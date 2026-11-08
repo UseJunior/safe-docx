@@ -137,7 +137,7 @@ export async function insertParagraph(
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
     return await manager.mutateSession(session, async (session) => {
-      const revisionCtx = ctx ? { ...ctx, idState: session.revisionIdState ??= structuredClone(ctx.idState) } : await getRevisionContextForSession(session);
+      const revisionCtx = await getRevisionContextForSession(session, ctx);
 
       const positionUpper = (params.position ?? 'AFTER').toUpperCase();
       if (positionUpper !== 'BEFORE' && positionUpper !== 'AFTER') {

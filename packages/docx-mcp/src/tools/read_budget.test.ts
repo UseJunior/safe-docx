@@ -173,7 +173,7 @@ describe('shared budget admission', () => {
     test.openspec('Google formats and explicit selectors')(`${format}: Google fakes render the selected format and walk exact cursors with no remote writes`, async () => {
       const input = paragraphs(Array.from({ length: 150 }, (_, i) => `${i}: ${'text '.repeat(120)}`));
       const write = vi.fn(() => { throw new Error('remote write forbidden'); });
-      const doc = { getParagraphs: () => input, executeBatchUpdate: write, replaceText: write };
+      const doc = { ensureCurrentStructure: vi.fn(async () => undefined), getParagraphs: () => input, executeBatchUpdate: write, replaceText: write };
       const session = { doc, docId: 'fake-read-only' } as unknown as GDocsSession;
       const mgr = createTestSessionManager();
       const seen: string[] = [];
@@ -219,7 +219,7 @@ describe('shared budget admission', () => {
         rowIndex: i - 1, colIndex: 0, totalRows: 2, totalCols: 1, isHeaderRow: i === 1,
         paraInCell: 0, cellParaCount: 1, colHeader: '' };
     }
-    const doc = { getParagraphs: vi.fn(() => input) };
+    const doc = { ensureCurrentStructure: vi.fn(async () => undefined), getParagraphs: vi.fn(() => input) };
     const session = { doc, docId: 'fake-tables' } as unknown as GDocsSession;
     const mgr = createTestSessionManager();
     const first = await gdocsReadFile(mgr, session, {}, {});

@@ -45,6 +45,24 @@ unavailable DOCX-to-ODT conversion.
 
 ## MCP And CLI
 
+Google document writes and explicit refreshes share a per-document queue. Cached
+structure is `unloaded`, `current`, or `stale_after_write`; raw batches leave it
+stale. Replacement, insertion and anchor maintenance refresh stale structure before
+resolving indexes and retain normal post-edit refreshes. MCP layout constructs its
+requests inside `executePlannedBatchUpdate` so refresh happens before planning.
+Snapshot getters remain synchronous; absolute requests passed directly to
+`executeBatchUpdate` remain the caller's responsibility.
+
+Google MCP `read_file` and `grep` also await current structure before returning
+content or matches. If a known-stale refresh fails, they return their existing
+`READ_ERROR` or `SEARCH_ERROR` response instead of serving the old snapshot.
+Already-current reads do not fetch again and reads never count as edits.
+
+An acknowledged Google user write increments `confirmedWriteVersion` before any
+follow-up read. If refresh fails, session mutation bookkeeping still records the
+remote success and the cached structure remains stale until refresh succeeds.
+Anchor maintenance invalidates structure without counting as a user edit.
+
 Running `safe-docx` with no command starts the MCP server. The CLI can also invoke tools directly:
 
 ```bash

@@ -411,6 +411,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
         },
       ];
       const mockDoc = {
+        ensureCurrentStructure: vi.fn(async () => undefined),
         getParagraphs: vi.fn(() => mockParagraphs),
         getParagraphTextById: vi.fn(),
         getParagraphByAnchorId: vi.fn(),

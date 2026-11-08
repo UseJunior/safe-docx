@@ -5,12 +5,10 @@ import fs from 'node:fs/promises';
 import { err, type ToolResponse } from '../tools/types.js';
 import {
   DocxDocument,
-  DocxZip,
-  REVISION_ID_ELEMENT_NAME_SET,
-  enumerateSelectedRevisionStoryPartPaths,
   createRevisionContext,
-  createRevisionIdState,
-  parseXml,
+  RevisionIdAllocator,
+  inferStartingRevisionIdState,
+  getSidePartRevisionSeedDocs,
   type NormalizationResult,
   type ParagraphRevision,
   type RevisionContext,
@@ -46,6 +44,15 @@ export type SaveCacheEntry = {
   exportedAtUtc: string;
   cachedAtIso: string;
 };
+
+export type ComparisonBaselines = Readonly<{
+  clean: Buffer;
+  withBookmarks: Buffer;
+}>;
+
+type ComparisonBaselineState =
+  | { status: 'loading'; source: Buffer; promise: Promise<ComparisonBaselines> }
+  | { status: 'ready'; source: Buffer; pair: ComparisonBaselines };
 
 export type ExtractionCacheEntry = {
   revision: number;
@@ -93,17 +100,18 @@ export type DocxSession = {
   /**
    * Post-normalization + bookmark-cleaned buffer used as comparison baseline for tracked output.
    * Comparing against this instead of originalBuffer prevents normalization artifacts from
-   * appearing as false tracked changes. Lazily generated on first save/compare via ensureBaselines().
+   * appearing as false tracked changes. Compatibility mirror only; consume ensureBaselines()'s pair.
    */
   comparisonBaseline: Buffer | null;
   /**
    * Post-normalization buffer WITH bookmarks, used as comparison baseline for
    * compare_documents tool (which uses cleanBookmarks: false).
-   * Lazily generated on first save/compare via ensureBaselines().
+   * Compatibility mirror only; consume ensureBaselines()'s pair.
    */
   comparisonBaselineWithBookmarks: Buffer | null;
   doc: DocxDocument;
   aiAuthor: string | null;
+  /** Published plain data; after initialization the managed allocator owns it. */
   revisionIdState: RevisionIdState | null;
   editCount: number;
   editRevision: number;
@@ -157,124 +165,55 @@ export type OdfSession = {
 
 export type Session = DocxSession | GDocsSession | OdfSession;
 
-const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-
-/**
- * WordprocessingML elements that carry package-wide revision `w:id` attributes.
- * Limiting the seed scan to these elements prevents non-revision IDs (e.g.,
- * `<w:comment w:id>`, `<w:footnote w:id>`, `<w:bookmarkStart w:id>`) from
- * spuriously inflating the starting revision-id counter.
- */
 function normalizeAiAuthor(author: string | null | undefined): string | null {
   if (typeof author !== 'string') return null;
   const trimmed = author.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getWordIdValue(element: Element): number | null {
-  const raw =
-    element.getAttributeNS(WORDPROCESSING_ML_NS, 'id')
-    ?? element.getAttribute('w:id')
-    ?? element.getAttribute('id');
-  if (raw === null) return null;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
+// Preserve the existing internal import path while moving the scan to core.
+export { inferStartingRevisionIdState, getSidePartRevisionSeedDocs };
+
+// Controllers stay outside cloneable session data. A candidate receives an
+// explicit fork, never a shallow copy of readiness or its in-flight promise.
+const revisionIdAllocators = new WeakMap<DocxSession, RevisionIdAllocator>();
+
+function revisionAllocator(session: DocxSession): RevisionIdAllocator {
+  let allocator = revisionIdAllocators.get(session);
+  if (!allocator) {
+    allocator = new RevisionIdAllocator(
+      async () => inferStartingRevisionIdState(...await session.doc.getRevisionSeedDocuments()),
+      session.revisionIdState ?? undefined,
+    );
+    revisionIdAllocators.set(session, allocator);
+  }
+  return allocator;
 }
 
-/**
- * Compute a starting `RevisionIdState` whose first allocated `w:id` is
- * higher than any existing revision id found in the supplied documents.
- *
- * Only `w:id` attributes on revision-bearing elements
- * (`REVISION_ID_ELEMENT_LOCAL_NAMES`) are considered. Non-revision IDs such
- * as `<w:comment w:id>` or `<w:footnote w:id>` share the attribute name but
- * occupy a different ID space and must not influence the counter.
- *
- * Callers should pass every available story/metadata part that can contain
- * package-wide revision attributes, not just `document.xml`.
- */
-export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdState {
-  let maxId = 0;
-
-  for (const doc of docs) {
-    for (const node of Array.from(doc.getElementsByTagName('*'))) {
-      const localName = node.localName ?? '';
-      if (!REVISION_ID_ELEMENT_NAME_SET.has(localName)) continue;
-      if (node.namespaceURI && node.namespaceURI !== WORDPROCESSING_ML_NS) continue;
-      const value = getWordIdValue(node);
-      if (value !== null && value > maxId) {
-        maxId = value;
-      }
+export async function getRevisionContextForSession(
+  session: DocxSession,
+  template?: RevisionContext,
+): Promise<RevisionContext | undefined> {
+  if (!session.aiAuthor && !template) return undefined;
+  const unpublished = session.revisionIdState === null;
+  const state = await revisionAllocator(session).ensureReady();
+  if (unpublished && template) {
+    // Legacy explicit contexts without a managed AI author are caller-seeded.
+    // Copy only their plain data into the detached candidate. The parent's
+    // scanned high-water mark survives failed/no-op candidates and publication.
+    if (!session.aiAuthor) {
+      state.nextId = template.idState.nextId;
+      state.moveRangeIds = structuredClone(template.idState.moveRangeIds);
+    } else {
+      state.nextId = Math.max(state.nextId, template.idState.nextId);
     }
   }
-
-  return createRevisionIdState(maxId + 1);
-}
-
-export async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> {
-  const docs: Document[] = [];
-
-  let zip: DocxZip;
-  try {
-    zip = await DocxZip.load(buffer);
-  } catch {
-    return docs;
-  }
-
-  for (const partPath of await enumerateSelectedRevisionStoryPartPaths(zip)) {
-    if (!zip.hasFile(partPath)) continue;
-    let xml: string | null;
-    try {
-      xml = await zip.readTextOrNull(partPath);
-    } catch {
-      continue;
-    }
-    if (!xml) continue;
-    try {
-      docs.push(parseXml(xml));
-    } catch {
-      // Malformed optional side part — skip so an unrelated parse failure
-      // does not block every tracked edit on the session.
-    }
-  }
-
-  return docs;
-}
-
-/**
- * Single-flight guard around the first revision-id seed scan per session.
- * Concurrent first callers await the same in-flight scan and assign the same
- * result, preventing a slower scan from clobbering a counter that a faster
- * caller has already advanced via emitted revisions.
- */
-const revisionIdSeedPromises = new WeakMap<DocxSession, Promise<RevisionIdState>>();
-
-export async function getRevisionContextForSession(session: DocxSession): Promise<RevisionContext | undefined> {
-  if (!session.aiAuthor) return undefined;
-
-  if (!session.revisionIdState) {
-    let pending = revisionIdSeedPromises.get(session);
-    if (!pending) {
-      pending = (async () => {
-        const sideDocs = await getSidePartRevisionSeedDocs(session.originalBuffer);
-        return inferStartingRevisionIdState(session.doc.getDocumentXmlClone(), ...sideDocs);
-      })();
-      revisionIdSeedPromises.set(session, pending);
-    }
-    try {
-      const seeded = await pending;
-      if (!session.revisionIdState) {
-        session.revisionIdState = seeded;
-      }
-    } finally {
-      revisionIdSeedPromises.delete(session);
-    }
-  }
+  session.revisionIdState = state;
 
   return createRevisionContext({
-    author: session.aiAuthor,
-    date: new Date(),
-    idState: session.revisionIdState,
+    author: template?.author ?? session.aiAuthor!,
+    date: template?.date ?? new Date(),
+    idState: state,
   });
 }
 
@@ -322,7 +261,9 @@ export class SessionManager {
         candidate.saveCache = new Map(active.saveCache);
         candidate.nonRevisionManifest = structuredClone(active.nonRevisionManifest);
         candidate.selectiveRevisionAction = structuredClone(active.selectiveRevisionAction);
-        candidate.revisionIdState = active.revisionIdState ? structuredClone(active.revisionIdState) : null;
+        const allocator = revisionAllocator(active).fork();
+        revisionIdAllocators.set(candidate, allocator);
+        candidate.revisionIdState = active.revisionIdState ? allocator.readyState : null;
       } else if (isOdfSession(active) && isOdfSession(candidate)) {
         candidate.archive = active.archive.fork();
       }
@@ -332,13 +273,21 @@ export class SessionManager {
       const after = await this.mutationContents(candidate);
       if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
       if (!before.equals(after)) {
-        // Direct-DOM handlers must invalidate the candidate's view too.
+        // Finish all candidate work before publishing either resource.
         if (isDocxSession(candidate)) candidate.doc.markMutated();
+        if (isDocxSession(active) && isDocxSession(candidate)) {
+          const allocator = revisionAllocator(active);
+          if (!allocator.publish(revisionAllocator(candidate))) {
+            return err('REVISION_ID_CONFLICT', 'Revision IDs advanced during mutation. Retry the edit.');
+          }
+          // Publishing advances the existing object so outstanding direct
+          // contexts cannot issue IDs already published by this mutation.
+          if (candidate.revisionIdState) active.revisionIdState = allocator.readyState;
+        }
         active.doc = candidate.doc;
         active.editCount += 1;
         active.editRevision += 1;
         if (isDocxSession(active) && isDocxSession(candidate)) {
-          active.revisionIdState = candidate.revisionIdState;
           active.nonRevisionManifest = candidate.nonRevisionManifest;
           active.selectiveRevisionAction = candidate.selectiveRevisionAction;
           active.saveCache.clear();
@@ -406,8 +355,8 @@ export class SessionManager {
   private ttlMs: number;
   private defaultAiAuthor: string | null;
 
-  /** Concurrency guard: prevents double-generation of baselines for the same session. */
-  private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
+  /** Resource ownership stays outside cloneable mutation/session metadata. */
+  private baselineStates = new WeakMap<DocxSession, ComparisonBaselineState>();
   private finalized = new WeakMap<DocxSession, { normalizationStats: NormalizationResult | null; paragraphCount: number }>();
   /** Retain failed removals for a later clearAllSessions retry, without retaining documents. */
   private pendingArtifactDirectories = new Set<string>();
@@ -679,33 +628,48 @@ export class SessionManager {
    * Safe to call multiple times — returns immediately if baselines already exist.
    * Uses a concurrency guard to prevent double-generation from parallel calls.
    */
-  async ensureBaselines(session: DocxSession): Promise<void> {
-    if (session.comparisonBaseline !== null) return;
-    const existing = this.baselinePromises.get(session);
-    if (existing) return existing;
-    const promise = this._generateBaselines(session);
-    this.baselinePromises.set(session, promise);
-    try {
-      await promise;
-    } finally {
-      this.baselinePromises.delete(session);
+  async ensureBaselines(session: DocxSession): Promise<ComparisonBaselines> {
+    if (!this.isActiveSession(session)) throw new Error('Comparison baseline session was closed or replaced.');
+    const source = session.originalBuffer;
+    const existing = this.baselineStates.get(session);
+    if (existing?.source === source) {
+      return existing.status === 'ready' ? existing.pair : existing.promise;
     }
+
+    // Legacy mirrors never establish readiness, including a manually populated half.
+    session.comparisonBaseline = null;
+    session.comparisonBaselineWithBookmarks = null;
+    // Register ownership before producer execution (including synchronous failures).
+    const promise = Promise.resolve().then(() => this._generateBaselines(source)).then(pair => {
+      if (!this.isActiveSession(session)
+        || session.originalBuffer !== source
+        || this.baselineStates.get(session) !== loading) {
+        throw new Error('Comparison baseline session or source was retired during preparation.');
+      }
+      this.baselineStates.set(session, { status: 'ready', source, pair });
+      session.comparisonBaseline = pair.clean;
+      session.comparisonBaselineWithBookmarks = pair.withBookmarks;
+      return pair;
+    }).finally(() => {
+      // A failed obsolete attempt must not erase a newer source's loading/ready state.
+      if (this.baselineStates.get(session) === loading) this.baselineStates.delete(session);
+    });
+    const loading: ComparisonBaselineState = { status: 'loading', source, promise };
+    this.baselineStates.set(session, loading);
+    return promise;
   }
 
-  private async _generateBaselines(session: DocxSession): Promise<void> {
+  private async _generateBaselines(source: Buffer): Promise<ComparisonBaselines> {
     // Reconstruct from immutable open-time source, NOT from the live session.doc
     // which may have been edited.
-    const doc = await DocxDocument.load(session.originalBuffer);
+    const doc = await DocxDocument.load(source);
     doc.normalize();
     doc.insertParagraphBookmarks('_baseline');
-    // Sequential on purpose: toBuffer() temporarily swaps document.xml inside
-    // the shared zip, so concurrent calls on one document race on that state.
-    // Baselines stay fully normalized (no minimalReserialization) — the
+    // Prepare both privately. Baselines stay fully normalized (no minimalReserialization) — the
     // comparison pipeline expects normalized-vs-normalized inputs.
     const clean = await doc.toBuffer({ cleanBookmarks: true });
     const bookmarked = await doc.toBuffer({ cleanBookmarks: false });
-    session.comparisonBaseline = clean.buffer;
-    session.comparisonBaselineWithBookmarks = bookmarked.buffer;
+    return { clean: clean.buffer, withBookmarks: bookmarked.buffer };
   }
 
   /** Get session by file path (auto-canonicalizes). */

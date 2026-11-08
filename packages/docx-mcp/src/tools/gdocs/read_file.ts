@@ -18,6 +18,7 @@ export async function gdocsReadFile(
       return err('INVALID_FORMAT', `Invalid format: ${params.format}`, "Use 'toon' (default), 'json', or 'simple'.");
     }
 
+    await session.doc.ensureCurrentStructure();
     const paragraphs = session.doc.getParagraphs();
     const gdocsNodes = buildDocumentViewNodes(paragraphs);
     // Cast to docx-core DocumentViewNode — structurally compatible

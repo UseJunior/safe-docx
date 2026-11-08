@@ -15,6 +15,7 @@ export async function gdocsReplaceText(
       const oldStr = stripAllInlineTags(params.old_string);
       const newStr = stripAllInlineTags(params.new_string);
 
+      await session.doc.ensureCurrentStructure();
       const beforeText = session.doc.getParagraphTextById(pid);
       if (beforeText === null) {
         return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
