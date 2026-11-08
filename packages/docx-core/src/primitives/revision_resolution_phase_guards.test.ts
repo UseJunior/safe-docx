@@ -129,11 +129,42 @@ for (const mode of ['accept', 'reject'] as const) {
           : `<w:tbl>${host === 'table' ? property : ''}<w:tr>${host === 'row' ? property : ''}<w:tc>${host === 'cell' ? property : ''}<w:p/></w:tc></w:tr></w:tbl>`;
         const doc = xml(body + `<w:p><w:r><w:rPr>${revision('rPrChange', 'foreign', '<w:rPr><w:b/></w:rPr>', 'Human')}</w:rPr><w:t>foreign</w:t></w:r></w:p>`);
         const foreignBefore = serializeXml(elements(doc, 'rPrChange').find(el => el.getAttributeNS(W, 'author') === 'Human')!);
-        resolve(doc, { filter: foreignFilter });
-        expect(serializeXml(elements(doc, prop)[0]!)).toContain(mode === 'accept' ? current : original);
+        const result = resolve(doc, { filter: foreignFilter });
+        expect(result).toMatchObject(mode === 'accept'
+          ? { propertyChangesResolved: 1 } : { propertyChangesReverted: 1 });
+        expect(elements(doc, `${prop}Change`).filter(el => el.getAttributeNS(W, 'id') === 'change')).toHaveLength(0);
+        const expected = parseXml(`<w:${prop} xmlns:w="${W}">${mode === 'accept' ? current : original}</w:${prop}>`);
+        expect(serializeXml(elements(doc, prop)[0]!)).toBe(serializeXml(expected.documentElement));
+        expect(elements(doc, 'rPrChange').filter(el => el.getAttributeNS(W, 'author') === 'Human')).toHaveLength(1);
         expect(serializeXml(elements(doc, 'rPrChange').find(el => el.getAttributeNS(W, 'author') === 'Human')!)).toBe(foreignBefore);
       });
     }
+
+    test('settles empty paragraph-mark history before final mark-property cleanup', () => {
+      const doc = xml('<w:p><w:pPr><w:rPr><w:ins w:id="1"/>' +
+        '<w:rPrChange w:id="2" w:author="A"><w:rPr/></w:rPrChange></w:rPr></w:pPr></w:p>');
+      resolve(doc);
+      expect(serializeXml(doc)).toBe(serializeXml(xml('<w:p/>')));
+    });
+
+    test('preserves the selector observations across the ordered live-DOM passes', () => {
+      const doc = xml(`<w:p><w:pPr><w:rPr>${revision('del', 'm')}</w:rPr></w:pPr>` +
+        revision('ins', 'i', run('a')) + revision('del', 'd', '<w:r><w:delText>b</w:delText></w:r>') +
+        revision('moveFrom', 'f', '<w:r><w:delText>c</w:delText></w:r>') + revision('moveTo', 't', run('c')) +
+        `<w:r><w:rPr><w:b/>${revision('rPrChange', 'r', '<w:rPr/>')}</w:rPr><w:t>e</w:t></w:r></w:p><w:p>${run('z')}</w:p>`);
+      const calls: string[] = [];
+      resolve(doc, { filter: el => { calls.push(`${el.localName}#${el.getAttributeNS(W, 'id')}`); return true; } });
+      // RevisionFilter is public: its observations must not be reordered or
+      // duplicated by precomputing another pass's selection. These sequences
+      // are independently characterized against the original implementation.
+      expect(calls).toEqual(mode === 'accept' ? [
+        'del#m', 'del#d', 'ins#i', 'del#m', 'del#m', 'del#m', 'del#d',
+        'moveFrom#f', 'del#m', 'del#d', 'moveFrom#f', 'ins#i', 'moveTo#t', 'rPrChange#r',
+      ] : [
+        'ins#i', 'del#m', 'del#d', 'del#m', 'ins#i', 'moveTo#t',
+        'ins#i', 'moveTo#t', 'del#m', 'del#d', 'moveFrom#f', 'rPrChange#r',
+      ]);
+    });
 
     test('keeps move-range selector behavior unchanged pending #1020', () => {
       const doc = xml(`<w:p><w:moveFromRangeStart w:id="1" w:author="AI"/>` +

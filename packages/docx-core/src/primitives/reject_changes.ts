@@ -888,8 +888,10 @@ export function rejectChanges(
   }
 
   // Keep calls explicit and ordered. Capture marks/bookmarks before wrappers
-  // disappear; restore deleted text before unwrapping moves; restore properties
-  // before merging paragraphs. Selectors must retain their live-DOM call order.
+  // disappear and restore properties before merging paragraphs. Selectors must
+  // retain their live-DOM call order. The existing deleted-text/move-source order
+  // is retained for compatibility; it leaves a pre-existing selective move-source
+  // text projection gap and is not claimed as a resolved or protected policy.
   const rowRevisions = resolveTableRowRevisionsPass(root, filter);
   const { markInsertedParagraphs, removedMoveToBookmarkIds, resolvedMarkProperties } =
     identifyParagraphMarkRevisionsPass(root, filter);

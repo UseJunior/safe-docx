@@ -9,8 +9,15 @@ Preconditions remain enforced where they already live: row markers are
 distinguished by their direct trPr parent, promoted wrappers are sorted deepest
 first, paragraph marks are captured before wrapper removal, selective deleted
 text restoration excludes surviving foreign wrappers, and paragraph merges run
-after property restoration. Regression tests protect those boundaries instead
-of introducing new validation errors or selector calls.
+after property restoration. Regression tests protect row/mark/bookmark/property
+ordering, exact selected property containers and observable selector call order
+without introducing new validation errors or selector calls.
+
+The unchanged deleted-text-before-move-source order has a pre-existing selective
+reject gap: selected move-source text can remain `delText` outside its wrapper.
+Dynamic review reproduced this on both main and the refactor. This behavior is
+not claimed as resolved or test-protected here. It is separate from #1020's
+authorless move-range ends; neither defect is absorbed into this refactor.
 
 The low-level passes mutate their DOM and propagate exceptions. They do not
 roll back. A DocxDocument fork, used by the atomic session mutation mechanism,
@@ -37,8 +44,11 @@ The selective range-end regression is characterization of the existing gap,
 not a new supported behavior. No comparison baseline is regenerated.
 
 ## Verification
-The 35 new tests pass against the original accept/reject source as well as the
-refactor. Nine focused suites pass 130 tests. The mandatory default workspace
+The initial 35 new tests pass against the original accept/reject source as well
+as the refactor. Review then strengthened all twelve property-history cases and
+added four guards for empty mark properties and selector observations. Initial
+nine-suite verification passed 130 tests; final review/gate evidence is recorded
+on PR #1374. The mandatory default workspace
 suite on the integrated pagination base (649a40c7) passes 4,912 tests, with the
 58 existing conditional skips. Build, workspace lint, spec coverage, conformance
 citations/document and cycle checks pass. The frozen real-corpus gate passes all
