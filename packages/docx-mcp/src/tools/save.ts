@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { errorCode, errorMessage } from "../error_utils.js";
-import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import {
@@ -13,6 +12,7 @@ import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session
 import { getAiRevisionBaseline, splitIntroducedDiagnostics } from './ai_revision_guard.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { artifactsFromCache, type SaveArtifacts } from './save_artifacts.js';
+import { publishSaveOutputs, SavePublicationError, type SaveOutput } from './save_publication.js';
 
 type SaveFormat = 'clean' | 'tracked' | 'both';
 type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
@@ -351,17 +351,16 @@ export async function save(
       }
     }
 
+    const outputs: SaveOutput[] = [];
     if (artifacts.format !== 'tracked') {
       const cleanPolicy = await enforceWritePathPolicy(savePath);
       if (!cleanPolicy.ok) return cleanPolicy.response;
-      await fs.mkdir(path.dirname(savePath), { recursive: true });
-      await fs.writeFile(savePath, new Uint8Array(artifacts.revisedBuffer));
+      outputs.push({ destination: cleanPolicy.resolvedPath, buffer: artifacts.revisedBuffer });
     }
     if (artifacts.format !== 'clean') {
       const trackedPolicy = await enforceWritePathPolicy(trackedPath);
       if (!trackedPolicy.ok) return trackedPolicy.response;
-      await fs.mkdir(path.dirname(trackedPath), { recursive: true });
-      await fs.writeFile(trackedPath, new Uint8Array(artifacts.trackedBuffer));
+      outputs.push({ destination: trackedPolicy.resolvedPath, buffer: artifacts.trackedBuffer });
     }
 
     // Summarize the AI's revisions from the session's write-time markup (#126).
@@ -369,6 +368,7 @@ export async function save(
     // artifact when present, else the session document directly.
     const revisionSummarySource = artifacts.format === 'clean' ? current.buffer : artifacts.trackedBuffer;
     const revisions = await collectAiRevisionSummary(revisionSummarySource, aiAuthor);
+    const publicationCleanupFailures = await publishSaveOutputs(outputs);
 
     const returnedVariants =
       format === 'clean'
@@ -407,6 +407,7 @@ export async function save(
       returned_variants: returnedVariants,
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
+      ...(publicationCleanupFailures.length ? { publication_cleanup_failures: publicationCleanupFailures } : {}),
       format_source: formatSource,
       parameter_warning: parameterWarning,
       selective_revision_disposition: cleanArtifactDiscardedRevisions
@@ -431,6 +432,14 @@ export async function save(
             : `${cacheHit ? 'Cached ' : ''}clean document saved to ${savePath} and tracked changes document saved to ${trackedPath}`),
     }, metadata));
   } catch (e: unknown) {
+    if (e instanceof SavePublicationError) {
+      if (e.rollbackFailures.length) {
+        return { ...err('SAVE_ERROR', `Failed to save: ${e.message}`, 'Recover the listed paths before retrying.'), rollback_failures: e.rollbackFailures };
+      }
+      if (e.code === 'ALIASED_OUTPUT_PATHS' || e.code === 'HARDLINK_OUTPUT_UNSUPPORTED') {
+        return err(e.code, e.message, 'Use distinct regular-file destinations.');
+      }
+    }
     const msg = errorMessage(e);
     if (String(errorCode(e) ?? '').toUpperCase() === 'EACCES') {
       return err('PERMISSION_DENIED', `Cannot write to: ${params.save_to_local_path}`, 'Try saving to ~/Downloads/ or ~/Documents/ instead.');
