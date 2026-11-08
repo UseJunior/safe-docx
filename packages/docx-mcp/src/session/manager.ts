@@ -297,6 +297,10 @@ export class SessionManager {
 
   /** Concurrency guard: prevents double-generation of baselines for the same session. */
   private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
+  private finalized = new WeakMap<DocxSession, { normalizationStats: NormalizationResult | null; paragraphCount: number }>();
+  /** Retain failed removals for a later clearAllSessions retry, without retaining documents. */
+  private pendingArtifactDirectories = new Set<string>();
+  private artifactCleanupPromises = new Map<string, Promise<void>>();
 
   constructor(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }) {
     this.ttlMs = opts?.ttlMs ?? 60 * 60 * 1000;
@@ -335,22 +339,26 @@ export class SessionManager {
     return `ses_${out}`;
   }
 
-  async createSession(documentContent: Buffer, filename: string, originalPath: string): Promise<DocxSession> {
+  async createSession(
+    documentContent: Buffer,
+    filename: string,
+    originalPath: string,
+    opts?: { skipNormalization?: boolean },
+  ): Promise<DocxSession> {
     const canonicalPath = await this.canonicalizePath(originalPath);
 
-    // One-session-per-file: clean up existing session for this path if any
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
-
+    // Loading can fail; retain the active session until its replacement is ready.
+    const doc = await DocxDocument.load(documentContent);
     const sessionId = this.newSessionId();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-docx-'));
     const tmpPath = path.join(dir, filename);
     // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
-
-    const doc = await DocxDocument.load(documentContent);
+    try {
+      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    } catch (error) {
+      await this.releaseArtifactDirectory(dir);
+      throw error;
+    }
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.ttlMs);
     const session: DocxSession = {
@@ -376,7 +384,17 @@ export class SessionManager {
       expiresAt,
       normalizationStats: null,
     };
+    try {
+      await this.finalizeNewSession(session, opts);
+    } catch (error) {
+      await this.cleanupSessionArtifacts(session);
+      throw error;
+    }
+    const existing = this.sessions.get(canonicalPath);
+    // Commit point: candidate failures above preserve the old session. Retirement
+    // below is best-effort and cannot invalidate or fail the published candidate.
     this.sessions.set(canonicalPath, session);
+    if (existing) await this.cleanupSessionArtifacts(existing);
     return session;
   }
 
@@ -395,15 +413,15 @@ export class SessionManager {
   ): Promise<OdfSession> {
     const canonicalPath = await this.canonicalizePath(originalPath);
 
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
-
     const sessionId = this.newSessionId();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
     const tmpPath = path.join(dir, filename);
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    try {
+      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+    } catch (error) {
+      await this.releaseArtifactDirectory(dir);
+      throw error;
+    }
 
     const now = new Date();
     const session: OdfSession = {
@@ -421,7 +439,10 @@ export class SessionManager {
       lastAccessedAt: now,
       expiresAt: new Date(now.getTime() + this.ttlMs),
     };
+    const existing = this.sessions.get(canonicalPath);
+    // Same commit boundary as DOCX: only retire the old resource after publication.
     this.sessions.set(canonicalPath, session);
+    if (existing) await this.cleanupSessionArtifacts(existing);
     return session;
   }
 
@@ -429,21 +450,24 @@ export class SessionManager {
    * Finalize a newly created session by normalizing the document and inserting
    * paragraph bookmarks. Baselines are lazily generated on first save/compare.
    *
-   * INVARIANT: All production session creation paths must call
-   * `finalizeNewSession` before returning a session. `createSession` alone
-   * leaves baselines null and is incomplete for tool use.
+   * Creation finalizes before publication. Kept idempotent for legacy callers
+   * that explicitly finalize after creation. Comparison baselines stay lazy.
    */
   async finalizeNewSession(
     session: DocxSession,
     opts?: { skipNormalization?: boolean },
   ): Promise<{ normalizationStats: NormalizationResult | null; paragraphCount: number }> {
+    const finalized = this.finalized.get(session);
+    if (finalized) return finalized;
     if (!opts?.skipNormalization) {
       session.normalizationStats = session.doc.normalize();
     }
     const info = session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
     // Baselines are lazily generated — skip the two toBuffer() calls here
     this.touch(session);
-    return { normalizationStats: session.normalizationStats, paragraphCount: info.paragraphCount };
+    const result = { normalizationStats: session.normalizationStats, paragraphCount: info.paragraphCount };
+    this.finalized.set(session, result);
+    return result;
   }
 
   /**
@@ -493,6 +517,7 @@ export class SessionManager {
     const now = Date.now();
     if (ses.expiresAt.getTime() < now) {
       this.sessions.delete(canonicalPath);
+      void this.cleanupSessionArtifacts(ses);
       return null;
     }
     return ses;
@@ -503,7 +528,10 @@ export class SessionManager {
    * edits it would otherwise discard when the process exits (#1048).
    */
   listSessions(): Session[] {
-    return [...this.sessions.values()];
+    return [...this.sessions.keys()].flatMap(key => {
+      const session = this.getSessionByPath(key);
+      return session ? [session] : [];
+    });
   }
 
   /**
@@ -516,6 +544,7 @@ export class SessionManager {
         const now = Date.now();
         if (ses.expiresAt.getTime() < now) {
           this.sessions.delete(key);
+          void this.cleanupSessionArtifacts(ses);
           throw new Error(`SESSION_EXPIRED:${sessionId}`);
         }
         return ses;
@@ -526,10 +555,31 @@ export class SessionManager {
 
   private async cleanupSessionArtifacts(session: Session): Promise<void> {
     if (isDocxSession(session) || isOdfSession(session)) {
-      const tmpDir = path.dirname(session.tmpPath);
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      await this.releaseArtifactDirectory(path.dirname(session.tmpPath));
     }
     // GDocs sessions have no tmp dir to clean up
+  }
+
+  /** Non-throwing retirement; concurrent requests share one removal attempt. */
+  private async releaseArtifactDirectory(dir: string): Promise<void> {
+    const existing = this.artifactCleanupPromises.get(dir);
+    if (existing) return existing;
+    this.pendingArtifactDirectories.add(dir);
+    const cleanup = (async () => {
+      try {
+        await fs.rm(dir, { recursive: true, force: true });
+        this.pendingArtifactDirectories.delete(dir);
+      } catch {
+        // Keep the path for retry. In particular, post-publication cleanup must
+        // not report creation failure or delete the active replacement's files.
+      }
+    })();
+    this.artifactCleanupPromises.set(dir, cleanup);
+    try {
+      await cleanup;
+    } finally {
+      this.artifactCleanupPromises.delete(dir);
+    }
   }
 
   async clearSessionByPath(filePath: string): Promise<string | null> {
@@ -549,6 +599,9 @@ export class SessionManager {
     const clearedPaths = allSessions.map(([key]) => key);
     this.sessions.clear();
     await Promise.all(allSessions.map(([, session]) => this.cleanupSessionArtifacts(session)));
+    // Also drain expiry cleanups and retry failed candidate/retirement removals.
+    await Promise.all(this.artifactCleanupPromises.values());
+    await Promise.all([...this.pendingArtifactDirectories].map(dir => this.releaseArtifactDirectory(dir)));
     return clearedPaths;
   }
 
@@ -619,7 +672,7 @@ export class SessionManager {
    */
   createGDocsSession(docId: string, doc: any): GDocsSession {
     const sessionKey = `gdocs:${docId}`;
-    const existing = this.sessions.get(sessionKey);
+    const existing = this.getSessionByPath(sessionKey);
     if (existing) {
       this.touch(existing);
       return existing as GDocsSession;
