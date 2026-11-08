@@ -39,6 +39,8 @@ describe('session publication lifecycle', () => {
       expect(normalize).not.toHaveBeenCalled();
       expect(session.doc.readParagraphs().paragraphs.map(p => p.id)).toEqual(ids);
       expect(await manager.getSessionByFilePath(session.originalPath)).toBe(session);
+      expect(session.comparisonBaseline).toBeNull();
+      expect(session.comparisonBaselineWithBookmarks).toBeNull();
     } finally { normalize.mockRestore(); }
   });
 
@@ -65,7 +67,9 @@ describe('session publication lifecycle', () => {
     const session = await manager.createSession(await makeMinimalDocx(['expired']), 'input.docx', path.join(dir, 'input.docx'));
     session.expiresAt = new Date(0);
     expect(await manager.getSessionByFilePath(session.originalPath)).toBeNull();
-    await expect.poll(async () => fs.stat(path.dirname(session.tmpPath)).then(() => true, () => false)).toBe(false);
+    await manager.clearAllSessions();
+    await manager.clearAllSessions();
+    await expect(fs.stat(path.dirname(session.tmpPath))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(manager.listSessions()).toEqual([]);
   });
 
