@@ -289,6 +289,19 @@ export function isOdfSession(s: Session): s is OdfSession {
   return s.provider === 'odf';
 }
 
+/** A unique opening ticket; a close permanently cancels it, including across reopen. */
+export interface SessionOpenTicket {
+  readonly sessionKey: string;
+  cancelled: boolean;
+}
+
+export class SessionClosedDuringOpenError extends Error {
+  constructor() {
+    super('Session was closed while opening. Re-run the tool to open a new session.');
+    this.name = 'SessionClosedDuringOpenError';
+  }
+}
+
 export class SessionManager {
   /** Sessions keyed by canonical file path (realpath). */
   private sessions = new Map<string, Session>();
@@ -301,6 +314,91 @@ export class SessionManager {
   /** Retain failed removals for a later clearAllSessions retry, without retaining documents. */
   private pendingArtifactDirectories = new Set<string>();
   private artifactCleanupPromises = new Map<string, Promise<void>>();
+  private openingTickets = new Map<string, Set<SessionOpenTicket>>();
+  private resolvingOpens = new Set<{ closedKeys: Set<string>; cancelled: boolean }>();
+  private pendingOpens = new Map<string, { sessionKey: string; promise: Promise<unknown> }>();
+
+  captureOpenTicket(sessionKey: string): SessionOpenTicket {
+    const ticket = { sessionKey, cancelled: false };
+    let tickets = this.openingTickets.get(sessionKey);
+    if (!tickets) this.openingTickets.set(sessionKey, tickets = new Set());
+    tickets.add(ticket);
+    return ticket;
+  }
+
+  /** Keep close events only while a local opener is resolving its canonical key. */
+  async captureOpenTicketForPath(filePath: string): Promise<SessionOpenTicket> {
+    const resolving = { closedKeys: new Set<string>(), cancelled: false };
+    this.resolvingOpens.add(resolving);
+    try {
+      const key = await this.canonicalizePath(filePath);
+      const ticket = this.captureOpenTicket(key);
+      ticket.cancelled = resolving.cancelled || resolving.closedKeys.has(key);
+      return ticket;
+    } finally {
+      this.resolvingOpens.delete(resolving);
+    }
+  }
+
+  releaseOpenTicket(ticket: SessionOpenTicket): void {
+    const tickets = this.openingTickets.get(ticket.sessionKey);
+    tickets?.delete(ticket);
+    if (tickets?.size === 0) this.openingTickets.delete(ticket.sessionKey);
+  }
+
+  private invalidateOpening(sessionKey: string): void {
+    for (const resolving of this.resolvingOpens) resolving.closedKeys.add(sessionKey);
+    for (const ticket of this.openingTickets.get(sessionKey) ?? []) ticket.cancelled = true;
+    this.openingTickets.delete(sessionKey);
+    for (const [key, entry] of this.pendingOpens) {
+      if (entry.sessionKey === sessionKey) this.pendingOpens.delete(key);
+    }
+  }
+
+  private assertOpenTicket(ticket: SessionOpenTicket): void {
+    if (ticket.cancelled) throw new SessionClosedDuringOpenError();
+  }
+
+  private async withOpenTicket<T>(
+    filePath: string,
+    supplied: SessionOpenTicket | undefined,
+    execute: (ticket: SessionOpenTicket) => Promise<T>,
+  ): Promise<T> {
+    const ticket = supplied ?? await this.captureOpenTicketForPath(filePath);
+    try {
+      this.assertOpenTicket(ticket);
+      return await execute(ticket);
+    } finally {
+      if (!supplied) this.releaseOpenTicket(ticket);
+    }
+  }
+
+  /** Register before execution, and let only the same promise remove its slot. */
+  async coordinateSessionOpen<T>(
+    sessionKey: string,
+    execute: (ticket: SessionOpenTicket) => Promise<T>,
+    provider: Session['provider'] = 'docx',
+    suppliedTicket?: SessionOpenTicket,
+  ): Promise<{ outcome: T; shared: boolean }> {
+    const pendingKey = `${provider}:${sessionKey}`;
+    const pending = this.pendingOpens.get(pendingKey);
+    if (pending) return { outcome: await pending.promise as T, shared: true };
+    const ticket = suppliedTicket ?? this.captureOpenTicket(sessionKey);
+    const promise = Promise.resolve().then(() => execute(ticket)).finally(() => {
+      if (!suppliedTicket) this.releaseOpenTicket(ticket);
+      if (this.pendingOpens.get(pendingKey)?.promise === promise) this.pendingOpens.delete(pendingKey);
+    });
+    this.pendingOpens.set(pendingKey, { sessionKey, promise });
+    return { outcome: await promise, shared: false };
+  }
+
+  async discardOpeningSession(session: Session): Promise<void> {
+    // A late candidate must never remove a newer session for the same path.
+    for (const [key, active] of this.sessions) {
+      if (active === session) this.sessions.delete(key);
+    }
+    await this.cleanupSessionArtifacts(session);
+  }
 
   constructor(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }) {
     this.ttlMs = opts?.ttlMs ?? 60 * 60 * 1000;
@@ -343,59 +441,61 @@ export class SessionManager {
     documentContent: Buffer,
     filename: string,
     originalPath: string,
-    opts?: { skipNormalization?: boolean },
+    opts?: { skipNormalization?: boolean; openTicket?: SessionOpenTicket },
   ): Promise<DocxSession> {
-    const canonicalPath = await this.canonicalizePath(originalPath);
-
-    // Loading can fail; retain the active session until its replacement is ready.
-    const doc = await DocxDocument.load(documentContent);
-    const sessionId = this.newSessionId();
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-docx-'));
-    const tmpPath = path.join(dir, filename);
-    // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
-    try {
-      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
-    } catch (error) {
-      await this.releaseArtifactDirectory(dir);
-      throw error;
-    }
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + this.ttlMs);
-    const session: DocxSession = {
-      provider: 'docx',
-      sessionId,
-      filename,
-      tmpPath,
-      originalPath,
-      originalBuffer: Buffer.from(documentContent),
-      comparisonBaseline: null,
-      comparisonBaselineWithBookmarks: null,
-      doc,
-      aiAuthor: this.defaultAiAuthor,
-      revisionIdState: null,
-      editCount: 0,
-      editRevision: 0,
-      saveCache: new Map<string, SaveCacheEntry>(),
-      extractionCache: null,
-      nonRevisionManifest: [],
-      selectiveRevisionAction: null,
-      createdAt: now,
-      lastAccessedAt: now,
-      expiresAt,
-      normalizationStats: null,
-    };
-    try {
-      await this.finalizeNewSession(session, opts);
-    } catch (error) {
-      await this.cleanupSessionArtifacts(session);
-      throw error;
-    }
-    const existing = this.sessions.get(canonicalPath);
-    // Commit point: candidate failures above preserve the old session. Retirement
-    // below is best-effort and cannot invalidate or fail the published candidate.
-    this.sessions.set(canonicalPath, session);
-    if (existing) await this.cleanupSessionArtifacts(existing);
-    return session;
+    return this.withOpenTicket(originalPath, opts?.openTicket, async (ticket) => {
+      const canonicalPath = ticket.sessionKey;
+      // Loading can fail; retain the active session until its replacement is ready.
+      const doc = await DocxDocument.load(documentContent);
+      const sessionId = this.newSessionId();
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-docx-'));
+      const tmpPath = path.join(dir, filename);
+      // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
+      try {
+        await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+      } catch (error) {
+        await this.releaseArtifactDirectory(dir);
+        throw error;
+      }
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + this.ttlMs);
+      const session: DocxSession = {
+        provider: 'docx',
+        sessionId,
+        filename,
+        tmpPath,
+        originalPath,
+        originalBuffer: Buffer.from(documentContent),
+        comparisonBaseline: null,
+        comparisonBaselineWithBookmarks: null,
+        doc,
+        aiAuthor: this.defaultAiAuthor,
+        revisionIdState: null,
+        editCount: 0,
+        editRevision: 0,
+        saveCache: new Map<string, SaveCacheEntry>(),
+        extractionCache: null,
+        nonRevisionManifest: [],
+        selectiveRevisionAction: null,
+        createdAt: now,
+        lastAccessedAt: now,
+        expiresAt,
+        normalizationStats: null,
+      };
+      try {
+        await this.finalizeNewSession(session, opts);
+        this.assertOpenTicket(ticket);
+      } catch (error) {
+        await this.cleanupSessionArtifacts(session);
+        throw error;
+      }
+      const existing = this.sessions.get(canonicalPath);
+      // Commit point: candidate failures above preserve the old session. Retirement
+      // below is best-effort and cannot invalidate or fail the published candidate.
+      this.sessions.set(canonicalPath, session);
+      if (existing) await this.cleanupSessionArtifacts(existing);
+      return session;
+    });
   }
 
   /**
@@ -410,40 +510,46 @@ export class SessionManager {
     originalPath: string,
     archive: any,
     doc: any,
+    opts?: { openTicket?: SessionOpenTicket },
   ): Promise<OdfSession> {
-    const canonicalPath = await this.canonicalizePath(originalPath);
+    return this.withOpenTicket(originalPath, opts?.openTicket, async (ticket) => {
+      const canonicalPath = ticket.sessionKey;
+      const sessionId = this.newSessionId();
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
+      const tmpPath = path.join(dir, filename);
+      try {
+        await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+      } catch (error) {
+        await this.releaseArtifactDirectory(dir);
+        throw error;
+      }
 
-    const sessionId = this.newSessionId();
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
-    const tmpPath = path.join(dir, filename);
-    try {
-      await fs.writeFile(tmpPath, new Uint8Array(documentContent));
-    } catch (error) {
-      await this.releaseArtifactDirectory(dir);
-      throw error;
-    }
-
-    const now = new Date();
-    const session: OdfSession = {
-      provider: 'odf',
-      sessionId,
-      filename,
-      tmpPath,
-      originalPath,
-      originalBuffer: Buffer.from(documentContent),
-      archive,
-      doc,
-      editCount: 0,
-      editRevision: 0,
-      createdAt: now,
-      lastAccessedAt: now,
-      expiresAt: new Date(now.getTime() + this.ttlMs),
-    };
-    const existing = this.sessions.get(canonicalPath);
-    // Same commit boundary as DOCX: only retire the old resource after publication.
-    this.sessions.set(canonicalPath, session);
-    if (existing) await this.cleanupSessionArtifacts(existing);
-    return session;
+      const now = new Date();
+      const session: OdfSession = {
+        provider: 'odf',
+        sessionId,
+        filename,
+        tmpPath,
+        originalPath,
+        originalBuffer: Buffer.from(documentContent),
+        archive,
+        doc,
+        editCount: 0,
+        editRevision: 0,
+        createdAt: now,
+        lastAccessedAt: now,
+        expiresAt: new Date(now.getTime() + this.ttlMs),
+      };
+      if (ticket.cancelled) {
+        await this.cleanupSessionArtifacts(session);
+        throw new SessionClosedDuringOpenError();
+      }
+      const existing = this.sessions.get(canonicalPath);
+      // Same commit boundary as DOCX: only retire the old resource after publication.
+      this.sessions.set(canonicalPath, session);
+      if (existing) await this.cleanupSessionArtifacts(existing);
+      return session;
+    });
   }
 
   /**
@@ -587,6 +693,7 @@ export class SessionManager {
     const sessionKey = filePath.startsWith('gdocs:')
       ? filePath
       : await this.canonicalizePath(filePath);
+    this.invalidateOpening(sessionKey);
     const session = this.sessions.get(sessionKey);
     if (!session) return null;
     this.sessions.delete(sessionKey);
@@ -595,6 +702,8 @@ export class SessionManager {
   }
 
   async clearAllSessions(): Promise<string[]> {
+    for (const resolving of this.resolvingOpens) resolving.cancelled = true;
+    for (const key of this.openingTickets.keys()) this.invalidateOpening(key);
     const allSessions = [...this.sessions.entries()];
     const clearedPaths = allSessions.map(([key]) => key);
     this.sessions.clear();
@@ -670,8 +779,9 @@ export class SessionManager {
    * Create a Google Docs session. The `doc` is an already-loaded
    * GoogleDocsDocument instance (created via dynamic import in the handler layer).
    */
-  createGDocsSession(docId: string, doc: any): GDocsSession {
+  createGDocsSession(docId: string, doc: any, opts?: { openTicket?: SessionOpenTicket }): GDocsSession {
     const sessionKey = `gdocs:${docId}`;
+    if (opts?.openTicket) this.assertOpenTicket(opts.openTicket);
     const existing = this.getSessionByPath(sessionKey);
     if (existing) {
       this.touch(existing);

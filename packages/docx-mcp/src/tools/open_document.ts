@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, SessionClosedDuringOpenError, type SessionOpenTicket } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
@@ -51,7 +51,9 @@ export async function openDocument(
   params: { file_path: string; skip_normalization?: boolean },
 ): Promise<ToolResponse> {
   const filePath = params.file_path;
+  let ticket: SessionOpenTicket | undefined;
   try {
+    ticket = await manager.captureOpenTicketForPath(filePath);
     const expanded = manager.normalizePath(filePath);
 
     const stat = await fs.stat(expanded).catch(() => null);
@@ -92,7 +94,11 @@ export async function openDocument(
       const filename = path.basename(safePath);
       const archive = await odf.OdfArchive.load(content as Buffer);
       const doc = odf.OdfDocument.fromContentXml(await archive.getContentXml());
-      const session = await manager.createOdfSession(content as Buffer, filename, safePath, archive, doc);
+      const session = await manager.createOdfSession(content as Buffer, filename, safePath, archive, doc, { openTicket: ticket });
+      if (ticket.cancelled) {
+        await manager.discardOpeningSession(session);
+        throw new SessionClosedDuringOpenError();
+      }
       const paragraphCount = session.doc.getParagraphs().length;
 
       return ok({
@@ -120,11 +126,16 @@ export async function openDocument(
     const filename = path.basename(safePath);
     const session = await manager.createSession(content as Buffer, filename, safePath, {
       skipNormalization: params.skip_normalization,
+      openTicket: ticket,
     });
 
     const { paragraphCount } = await manager.finalizeNewSession(session, {
       skipNormalization: params.skip_normalization,
     });
+    if (ticket.cancelled) {
+      await manager.discardOpeningSession(session);
+      throw new SessionClosedDuringOpenError();
+    }
 
     return ok({
       file_path: manager.normalizePath(session.originalPath),
@@ -151,8 +162,13 @@ export async function openDocument(
       tools: getAvailableToolsSchema(),
     });
   } catch (e: unknown) {
+    if (ticket?.cancelled || e instanceof SessionClosedDuringOpenError) {
+      return err('SESSION_CLOSED', 'Session was closed while opening.', 'Re-run open_document to open a new session.');
+    }
     const refusal = conformanceRefusalResponse(e);
     if (refusal) return refusal;
     return err('FILE_READ_ERROR', `Failed to read file: ${errorMessage(e)}`, 'Ensure the file exists and is readable.');
+  } finally {
+    if (ticket) manager.releaseOpenTicket(ticket);
   }
 }

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
-import { type DocxSession, type GDocsSession, type OdfSession, type Session, SessionManager } from '../session/manager.js';
+import { type DocxSession, type GDocsSession, type OdfSession, type Session, type SessionOpenTicket, SessionClosedDuringOpenError, SessionManager } from '../session/manager.js';
 import { err, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
@@ -40,15 +40,50 @@ export type OdfSessionResolutionOutcome =
 // Concurrent auto-open deduplication
 // ---------------------------------------------------------------------------
 
-const pendingByManager = new WeakMap<SessionManager, Map<string, Promise<SessionResolutionOutcome>>>();
+type ProviderOutcome<T extends Session> =
+  | { ok: true; session: T; metadata: Record<string, unknown> }
+  | { ok: false; response: ToolResponse };
 
-function getPendingMap(manager: SessionManager): Map<string, Promise<SessionResolutionOutcome>> {
-  let map = pendingByManager.get(manager);
-  if (!map) {
-    map = new Map();
-    pendingByManager.set(manager, map);
+function closedDuringOpen(): ToolResponse {
+  return err('SESSION_CLOSED', 'Session was closed while opening.', 'Re-run the tool to open a new session.');
+}
+
+async function coordinateProviderOpen<T extends Session>(
+  manager: SessionManager,
+  sessionKey: string,
+  provider: T['provider'],
+  execute: (ticket: SessionOpenTicket) => Promise<ProviderOutcome<T>>,
+  suppliedTicket?: SessionOpenTicket,
+): Promise<ProviderOutcome<T>> {
+  const { outcome, shared } = await manager.coordinateSessionOpen(sessionKey, async (ticket) => {
+    try {
+      const result = await execute(ticket);
+      if (ticket.cancelled) {
+        if (result.ok) await manager.discardOpeningSession(result.session);
+        return { ok: false as const, response: closedDuringOpen() };
+      }
+      return result;
+    } catch (error) {
+      if (ticket.cancelled || error instanceof SessionClosedDuringOpenError) {
+        return { ok: false as const, response: closedDuringOpen() };
+      }
+      throw error;
+    }
+  }, provider, suppliedTicket);
+  if (!outcome.ok) return outcome;
+  if (manager.getSessionByPath(sessionKey) !== outcome.session) {
+    return { ok: false, response: closedDuringOpen() };
   }
-  return map;
+  if (!shared) return outcome;
+  manager.touch(outcome.session);
+  return {
+    ...outcome,
+    metadata: {
+      ...outcome.metadata,
+      session_resolution: 'reused' as SessionResolutionMode,
+      session_resolution_detail: 'awaited_concurrent_open',
+    },
+  };
 }
 
 export async function validateAndLoadDocxFromPath(
@@ -257,86 +292,61 @@ export async function resolveSessionForTool(
     };
   }
 
-  const canonicalPath = await manager.canonicalizePath(filePath);
+  const ticket = await manager.captureOpenTicketForPath(filePath);
+  try {
+    if (ticket.cancelled) return { ok: false, response: closedDuringOpen() };
+    const canonicalPath = ticket.sessionKey;
 
-  // Check for existing session. ODF is path-keyed too, but this resolver must remain DOCX-only.
-  const existingSession = manager.getSessionByPath(canonicalPath);
-  if (existingSession && existingSession.provider !== 'docx') {
-    return {
-      ok: false,
-      response: err(
-        'UNSUPPORTED_FOR_ODF',
-        `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
-        'Use read_file, replace_text, grep, insert_paragraph, add_comment, get_comments, compare_documents, save, get_file_status, or close_file for .odt files.',
-      ),
-    };
-  }
-  const existing = existingSession as DocxSession | null;
-  if (existing) {
-    const reuseLastUsed = existing.lastAccessedAt.toISOString();
-    manager.touch(existing);
-    const staleWarning = await checkStaleness(existing, canonicalPath);
-    return {
-      ok: true,
-      session: existing,
-      metadata: {
-        session_resolution: 'reused' as SessionResolutionMode,
-        resolved_file_path: canonicalPath,
-        ...(staleWarning ? { stale_warning: staleWarning } : {}),
-        reused_session_context: {
-          edit_revision: existing.editRevision,
-          edit_count: existing.editCount,
-          created_at: existing.createdAt.toISOString(),
-          last_used_at: reuseLastUsed,
-        },
-      },
-    };
-  }
-
-  // Fail fast for unsupported tools on a `.odt` path BEFORE touching the pending map.
-  // This must be a synchronous early return: registering it as a leader promise would
-  // resolve before `pendingMap.set` runs, leaving a stale entry that replays THIS tool's
-  // error (and tool name) for the next unsupported tool on the same path.
-  if (path.extname(manager.normalizePath(filePath)).toLowerCase() === '.odt') {
-    return {
-      ok: false,
-      response: err(
-        'UNSUPPORTED_FOR_ODF',
-        `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
-        'Use read_file, replace_text, grep, insert_paragraph, add_comment, get_comments, compare_documents, save, get_file_status, or close_file for .odt files.',
-      ),
-    };
-  }
-
-  // --- Concurrent auto-open deduplication ---
-  const pendingMap = getPendingMap(manager);
-  const pending = pendingMap.get(canonicalPath);
-
-  if (pending) {
-    // Waiter: another request is already creating a session for this path
-    const outcome = await pending;
-    if (outcome.ok) {
-      manager.touch(outcome.session);
+    // Check for existing session. ODF is path-keyed too, but this resolver must remain DOCX-only.
+    const existingSession = manager.getSessionByPath(canonicalPath);
+    if (existingSession && existingSession.provider !== 'docx') {
+      return {
+        ok: false,
+        response: err(
+          'UNSUPPORTED_FOR_ODF',
+          `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
+          'Use read_file, replace_text, grep, insert_paragraph, add_comment, get_comments, compare_documents, save, get_file_status, or close_file for .odt files.',
+        ),
+      };
+    }
+    const existing = existingSession as DocxSession | null;
+    if (existing) {
+      const reuseLastUsed = existing.lastAccessedAt.toISOString();
+      manager.touch(existing);
+      const staleWarning = await checkStaleness(existing, canonicalPath);
       return {
         ok: true,
-        session: outcome.session,
+        session: existing,
         metadata: {
-          ...outcome.metadata,
           session_resolution: 'reused' as SessionResolutionMode,
-          session_resolution_detail: 'awaited_concurrent_open',
           resolved_file_path: canonicalPath,
+          ...(staleWarning ? { stale_warning: staleWarning } : {}),
+          reused_session_context: {
+            edit_revision: existing.editRevision,
+            edit_count: existing.editCount,
+            created_at: existing.createdAt.toISOString(),
+            last_used_at: reuseLastUsed,
+          },
         },
       };
     }
-    // Leader failed — return the same structured error to the waiter
-    return outcome;
-  }
 
-  // Leader: first concurrent request for this path
-  let storedPromise!: Promise<SessionResolutionOutcome>;
+    // Fail fast for unsupported tools on a `.odt` path BEFORE touching the pending map.
+    // This must be a synchronous early return: registering it as a leader promise would
+    // resolve before `pendingMap.set` runs, leaving a stale entry that replays THIS tool's
+    // error (and tool name) for the next unsupported tool on the same path.
+    if (path.extname(manager.normalizePath(filePath)).toLowerCase() === '.odt') {
+      return {
+        ok: false,
+        response: err(
+          'UNSUPPORTED_FOR_ODF',
+          `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
+          'Use read_file, replace_text, grep, insert_paragraph, add_comment, get_comments, compare_documents, save, get_file_status, or close_file for .odt files.',
+        ),
+      };
+    }
 
-  const outcomePromise: Promise<SessionResolutionOutcome> = (async () => {
-    try {
+    return await coordinateProviderOpen<DocxSession>(manager, canonicalPath, 'docx', async (ticket) => {
       // `.odt` is already handled by the synchronous early return above, so by here
       // the path is a non-`.odt` DOCX candidate.
       const loaded = await validateAndLoadDocxFromPath(manager, filePath);
@@ -350,6 +360,7 @@ export async function resolveSessionForTool(
           loaded.content,
           loaded.filename,
           loaded.normalizedPath,
+          { openTicket: ticket },
         );
       } catch (e: unknown) {
         // A WML Strict package is refused by DocxDocument.load; return the typed
@@ -368,37 +379,15 @@ export async function resolveSessionForTool(
           resolved_file_path: canonicalPath,
         },
       };
-    } finally {
-      // Identity-guarded cleanup
-      if (pendingMap.get(canonicalPath) === storedPromise) {
-        pendingMap.delete(canonicalPath);
-      }
-    }
-  })();
-
-  storedPromise = outcomePromise;
-
-  // Prevent unhandled rejection warnings for exceptional throws
-  outcomePromise.catch(() => {});
-
-  pendingMap.set(canonicalPath, outcomePromise);
-  return await outcomePromise;
+    }, ticket);
+  } finally {
+    manager.releaseOpenTicket(ticket);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // ODF session resolution
 // ---------------------------------------------------------------------------
-
-const odfPendingByManager = new WeakMap<SessionManager, Map<string, Promise<OdfSessionResolutionOutcome>>>();
-
-function getOdfPendingMap(manager: SessionManager): Map<string, Promise<OdfSessionResolutionOutcome>> {
-  let map = odfPendingByManager.get(manager);
-  if (!map) {
-    map = new Map();
-    odfPendingByManager.set(manager, map);
-  }
-  return map;
-}
 
 export async function resolveOdfSessionForTool(
   manager: SessionManager,
@@ -418,66 +407,45 @@ export async function resolveOdfSessionForTool(
     };
   }
 
-  const canonicalPath = await manager.canonicalizePath(filePath);
+  const ticket = await manager.captureOpenTicketForPath(filePath);
+  try {
+    if (ticket.cancelled) return { ok: false, response: closedDuringOpen() };
+    const canonicalPath = ticket.sessionKey;
 
-  const existing = manager.getSessionByPath(canonicalPath);
-  if (existing && existing.provider === 'odf') {
-    const reuseLastUsed = existing.lastAccessedAt.toISOString();
-    manager.touch(existing);
-    const staleWarning = await checkStaleness(existing, canonicalPath);
-    return {
-      ok: true,
-      session: existing,
-      metadata: {
-        session_resolution: 'reused' as SessionResolutionMode,
-        resolved_file_path: canonicalPath,
-        ...(staleWarning ? { stale_warning: staleWarning } : {}),
-        reused_session_context: {
-          edit_revision: existing.editRevision,
-          edit_count: existing.editCount,
-          created_at: existing.createdAt.toISOString(),
-          last_used_at: reuseLastUsed,
-        },
-      },
-    };
-  }
-
-  if (existing) {
-    return {
-      ok: false,
-      response: err(
-        'INVALID_FILE_TYPE',
-        `Existing session for ${filePath} is provider '${existing.provider}', not ODF.`,
-        'Use the matching provider arguments for the active session.',
-      ),
-    };
-  }
-
-  const pendingMap = getOdfPendingMap(manager);
-  const pending = pendingMap.get(canonicalPath);
-
-  if (pending) {
-    const outcome = await pending;
-    if (outcome.ok) {
-      manager.touch(outcome.session);
+    const existing = manager.getSessionByPath(canonicalPath);
+    if (existing && existing.provider === 'odf') {
+      const reuseLastUsed = existing.lastAccessedAt.toISOString();
+      manager.touch(existing);
+      const staleWarning = await checkStaleness(existing, canonicalPath);
       return {
         ok: true,
-        session: outcome.session,
+        session: existing,
         metadata: {
-          ...outcome.metadata,
           session_resolution: 'reused' as SessionResolutionMode,
-          session_resolution_detail: 'awaited_concurrent_open',
           resolved_file_path: canonicalPath,
+          ...(staleWarning ? { stale_warning: staleWarning } : {}),
+          reused_session_context: {
+            edit_revision: existing.editRevision,
+            edit_count: existing.editCount,
+            created_at: existing.createdAt.toISOString(),
+            last_used_at: reuseLastUsed,
+          },
         },
       };
     }
-    return outcome;
-  }
 
-  let storedPromise!: Promise<OdfSessionResolutionOutcome>;
+    if (existing) {
+      return {
+        ok: false,
+        response: err(
+          'INVALID_FILE_TYPE',
+          `Existing session for ${filePath} is provider '${existing.provider}', not ODF.`,
+          'Use the matching provider arguments for the active session.',
+        ),
+      };
+    }
 
-  const outcomePromise: Promise<OdfSessionResolutionOutcome> = (async () => {
-    try {
+    return await coordinateProviderOpen<OdfSession>(manager, canonicalPath, 'odf', async (ticket) => {
       const loaded = await validateAndLoadOdfFromPath(manager, filePath);
       if (!loaded.ok) {
         return { ok: false as const, response: loaded.response };
@@ -489,6 +457,7 @@ export async function resolveOdfSessionForTool(
         loaded.normalizedPath,
         loaded.archive,
         loaded.doc,
+        { openTicket: ticket },
       );
 
       return {
@@ -499,17 +468,10 @@ export async function resolveOdfSessionForTool(
           resolved_file_path: canonicalPath,
         },
       };
-    } finally {
-      if (pendingMap.get(canonicalPath) === storedPromise) {
-        pendingMap.delete(canonicalPath);
-      }
-    }
-  })();
-
-  storedPromise = outcomePromise;
-  outcomePromise.catch(() => {});
-  pendingMap.set(canonicalPath, outcomePromise);
-  return await outcomePromise;
+    }, ticket);
+  } finally {
+    manager.releaseOpenTicket(ticket);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -520,17 +482,6 @@ function extractGoogleDocId(input: string): string {
   const urlMatch = input.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
   if (urlMatch) return urlMatch[1]!;
   return input.trim();
-}
-
-const gdocsPendingByManager = new WeakMap<SessionManager, Map<string, Promise<GDocsSessionResolutionOutcome>>>();
-
-function getGDocsPendingMap(manager: SessionManager): Map<string, Promise<GDocsSessionResolutionOutcome>> {
-  let map = gdocsPendingByManager.get(manager);
-  if (!map) {
-    map = new Map();
-    gdocsPendingByManager.set(manager, map);
-  }
-  return map;
 }
 
 export async function resolveGDocsSessionForTool(
@@ -569,63 +520,32 @@ export async function resolveGDocsSessionForTool(
     };
   }
 
-  // Concurrent dedup
-  const pendingMap = getGDocsPendingMap(manager);
-  const pending = pendingMap.get(sessionKey);
-  if (pending) {
-    const outcome = await pending;
-    if (outcome.ok) {
-      manager.touch(outcome.session);
+  return coordinateProviderOpen<GDocsSession>(manager, sessionKey, 'gdocs', async (ticket) => {
+    const gdocsCore = await loadGDocsCore();
+    if (!gdocsCore) {
       return {
-        ok: true,
-        session: outcome.session,
-        metadata: {
-          ...outcome.metadata,
-          session_resolution: 'reused' as SessionResolutionMode,
-          session_resolution_detail: 'awaited_concurrent_open',
-        },
+        ok: false as const,
+        response: err(
+          'MISSING_DEPENDENCY',
+          'Google Docs support requires @usejunior/google-docs-core.',
+          'Run: npm install @usejunior/google-docs-core',
+        ),
       };
     }
-    return outcome;
-  }
 
-  let storedPromise!: Promise<GDocsSessionResolutionOutcome>;
-  const outcomePromise: Promise<GDocsSessionResolutionOutcome> = (async () => {
-    try {
-      const gdocsCore = await loadGDocsCore();
-      if (!gdocsCore) {
-        return {
-          ok: false as const,
-          response: err(
-            'MISSING_DEPENDENCY',
-            'Google Docs support requires @usejunior/google-docs-core.',
-            'Run: npm install @usejunior/google-docs-core',
-          ),
-        };
-      }
+    const doc = await gdocsCore.GoogleDocsDocument.load(docId);
+    if (ticket.cancelled) return { ok: false, response: closedDuringOpen() };
+    await doc.injectAnchors();
 
-      const doc = await gdocsCore.GoogleDocsDocument.load(docId);
-      await doc.injectAnchors();
+    const session = manager.createGDocsSession(docId, doc, { openTicket: ticket });
 
-      const session = manager.createGDocsSession(docId, doc);
-
-      return {
-        ok: true as const,
-        session,
-        metadata: {
-          session_resolution: 'opened' as SessionResolutionMode,
-          google_doc_id: docId,
-        },
-      };
-    } finally {
-      if (pendingMap.get(sessionKey) === storedPromise) {
-        pendingMap.delete(sessionKey);
-      }
-    }
-  })();
-
-  storedPromise = outcomePromise;
-  outcomePromise.catch(() => {});
-  pendingMap.set(sessionKey, outcomePromise);
-  return await outcomePromise;
+    return {
+      ok: true as const,
+      session,
+      metadata: {
+        session_resolution: 'opened' as SessionResolutionMode,
+        google_doc_id: docId,
+      },
+    };
+  });
 }
