@@ -74,7 +74,7 @@ function seedMetadata(session: DocxSession) {
 
 describe('local mutation boundary', () => {
   test('table selector refusals and partial application keep package state and counters consistent', async () => {
-    const buffer = await buildDocxFromBodyXml('<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>');
+    const buffer = await buildDocxFromBodyXml('<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>');
     const { manager, session, file } = await setup(buffer);
     const metadata = seedMetadata(session);
     const before = await session.doc.getMutationSnapshot();
