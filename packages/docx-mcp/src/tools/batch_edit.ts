@@ -641,7 +641,11 @@ export async function batchEdit(
       };
     }
 
-    const ctx = await getRevisionContextForSession(session);
+    const ctx = await getRevisionContextForSession({
+      ...session,
+      doc: session.doc.fork(),
+      revisionIdState: session.revisionIdState ? structuredClone(session.revisionIdState) : null,
+    });
     const revisionPreflight = await preflightAiRevisionMutation(
       session,
       ctx,

@@ -5,6 +5,7 @@
 - [x] Preserve format-specific accounting, table splits and explicit selectors.
 - [x] Add synthetic accumulator, local format and Google fake regression tests.
 - [x] Validate proposal and mandatory repository checks.
-- [ ] Obtain dynamic Gemini review and adjudicate findings.
+- [x] Obtain dynamic different-family review and adjudicate findings (registered
+      Claude fallback after two actual agy quota failures; confirmation APPROVE).
 - [ ] Merge after required checks; build exact merged SHA, run public NVCA
       read/save/reopen smoke and the complete default workspace suite.

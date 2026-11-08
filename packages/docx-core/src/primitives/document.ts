@@ -1,4 +1,4 @@
-import { DocxZip } from './zip.js';
+import { DocxZip, ZIP_EPOCH } from './zip.js';
 import { attributeXmlParseError, parseXml, serializeXml } from './xml.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
@@ -456,6 +456,39 @@ export class DocxDocument {
       // that only held the part's text (#1024).
       throw await attributeXmlParseError(error, buffer);
     }
+  }
+
+  /**
+   * Fork an editing candidate without reopening the package. In particular the
+   * original source text remains the minimal-reserialization baseline, and
+   * bookmark reservations survive even when their blocks have been removed.
+   */
+  fork(): DocxDocument {
+    const clone = (doc: Document | null): Document | null => doc ? doc.cloneNode(true) as Document : null;
+    const fork = new DocxDocument(
+      this.zip.fork(), clone(this.documentXml)!, clone(this.stylesXml), clone(this.themeXml),
+      clone(this.numberingXml), clone(this.footnotesXml), new Map(this.relsMap), this.originalDocumentXmlText,
+    );
+    fork.mutationVersion = this.mutationVersion;
+    if (this.paragraphBookmarkReservation) {
+      fork.paragraphBookmarkReservation = {
+        usedNames: new Set(this.paragraphBookmarkReservation.usedNames),
+        nextNumericId: this.paragraphBookmarkReservation.nextNumericId,
+      };
+    }
+    return fork;
+  }
+
+  /**
+   * Deterministic internal editing state for mutation comparison. Candidates
+   * may contain malformed input being validated/refused; they are not emitted
+   * artifacts. Actual exports continue through toBuffer and its schema capture.
+   */
+  async getMutationSnapshot(): Promise<Buffer> {
+    return this.zip.toBuffer({
+      fileDate: ZIP_EPOCH,
+      textOverrides: { 'word/document.xml': serializeXml(this.documentXml) },
+    });
   }
 
   private static async loadUnattributed(buffer: Buffer): Promise<DocxDocument> {

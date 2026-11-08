@@ -41,47 +41,49 @@ export async function deleteComment(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'delete_comment' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
-  const ctx = await getRevisionContextForSession(session);
+  return await manager.mutateSession(session, async (session) => {
+    const ctx = await getRevisionContextForSession(session);
 
-  if (params.comment_id == null) {
-    return err('MISSING_PARAMETER', 'comment_id is required.', 'Provide the comment ID to delete.');
-  }
-
-  try {
-    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
-      doc.deleteComment({ commentId: params.comment_id! }, activeCtx);
-
-    const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, COMMENT_TOUCHED_CONTEXT);
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
-
-    // Resolve root-vs-reply before mutating: an anchored (root) comment removes
-    // structural range markers from document.xml, a reply does not.
-    const anchored = isRootComment(await session.doc.getComments(), params.comment_id);
-
-    await mutate(session.doc, ctx);
-
-    manager.markEdited(session);
-    // The removed body-story w:commentReference run is wrapped in w:del (Table
-    // A). Removing the comment/reply body text from comments.xml and the reply
-    // graph from commentsExtended.xml — and, for a root comment, the structural
-    // w:commentRangeStart/End milestones from document.xml — is package-mutation
-    // cleanup with no revision wrapper (#122): record it.
-    manager.recordNonRevisionChange(session, {
-      tool: 'delete_comment',
-      parts: anchored ? ['word/document.xml', ...COMMENT_SIDE_PARTS] : [...COMMENT_SIDE_PARTS],
-      description: anchored
-        ? `Root comment ${params.comment_id} and its threaded replies removed from comment side parts (comments.xml, commentsExtended.xml); its w:commentRangeStart/End milestones were removed from word/document.xml as structural markers (the body-story reference removal is tracked separately as a w:del revision).`
-        : `Reply comment ${params.comment_id} removed from comment side parts (comments.xml, commentsExtended.xml). Reply-only deletion is package-mutation with no body anchor, so word/document.xml is untouched.`,
-    });
-    return ok(mergeSessionResolutionMetadata({
-      comment_id: params.comment_id,
-      file_path: manager.normalizePath(session.originalPath),
-    }, metadata));
-  } catch (e: unknown) {
-    const msg = errorMessage(e);
-    if (msg.includes('not found')) {
-      return err('COMMENT_NOT_FOUND', msg, 'Use get_comments to list available comments.');
+    if (params.comment_id == null) {
+      return err('MISSING_PARAMETER', 'comment_id is required.', 'Provide the comment ID to delete.');
     }
-    return err('COMMENT_ERROR', msg);
-  }
+
+    try {
+      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
+        doc.deleteComment({ commentId: params.comment_id! }, activeCtx);
+
+      const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, COMMENT_TOUCHED_CONTEXT);
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
+
+      // Resolve root-vs-reply before mutating: an anchored (root) comment removes
+      // structural range markers from document.xml, a reply does not.
+      const anchored = isRootComment(await session.doc.getComments(), params.comment_id);
+
+      await mutate(session.doc, ctx);
+
+      manager.markEdited(session);
+      // The removed body-story w:commentReference run is wrapped in w:del (Table
+      // A). Removing the comment/reply body text from comments.xml and the reply
+      // graph from commentsExtended.xml — and, for a root comment, the structural
+      // w:commentRangeStart/End milestones from document.xml — is package-mutation
+      // cleanup with no revision wrapper (#122): record it.
+      manager.recordNonRevisionChange(session, {
+        tool: 'delete_comment',
+        parts: anchored ? ['word/document.xml', ...COMMENT_SIDE_PARTS] : [...COMMENT_SIDE_PARTS],
+        description: anchored
+          ? `Root comment ${params.comment_id} and its threaded replies removed from comment side parts (comments.xml, commentsExtended.xml); its w:commentRangeStart/End milestones were removed from word/document.xml as structural markers (the body-story reference removal is tracked separately as a w:del revision).`
+          : `Reply comment ${params.comment_id} removed from comment side parts (comments.xml, commentsExtended.xml). Reply-only deletion is package-mutation with no body anchor, so word/document.xml is untouched.`,
+      });
+      return ok(mergeSessionResolutionMetadata({
+        comment_id: params.comment_id,
+        file_path: manager.normalizePath(session.originalPath),
+      }, metadata));
+    } catch (e: unknown) {
+      const msg = errorMessage(e);
+      if (msg.includes('not found')) {
+        return err('COMMENT_NOT_FOUND', msg, 'Use get_comments to list available comments.');
+      }
+      return err('COMMENT_ERROR', msg);
+    }
+  });
 }

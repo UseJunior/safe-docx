@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
+import { err, type ToolResponse } from '../tools/types.js';
 import {
   DocxDocument,
   DocxZip,
@@ -303,6 +304,103 @@ export class SessionClosedDuringOpenError extends Error {
 }
 
 export class SessionManager {
+  private mutationQueues = new WeakMap<Session, Promise<void>>();
+
+  /**
+   * Serialize local mutations on unpublished candidates. No await separates
+   * generation validation from publication of the document and its bookkeeping.
+   * The active session continues owning its identity and temporary resources.
+   */
+  async mutateSession<S extends DocxSession | OdfSession>(
+    active: S,
+    execute: (candidate: S) => Promise<ToolResponse>,
+  ): Promise<ToolResponse> {
+    return this.serializeMutation(active, async () => {
+      if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
+      const candidate = { ...active, doc: active.doc.fork() } as S;
+      if (isDocxSession(active) && isDocxSession(candidate)) {
+        candidate.saveCache = new Map(active.saveCache);
+        candidate.nonRevisionManifest = structuredClone(active.nonRevisionManifest);
+        candidate.selectiveRevisionAction = structuredClone(active.selectiveRevisionAction);
+        candidate.revisionIdState = active.revisionIdState ? structuredClone(active.revisionIdState) : null;
+      } else if (isOdfSession(active) && isOdfSession(candidate)) {
+        candidate.archive = active.archive.fork();
+      }
+      const before = await this.mutationContents(candidate);
+      const response = await execute(candidate);
+      if (!response.success) return response;
+      const after = await this.mutationContents(candidate);
+      if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
+      if (!before.equals(after)) {
+        // Direct-DOM handlers must invalidate the candidate's view too.
+        if (isDocxSession(candidate)) candidate.doc.markMutated();
+        active.doc = candidate.doc;
+        active.editCount += 1;
+        active.editRevision += 1;
+        if (isDocxSession(active) && isDocxSession(candidate)) {
+          active.revisionIdState = candidate.revisionIdState;
+          active.nonRevisionManifest = candidate.nonRevisionManifest;
+          active.selectiveRevisionAction = candidate.selectiveRevisionAction;
+          active.saveCache.clear();
+          active.extractionCache = null;
+        } else if (isOdfSession(active) && isOdfSession(candidate)) {
+          active.archive = candidate.archive;
+        }
+      } else if ('persistence_required' in response) {
+        response.persistence_required = false;
+        response.selected_revision_ids = [];
+        delete response.next_step;
+      }
+      if ('edit_count' in response) response.edit_count = active.editCount;
+      return response;
+    });
+  }
+
+  private async mutationContents(session: DocxSession | OdfSession): Promise<Buffer> {
+    if (isDocxSession(session)) {
+      // Ignore ZIP timestamps. No-op detection includes every package part,
+      // rather than trusting selected revision IDs or handler edit counters.
+      return session.doc.getMutationSnapshot();
+    }
+    // ODF handlers mutate content.xml; the archive is staged separately.
+    return Buffer.from(session.doc.toXml());
+  }
+
+  private isActiveSession(session: Session): boolean {
+    return [...this.sessions.values()].includes(session) && session.expiresAt.getTime() >= Date.now();
+  }
+
+  private async serializeMutation<T>(session: Session, execute: () => Promise<T>): Promise<T> {
+    const preceding = this.mutationQueues.get(session) ?? Promise.resolve();
+    let release!: () => void;
+    const tail = new Promise<void>(resolve => { release = resolve; });
+    this.mutationQueues.set(session, tail);
+    await preceding;
+    try {
+      return await execute();
+    } finally {
+      release();
+      if (this.mutationQueues.get(session) === tail) this.mutationQueues.delete(session);
+    }
+  }
+
+  /** Remote writes cannot be rolled back by discarding a local snapshot. */
+  async mutateRemoteSession(active: GDocsSession, execute: (candidate: GDocsSession) => Promise<ToolResponse>): Promise<ToolResponse> {
+    return this.serializeMutation(active, async () => {
+      if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
+      const candidate = { ...active };
+      const before = active.doc.getConfirmedWriteVersion();
+      try {
+        const response = await execute(candidate);
+        return response;
+      } finally {
+        // Record confirmed remote success even when refresh or response shaping
+        // fails, or the session retires while the request is in flight. Never
+        // publish this old state into a replacement session.
+        if (active.doc.getConfirmedWriteVersion() !== before) this.markEdited(active);
+      }
+    });
+  }
   /** Sessions keyed by canonical file path (realpath). */
   private sessions = new Map<string, Session>();
   private ttlMs: number;
