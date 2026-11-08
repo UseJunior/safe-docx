@@ -47,6 +47,11 @@ function makeMockDoc() {
   let confirmedWriteVersion = 0;
   return {
     getConfirmedWriteVersion: () => confirmedWriteVersion,
+    ensureCurrentStructure: vi.fn(async () => undefined),
+    executePlannedBatchUpdate: vi.fn(async (plan: () => unknown[]) => {
+      if (plan().length > 0) confirmedWriteVersion++;
+      return {};
+    }),
     getParagraphs: vi.fn(() => paragraphs),
     getParagraphTextById: vi.fn((anchorId: string) => {
       const p = paragraphs.find(p => p.anchorId === anchorId || p.anchorName === anchorId);

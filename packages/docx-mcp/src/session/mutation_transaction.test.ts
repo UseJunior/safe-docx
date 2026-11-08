@@ -386,6 +386,7 @@ test.openspec('Remote write succeeds and refresh fails')('confirmed Google succe
   const doc = {
     getConfirmedWriteVersion: () => version,
     getParagraphTextById: () => 'First',
+    ensureCurrentStructure: async () => undefined,
     replaceText: async () => { version++; throw new Error('refresh failed after confirmed remote edit'); },
   };
   const session = manager.createGDocsSession('synthetic', doc);
@@ -450,6 +451,10 @@ test('Google layout validates all selectors before sending one acknowledged batc
     getConfirmedWriteVersion: () => version,
     getParagraphByAnchorId: (id: string) => id === 'missing' ? null : { startIndex: 1, endIndex: 6, ...(id === 'tabbed' ? { tabId: 'tab-1' } : {}) },
     executeBatchUpdate: execute,
+    executePlannedBatchUpdate: async (plan: () => unknown[]) => {
+      const requests = plan();
+      if (requests.length > 0) await execute(requests);
+    },
   });
   for (const params of [{}, { paragraph_spacing: {} }, { paragraph_spacing: { paragraph_ids: [] } }, { paragraph_spacing: { paragraph_ids: ['tabbed', 'missing'], before_twips: 120 } }]) {
     expect((await gdocsFormatLayout(manager, session, params, {})).success).toBe(false);
@@ -482,6 +487,7 @@ test('Google insertion refusals and acknowledged failures preserve remote bookke
   const insert = vi.fn(async () => { version++; throw new Error('refresh failed'); });
   const session = manager.createGDocsSession('insert', {
     getConfirmedWriteVersion: () => version,
+    ensureCurrentStructure: async () => undefined,
     getParagraphTextById: (id: string) => id === 'missing' ? null : 'First',
     insertParagraph: insert,
   });
