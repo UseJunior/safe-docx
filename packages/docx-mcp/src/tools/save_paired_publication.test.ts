@@ -73,10 +73,19 @@ describe('save destination coordination', () => {
     const clean = path.join(canonicalDir, 'clean.docx');
     const tracked = path.join(canonicalDir, 'tracked.docx');
     await fs.writeFile(clean, 'original');
-    const rename = fs.rename.bind(fs);
-    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
-      if ((String(from).endsWith('/staged') && String(to) === tracked) || String(from).endsWith('/original')) throw new Error('injected recovery failure');
-      return rename(from, to);
+    const open = fs.open.bind(fs);
+    vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args);
+      const destination = String(args[0]);
+      if (destination === clean || destination === tracked) {
+        let attempt = 0;
+        const write = handle.write.bind(handle);
+        vi.spyOn(handle, 'write').mockImplementation((async (...writeArgs: unknown[]) => {
+          if (destination === tracked || attempt++ > 0) throw new Error('injected recovery failure');
+          return (write as (...args: unknown[]) => Promise<unknown>)(...writeArgs);
+        }) as never);
+      }
+      return handle;
     });
     const result = await save(mgr, { file_path: inputPath, save_to_local_path: clean, tracked_save_to_local_path: tracked });
     assertFailure(result, 'SAVE_ERROR');

@@ -1,4 +1,4 @@
-import fs from 'node:fs/promises';
+import fs, { type FileHandle } from 'node:fs/promises';
 import { constants, type Stats } from 'node:fs';
 import path from 'node:path';
 import { errorCode, errorMessage } from '../error_utils.js';
@@ -23,10 +23,16 @@ export class SavePublicationError extends Error {
 
 type Entry = SaveOutput & {
   original: Stats | null;
-  state: 'prepared' | 'staged' | 'backed-up' | 'published' | 'restored' | 'recovery-needed';
+  state: 'prepared' | 'staged' | 'backed-up' | 'publishing' | 'published' | 'restored' | 'recovery-needed';
   directory?: string;
   stage?: string;
   backup?: string;
+  backupVerified?: boolean;
+  originalBytes?: Buffer;
+  stagedBytes?: Buffer;
+  handle?: FileHandle;
+  created?: Stats;
+  createdByUs?: boolean;
 };
 type AliasProbeGroup = {
   ancestor: string;
@@ -106,8 +112,9 @@ async function checkMissingAliases(groups: Map<string, AliasProbeGroup>): Promis
 
 /**
  * Inputs are canonical write targets from path policy. Preflight is observational:
- * external writers can still race these checks. Each rename stays on its target
- * filesystem; the pair is NOT crash atomic, including across filesystems.
+ * external writers can still race these checks. Existing inodes are written
+ * through to retain their security metadata; new outputs use exclusive creation.
+ * The pair is NOT crash atomic, including across filesystems.
  */
 export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<RecoveryFailure[]> {
   const entries: Entry[] = [];
@@ -121,13 +128,14 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
     entries.push({ ...output, destination, original, state: 'prepared' });
   }
   // Check aliases before rejecting multiply linked files to give paired aliases
-  // their specific diagnostic. Reject other hardlinks rather than splitting them.
+  // their specific diagnostic. Keep the conservative unrelated-hardlink refusal:
+  // changing one name would also change every other linked consumer's contents.
   const groups = new Map<string, AliasProbeGroup>();
   for (const entry of entries) {
     if (entry.original) {
       if (!entry.original.isFile()) throw new Error(`Output is not a regular file: ${entry.destination}`);
       if (entry.original.nlink > 1) {
-        throw new SavePublicationError(`Cannot replace hardlinked output without changing link semantics: ${entry.destination}`, 'HARDLINK_OUTPUT_UNSUPPORTED');
+        throw new SavePublicationError(`Refusing to change output with unrelated hardlinks: ${entry.destination}`, 'HARDLINK_OUTPUT_UNSUPPORTED');
       }
       await fs.access(entry.destination, constants.W_OK);
     }
@@ -146,7 +154,7 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
   const failures: RecoveryFailure[] = [];
   const report = (entry: Entry, operation: string, filePath: string, e: unknown) => {
     failures.push({ path: filePath, operation, error: errorMessage(e),
-      ...(entry.backup ? { backup_path: entry.backup } : {}),
+      ...(entry.backupVerified && entry.backup ? { backup_path: entry.backup } : {}),
       ...(operation === 'remove-stage' && entry.stage ? { staging_path: entry.stage } : {}) });
   };
   const cleanup = async (entry: Entry) => {
@@ -164,41 +172,103 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
     }
   };
 
+  const sameInode = (a: Stats, b: Stats) => a.dev === b.dev && a.ino === b.ino;
+  const checkIdentity = async (entry: Entry) => {
+    const info = await fs.lstat(entry.destination);
+    const expected = entry.original ?? entry.created;
+    if (!expected || !info.isFile() || !sameInode(info, expected)) {
+      throw new Error(`Output identity changed: ${entry.destination}`);
+    }
+  };
+  const writeThrough = async (entry: Entry, bytes: Buffer) => {
+    let position = 0;
+    while (position < bytes.length) {
+      const { bytesWritten } = await entry.handle!.write(bytes, position, bytes.length - position, position);
+      if (bytesWritten <= 0) throw new Error(`No write progress: ${entry.destination}`);
+      position += bytesWritten;
+    }
+    await entry.handle!.truncate(bytes.length);
+  };
+  const close = async (entry: Entry) => {
+    if (!entry.handle) return;
+    try { await entry.handle.close(); entry.handle = undefined; }
+    catch (e) { report(entry, 'close-output-handle', entry.destination, e); }
+  };
+  const removeBackup = async (entry: Entry) => {
+    if (!entry.backup) return;
+    const backup = entry.backup;
+    try { await fs.unlink(backup); entry.backup = undefined; }
+    catch (e) { report(entry, entry.backupVerified ? 'remove-backup' : 'remove-incomplete-backup', backup, e); }
+  };
+
   try {
     for (const entry of entries) {
       await fs.mkdir(path.dirname(entry.destination), { recursive: true });
       entry.directory = await fs.mkdtemp(path.join(path.dirname(entry.destination), '.safe-docx-save-'));
       // Register the stage before writeFile: a partial write must also be cleaned.
       entry.stage = path.join(entry.directory, 'staged');
-      await fs.writeFile(entry.stage, entry.buffer, { flag: 'wx' });
-      if (entry.original) await fs.chmod(entry.stage, entry.original.mode & 0o7777);
+      await fs.writeFile(entry.stage, entry.buffer, { flag: 'wx', mode: 0o600 });
+      entry.stagedBytes = await fs.readFile(entry.stage);
+      if (!entry.stagedBytes.equals(entry.buffer)) throw new Error(`Incomplete staged bytes: ${entry.stage}`);
       entry.state = 'staged';
     }
     for (const entry of entries) {
       if (entry.original) {
-        const backup = path.join(entry.directory!, 'original');
-        await fs.rename(entry.destination, backup);
-        entry.backup = backup;
+        // Open without truncation, then check the opened inode before relying on
+        // its bytes. Keeping this handle lets publication and rollback preserve
+        // ownership, ACLs, xattrs and inode identity without metadata cloning.
+        entry.handle = await fs.open(entry.destination, 'r+');
+        const opened = await entry.handle.stat();
+        if (!opened.isFile() || !sameInode(opened, entry.original) || opened.nlink > 1) {
+          throw new Error(`Output identity changed before backup: ${entry.destination}`);
+        }
+        const bytes = await entry.handle.readFile();
+        entry.backup = path.join(entry.directory!, 'original');
+        await fs.writeFile(entry.backup, bytes, { flag: 'wx', mode: 0o600 });
+        const verified = await fs.readFile(entry.backup);
+        if (!verified.equals(bytes)) throw new Error(`Incomplete backup bytes: ${entry.backup}`);
+        entry.originalBytes = verified;
+        entry.backupVerified = true;
         entry.state = 'backed-up';
       }
     }
     for (const entry of entries) {
-      await fs.rename(entry.stage!, entry.destination);
-      entry.stage = undefined;
+      if (entry.original) await checkIdentity(entry);
+      else {
+        // An unexpected file created after preflight belongs to its creator.
+        // Never truncate it, and never remove it if exclusive open fails.
+        entry.handle = await fs.open(entry.destination, 'wx');
+        entry.createdByUs = true;
+        entry.created = await entry.handle.stat();
+      }
+      // A rejected write/truncate may already have changed bytes. Register the
+      // start, not merely successful completion, so this very target rolls back.
+      entry.state = 'publishing';
+      await writeThrough(entry, entry.stagedBytes!);
       entry.state = 'published';
     }
   } catch (cause) {
     for (const entry of [...entries].reverse()) {
-      if (entry.backup) {
+      if (entry.original && (entry.state === 'publishing' || entry.state === 'published')) {
         try {
-          await fs.rename(entry.backup, entry.destination);
-          entry.backup = undefined;
+          if (!entry.backupVerified || !entry.originalBytes) throw new Error('Missing verified original bytes');
+          await checkIdentity(entry);
+          await writeThrough(entry, entry.originalBytes);
           entry.state = 'restored';
         } catch (e) { entry.state = 'recovery-needed'; report(entry, 'restore-original', entry.destination, e); }
-      } else if (entry.state === 'published') {
-        try { await fs.unlink(entry.destination); entry.state = 'restored'; }
+      } else if (entry.createdByUs) {
+        try {
+          entry.created ??= await entry.handle!.stat();
+          await checkIdentity(entry);
+          await close(entry);
+          if (entry.handle) throw new Error(`Cannot remove new output with unclosed handle: ${entry.destination}`);
+          await fs.unlink(entry.destination);
+          entry.state = 'restored';
+        }
         catch (e) { entry.state = 'recovery-needed'; report(entry, 'remove-new-output', entry.destination, e); }
       }
+      await close(entry);
+      if (entry.state !== 'recovery-needed' && !entry.handle) await removeBackup(entry);
       await cleanup(entry);
     }
     throw new SavePublicationError(
@@ -207,14 +277,11 @@ export async function publishSaveOutputs(outputs: SaveOutput[]): Promise<Recover
     );
   }
 
-  // Commit boundary: both files now contain requested bytes. Cleanup failure
-  // cannot be called a rolled-back save after some backups have been discarded.
+  // Commit boundary: both files now contain requested bytes. Cleanup errors are
+  // diagnostics; a failed restore's verified backup is never discarded.
   for (const entry of entries) {
-    if (entry.backup) {
-      const backup = entry.backup;
-      try { await fs.unlink(backup); entry.backup = undefined; }
-      catch (e) { report(entry, 'remove-backup', backup, e); }
-    }
+    await close(entry);
+    if (!entry.handle) await removeBackup(entry);
     await cleanup(entry);
   }
   return failures;
