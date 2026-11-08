@@ -9,13 +9,13 @@ newline within a block to a `text:line-break`. It SHALL inherit the anchor parag
 `text:style-name` only when the anchor is itself a `text:p`; when the anchor is a heading
 (`text:h`), the inserted blocks SHALL be default body paragraphs without the heading style.
 
-Because paragraph IDs are positional ordinals, insertion SHALL rebuild the structural block
-index and SHALL return the inserted blocks' freshly recomputed IDs in document order. A
+Existing paragraph IDs SHALL remain stable; insertion SHALL rebuild document order and
+return the inserted blocks' monotonically allocated session IDs in document order. A
 non-resolving anchor `id` SHALL return an `ANCHOR_NOT_FOUND` result rather than throwing.
 
 #### Scenario: [OINS-01] Insert after a body paragraph
 - **WHEN** `insertParagraph(id, "New text", "AFTER")` is called for a `text:p` anchor
-- **THEN** a new `text:p` carrying the anchor's style is inserted immediately after it, and its new positional ID is returned
+- **THEN** a new `text:p` carrying the anchor's style is inserted immediately after it, and its new session ID is returned
 
 #### Scenario: [OINS-02] Insert before, heading anchor does not propagate heading style
 - **WHEN** `insertParagraph(id, "Body", "BEFORE")` is called for a `text:h` anchor
