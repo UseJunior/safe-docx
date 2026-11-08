@@ -6,6 +6,8 @@ The insertion response keeps `new_paragraph_id`, `new_paragraph_ids`, `invalidat
 
 Saving preserves the current session's mapping. Opening the saved file in a new session deterministically assigns IDs in its stored order. For example, inserting before `p0:A, p1:B` produces `p2:New, p0:A, p1:B` in the active session; reopening yields `p0:New, p1:A, p2:B`. IDs are held in memory, never written as new ODF attributes or bookmarks.
 
+A file-first tool can implicitly reopen a closed or expired session. Its `session_resolution: 'opened'` metadata indicates a new ID space; obtain IDs from the newly opened session before using them for subsequent edits.
+
 ## Revalidation and contributor reconciliation
 
 Current main at `650bd0b9` still indexed anchors positionally and rebuilt positional identities on transaction forks. The initial candidate was preserved before integrating main's atomic mutation boundary (#1368 / #1301). The fork must transfer stable IDs: insertion followed by another MCP mutation would otherwise silently renumber them.
