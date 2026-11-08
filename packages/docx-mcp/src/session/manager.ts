@@ -45,6 +45,15 @@ export type SaveCacheEntry = {
   cachedAtIso: string;
 };
 
+export type ComparisonBaselines = Readonly<{
+  clean: Buffer;
+  withBookmarks: Buffer;
+}>;
+
+type ComparisonBaselineState =
+  | { status: 'loading'; source: Buffer; promise: Promise<ComparisonBaselines> }
+  | { status: 'ready'; source: Buffer; pair: ComparisonBaselines };
+
 export type ExtractionCacheEntry = {
   revision: number;
   changes: ParagraphRevision[];
@@ -91,13 +100,13 @@ export type DocxSession = {
   /**
    * Post-normalization + bookmark-cleaned buffer used as comparison baseline for tracked output.
    * Comparing against this instead of originalBuffer prevents normalization artifacts from
-   * appearing as false tracked changes. Lazily generated on first save/compare via ensureBaselines().
+   * appearing as false tracked changes. Compatibility mirror only; consume ensureBaselines()'s pair.
    */
   comparisonBaseline: Buffer | null;
   /**
    * Post-normalization buffer WITH bookmarks, used as comparison baseline for
    * compare_documents tool (which uses cleanBookmarks: false).
-   * Lazily generated on first save/compare via ensureBaselines().
+   * Compatibility mirror only; consume ensureBaselines()'s pair.
    */
   comparisonBaselineWithBookmarks: Buffer | null;
   doc: DocxDocument;
@@ -346,8 +355,8 @@ export class SessionManager {
   private ttlMs: number;
   private defaultAiAuthor: string | null;
 
-  /** Concurrency guard: prevents double-generation of baselines for the same session. */
-  private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
+  /** Resource ownership stays outside cloneable mutation/session metadata. */
+  private baselineStates = new WeakMap<DocxSession, ComparisonBaselineState>();
   private finalized = new WeakMap<DocxSession, { normalizationStats: NormalizationResult | null; paragraphCount: number }>();
   /** Retain failed removals for a later clearAllSessions retry, without retaining documents. */
   private pendingArtifactDirectories = new Set<string>();
@@ -619,33 +628,48 @@ export class SessionManager {
    * Safe to call multiple times — returns immediately if baselines already exist.
    * Uses a concurrency guard to prevent double-generation from parallel calls.
    */
-  async ensureBaselines(session: DocxSession): Promise<void> {
-    if (session.comparisonBaseline !== null) return;
-    const existing = this.baselinePromises.get(session);
-    if (existing) return existing;
-    const promise = this._generateBaselines(session);
-    this.baselinePromises.set(session, promise);
-    try {
-      await promise;
-    } finally {
-      this.baselinePromises.delete(session);
+  async ensureBaselines(session: DocxSession): Promise<ComparisonBaselines> {
+    if (!this.isActiveSession(session)) throw new Error('Comparison baseline session was closed or replaced.');
+    const source = session.originalBuffer;
+    const existing = this.baselineStates.get(session);
+    if (existing?.source === source) {
+      return existing.status === 'ready' ? existing.pair : existing.promise;
     }
+
+    // Legacy mirrors never establish readiness, including a manually populated half.
+    session.comparisonBaseline = null;
+    session.comparisonBaselineWithBookmarks = null;
+    // Register ownership before producer execution (including synchronous failures).
+    const promise = Promise.resolve().then(() => this._generateBaselines(source)).then(pair => {
+      if (!this.isActiveSession(session)
+        || session.originalBuffer !== source
+        || this.baselineStates.get(session) !== loading) {
+        throw new Error('Comparison baseline session or source was retired during preparation.');
+      }
+      this.baselineStates.set(session, { status: 'ready', source, pair });
+      session.comparisonBaseline = pair.clean;
+      session.comparisonBaselineWithBookmarks = pair.withBookmarks;
+      return pair;
+    }).finally(() => {
+      // A failed obsolete attempt must not erase a newer source's loading/ready state.
+      if (this.baselineStates.get(session) === loading) this.baselineStates.delete(session);
+    });
+    const loading: ComparisonBaselineState = { status: 'loading', source, promise };
+    this.baselineStates.set(session, loading);
+    return promise;
   }
 
-  private async _generateBaselines(session: DocxSession): Promise<void> {
+  private async _generateBaselines(source: Buffer): Promise<ComparisonBaselines> {
     // Reconstruct from immutable open-time source, NOT from the live session.doc
     // which may have been edited.
-    const doc = await DocxDocument.load(session.originalBuffer);
+    const doc = await DocxDocument.load(source);
     doc.normalize();
     doc.insertParagraphBookmarks('_baseline');
-    // Sequential on purpose: toBuffer() temporarily swaps document.xml inside
-    // the shared zip, so concurrent calls on one document race on that state.
-    // Baselines stay fully normalized (no minimalReserialization) — the
+    // Prepare both privately. Baselines stay fully normalized (no minimalReserialization) — the
     // comparison pipeline expects normalized-vs-normalized inputs.
     const clean = await doc.toBuffer({ cleanBookmarks: true });
     const bookmarked = await doc.toBuffer({ cleanBookmarks: false });
-    session.comparisonBaseline = clean.buffer;
-    session.comparisonBaselineWithBookmarks = bookmarked.buffer;
+    return { clean: clean.buffer, withBookmarks: bookmarked.buffer };
   }
 
   /** Get session by file path (auto-canonicalizes). */
