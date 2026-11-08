@@ -21,7 +21,10 @@ can close the same table twice when admission stops inside it.
 
 ## Impact
 
-Only docx-mcp reading helpers and tests. No new MCP parameters or cursor API,
+Docx-mcp reading helpers, tests and the associated measured coverage floors.
+The initial CI run improved MCP line coverage from its 89.12% baseline to 90.21%,
+triggering the positive-drift ratchet; refresh the floor without lowering any
+floor or changing ratchet policy. No new MCP parameters or cursor API,
 serializer changes, mutation/session/save changes, or ODF provider changes.
 Implementation follows Steven's explicitly approved remediation plan; approval
 to implement and ship reviewed, passing PRs was supplied in the task brief.
