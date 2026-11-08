@@ -6,7 +6,7 @@ The insertion response keeps `new_paragraph_id`, `new_paragraph_ids`, `invalidat
 
 Saving preserves the current session's mapping. Opening the saved file in a new session deterministically assigns IDs in its stored order. For example, inserting before `p0:A, p1:B` produces `p2:New, p0:A, p1:B` in the active session; reopening yields `p0:New, p1:A, p2:B`. IDs are held in memory, never written as new ODF attributes or bookmarks.
 
-A file-first tool can implicitly reopen a closed or expired session. Its `session_resolution: 'opened'` metadata indicates a new ID space; obtain IDs from the newly opened session before using them for subsequent edits.
+An ID-targeted edit that implicitly reopens a closed or expired session can already apply an old ID to a different paragraph before returning `session_resolution: 'opened'`. This metadata reports reopening after execution; it is not a pre-mutation stale-ID guard. When session continuity is uncertain, obtain fresh IDs with `read_file` or `grep` on the newly opened file before an ID-targeted edit.
 
 ## Revalidation and contributor reconciliation
 
