@@ -20,7 +20,8 @@ import { acceptAiEdits } from '../tools/accept_ai_edits.js';
 const { buildDocxFromBodyXml }: { buildDocxFromBodyXml(body: string): Promise<Buffer> } =
   await import(new URL('../../../docx-core/src/testing/ooxml-fixtures.ts', import.meta.url).href);
 
-const test = testAllure.epic('Document Editing').withLabels({ feature: 'Atomic session mutations' });
+const TEST_FEATURE = 'centralize-session-mutations';
+const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 const managers: SessionManager[] = [];
 const dirs: string[] = [];
 afterEach(async () => {
