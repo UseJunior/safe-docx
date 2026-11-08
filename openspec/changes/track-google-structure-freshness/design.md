@@ -5,7 +5,7 @@ Use an explicit three-value freshness state and a per-document promise tail. Rej
 
 Normal replacement/insertion retains its existing post-edit refresh and insertion anchor refresh. Acknowledgement updates the confirmed-write version and revision before any follow-up read. Failed refresh leaves old structure present but stale, retains the remote counters, and blocks further cached-index writes until a refresh succeeds. Anchor maintenance invalidates freshness without incrementing the user confirmed-write counter, preserving foundation F.
 
-Synchronous cache getters remain snapshot accessors. They do not perform network I/O or promise current data. MCP selector prechecks explicitly refresh; layout builds indexes inside the queue. Direct absolute-index API callers retain responsibility for their supplied indexes.
+Synchronous cache getters remain snapshot accessors. They do not perform network I/O or promise current data. MCP selector prechecks explicitly refresh; layout builds indexes inside the queue. User-facing Google MCP reads and grep await `ensureCurrentStructure()` before using paragraph snapshots. Known-stale refresh failures return the existing structured read/search error, while current state adds no fetch and neither operation counts as a write. Direct absolute-index API callers retain responsibility for their supplied indexes.
 
 ## Risks
 Operations now wait for earlier refreshes, intentionally trading concurrency for coherent indexes. External collaborators still use Google's required-revision control; there is no new cloud rollback or live-document smoke.

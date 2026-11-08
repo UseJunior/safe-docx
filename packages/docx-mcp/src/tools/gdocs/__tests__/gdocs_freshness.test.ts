@@ -1,9 +1,11 @@
 import { afterEach, expect, vi } from 'vitest';
 import { testAllure } from '../../../testing/allure-test.js';
-import { SessionManager } from '../../../session/manager.js';
+import { SessionManager, type GDocsSession } from '../../../session/manager.js';
 import { gdocsFormatLayout } from '../format_layout.js';
 import { gdocsInsertParagraph } from '../insert_paragraph.js';
 import { gdocsReplaceText } from '../replace_text.js';
+import { gdocsReadFile } from '../read_file.js';
+import { gdocsGrep } from '../grep.js';
 import { GoogleDocsDocument } from '../../../../../google-docs-core/src/document.js';
 import { resolveCredentials } from '../../../../../google-docs-core/src/auth.js';
 import type { GoogleApiClient } from '../../../../../google-docs-core/src/api-client.js';
@@ -108,3 +110,75 @@ test.openspec('Concurrent writes and refreshes')('missing layout selectors after
   expect(batchUpdate).toHaveBeenCalledTimes(2);
   expect(getDocument).toHaveBeenCalledTimes(2);
 });
+
+for (const tool of ['read_file', 'grep'] as const) {
+  const read = (manager: SessionManager, session: GDocsSession) => tool === 'read_file'
+    ? gdocsReadFile(manager, session, { format: 'json', node_ids: [anchorId] }, { source: 'synthetic' })
+    : gdocsGrep(manager, session, { patterns: ['Beta', 'Gamma'], whole_word: true, max_results: 1, context_chars: 3 }, { source: 'synthetic' });
+
+  test.openspec('Known-stale Google reads refresh before returning content')(`${tool} recovers acknowledged edits after failed mutation refresh without recording another edit`, async () => {
+    const { doc, manager, session, getDocument, batchUpdate } = await setup();
+    getDocument.mockRejectedValueOnce(new Error('post-edit refresh failed'));
+    expect((await gdocsReplaceText(manager, session, { target_paragraph_id: anchorId, old_string: 'Beta', new_string: 'Gamma', instruction: 'test' }, {})).success).toBe(false);
+    expect(doc.isStructureStale()).toBe(true);
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(session.editCount).toBe(1);
+    getDocument.mockResolvedValueOnce(snapshot(1, 'Alpha Gamma'));
+    const result = await read(manager, session);
+    expect(result).toMatchObject({ success: true, google_doc_id: 'synthetic', source: 'synthetic' });
+    if (tool === 'read_file') {
+      expect(JSON.parse(String(result.content))).toMatchObject([{ id: anchorId, text: 'Alpha Gamma' }]);
+      expect(result).toMatchObject({ total_paragraphs: 1, paragraphs_returned: 1 });
+    } else {
+      expect(result).toMatchObject({ patterns: ['Beta', 'Gamma'], total_matches: 1, paragraphs_with_matches: 1, matches_returned: 1, max_results_applied: 1, matches_truncated: false, matches: [{ para_id: anchorId, match_text: 'Gamma', match_count_in_paragraph: 1 }] });
+    }
+    expect(JSON.stringify(result)).not.toContain('Alpha Beta');
+    expect(doc.isStructureStale()).toBe(false);
+    expect(getDocument).toHaveBeenCalledTimes(3); // load, failed normal refresh, recovery read
+    expect(batchUpdate).toHaveBeenCalledTimes(1);
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(doc.getEditCount()).toBe(1);
+    expect(session.editCount).toBe(1);
+    expect(session.editRevision).toBe(1);
+  });
+
+  test.openspec('Known-stale Google reads fail rather than serve old content')(`${tool} returns its existing structured error if freshness retry fails and remains recoverable`, async () => {
+    const { doc, manager, session, getDocument, batchUpdate } = await setup();
+    getDocument.mockRejectedValueOnce(new Error('post-edit refresh failed'));
+    await gdocsReplaceText(manager, session, { target_paragraph_id: anchorId, old_string: 'Beta', new_string: 'Gamma', instruction: 'test' }, {});
+    getDocument.mockRejectedValueOnce(new Error('read freshness failed'));
+    const result = await read(manager, session);
+    expect(result).toMatchObject({ success: false, error: { code: tool === 'read_file' ? 'READ_ERROR' : 'SEARCH_ERROR' } });
+    expect(JSON.stringify(result)).toContain('read freshness failed');
+    expect(result).not.toHaveProperty('content');
+    expect(result).not.toHaveProperty('matches');
+    expect(doc.isStructureStale()).toBe(true);
+    expect(doc.getRevisionId()).toBe('rev-remote');
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(session.editCount).toBe(1);
+    getDocument.mockResolvedValueOnce(snapshot(1, 'Alpha Gamma'));
+    expect((await read(manager, session)).success).toBe(true);
+    expect(getDocument).toHaveBeenCalledTimes(4);
+    expect(batchUpdate).toHaveBeenCalledTimes(1);
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(session.editCount).toBe(1);
+    expect(session.editRevision).toBe(1);
+  });
+
+  test.openspec('Current Google reads do not refetch')(`${tool} preserves current-state refresh counts and never writes`, async () => {
+    const { doc, manager, session, getDocument, batchUpdate } = await setup();
+    expect((await read(manager, session)).success).toBe(true);
+    expect((await read(manager, session)).success).toBe(true);
+    expect(getDocument).toHaveBeenCalledTimes(1);
+    expect(batchUpdate).not.toHaveBeenCalled();
+    expect(doc.getConfirmedWriteVersion()).toBe(0);
+    expect(session.editCount).toBe(0);
+    getDocument.mockResolvedValueOnce(snapshot(1, 'Alpha Gamma'));
+    expect((await gdocsReplaceText(manager, session, { target_paragraph_id: anchorId, old_string: 'Beta', new_string: 'Gamma', instruction: 'test' }, {})).success).toBe(true);
+    expect((await read(manager, session)).success).toBe(true);
+    expect(getDocument).toHaveBeenCalledTimes(2); // normal edit refresh, no read amplification
+    expect(batchUpdate).toHaveBeenCalledTimes(1);
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(session.editCount).toBe(1);
+  });
+}
