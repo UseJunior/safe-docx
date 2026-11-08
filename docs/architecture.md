@@ -30,6 +30,19 @@ ODT and Google Docs are alternative document sources for supported operations. T
 
 `@usejunior/odf-core` and `@usejunior/google-docs-core` support the alternative ODT and Google Docs paths.
 
+## Provider Loading
+
+The ODF and Google Docs loaders each share one import promise for the lifetime of
+an MCP or CLI process. Concurrent calls join that attempt. A successful import
+retains the module; a failed import retains its original cause in a discriminated
+`failed` state and returns `null` to tool callers. Failure is cached until the
+process restarts, so installing or repairing a provider requires a restart.
+
+The internal loader state distinguishes `idle`, `loading`, `ready`, and `failed`
+without changing tool responses. Existing callers continue to report
+`MISSING_DEPENDENCY` for unavailable editing providers and `ODF_UNAVAILABLE` for
+unavailable DOCX-to-ODT conversion.
+
 ## MCP And CLI
 
 Running `safe-docx` with no command starts the MCP server. The CLI can also invoke tools directly:
@@ -55,6 +68,8 @@ See the [tool reference](../packages/docx-mcp/docs/tool-reference.generated.md) 
 ## Document Sessions
 
 Most operations begin with a file path. Safe Docx detects the format, parses the document, and creates or reuses a session:
+
+The session manager finalizes DOCX candidates (normalization unless skipped, then paragraph anchors) before publishing them. Repeated finalization preserves the initial policy; comparison baselines stay lazy. Failed replacement preparation leaves the old session usable. Publication is the commit point: retirement of old artifacts cannot fail successful creation. Expiry lookups and listings retire artifacts asynchronously, and clear-all drains cleanup and retries directory removals that the filesystem previously refused.
 
 ```text
 file path
@@ -112,6 +127,8 @@ Comments, footnotes, relationships, and other DOCX package parts are handled aut
 
 Pre-existing revisions from other authors remain distinct from the current session's changes.
 
+DOCX serialization captures the archive entries and current document XML synchronously before asynchronous ZIP generation. Each export applies its bookmark policy and optional fixed entry date to an isolated snapshot. Overlapping exports can therefore use different policies without changing the live document or archive; a failed export leaves the session available for subsequent edits and saves.
+
 For a fresh comparison between an original and a revised document, use `compare_documents`. It produces a DOCX whose tracked changes describe the difference between those two files.
 
 ## Conversion
@@ -121,6 +138,15 @@ For a fresh comparison between an original and a revised document, use `compare_
 `convert_to_odt` converts a DOCX file to OpenDocument Text without invoking LibreOffice. It returns a lossiness summary for constructs that cannot be represented with the same fidelity.
 
 ## Generation
+
+The greenfield generation compiler's `CompileContext` reserves allocated header/footer
+names separately from part registrations. Allocators skip reserved, registered, and
+written names. Identical registrations retain their relationship ID; conflicting
+content types or relationship types fail with `GenerationInternalError`. Final file
+assembly requires content for every registered part and places `[Content_Types].xml`
+first, retaining insertion order for the remaining files. A failed assembly can be
+retried after supplying missing content; assembly does not seal the context. This
+context does not load existing packages.
 
 `@usejunior/docx-core` exposes `generateDocx(DocumentSpec)` for creating a new DOCX from a JSON-serializable specification. Generation is currently a library API rather than an installed CLI command. [Issue #573](https://github.com/UseJunior/safe-docx/issues/573) tracks a first-class `safe-docx generate` command.
 

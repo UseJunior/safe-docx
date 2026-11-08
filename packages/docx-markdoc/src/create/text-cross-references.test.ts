@@ -317,5 +317,6 @@ describeWithLibreOffice('Traceability: text cross-references in a real LibreOffi
         await rm(dir, { recursive: true, force: true });
       }
     },
+    60_000,
   );
 });

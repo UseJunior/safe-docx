@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
+import { err, type ToolResponse } from '../tools/types.js';
 import {
   DocxDocument,
   DocxZip,
@@ -289,7 +290,117 @@ export function isOdfSession(s: Session): s is OdfSession {
   return s.provider === 'odf';
 }
 
+/** A unique opening ticket; a close permanently cancels it, including across reopen. */
+export interface SessionOpenTicket {
+  readonly sessionKey: string;
+  cancelled: boolean;
+}
+
+export class SessionClosedDuringOpenError extends Error {
+  constructor() {
+    super('Session was closed while opening. Re-run the tool to open a new session.');
+    this.name = 'SessionClosedDuringOpenError';
+  }
+}
+
 export class SessionManager {
+  private mutationQueues = new WeakMap<Session, Promise<void>>();
+
+  /**
+   * Serialize local mutations on unpublished candidates. No await separates
+   * generation validation from publication of the document and its bookkeeping.
+   * The active session continues owning its identity and temporary resources.
+   */
+  async mutateSession<S extends DocxSession | OdfSession>(
+    active: S,
+    execute: (candidate: S) => Promise<ToolResponse>,
+  ): Promise<ToolResponse> {
+    return this.serializeMutation(active, async () => {
+      if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
+      const candidate = { ...active, doc: active.doc.fork() } as S;
+      if (isDocxSession(active) && isDocxSession(candidate)) {
+        candidate.saveCache = new Map(active.saveCache);
+        candidate.nonRevisionManifest = structuredClone(active.nonRevisionManifest);
+        candidate.selectiveRevisionAction = structuredClone(active.selectiveRevisionAction);
+        candidate.revisionIdState = active.revisionIdState ? structuredClone(active.revisionIdState) : null;
+      } else if (isOdfSession(active) && isOdfSession(candidate)) {
+        candidate.archive = active.archive.fork();
+      }
+      const before = await this.mutationContents(candidate);
+      const response = await execute(candidate);
+      if (!response.success) return response;
+      const after = await this.mutationContents(candidate);
+      if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
+      if (!before.equals(after)) {
+        // Direct-DOM handlers must invalidate the candidate's view too.
+        if (isDocxSession(candidate)) candidate.doc.markMutated();
+        active.doc = candidate.doc;
+        active.editCount += 1;
+        active.editRevision += 1;
+        if (isDocxSession(active) && isDocxSession(candidate)) {
+          active.revisionIdState = candidate.revisionIdState;
+          active.nonRevisionManifest = candidate.nonRevisionManifest;
+          active.selectiveRevisionAction = candidate.selectiveRevisionAction;
+          active.saveCache.clear();
+          active.extractionCache = null;
+        } else if (isOdfSession(active) && isOdfSession(candidate)) {
+          active.archive = candidate.archive;
+        }
+      } else if ('persistence_required' in response) {
+        response.persistence_required = false;
+        response.selected_revision_ids = [];
+        delete response.next_step;
+      }
+      if ('edit_count' in response) response.edit_count = active.editCount;
+      return response;
+    });
+  }
+
+  private async mutationContents(session: DocxSession | OdfSession): Promise<Buffer> {
+    if (isDocxSession(session)) {
+      // Ignore ZIP timestamps. No-op detection includes every package part,
+      // rather than trusting selected revision IDs or handler edit counters.
+      return session.doc.getMutationSnapshot();
+    }
+    // ODF handlers mutate content.xml; the archive is staged separately.
+    return Buffer.from(session.doc.toXml());
+  }
+
+  private isActiveSession(session: Session): boolean {
+    return [...this.sessions.values()].includes(session) && session.expiresAt.getTime() >= Date.now();
+  }
+
+  private async serializeMutation<T>(session: Session, execute: () => Promise<T>): Promise<T> {
+    const preceding = this.mutationQueues.get(session) ?? Promise.resolve();
+    let release!: () => void;
+    const tail = new Promise<void>(resolve => { release = resolve; });
+    this.mutationQueues.set(session, tail);
+    await preceding;
+    try {
+      return await execute();
+    } finally {
+      release();
+      if (this.mutationQueues.get(session) === tail) this.mutationQueues.delete(session);
+    }
+  }
+
+  /** Remote writes cannot be rolled back by discarding a local snapshot. */
+  async mutateRemoteSession(active: GDocsSession, execute: (candidate: GDocsSession) => Promise<ToolResponse>): Promise<ToolResponse> {
+    return this.serializeMutation(active, async () => {
+      if (!this.isActiveSession(active)) return err('SESSION_CLOSED', 'Session was closed or replaced during mutation.');
+      const candidate = { ...active };
+      const before = active.doc.getConfirmedWriteVersion();
+      try {
+        const response = await execute(candidate);
+        return response;
+      } finally {
+        // Record confirmed remote success even when refresh or response shaping
+        // fails, or the session retires while the request is in flight. Never
+        // publish this old state into a replacement session.
+        if (active.doc.getConfirmedWriteVersion() !== before) this.markEdited(active);
+      }
+    });
+  }
   /** Sessions keyed by canonical file path (realpath). */
   private sessions = new Map<string, Session>();
   private ttlMs: number;
@@ -297,6 +408,95 @@ export class SessionManager {
 
   /** Concurrency guard: prevents double-generation of baselines for the same session. */
   private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
+  private finalized = new WeakMap<DocxSession, { normalizationStats: NormalizationResult | null; paragraphCount: number }>();
+  /** Retain failed removals for a later clearAllSessions retry, without retaining documents. */
+  private pendingArtifactDirectories = new Set<string>();
+  private artifactCleanupPromises = new Map<string, Promise<void>>();
+  private openingTickets = new Map<string, Set<SessionOpenTicket>>();
+  private resolvingOpens = new Set<{ closedKeys: Set<string>; cancelled: boolean }>();
+  private pendingOpens = new Map<string, { sessionKey: string; promise: Promise<unknown> }>();
+
+  captureOpenTicket(sessionKey: string): SessionOpenTicket {
+    const ticket = { sessionKey, cancelled: false };
+    let tickets = this.openingTickets.get(sessionKey);
+    if (!tickets) this.openingTickets.set(sessionKey, tickets = new Set());
+    tickets.add(ticket);
+    return ticket;
+  }
+
+  /** Keep close events only while a local opener is resolving its canonical key. */
+  async captureOpenTicketForPath(filePath: string): Promise<SessionOpenTicket> {
+    const resolving = { closedKeys: new Set<string>(), cancelled: false };
+    this.resolvingOpens.add(resolving);
+    try {
+      const key = await this.canonicalizePath(filePath);
+      const ticket = this.captureOpenTicket(key);
+      ticket.cancelled = resolving.cancelled || resolving.closedKeys.has(key);
+      return ticket;
+    } finally {
+      this.resolvingOpens.delete(resolving);
+    }
+  }
+
+  releaseOpenTicket(ticket: SessionOpenTicket): void {
+    const tickets = this.openingTickets.get(ticket.sessionKey);
+    tickets?.delete(ticket);
+    if (tickets?.size === 0) this.openingTickets.delete(ticket.sessionKey);
+  }
+
+  private invalidateOpening(sessionKey: string): void {
+    for (const resolving of this.resolvingOpens) resolving.closedKeys.add(sessionKey);
+    for (const ticket of this.openingTickets.get(sessionKey) ?? []) ticket.cancelled = true;
+    this.openingTickets.delete(sessionKey);
+    for (const [key, entry] of this.pendingOpens) {
+      if (entry.sessionKey === sessionKey) this.pendingOpens.delete(key);
+    }
+  }
+
+  private assertOpenTicket(ticket: SessionOpenTicket): void {
+    if (ticket.cancelled) throw new SessionClosedDuringOpenError();
+  }
+
+  private async withOpenTicket<T>(
+    filePath: string,
+    supplied: SessionOpenTicket | undefined,
+    execute: (ticket: SessionOpenTicket) => Promise<T>,
+  ): Promise<T> {
+    const ticket = supplied ?? await this.captureOpenTicketForPath(filePath);
+    try {
+      this.assertOpenTicket(ticket);
+      return await execute(ticket);
+    } finally {
+      if (!supplied) this.releaseOpenTicket(ticket);
+    }
+  }
+
+  /** Register before execution, and let only the same promise remove its slot. */
+  async coordinateSessionOpen<T>(
+    sessionKey: string,
+    execute: (ticket: SessionOpenTicket) => Promise<T>,
+    provider: Session['provider'] = 'docx',
+    suppliedTicket?: SessionOpenTicket,
+  ): Promise<{ outcome: T; shared: boolean }> {
+    const pendingKey = `${provider}:${sessionKey}`;
+    const pending = this.pendingOpens.get(pendingKey);
+    if (pending) return { outcome: await pending.promise as T, shared: true };
+    const ticket = suppliedTicket ?? this.captureOpenTicket(sessionKey);
+    const promise = Promise.resolve().then(() => execute(ticket)).finally(() => {
+      if (!suppliedTicket) this.releaseOpenTicket(ticket);
+      if (this.pendingOpens.get(pendingKey)?.promise === promise) this.pendingOpens.delete(pendingKey);
+    });
+    this.pendingOpens.set(pendingKey, { sessionKey, promise });
+    return { outcome: await promise, shared: false };
+  }
+
+  async discardOpeningSession(session: Session): Promise<void> {
+    // A late candidate must never remove a newer session for the same path.
+    for (const [key, active] of this.sessions) {
+      if (active === session) this.sessions.delete(key);
+    }
+    await this.cleanupSessionArtifacts(session);
+  }
 
   constructor(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }) {
     this.ttlMs = opts?.ttlMs ?? 60 * 60 * 1000;
@@ -335,49 +535,65 @@ export class SessionManager {
     return `ses_${out}`;
   }
 
-  async createSession(documentContent: Buffer, filename: string, originalPath: string): Promise<DocxSession> {
-    const canonicalPath = await this.canonicalizePath(originalPath);
-
-    // One-session-per-file: clean up existing session for this path if any
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
-
-    const sessionId = this.newSessionId();
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-docx-'));
-    const tmpPath = path.join(dir, filename);
-    // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
-
-    const doc = await DocxDocument.load(documentContent);
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + this.ttlMs);
-    const session: DocxSession = {
-      provider: 'docx',
-      sessionId,
-      filename,
-      tmpPath,
-      originalPath,
-      originalBuffer: Buffer.from(documentContent),
-      comparisonBaseline: null,
-      comparisonBaselineWithBookmarks: null,
-      doc,
-      aiAuthor: this.defaultAiAuthor,
-      revisionIdState: null,
-      editCount: 0,
-      editRevision: 0,
-      saveCache: new Map<string, SaveCacheEntry>(),
-      extractionCache: null,
-      nonRevisionManifest: [],
-      selectiveRevisionAction: null,
-      createdAt: now,
-      lastAccessedAt: now,
-      expiresAt,
-      normalizationStats: null,
-    };
-    this.sessions.set(canonicalPath, session);
-    return session;
+  async createSession(
+    documentContent: Buffer,
+    filename: string,
+    originalPath: string,
+    opts?: { skipNormalization?: boolean; openTicket?: SessionOpenTicket },
+  ): Promise<DocxSession> {
+    return this.withOpenTicket(originalPath, opts?.openTicket, async (ticket) => {
+      const canonicalPath = ticket.sessionKey;
+      // Loading can fail; retain the active session until its replacement is ready.
+      const doc = await DocxDocument.load(documentContent);
+      const sessionId = this.newSessionId();
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-docx-'));
+      const tmpPath = path.join(dir, filename);
+      // Ensure we pass an ArrayBufferView to satisfy Node's type signature across TS lib setups.
+      try {
+        await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+      } catch (error) {
+        await this.releaseArtifactDirectory(dir);
+        throw error;
+      }
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + this.ttlMs);
+      const session: DocxSession = {
+        provider: 'docx',
+        sessionId,
+        filename,
+        tmpPath,
+        originalPath,
+        originalBuffer: Buffer.from(documentContent),
+        comparisonBaseline: null,
+        comparisonBaselineWithBookmarks: null,
+        doc,
+        aiAuthor: this.defaultAiAuthor,
+        revisionIdState: null,
+        editCount: 0,
+        editRevision: 0,
+        saveCache: new Map<string, SaveCacheEntry>(),
+        extractionCache: null,
+        nonRevisionManifest: [],
+        selectiveRevisionAction: null,
+        createdAt: now,
+        lastAccessedAt: now,
+        expiresAt,
+        normalizationStats: null,
+      };
+      try {
+        await this.finalizeNewSession(session, opts);
+        this.assertOpenTicket(ticket);
+      } catch (error) {
+        await this.cleanupSessionArtifacts(session);
+        throw error;
+      }
+      const existing = this.sessions.get(canonicalPath);
+      // Commit point: candidate failures above preserve the old session. Retirement
+      // below is best-effort and cannot invalidate or fail the published candidate.
+      this.sessions.set(canonicalPath, session);
+      if (existing) await this.cleanupSessionArtifacts(existing);
+      return session;
+    });
   }
 
   /**
@@ -392,58 +608,70 @@ export class SessionManager {
     originalPath: string,
     archive: any,
     doc: any,
+    opts?: { openTicket?: SessionOpenTicket },
   ): Promise<OdfSession> {
-    const canonicalPath = await this.canonicalizePath(originalPath);
+    return this.withOpenTicket(originalPath, opts?.openTicket, async (ticket) => {
+      const canonicalPath = ticket.sessionKey;
+      const sessionId = this.newSessionId();
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
+      const tmpPath = path.join(dir, filename);
+      try {
+        await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+      } catch (error) {
+        await this.releaseArtifactDirectory(dir);
+        throw error;
+      }
 
-    const existing = this.sessions.get(canonicalPath);
-    if (existing) {
-      await this.cleanupSessionArtifacts(existing);
-    }
-
-    const sessionId = this.newSessionId();
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
-    const tmpPath = path.join(dir, filename);
-    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
-
-    const now = new Date();
-    const session: OdfSession = {
-      provider: 'odf',
-      sessionId,
-      filename,
-      tmpPath,
-      originalPath,
-      originalBuffer: Buffer.from(documentContent),
-      archive,
-      doc,
-      editCount: 0,
-      editRevision: 0,
-      createdAt: now,
-      lastAccessedAt: now,
-      expiresAt: new Date(now.getTime() + this.ttlMs),
-    };
-    this.sessions.set(canonicalPath, session);
-    return session;
+      const now = new Date();
+      const session: OdfSession = {
+        provider: 'odf',
+        sessionId,
+        filename,
+        tmpPath,
+        originalPath,
+        originalBuffer: Buffer.from(documentContent),
+        archive,
+        doc,
+        editCount: 0,
+        editRevision: 0,
+        createdAt: now,
+        lastAccessedAt: now,
+        expiresAt: new Date(now.getTime() + this.ttlMs),
+      };
+      if (ticket.cancelled) {
+        await this.cleanupSessionArtifacts(session);
+        throw new SessionClosedDuringOpenError();
+      }
+      const existing = this.sessions.get(canonicalPath);
+      // Same commit boundary as DOCX: only retire the old resource after publication.
+      this.sessions.set(canonicalPath, session);
+      if (existing) await this.cleanupSessionArtifacts(existing);
+      return session;
+    });
   }
 
   /**
    * Finalize a newly created session by normalizing the document and inserting
    * paragraph bookmarks. Baselines are lazily generated on first save/compare.
    *
-   * INVARIANT: All production session creation paths must call
-   * `finalizeNewSession` before returning a session. `createSession` alone
-   * leaves baselines null and is incomplete for tool use.
+   * Creation finalizes before publication. Kept idempotent for legacy callers
+   * that explicitly finalize after creation. Comparison baselines stay lazy.
    */
   async finalizeNewSession(
     session: DocxSession,
     opts?: { skipNormalization?: boolean },
   ): Promise<{ normalizationStats: NormalizationResult | null; paragraphCount: number }> {
+    const finalized = this.finalized.get(session);
+    if (finalized) return finalized;
     if (!opts?.skipNormalization) {
       session.normalizationStats = session.doc.normalize();
     }
     const info = session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
     // Baselines are lazily generated — skip the two toBuffer() calls here
     this.touch(session);
-    return { normalizationStats: session.normalizationStats, paragraphCount: info.paragraphCount };
+    const result = { normalizationStats: session.normalizationStats, paragraphCount: info.paragraphCount };
+    this.finalized.set(session, result);
+    return result;
   }
 
   /**
@@ -493,6 +721,7 @@ export class SessionManager {
     const now = Date.now();
     if (ses.expiresAt.getTime() < now) {
       this.sessions.delete(canonicalPath);
+      void this.cleanupSessionArtifacts(ses);
       return null;
     }
     return ses;
@@ -503,7 +732,10 @@ export class SessionManager {
    * edits it would otherwise discard when the process exits (#1048).
    */
   listSessions(): Session[] {
-    return [...this.sessions.values()];
+    return [...this.sessions.keys()].flatMap(key => {
+      const session = this.getSessionByPath(key);
+      return session ? [session] : [];
+    });
   }
 
   /**
@@ -516,6 +748,7 @@ export class SessionManager {
         const now = Date.now();
         if (ses.expiresAt.getTime() < now) {
           this.sessions.delete(key);
+          void this.cleanupSessionArtifacts(ses);
           throw new Error(`SESSION_EXPIRED:${sessionId}`);
         }
         return ses;
@@ -526,10 +759,31 @@ export class SessionManager {
 
   private async cleanupSessionArtifacts(session: Session): Promise<void> {
     if (isDocxSession(session) || isOdfSession(session)) {
-      const tmpDir = path.dirname(session.tmpPath);
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      await this.releaseArtifactDirectory(path.dirname(session.tmpPath));
     }
     // GDocs sessions have no tmp dir to clean up
+  }
+
+  /** Non-throwing retirement; concurrent requests share one removal attempt. */
+  private async releaseArtifactDirectory(dir: string): Promise<void> {
+    const existing = this.artifactCleanupPromises.get(dir);
+    if (existing) return existing;
+    this.pendingArtifactDirectories.add(dir);
+    const cleanup = (async () => {
+      try {
+        await fs.rm(dir, { recursive: true, force: true });
+        this.pendingArtifactDirectories.delete(dir);
+      } catch {
+        // Keep the path for retry. In particular, post-publication cleanup must
+        // not report creation failure or delete the active replacement's files.
+      }
+    })();
+    this.artifactCleanupPromises.set(dir, cleanup);
+    try {
+      await cleanup;
+    } finally {
+      this.artifactCleanupPromises.delete(dir);
+    }
   }
 
   async clearSessionByPath(filePath: string): Promise<string | null> {
@@ -537,6 +791,7 @@ export class SessionManager {
     const sessionKey = filePath.startsWith('gdocs:')
       ? filePath
       : await this.canonicalizePath(filePath);
+    this.invalidateOpening(sessionKey);
     const session = this.sessions.get(sessionKey);
     if (!session) return null;
     this.sessions.delete(sessionKey);
@@ -545,10 +800,15 @@ export class SessionManager {
   }
 
   async clearAllSessions(): Promise<string[]> {
+    for (const resolving of this.resolvingOpens) resolving.cancelled = true;
+    for (const key of this.openingTickets.keys()) this.invalidateOpening(key);
     const allSessions = [...this.sessions.entries()];
     const clearedPaths = allSessions.map(([key]) => key);
     this.sessions.clear();
     await Promise.all(allSessions.map(([, session]) => this.cleanupSessionArtifacts(session)));
+    // Also drain expiry cleanups and retry failed candidate/retirement removals.
+    await Promise.all(this.artifactCleanupPromises.values());
+    await Promise.all([...this.pendingArtifactDirectories].map(dir => this.releaseArtifactDirectory(dir)));
     return clearedPaths;
   }
 
@@ -617,9 +877,10 @@ export class SessionManager {
    * Create a Google Docs session. The `doc` is an already-loaded
    * GoogleDocsDocument instance (created via dynamic import in the handler layer).
    */
-  createGDocsSession(docId: string, doc: any): GDocsSession {
+  createGDocsSession(docId: string, doc: any, opts?: { openTicket?: SessionOpenTicket }): GDocsSession {
     const sessionKey = `gdocs:${docId}`;
-    const existing = this.sessions.get(sessionKey);
+    if (opts?.openTicket) this.assertOpenTicket(opts.openTicket);
+    const existing = this.getSessionByPath(sessionKey);
     if (existing) {
       this.touch(existing);
       return existing as GDocsSession;

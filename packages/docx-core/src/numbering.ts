@@ -98,6 +98,8 @@ export interface NumberingState {
   counters: Map<string, number[]>;
   /** Track whether each level has been used in current sequence */
   levelUsed: Map<string, boolean[]>;
+  /** Previous level per numbering definition, isolated to this document. */
+  lastUsedLevel?: Map<string, number>;
 }
 
 /**
@@ -113,6 +115,7 @@ export function createNumberingState(): NumberingState {
   return {
     counters: new Map(),
     levelUsed: new Map(),
+    lastUsedLevel: new Map(),
   };
 }
 
@@ -169,11 +172,6 @@ function getLevelUsed(
 }
 
 /**
- * Track the last used level for each numbering definition.
- */
-const lastUsedLevel = new Map<string, number>();
-
-/**
  * Process a numbered paragraph and return its display number.
  *
  * Updates the numbering state and returns the appropriate number to display,
@@ -200,6 +198,8 @@ export function processNumberedParagraph(
   const counters = getCounters(state, numId);
   const levelUsed = getLevelUsed(state, numId);
   const key = `num:${numId}`;
+  // Lazily initialize for callers that constructed the legacy two-map shape.
+  const lastUsedLevel = state.lastUsedLevel ??= new Map<string, number>();
 
   // Check for continuation pattern
   const continuation = detectContinuationPattern(
