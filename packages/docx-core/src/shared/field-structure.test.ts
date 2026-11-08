@@ -10,6 +10,7 @@ import {
   validateFieldStructure,
   validateStrictFieldStructure,
   collectFieldStructureIssues,
+  collectStrictFieldStructureIssues,
 } from './field-structure.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
@@ -19,6 +20,21 @@ const test = testAllure
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+
+test('strict marker diagnostics leave the pinned differential predicate unchanged', () => {
+  const cases = [
+    { field: fldChar('separate'), code: 'FIELD_STRAY_SEPARATOR' },
+    { field: fldChar('end') + fldChar('begin'), code: 'FIELD_STRAY_END' },
+    { field: fldChar('begin') + fldChar('separate') + fldChar('separate') + fldChar('end'), code: 'FIELD_DUPLICATE_SEPARATOR' },
+    { field: '<w:r><w:fldChar/></w:r>', code: 'FIELD_UNKNOWN_CHAR_TYPE' },
+  ];
+  for (const { field, code } of cases) {
+    const xml = buildDoc(`<w:p>${field}</w:p>`);
+    expect(validateFieldStructure(xml), field).toBe(true);
+    expect(validateStrictFieldStructure(xml), field).toBe(false);
+    expect(collectStrictFieldStructureIssues(xml).map((issue) => issue.code)).toContain(code);
+  }
+});
 
 function buildDoc(bodyXml: string): string {
   return `<w:document ${NS}><w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
