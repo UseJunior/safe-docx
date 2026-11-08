@@ -49,8 +49,8 @@ function removeDirectChildrenByName(parent: Element, localNames: readonly string
   return matches.length > 0;
 }
 
-function invalidateDocumentCaches(doc: unknown): void {
-  (doc as DocxDocument).markMutated();
+function invalidateDocumentCaches(doc: DocxDocument): void {
+  doc.markMutated();
 }
 
 export async function clearFormatting(

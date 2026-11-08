@@ -244,8 +244,8 @@ function isLikelyFieldPlaceholder(text: string): boolean {
   return (t.startsWith('[') && t.endsWith(']')) || (t.startsWith('«') && t.endsWith('»'));
 }
 
-function invalidateDocumentCaches(doc: unknown): void {
-  (doc as DocxDocument).markMutated();
+function invalidateDocumentCaches(doc: DocxDocument): void {
+  doc.markMutated();
 }
 
 export async function replaceText(

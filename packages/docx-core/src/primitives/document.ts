@@ -403,12 +403,17 @@ function collectNamedBookmarkIds(doc: Document): Set<string> {
 }
 
 export class DocxDocument {
-  /** Notify the document after a caller mutates an exposed paragraph DOM. */
+  /**
+   * Notify the document after mutating an exposed DOM element. Built-in edits
+   * notify automatically. Versions cover body, selected stories, and package
+   * parts; they are local to this instance, not a count of tool calls.
+   */
   markMutated(): void {
     this.mutationVersion += 1;
     this.documentViewCache = null;
   }
 
+  /** Read the mutation history without changing cache validity or the version. */
   getMutationVersion(): number {
     return this.mutationVersion;
   }
@@ -521,17 +526,18 @@ export class DocxDocument {
     bookmarkReservation?: BookmarkReservation,
   ): T {
     const bodyDocument = this.documentXml;
-    const mutationVersion = this.mutationVersion;
     const viewCache = this.documentViewCache;
     const previousReservation = this.paragraphBookmarkReservation;
     this.documentXml = story;
+    // A body view must never be served while traversing a different DOM.
+    this.documentViewCache = null;
     this.paragraphBookmarkReservation = bookmarkReservation;
     try {
       return mutation();
     } finally {
       this.documentXml = bodyDocument;
-      this.mutationVersion = mutationVersion;
-      this.documentViewCache = viewCache;
+      // Restore body-only state, never the document-wide mutation history.
+      this.documentViewCache = viewCache?.version === this.mutationVersion ? viewCache : null;
       this.paragraphBookmarkReservation = previousReservation;
     }
   }
@@ -554,7 +560,10 @@ export class DocxDocument {
     const story = await this.selectedStoryDocument(partPath);
     const reservation = this.paragraphBookmarkReservation;
     const result = insertParagraphBookmarks(story, attachmentId, reservation);
-    if (result.indexedParagraphs > 0) this.zip.writeText(partPath, serializeXml(story));
+    if (result.indexedParagraphs > 0) {
+      this.zip.writeText(partPath, serializeXml(story));
+      this.markMutated();
+    }
     return { paragraphCount: result.indexedParagraphs };
   }
 
@@ -582,6 +591,7 @@ export class DocxDocument {
     assertStoryParagraphMutationSafe(paragraph, 'replace');
     replaceParagraphTextRange(paragraph, params.start, params.end, params.replaceText);
     this.zip.writeText(params.partPath, serializeXml(story));
+    this.markMutated();
   }
 
   /** Mutate intended-clean story text; comparison is responsible for tracked output. */
@@ -606,6 +616,7 @@ export class DocxDocument {
     }
     replaceParagraphTextRange(paragraph, match.start, match.end, params.replaceText);
     this.zip.writeText(params.partPath, serializeXml(story));
+    this.markMutated();
   }
 
   /**
@@ -627,6 +638,7 @@ export class DocxDocument {
     assertStoryParagraphMutationSafe(paragraph, 'replace');
     formatParagraphTextRange(paragraph, params.start, params.end, params.format);
     this.zip.writeText(params.partPath, serializeXml(story));
+    this.markMutated();
   }
 
   async insertStoryParagraph(params: {
@@ -681,6 +693,7 @@ export class DocxDocument {
     bookmarkStart?.parentNode?.removeChild(bookmarkStart);
     bookmarkEnd?.parentNode?.removeChild(bookmarkEnd);
     this.zip.writeText(partPath, serializeXml(story));
+    this.markMutated();
   }
 
   insertTableRow(params: InsertTableRowParams, ctx?: RevisionContext): InsertTableRowResult {
@@ -691,14 +704,12 @@ export class DocxDocument {
       this.paragraphBookmarkReservation,
     );
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
   deleteTableRow(params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
     const result = deleteTableRowImpl(this.documentXml, params, ctx);
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -706,7 +717,6 @@ export class DocxDocument {
   insertTableColumn(params: InsertTableColumnParams, ctx?: RevisionContext): InsertTableColumnResult {
     const result = insertTableColumnImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -714,7 +724,6 @@ export class DocxDocument {
   deleteTableColumn(params: DeleteTableColumnParams, ctx?: RevisionContext): DeleteTableColumnResult {
     const result = deleteTableColumnImpl(this.documentXml, params, ctx);
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -722,7 +731,6 @@ export class DocxDocument {
   splitTableCell(params: SplitTableCellParams, ctx?: RevisionContext): SplitTableCellResult {
     const result = splitTableCellImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -730,7 +738,6 @@ export class DocxDocument {
   absorbTableCell(params: AbsorbTableCellParams, ctx?: RevisionContext): AbsorbTableCellResult {
     const result = absorbTableCellImpl(this.documentXml, params, ctx);
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -750,7 +757,7 @@ export class DocxDocument {
    * Should be called BEFORE bookmark allocation.
    */
   normalize(): NormalizationResult {
-    const mr = mergeRuns(this.documentXml);
+    const mr = this.mergeRunsOnly();
     const sr = simplifyRedlines(this.documentXml);
 
     // Prevent double elevation in footnote/endnote reference styles
@@ -762,9 +769,8 @@ export class DocxDocument {
       }
     }
 
-    if (mr.runsMerged > 0 || sr.wrappersConsolidated > 0 || de.doubleElevationsFixed > 0) {
+    if (sr.wrappersConsolidated > 0 || de.doubleElevationsFixed > 0) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return {
       runsMerged: mr.runsMerged,
@@ -810,6 +816,7 @@ export class DocxDocument {
     const total = emptyAcceptChangesResult();
     const bodyResult = acceptChangesImpl(this.documentXml);
     addAcceptChangesResult(total, bodyResult);
+    if (hasAcceptedChanges(bodyResult)) this.markMutated();
 
     // After accepting, footnotes whose body reference lived inside a removed
     // w:del are orphaned. Only worth checking when the body sweep removed
@@ -833,16 +840,13 @@ export class DocxDocument {
 
       if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(partPath, serializeXml(partDoc));
+        this.markMutated();
         if (partPath === 'word/footnotes.xml') {
           this.footnotesXml = partDoc;
         }
       }
     }
 
-    if (hasAcceptedChanges(total)) {
-      this.markMutated();
-      this.documentViewCache = null;
-    }
     return total;
   }
 
@@ -854,6 +858,7 @@ export class DocxDocument {
     const total = emptyRejectChangesResult();
     const bodyResult = rejectChangesImpl(this.documentXml);
     addRejectChangesResult(total, bodyResult);
+    if (hasRejectedChanges(bodyResult)) this.markMutated();
 
     // After rejecting, footnotes whose body reference lived inside a removed
     // w:ins are orphaned. Only worth checking when the body sweep removed
@@ -877,16 +882,13 @@ export class DocxDocument {
 
       if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(partPath, serializeXml(partDoc));
+        this.markMutated();
         if (partPath === 'word/footnotes.xml') {
           this.footnotesXml = partDoc;
         }
       }
     }
 
-    if (hasRejectedChanges(total)) {
-      this.markMutated();
-      this.documentViewCache = null;
-    }
     return total;
   }
 
@@ -937,6 +939,7 @@ export class DocxDocument {
 
     const bodyResult = acceptChangesImpl(this.documentXml, { filter });
     addAcceptChangesResult(total, bodyResult);
+    if (hasAcceptedChanges(bodyResult)) this.markMutated();
     const liveFootnoteRefIds = bodyResult.deletionsAccepted > 0
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
@@ -952,14 +955,11 @@ export class DocxDocument {
       }
       if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(story.path, serializeXml(story.doc));
+        this.markMutated();
         if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
       }
     }
 
-    if (hasAcceptedChanges(total)) {
-      this.markMutated();
-      this.documentViewCache = null;
-    }
     return { result: total, selectedIds: matchedIds };
   }
 
@@ -975,6 +975,7 @@ export class DocxDocument {
 
     const bodyResult = rejectChangesImpl(this.documentXml, { filter });
     addRejectChangesResult(total, bodyResult);
+    if (hasRejectedChanges(bodyResult)) this.markMutated();
     const liveFootnoteRefIds = bodyResult.insertionsRemoved > 0
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
@@ -990,14 +991,11 @@ export class DocxDocument {
       }
       if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(story.path, serializeXml(story.doc));
+        this.markMutated();
         if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
       }
     }
 
-    if (hasRejectedChanges(total)) {
-      this.markMutated();
-      this.documentViewCache = null;
-    }
     return { result: total, selectedIds: matchedIds };
   }
 
@@ -1104,7 +1102,6 @@ export class DocxDocument {
     }
     replaceParagraphTextRange(p, match.start, match.end, replaceText);
     this.markMutated();
-    this.documentViewCache = null;
   }
 
   /**
@@ -1117,7 +1114,6 @@ export class DocxDocument {
     if (!p) throw new Error(`Paragraph not found: ${targetParagraphId}`);
     replaceParagraphTextRange(p, start, end, replaceText);
     this.markMutated();
-    this.documentViewCache = null;
   }
 
   formatTextAtRange(params: { targetParagraphId: string; start: number; end: number; format: TextRangeRunFormat }): void {
@@ -1125,7 +1121,6 @@ export class DocxDocument {
     if (!paragraph) throw new Error(`Paragraph not found: ${params.targetParagraphId}`);
     formatParagraphTextRange(paragraph, params.start, params.end, params.format);
     this.markMutated();
-    this.documentViewCache = null;
   }
 
   insertParagraph(params: {
@@ -1389,7 +1384,6 @@ export class DocxDocument {
     }
 
     this.markMutated();
-    this.documentViewCache = null;
     const result: { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } = {
       newParagraphId: insertedIds[0]!,
       newParagraphIds: insertedIds,
@@ -1405,7 +1399,6 @@ export class DocxDocument {
     const result = setParagraphProperties(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1417,7 +1410,6 @@ export class DocxDocument {
     const result = setParagraphSpacing(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1438,7 +1430,6 @@ export class DocxDocument {
     );
     if (result.changed) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1458,7 +1449,6 @@ export class DocxDocument {
       this.paragraphBookmarkReservation,
     );
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -1469,7 +1459,6 @@ export class DocxDocument {
     const result = setSectionPageNumberStart(this.documentXml, mutation, ctx);
     if (result.changed) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1481,7 +1470,6 @@ export class DocxDocument {
     const result = updateSectionProperties(this.documentXml, mutation, ctx);
     if (result.changed) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1493,7 +1481,6 @@ export class DocxDocument {
     const result = setTableRowHeight(this.documentXml, mutation, ctx);
     if (result.affectedRows > 0) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1505,7 +1492,6 @@ export class DocxDocument {
     const result = setTableCellPadding(this.documentXml, mutation, ctx);
     if (result.affectedCells > 0) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1525,10 +1511,18 @@ export class DocxDocument {
    * disturb rsid attributes on runs the caller did not touch (#286).
    */
   mergeRunsOnly(opts: MergeRunsOptions = {}): MergeRunsResult {
+    // Normalization also strips rsid attributes from surviving single runs.
+    // Those edits are absent from the public merge/proofing result counts.
+    const stripsRsid = !opts.preserveRsidIdentity && this.getParagraphs().some((p) =>
+      Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.r)).some((run) =>
+        [run, ...Array.from(run.getElementsByTagName('*'))].some((el) =>
+          Array.from(el.attributes).some((attr) => /^rsid/i.test(attr.localName ?? attr.name)),
+        ),
+      ),
+    );
     const result = mergeRuns(this.documentXml, opts);
-    if (result.runsMerged > 0) {
+    if (result.runsMerged > 0 || result.proofErrRemoved > 0 || stripsRsid) {
       this.markMutated();
-      this.documentViewCache = null;
     }
     return result;
   }
@@ -1566,7 +1560,6 @@ export class DocxDocument {
     }, ctx);
 
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -1596,7 +1589,6 @@ export class DocxDocument {
     }, ctx);
 
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -1611,7 +1603,6 @@ export class DocxDocument {
   async deleteComment(params: { commentId: number }, ctx?: RevisionContext): Promise<void> {
     await deleteCommentImpl(this.documentXml, this.zip, params, ctx);
     this.markMutated();
-    this.documentViewCache = null;
   }
 
   async updateCommentBody(params: {
@@ -1711,7 +1702,6 @@ export class DocxDocument {
     }
     await this.refreshFootnotesXml();
     if (converted.length > 0) this.markMutated();
-    this.documentViewCache = null;
     return {
       selected: selected.length,
       converted,
@@ -1807,7 +1797,6 @@ export class DocxDocument {
 
     await this.refreshFootnotesXml();
     this.markMutated();
-    this.documentViewCache = null;
     return result;
   }
 
@@ -1818,7 +1807,6 @@ export class DocxDocument {
     await updateFootnoteTextImpl(this.zip, params, ctx);
     await this.refreshFootnotesXml();
     this.markMutated();
-    this.documentViewCache = null;
   }
 
   /**
@@ -1828,7 +1816,6 @@ export class DocxDocument {
     await deleteFootnoteImpl(this.documentXml, this.zip, params, ctx);
     await this.refreshFootnotesXml();
     this.markMutated();
-    this.documentViewCache = null;
   }
 
   /**
