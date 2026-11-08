@@ -6,6 +6,8 @@ A transaction fork clones XML, pairs cloned blocks with source blocks in the sam
 
 Comment enumeration takes an optional identity callback. OdfDocument supplies its session mapping; standalone `readAnnotations` calls keep the positional default. Existing MCP names, parameters and response keys stay intact; only the approved ODF insertion invalidation values change.
 
+This approved policy supersedes the positional-ID and insertion-invalidation clauses in the earlier `add-odf-grep-insert` and `centralize-session-mutations` changes. Their other tool and transaction requirements still apply.
+
 ## Risks / Trade-offs
 
 Session IDs are intentionally not durable across reopen. Consumers must use IDs read in the newly opened session. Fork identity transfer relies on the same block collector traversing an exact DOM clone; tests cover headings, table cells, duplicate text, comments and later mutations. Failed transaction candidates must not publish allocator state.
