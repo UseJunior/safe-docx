@@ -35,6 +35,21 @@ For two-document comparison, use [`@usejunior/docx-compare`](../docx-compare). F
 
 See the repository [architecture](../../docs/architecture.md), [support contract](SUPPORT.md), and [package source and examples](https://github.com/UseJunior/safe-docx/tree/main/packages/docx-core).
 
+## Semantic serializer boundaries
+
+`iterateSerializerBlocks(nodes, options)` and `collectSerializerBlocks(nodes, options)`
+are exported from the package root. They traverse a document view in order, grouping
+only contiguous nodes with the same table ID and contiguous list items. A table ID
+that reappears after another block starts a new table group. Table classification
+precedes headings, then lists, then paragraphs; empty paragraphs remain boundaries.
+
+HTML and Markdown use Word-style headings and retain their existing nesting and
+empty-paragraph rendering. ODF supplies its own heading and list predicates:
+manual labels stay literal paragraphs, and unsurfaced body spacing splits lists via
+`shouldBreakList(currentNode, previousNode)`. Renderers still own table-cell
+paragraphs, list nesting, inline formatting, and output syntax. The iterator does
+not mutate the input nodes. See [the proposal](../../openspec/changes/refactor-serializer-block-boundaries/proposal.md).
+
 ## Document mutation versions
 
 `DocxDocument.getMutationVersion()` returns an instance-local invalidation token
