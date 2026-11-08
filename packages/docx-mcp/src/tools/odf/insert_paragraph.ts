@@ -10,9 +10,7 @@ import { err, ok, type ToolResponse } from '../types.js';
  * line breaks (parity with the DOCX tool). DOCX run-formatting tags are not yet supported
  * for ODF and are stripped.
  *
- * IMPORTANT: ODF paragraph IDs are positional ordinals, so inserting shifts every ID at or
- * after the insertion point. The response carries machine-actionable invalidation fields so
- * the agent re-reads before its next edit.
+ * Paragraph IDs remain stable during a session; reopening assigns a new ID space.
  */
 export async function odfInsertParagraph(
   manager: SessionManager,
@@ -46,11 +44,10 @@ export async function odfInsertParagraph(
       new_paragraph_ids: newIds,
       position: positionUpper,
       inserted_text: previewText(text, RESULT_PREVIEW_CHARS),
-      // ODF IDs are positional; everything at/after the insertion point has shifted.
-      invalidates_paragraph_ids_after: anchorId,
-      requires_reread_before_next_edit: true,
+      invalidates_paragraph_ids_after: null,
+      requires_reread_before_next_edit: false,
       ids_note:
-        'ODF paragraph IDs are positional and have shifted after this insertion. Call read_file or grep again to get current IDs before your next edit.',
+        'ODF paragraph IDs remain stable in this session. Reopening the document assigns IDs in stored document order.',
       ...metadata,
     });
   } catch (e: unknown) {

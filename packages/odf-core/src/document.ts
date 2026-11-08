@@ -19,7 +19,7 @@ import { collectBlocks } from './shared/odf/blocks.js';
 import { addAnnotation, readAnnotations, type AddAnnotationResult, type OdfComment } from './comments.js';
 
 export type OdfParagraph = {
-  /** Deterministic structural ID (document-order ordinal), stable for identical bytes. */
+  /** Stable within a session; initially assigned in stored document order. */
   id: string;
   /** Visible text with `text:s` expanded to spaces and `text:tab` to a tab. */
   text: string;
@@ -49,12 +49,16 @@ export type AddCommentResult =
 
 export class OdfDocument {
   private doc: Document;
-  /** Block-level text elements in document order; index is the structural ID ordinal. */
+  /** Block-level text elements in document order, independently of identity. */
   private blocks: Element[];
+  private readonly ids = new Map<Element, string>();
+  private readonly elements = new Map<string, Element>();
+  private nextId = 0;
 
   private constructor(doc: Document, blocks: Element[]) {
     this.doc = doc;
     this.blocks = blocks;
+    for (const block of blocks) this.idForBlock(block);
   }
 
   /** Parse a `content.xml` string into a document view. */
@@ -65,21 +69,24 @@ export class OdfDocument {
     return new OdfDocument(doc, blocks);
   }
 
-  private idForIndex(index: number): string {
-    return `p${index}`;
+  private idForBlock(block: Element): string {
+    let id = this.ids.get(block);
+    if (id === undefined) {
+      id = `p${this.nextId++}`;
+      this.ids.set(block, id);
+      this.elements.set(id, block);
+    }
+    return id;
   }
 
   private blockForId(id: string): Element | null {
-    const m = /^p(\d+)$/.exec(id);
-    if (!m) return null;
-    const idx = Number.parseInt(m[1]!, 10);
-    return this.blocks[idx] ?? null;
+    return this.elements.get(id) ?? null;
   }
 
   /** All paragraphs in document order. */
   getParagraphs(): OdfParagraph[] {
-    return this.blocks.map((el, i) => ({
-      id: this.idForIndex(i),
+    return this.blocks.map((el) => ({
+      id: this.idForBlock(el),
       text: buildSegments(el).visible,
     }));
   }
@@ -135,10 +142,9 @@ export class OdfDocument {
    * the anchor is itself a `text:p` — inserting after a heading (`text:h`) produces
    * default body paragraphs, never more headings.
    *
-   * Paragraph IDs are positional ordinals, so every ID at or after the insertion point
-   * shifts by the number of inserted blocks. Returns the inserted blocks' freshly
-   * recomputed IDs in document order; callers must re-read before issuing further edits
-   * that target IDs near or after the insertion point.
+   * Existing paragraph IDs remain stable. New blocks receive monotonically
+   * allocated session IDs, returned in insertion order. Reopening the stored
+   * document creates a new ID space in stored document order.
    */
   insertParagraph(id: string, text: string, position: 'BEFORE' | 'AFTER'): InsertResult {
     const anchor = this.blockForId(id);
@@ -175,12 +181,12 @@ export class OdfDocument {
       parent.insertBefore(el, refNode);
     }
 
-    // Rebuild the structural block index; positional IDs shift accordingly.
+    // Rebuild document order without changing existing block identities.
     const blocks: Element[] = [];
     collectBlocks(this.doc.documentElement, blocks);
     this.blocks = blocks;
 
-    const newIds = newEls.map((el) => this.idForIndex(blocks.indexOf(el)));
+    const newIds = newEls.map((el) => this.idForBlock(el));
     return { ok: true, newIds };
   }
 
@@ -189,7 +195,7 @@ export class OdfDocument {
    * Omit `start`/`end` to bracket the whole paragraph (structural insertion, independent of
    * text segmentation); supply a visible `start`/`end` range to bracket a substring (which must
    * lie within a single `#text` node, else `MATCH_SPANS_MULTIPLE_NODES`). Annotations are inline
-   * children, so positional paragraph IDs do NOT shift.
+   * children and do not affect paragraph identity.
    */
   addComment(params: AddCommentParams): AddCommentResult {
     const block = this.blockForId(params.paragraphId);
@@ -209,7 +215,7 @@ export class OdfDocument {
 
   /** All `office:annotation` comments in document order. */
   getComments(): OdfComment[] {
-    return readAnnotations(this.blocks);
+    return readAnnotations(this.blocks, block => this.idForBlock(block));
   }
 
   /** Serialize the (possibly edited) document back to a `content.xml` string. */
