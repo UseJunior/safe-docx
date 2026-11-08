@@ -491,7 +491,9 @@ describe('read_file pagination', () => {
     // `#END_TABLE`, which can push the final accumulated content over the
     // budget even though row 1 itself fit. The warning must reflect node 1's
     // own size at admission time, not the post-loop closed-out content.
-    const cellLen = 55_864; // tuned to put row 1 just under, row 2 over (Codex repro)
+    // Tune against one structural closure. The old loop emitted #END_TABLE
+    // twice on rejection; retaining that artifact would mask the boundary.
+    const cellLen = 55_876;
     const cellText = 'X'.repeat(cellLen);
     const tableXml =
       `<w:tbl>` +
