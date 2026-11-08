@@ -75,7 +75,7 @@ describe('save artifact contracts', () => {
     { params: { save_format: 'tracked' as const, track_changes: false }, format: 'tracked', source: 'save_format' },
   ];
   for (const [index, selection] of selections.entries()) {
-    test(`format precedence and aliases case ${index}`, async () => {
+    test.openspec('Format compatibility and cache reuse')(`format precedence and aliases case ${index}`, async () => {
       const { mgr, inputPath, tmpDir } = await fixture();
       const result = await save(mgr, {
         file_path: inputPath, save_to_local_path: path.join(tmpDir, 'output.docx'),
