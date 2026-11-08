@@ -57,6 +57,17 @@ export class OdfDocument {
     this.blocks = blocks;
   }
 
+  /**
+   * Clone the editing state without reopening a session. Current positional IDs
+   * are preserved by document order; future session identity belongs here too.
+   */
+  fork(): OdfDocument {
+    const doc = this.doc.cloneNode(true) as Document;
+    const blocks: Element[] = [];
+    collectBlocks(doc.documentElement, blocks);
+    return new OdfDocument(doc, blocks);
+  }
+
   /** Parse a `content.xml` string into a document view. */
   static fromContentXml(contentXml: string): OdfDocument {
     const doc = parseXml(contentXml);

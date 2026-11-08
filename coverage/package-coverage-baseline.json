@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-02T21:46:48.221Z",
+  "generated_at": "2026-11-08T06:17:48.759Z",
   "policy": {
     "ratchet_tolerance_percentage_points": 0.1,
     "max_positive_drift_percentage_points": {
@@ -45,10 +45,10 @@
       }
     },
     "docx-mcp": {
-      "lines": 89.12,
-      "branches": 79.2,
-      "functions": 94.38,
-      "statements": 86.89,
+      "lines": 92.28,
+      "branches": 82.77,
+      "functions": 96.75,
+      "statements": 90.02,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -58,9 +58,9 @@
     }
   },
   "aggregate": {
-    "lines_mean": 91.48,
-    "branches_mean": 80.89,
-    "functions_mean": 94.13,
-    "statements_mean": 89.27
+    "lines_mean": 92.27,
+    "branches_mean": 81.78,
+    "functions_mean": 94.72,
+    "statements_mean": 90.06
   }
 }

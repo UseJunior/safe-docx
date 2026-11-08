@@ -26,77 +26,79 @@ export async function odfAddComment(
   },
   metadata: Record<string, unknown>,
 ): Promise<ToolResponse> {
-  try {
-    if (params.parent_comment_id != null) {
-      return err(
-        'UNSUPPORTED_FOR_ODF',
-        'Comment replies are not supported for ODF (.odt) files.',
-        'ODF has no first-class reply graph; add a new root comment with target_paragraph_id instead.',
-      );
-    }
-
-    if (!params.target_paragraph_id) {
-      return err(
-        'MISSING_PARAMETER',
-        'target_paragraph_id is required for ODF comments.',
-        'Provide target_paragraph_id (and optional anchor_text) to anchor the comment.',
-      );
-    }
-
-    const pid = params.target_paragraph_id;
-    const paraText = session.doc.getParagraphTextById(pid);
-    if (paraText == null) {
-      return err(
-        'ANCHOR_NOT_FOUND',
-        `Paragraph ID ${pid} not found in document`,
-        'Use grep or read_file to find valid paragraph IDs.',
-      );
-    }
-
-    let range: { start?: number; end?: number } = {};
-    if (params.anchor_text) {
-      const match = findUniqueSubstringMatch(paraText, params.anchor_text);
-      if (match.status === 'not_found') {
+  return manager.mutateSession(session, async (session) => {
+    try {
+      if (params.parent_comment_id != null) {
         return err(
-          'TEXT_NOT_FOUND',
-          `anchor_text '${params.anchor_text}' not found in paragraph ${pid}`,
-          'Verify anchor_text is present in the target paragraph.',
+          'UNSUPPORTED_FOR_ODF',
+          'Comment replies are not supported for ODF (.odt) files.',
+          'ODF has no first-class reply graph; add a new root comment with target_paragraph_id instead.',
         );
       }
-      if (match.status === 'multiple') {
+
+      if (!params.target_paragraph_id) {
         return err(
-          'MULTIPLE_MATCHES',
-          `Found ${match.matchCount} matches for anchor_text in paragraph ${pid}`,
-          'Provide more specific anchor_text for a unique match.',
+          'MISSING_PARAMETER',
+          'target_paragraph_id is required for ODF comments.',
+          'Provide target_paragraph_id (and optional anchor_text) to anchor the comment.',
         );
       }
-      range = { start: match.start, end: match.end };
-    }
 
-    const result = session.doc.addComment({
-      paragraphId: pid,
-      ...range,
-      author: params.author,
-      text: params.text,
-      initials: params.initials,
-    });
-    if (!result.ok) {
-      return err(result.code, result.message);
-    }
-    manager.markEdited(session);
+      const pid = params.target_paragraph_id;
+      const paraText = session.doc.getParagraphTextById(pid);
+      if (paraText == null) {
+        return err(
+          'ANCHOR_NOT_FOUND',
+          `Paragraph ID ${pid} not found in document`,
+          'Use grep or read_file to find valid paragraph IDs.',
+        );
+      }
 
-    return ok({
-      success: true,
-      comment_id: result.commentId,
-      anchor_paragraph_id: pid,
-      anchor_text: params.anchor_text ?? null,
-      mode: 'root',
-      provider: 'odf',
-      file_path: session.originalPath,
-      edit_count: session.editCount,
-      ...metadata,
-    });
-  } catch (e: unknown) {
-    return err('COMMENT_ERROR', `Failed to add comment to ODF document: ${errorMessage(e)}`);
-  }
+      let range: { start?: number; end?: number } = {};
+      if (params.anchor_text) {
+        const match = findUniqueSubstringMatch(paraText, params.anchor_text);
+        if (match.status === 'not_found') {
+          return err(
+            'TEXT_NOT_FOUND',
+            `anchor_text '${params.anchor_text}' not found in paragraph ${pid}`,
+            'Verify anchor_text is present in the target paragraph.',
+          );
+        }
+        if (match.status === 'multiple') {
+          return err(
+            'MULTIPLE_MATCHES',
+            `Found ${match.matchCount} matches for anchor_text in paragraph ${pid}`,
+            'Provide more specific anchor_text for a unique match.',
+          );
+        }
+        range = { start: match.start, end: match.end };
+      }
+
+      const result = session.doc.addComment({
+        paragraphId: pid,
+        ...range,
+        author: params.author,
+        text: params.text,
+        initials: params.initials,
+      });
+      if (!result.ok) {
+        return err(result.code, result.message);
+      }
+      manager.markEdited(session);
+
+      return ok({
+        success: true,
+        comment_id: result.commentId,
+        anchor_paragraph_id: pid,
+        anchor_text: params.anchor_text ?? null,
+        mode: 'root',
+        provider: 'odf',
+        file_path: session.originalPath,
+        edit_count: session.editCount,
+        ...metadata,
+      });
+    } catch (e: unknown) {
+      return err('COMMENT_ERROR', `Failed to add comment to ODF document: ${errorMessage(e)}`);
+    }
+  });
 }

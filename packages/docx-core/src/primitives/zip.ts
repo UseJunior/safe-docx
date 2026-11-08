@@ -51,6 +51,20 @@ export class DocxZip {
     return new DocxZip(zip);
   }
 
+  /** Isolate the entry table and metadata; compressed payloads are immutable. */
+  fork(): DocxZip {
+    const zip = new JSZip();
+    for (const file of Object.values(this.zip.files)) {
+      zip.files[file.name] = Object.assign(Object.create(Object.getPrototypeOf(file)), file, {
+        date: new Date(file.date.getTime()),
+        options: { ...file.options },
+      });
+    }
+    (zip as JSZip & { comment?: string | null }).comment =
+      (this.zip as JSZip & { comment?: string | null }).comment;
+    return new DocxZip(zip);
+  }
+
   async readText(path: string): Promise<string> {
     const file = this.zip.file(path);
     if (!file) throw new Error(`Missing file in .docx: ${path}`);
