@@ -66,6 +66,11 @@ export type SelectiveRevisionAction = {
   editRevision: number;
 };
 
+/** Session-only export policy; lastAction is diagnostic history, not a revision inventory. */
+export type SelectiveRevisionPolicy =
+  | { mode: 'ordinary' }
+  | { mode: 'preserve'; lastAction: SelectiveRevisionAction };
+
 /**
  * A package-level (non-revision) mutation recorded during a session.
  *
@@ -124,11 +129,11 @@ export type DocxSession = {
    */
   nonRevisionManifest: NonRevisionChange[];
   /**
-   * Most recent selective revision disposition in this in-memory session.
-   * A later clean save uses this marker to prevent automatically accepting
-   * remaining revisions that the caller deliberately left unresolved.
+   * Sticky session policy, published with changed XML by mutateSession.
+   * Later edits and export acknowledgements do not reset preservation mode.
+   * Remaining revisions are always derived from document contents at export.
    */
-  selectiveRevisionAction: SelectiveRevisionAction | null;
+  selectiveRevisionPolicy: SelectiveRevisionPolicy;
   createdAt: Date;
   lastAccessedAt: Date;
   expiresAt: Date;
@@ -260,7 +265,7 @@ export class SessionManager {
       if (isDocxSession(active) && isDocxSession(candidate)) {
         candidate.saveCache = new Map(active.saveCache);
         candidate.nonRevisionManifest = structuredClone(active.nonRevisionManifest);
-        candidate.selectiveRevisionAction = structuredClone(active.selectiveRevisionAction);
+        candidate.selectiveRevisionPolicy = structuredClone(active.selectiveRevisionPolicy);
         const allocator = revisionAllocator(active).fork();
         revisionIdAllocators.set(candidate, allocator);
         candidate.revisionIdState = active.revisionIdState ? allocator.readyState : null;
@@ -289,7 +294,7 @@ export class SessionManager {
         active.editRevision += 1;
         if (isDocxSession(active) && isDocxSession(candidate)) {
           active.nonRevisionManifest = candidate.nonRevisionManifest;
-          active.selectiveRevisionAction = candidate.selectiveRevisionAction;
+          active.selectiveRevisionPolicy = candidate.selectiveRevisionPolicy;
           active.saveCache.clear();
           active.extractionCache = null;
         } else if (isOdfSession(active) && isOdfSession(candidate)) {
@@ -523,7 +528,7 @@ export class SessionManager {
         saveCache: new Map<string, SaveCacheEntry>(),
         extractionCache: null,
         nonRevisionManifest: [],
-        selectiveRevisionAction: null,
+        selectiveRevisionPolicy: { mode: 'ordinary' },
         createdAt: now,
         lastAccessedAt: now,
         expiresAt,
@@ -810,9 +815,15 @@ export class SessionManager {
     session: DocxSession,
     action: Omit<SelectiveRevisionAction, 'editRevision'>,
   ): void {
-    session.selectiveRevisionAction = {
-      ...action,
-      editRevision: session.editRevision,
+    // Called on the unpublished mutation candidate. Failure/no-op discards this
+    // transition; only changed package contents authorize publishing it.
+    session.selectiveRevisionPolicy = {
+      mode: 'preserve',
+      lastAction: {
+        ...action,
+        selectedRevisionIds: [...action.selectedRevisionIds],
+        editRevision: session.editRevision,
+      },
     };
   }
 

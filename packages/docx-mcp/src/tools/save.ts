@@ -191,9 +191,9 @@ export async function save(
     const revision = session.editRevision;
     const editCount = session.editCount;
     const aiAuthor = session.aiAuthor;
-    const selectivePolicy = session.selectiveRevisionAction;
-    const selectiveRevisionAction = selectivePolicy
-      ? { ...selectivePolicy, selectedRevisionIds: [...selectivePolicy.selectedRevisionIds] }
+    const selectivePolicy = session.selectiveRevisionPolicy;
+    const selectiveRevisionAction = selectivePolicy.mode === 'preserve'
+      ? { ...selectivePolicy.lastAction, selectedRevisionIds: [...selectivePolicy.lastAction.selectedRevisionIds] }
       : null;
     const nonRevisionManifest = session.nonRevisionManifest.map(change => ({
       ...change, parts: [...change.parts],
@@ -230,7 +230,7 @@ export async function save(
     let cleanArtifactDiscardedRevisions: SaveRevisionSummary | undefined;
     if (
       (format === 'clean' || format === 'both')
-      && selectiveRevisionAction
+      && selectivePolicy.mode === 'preserve'
       && aiAuthor
     ) {
       const remaining = await collectAiRevisionSummary(current.buffer, aiAuthor);
@@ -315,7 +315,7 @@ export async function save(
       // An in-flight save may finish after a mutation invalidated the cache.
       // Return its captured generation, but never publish it as current.
       if (session.doc === doc && session.editRevision === revision
-        && session.aiAuthor === aiAuthor && session.selectiveRevisionAction === selectivePolicy) {
+        && session.aiAuthor === aiAuthor && session.selectiveRevisionPolicy === selectivePolicy) {
         manager.setSaveCache(session, {
           ...artifacts,
           cacheKey,
