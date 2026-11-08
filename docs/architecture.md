@@ -30,6 +30,19 @@ ODT and Google Docs are alternative document sources for supported operations. T
 
 `@usejunior/odf-core` and `@usejunior/google-docs-core` support the alternative ODT and Google Docs paths.
 
+## Provider Loading
+
+The ODF and Google Docs loaders each share one import promise for the lifetime of
+an MCP or CLI process. Concurrent calls join that attempt. A successful import
+retains the module; a failed import retains its original cause in a discriminated
+`failed` state and returns `null` to tool callers. Failure is cached until the
+process restarts, so installing or repairing a provider requires a restart.
+
+The internal loader state distinguishes `idle`, `loading`, `ready`, and `failed`
+without changing tool responses. Existing callers continue to report
+`MISSING_DEPENDENCY` for unavailable editing providers and `ODF_UNAVAILABLE` for
+unavailable DOCX-to-ODT conversion.
+
 ## MCP And CLI
 
 Running `safe-docx` with no command starts the MCP server. The CLI can also invoke tools directly:
