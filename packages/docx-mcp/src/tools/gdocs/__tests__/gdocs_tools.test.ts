@@ -44,7 +44,9 @@ function makeMockParagraphs() {
 
 function makeMockDoc() {
   const paragraphs = makeMockParagraphs();
+  let confirmedWriteVersion = 0;
   return {
+    getConfirmedWriteVersion: () => confirmedWriteVersion,
     getParagraphs: vi.fn(() => paragraphs),
     getParagraphTextById: vi.fn((anchorId: string) => {
       const p = paragraphs.find(p => p.anchorId === anchorId || p.anchorName === anchorId);
@@ -57,9 +59,10 @@ function makeMockDoc() {
       // Simulate text replacement
       const p = paragraphs.find(p => p.anchorId === _anchorId || p.anchorName === _anchorId);
       if (p) p.text = p.text.replace(_old, _new);
+      if (_old !== _new) confirmedWriteVersion++;
     }),
-    insertParagraph: vi.fn(async () => ({ newAnchorId: 't.0:_bk_3' })),
-    executeBatchUpdate: vi.fn(async () => ({})),
+    insertParagraph: vi.fn(async () => { confirmedWriteVersion++; return { newAnchorId: 't.0:_bk_3' }; }),
+    executeBatchUpdate: vi.fn(async () => { confirmedWriteVersion++; return {}; }),
     exportAsDocx: vi.fn(async () => Buffer.from('PK\x03\x04mock-docx')),
     getDocId: vi.fn(() => 'test-doc-id-123'),
     getRevisionId: vi.fn(() => 'rev_abc123'),

@@ -11,16 +11,18 @@ export async function acceptChanges(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'accept_changes' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
+  return await manager.mutateSession(session, async (session) => {
 
-  try {
-    const stats = await session.doc.acceptChanges();
-    // A no-op sweep must not look like an edit or drop cached views (#1084).
-    if (revisionResultChangedDocument(stats)) manager.markEdited(session);
-    return ok(mergeSessionResolutionMetadata({
-      ...stats,
-      file_path: manager.normalizePath(session.originalPath),
-    }, metadata));
-  } catch (e: unknown) {
-    return err('ACCEPT_CHANGES_ERROR', errorMessage(e));
-  }
+    try {
+      const stats = await session.doc.acceptChanges();
+      // A no-op sweep must not look like an edit or drop cached views (#1084).
+      if (revisionResultChangedDocument(stats)) manager.markEdited(session);
+      return ok(mergeSessionResolutionMetadata({
+        ...stats,
+        file_path: manager.normalizePath(session.originalPath),
+      }, metadata));
+    } catch (e: unknown) {
+      return err('ACCEPT_CHANGES_ERROR', errorMessage(e));
+    }
+  });
 }

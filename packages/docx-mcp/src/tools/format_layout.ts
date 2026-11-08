@@ -323,244 +323,246 @@ export async function formatLayout(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'format_layout' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const ctx = await getRevisionContextForSession(session);
+    return await manager.mutateSession(session, async (session) => {
+      const ctx = await getRevisionContextForSession(session);
 
-    const strict = params.strict ?? true;
-    if (typeof strict !== 'boolean') {
-      return err('VALIDATION_ERROR', 'strict must be a boolean.', 'Set strict to true or false.');
-    }
+      const strict = params.strict ?? true;
+      if (typeof strict !== 'boolean') {
+        return err('VALIDATION_ERROR', 'strict must be a boolean.', 'Set strict to true or false.');
+      }
 
-    const paragraphSpacing = parseParagraphSpacingMutation(params.paragraph_spacing);
-    if (isValidationError(paragraphSpacing)) {
-      return err('VALIDATION_ERROR', paragraphSpacing.message, paragraphSpacing.hint);
-    }
+      const paragraphSpacing = parseParagraphSpacingMutation(params.paragraph_spacing);
+      if (isValidationError(paragraphSpacing)) {
+        return err('VALIDATION_ERROR', paragraphSpacing.message, paragraphSpacing.hint);
+      }
 
-    const paragraphProperties = parseParagraphPropertiesMutation(params.paragraph_properties);
-    if (isValidationError(paragraphProperties)) {
-      return err('VALIDATION_ERROR', paragraphProperties.message, paragraphProperties.hint);
-    }
+      const paragraphProperties = parseParagraphPropertiesMutation(params.paragraph_properties);
+      if (isValidationError(paragraphProperties)) {
+        return err('VALIDATION_ERROR', paragraphProperties.message, paragraphProperties.hint);
+      }
 
-    const rowHeight = parseRowHeightMutation(params.row_height);
-    if (isValidationError(rowHeight)) {
-      return err('VALIDATION_ERROR', rowHeight.message, rowHeight.hint);
-    }
+      const rowHeight = parseRowHeightMutation(params.row_height);
+      if (isValidationError(rowHeight)) {
+        return err('VALIDATION_ERROR', rowHeight.message, rowHeight.hint);
+      }
 
-    const cellPadding = parseCellPaddingMutation(params.cell_padding);
-    if (isValidationError(cellPadding)) {
-      return err('VALIDATION_ERROR', cellPadding.message, cellPadding.hint);
-    }
+      const cellPadding = parseCellPaddingMutation(params.cell_padding);
+      if (isValidationError(cellPadding)) {
+        return err('VALIDATION_ERROR', cellPadding.message, cellPadding.hint);
+      }
 
-    if (!paragraphSpacing && !paragraphProperties && !rowHeight && !cellPadding) {
-      return err(
-        'VALIDATION_ERROR',
-        'No layout operation was provided.',
-        'Provide at least one of paragraph_spacing, paragraph_properties, row_height, or cell_padding.',
-      );
-    }
-
-    if (paragraphSpacing && strict) {
-      const missing = paragraphSpacing.paragraphIds.filter((id) => session.doc.getParagraphElementById(id) === null);
-      if (missing.length > 0) {
+      if (!paragraphSpacing && !paragraphProperties && !rowHeight && !cellPadding) {
         return err(
-          'INVALID_SELECTOR',
-          `paragraph_spacing references missing paragraph IDs: ${missing.join(', ')}`,
-          'Set strict=false to ignore missing selectors and apply best-effort changes.',
+          'VALIDATION_ERROR',
+          'No layout operation was provided.',
+          'Provide at least one of paragraph_spacing, paragraph_properties, row_height, or cell_padding.',
         );
       }
-    }
 
-    if (paragraphProperties && strict) {
-      const missing = paragraphProperties.paragraphIds.filter((id) => session.doc.getParagraphElementById(id) === null);
-      if (missing.length > 0) {
+      if (paragraphSpacing && strict) {
+        const missing = paragraphSpacing.paragraphIds.filter((id) => session.doc.getParagraphElementById(id) === null);
+        if (missing.length > 0) {
+          return err(
+            'INVALID_SELECTOR',
+            `paragraph_spacing references missing paragraph IDs: ${missing.join(', ')}`,
+            'Set strict=false to ignore missing selectors and apply best-effort changes.',
+          );
+        }
+      }
+
+      if (paragraphProperties && strict) {
+        const missing = paragraphProperties.paragraphIds.filter((id) => session.doc.getParagraphElementById(id) === null);
+        if (missing.length > 0) {
+          return err(
+            'INVALID_SELECTOR',
+            `paragraph_properties references missing paragraph IDs: ${missing.join(', ')}`,
+            'Set strict=false to ignore missing selectors and apply best-effort changes.',
+          );
+        }
+      }
+
+      if (strict && (rowHeight || cellPadding)) {
+        // Preflight selectors against a cloned document so strict-mode failures
+        // do not partially mutate the active session document.
+        const snapshot = await session.doc.toBuffer({ cleanBookmarks: false });
+        const previewDoc = await DocxDocument.load(snapshot.buffer);
+
+        if (rowHeight) {
+          const rowPreview = previewDoc.setTableRowHeight(rowHeight);
+          if (rowPreview.missingTableIndexes.length > 0) {
+            return err(
+              'INVALID_SELECTOR',
+              `row_height missing table indexes: ${rowPreview.missingTableIndexes.join(', ')}`,
+              'Set strict=false to allow best-effort application.',
+            );
+          }
+          if (rowPreview.missingRowIndexes.length > 0) {
+            return err(
+              'INVALID_SELECTOR',
+              `row_height missing row indexes: ${rowPreview.missingRowIndexes
+                .map((x) => `${x.tableIndex}:${x.rowIndex}`)
+                .join(', ')}`,
+              'Set strict=false to allow best-effort application.',
+            );
+          }
+        }
+
+        if (cellPadding) {
+          const cellPreview = previewDoc.setTableCellPadding(cellPadding);
+          if (cellPreview.missingTableIndexes.length > 0) {
+            return err(
+              'INVALID_SELECTOR',
+              `cell_padding missing table indexes: ${cellPreview.missingTableIndexes.join(', ')}`,
+              'Set strict=false to allow best-effort application.',
+            );
+          }
+          if (cellPreview.missingRowIndexes.length > 0) {
+            return err(
+              'INVALID_SELECTOR',
+              `cell_padding missing row indexes: ${cellPreview.missingRowIndexes
+                .map((x) => `${x.tableIndex}:${x.rowIndex}`)
+                .join(', ')}`,
+              'Set strict=false to allow best-effort application.',
+            );
+          }
+          if (cellPreview.missingCellIndexes.length > 0) {
+            return err(
+              'INVALID_SELECTOR',
+              `cell_padding missing cell indexes: ${cellPreview.missingCellIndexes
+                .map((x) => `${x.tableIndex}:${x.rowIndex}:${x.cellIndex}`)
+                .join(', ')}`,
+              'Set strict=false to allow best-effort application.',
+            );
+          }
+        }
+      }
+
+      const paragraphCountBefore = session.doc.getParagraphs().length;
+      const warnings: string[] = [];
+
+      const revisionPreflight = await preflightAiRevisionMutation(
+        session,
+        ctx,
+        (previewDoc, previewCtx) => {
+          const previewParagraphCountBefore = previewDoc.getParagraphs().length;
+          // paragraph_properties runs first so its foreign-revision check sees
+          // the original w:pPrChange before spacing could replace it.
+          if (paragraphProperties) previewDoc.setParagraphProperties(paragraphProperties, previewCtx);
+          if (paragraphSpacing) previewDoc.setParagraphSpacing(paragraphSpacing, previewCtx);
+          if (rowHeight) previewDoc.setTableRowHeight(rowHeight, previewCtx);
+          if (cellPadding) previewDoc.setTableCellPadding(cellPadding, previewCtx);
+          const previewParagraphCountAfter = previewDoc.getParagraphs().length;
+          if (previewParagraphCountAfter !== previewParagraphCountBefore) {
+            throw new Error(
+              `Layout formatting changed paragraph count (${previewParagraphCountBefore} -> ${previewParagraphCountAfter}).`,
+            );
+          }
+        },
+      );
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
+
+      const paragraphPropertiesResult = paragraphProperties
+        ? session.doc.setParagraphProperties(paragraphProperties, ctx)
+        : null;
+      const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
+      const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;
+      const cellPaddingResult = cellPadding ? session.doc.setTableCellPadding(cellPadding, ctx) : null;
+
+      const paragraphCountAfter = session.doc.getParagraphs().length;
+      if (paragraphCountAfter !== paragraphCountBefore) {
         return err(
-          'INVALID_SELECTOR',
-          `paragraph_properties references missing paragraph IDs: ${missing.join(', ')}`,
-          'Set strict=false to ignore missing selectors and apply best-effort changes.',
+          'INVARIANT_VIOLATION',
+          `Layout formatting changed paragraph count (${paragraphCountBefore} -> ${paragraphCountAfter}).`,
+          'Layout operations must only mutate OOXML spacing/geometry and must not insert spacer paragraphs.',
         );
       }
-    }
 
-    if (strict && (rowHeight || cellPadding)) {
-      // Preflight selectors against a cloned document so strict-mode failures
-      // do not partially mutate the active session document.
-      const snapshot = await session.doc.toBuffer({ cleanBookmarks: false });
-      const previewDoc = await DocxDocument.load(snapshot.buffer);
-
-      if (rowHeight) {
-        const rowPreview = previewDoc.setTableRowHeight(rowHeight);
-        if (rowPreview.missingTableIndexes.length > 0) {
-          return err(
-            'INVALID_SELECTOR',
-            `row_height missing table indexes: ${rowPreview.missingTableIndexes.join(', ')}`,
-            'Set strict=false to allow best-effort application.',
-          );
+      if (paragraphSpacingResult && paragraphSpacingResult.missingParagraphIds.length > 0) {
+        const message = `paragraph_spacing skipped missing paragraph IDs: ${paragraphSpacingResult.missingParagraphIds.join(', ')}`;
+        if (strict) {
+          return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
         }
-        if (rowPreview.missingRowIndexes.length > 0) {
-          return err(
-            'INVALID_SELECTOR',
-            `row_height missing row indexes: ${rowPreview.missingRowIndexes
-              .map((x) => `${x.tableIndex}:${x.rowIndex}`)
-              .join(', ')}`,
-            'Set strict=false to allow best-effort application.',
-          );
-        }
-      }
-
-      if (cellPadding) {
-        const cellPreview = previewDoc.setTableCellPadding(cellPadding);
-        if (cellPreview.missingTableIndexes.length > 0) {
-          return err(
-            'INVALID_SELECTOR',
-            `cell_padding missing table indexes: ${cellPreview.missingTableIndexes.join(', ')}`,
-            'Set strict=false to allow best-effort application.',
-          );
-        }
-        if (cellPreview.missingRowIndexes.length > 0) {
-          return err(
-            'INVALID_SELECTOR',
-            `cell_padding missing row indexes: ${cellPreview.missingRowIndexes
-              .map((x) => `${x.tableIndex}:${x.rowIndex}`)
-              .join(', ')}`,
-            'Set strict=false to allow best-effort application.',
-          );
-        }
-        if (cellPreview.missingCellIndexes.length > 0) {
-          return err(
-            'INVALID_SELECTOR',
-            `cell_padding missing cell indexes: ${cellPreview.missingCellIndexes
-              .map((x) => `${x.tableIndex}:${x.rowIndex}:${x.cellIndex}`)
-              .join(', ')}`,
-            'Set strict=false to allow best-effort application.',
-          );
-        }
-      }
-    }
-
-    const paragraphCountBefore = session.doc.getParagraphs().length;
-    const warnings: string[] = [];
-
-    const revisionPreflight = await preflightAiRevisionMutation(
-      session,
-      ctx,
-      (previewDoc, previewCtx) => {
-        const previewParagraphCountBefore = previewDoc.getParagraphs().length;
-        // paragraph_properties runs first so its foreign-revision check sees
-        // the original w:pPrChange before spacing could replace it.
-        if (paragraphProperties) previewDoc.setParagraphProperties(paragraphProperties, previewCtx);
-        if (paragraphSpacing) previewDoc.setParagraphSpacing(paragraphSpacing, previewCtx);
-        if (rowHeight) previewDoc.setTableRowHeight(rowHeight, previewCtx);
-        if (cellPadding) previewDoc.setTableCellPadding(cellPadding, previewCtx);
-        const previewParagraphCountAfter = previewDoc.getParagraphs().length;
-        if (previewParagraphCountAfter !== previewParagraphCountBefore) {
-          throw new Error(
-            `Layout formatting changed paragraph count (${previewParagraphCountBefore} -> ${previewParagraphCountAfter}).`,
-          );
-        }
-      },
-    );
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
-
-    const paragraphPropertiesResult = paragraphProperties
-      ? session.doc.setParagraphProperties(paragraphProperties, ctx)
-      : null;
-    const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
-    const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;
-    const cellPaddingResult = cellPadding ? session.doc.setTableCellPadding(cellPadding, ctx) : null;
-
-    const paragraphCountAfter = session.doc.getParagraphs().length;
-    if (paragraphCountAfter !== paragraphCountBefore) {
-      return err(
-        'INVARIANT_VIOLATION',
-        `Layout formatting changed paragraph count (${paragraphCountBefore} -> ${paragraphCountAfter}).`,
-        'Layout operations must only mutate OOXML spacing/geometry and must not insert spacer paragraphs.',
-      );
-    }
-
-    if (paragraphSpacingResult && paragraphSpacingResult.missingParagraphIds.length > 0) {
-      const message = `paragraph_spacing skipped missing paragraph IDs: ${paragraphSpacingResult.missingParagraphIds.join(', ')}`;
-      if (strict) {
-        return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
-      }
-      warnings.push(message);
-    }
-    if (paragraphPropertiesResult && paragraphPropertiesResult.missingParagraphIds.length > 0) {
-      const message = `paragraph_properties skipped missing paragraph IDs: ${paragraphPropertiesResult.missingParagraphIds.join(', ')}`;
-      if (strict) {
-        return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
-      }
-      warnings.push(message);
-    }
-    if (rowHeightResult) {
-      if (rowHeightResult.missingTableIndexes.length > 0) {
-        const message = `row_height missing table indexes: ${rowHeightResult.missingTableIndexes.join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
         warnings.push(message);
       }
-      if (rowHeightResult.missingRowIndexes.length > 0) {
-        const message = `row_height missing row indexes: ${rowHeightResult.missingRowIndexes
-          .map((x) => `${x.tableIndex}:${x.rowIndex}`)
-          .join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+      if (paragraphPropertiesResult && paragraphPropertiesResult.missingParagraphIds.length > 0) {
+        const message = `paragraph_properties skipped missing paragraph IDs: ${paragraphPropertiesResult.missingParagraphIds.join(', ')}`;
+        if (strict) {
+          return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        }
         warnings.push(message);
       }
-    }
-    if (cellPaddingResult) {
-      if (cellPaddingResult.missingTableIndexes.length > 0) {
-        const message = `cell_padding missing table indexes: ${cellPaddingResult.missingTableIndexes.join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
-        warnings.push(message);
+      if (rowHeightResult) {
+        if (rowHeightResult.missingTableIndexes.length > 0) {
+          const message = `row_height missing table indexes: ${rowHeightResult.missingTableIndexes.join(', ')}`;
+          if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+          warnings.push(message);
+        }
+        if (rowHeightResult.missingRowIndexes.length > 0) {
+          const message = `row_height missing row indexes: ${rowHeightResult.missingRowIndexes
+            .map((x) => `${x.tableIndex}:${x.rowIndex}`)
+            .join(', ')}`;
+          if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+          warnings.push(message);
+        }
       }
-      if (cellPaddingResult.missingRowIndexes.length > 0) {
-        const message = `cell_padding missing row indexes: ${cellPaddingResult.missingRowIndexes
-          .map((x) => `${x.tableIndex}:${x.rowIndex}`)
-          .join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
-        warnings.push(message);
+      if (cellPaddingResult) {
+        if (cellPaddingResult.missingTableIndexes.length > 0) {
+          const message = `cell_padding missing table indexes: ${cellPaddingResult.missingTableIndexes.join(', ')}`;
+          if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+          warnings.push(message);
+        }
+        if (cellPaddingResult.missingRowIndexes.length > 0) {
+          const message = `cell_padding missing row indexes: ${cellPaddingResult.missingRowIndexes
+            .map((x) => `${x.tableIndex}:${x.rowIndex}`)
+            .join(', ')}`;
+          if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+          warnings.push(message);
+        }
+        if (cellPaddingResult.missingCellIndexes.length > 0) {
+          const message = `cell_padding missing cell indexes: ${cellPaddingResult.missingCellIndexes
+            .map((x) => `${x.tableIndex}:${x.rowIndex}:${x.cellIndex}`)
+            .join(', ')}`;
+          if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+          warnings.push(message);
+        }
       }
-      if (cellPaddingResult.missingCellIndexes.length > 0) {
-        const message = `cell_padding missing cell indexes: ${cellPaddingResult.missingCellIndexes
-          .map((x) => `${x.tableIndex}:${x.rowIndex}:${x.cellIndex}`)
-          .join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
-        warnings.push(message);
-      }
-    }
 
-    // A paragraph touched by both paragraph groups counts once.
-    const affectedParagraphIds = new Set<string>(paragraphPropertiesResult?.affectedParagraphIds ?? []);
-    if (paragraphSpacing && paragraphSpacingResult) {
-      const missing = new Set(paragraphSpacingResult.missingParagraphIds);
-      for (const id of paragraphSpacing.paragraphIds) if (!missing.has(id)) affectedParagraphIds.add(id);
-    }
-    const affectedParagraphs = affectedParagraphIds.size;
-    const affectedRows = rowHeightResult?.affectedRows ?? 0;
-    const affectedCells = cellPaddingResult?.affectedCells ?? 0;
-    const totalAffected = affectedParagraphs + affectedRows + affectedCells;
-    if (totalAffected > 0) {
-      manager.markEdited(session);
-    }
-    manager.touch(session);
+      // A paragraph touched by both paragraph groups counts once.
+      const affectedParagraphIds = new Set<string>(paragraphPropertiesResult?.affectedParagraphIds ?? []);
+      if (paragraphSpacing && paragraphSpacingResult) {
+        const missing = new Set(paragraphSpacingResult.missingParagraphIds);
+        for (const id of paragraphSpacing.paragraphIds) if (!missing.has(id)) affectedParagraphIds.add(id);
+      }
+      const affectedParagraphs = affectedParagraphIds.size;
+      const affectedRows = rowHeightResult?.affectedRows ?? 0;
+      const affectedCells = cellPaddingResult?.affectedCells ?? 0;
+      const totalAffected = affectedParagraphs + affectedRows + affectedCells;
+      if (totalAffected > 0) {
+        manager.markEdited(session);
+      }
+      manager.touch(session);
 
-    return ok(mergeSessionResolutionMetadata({
-      file_path: manager.normalizePath(session.originalPath),
-      strict,
-      mutation_summary: {
-        affected_paragraphs: affectedParagraphs,
-        affected_rows: affectedRows,
-        affected_cells: affectedCells,
-      },
-      paragraph_spacing_result: paragraphSpacingResult ?? undefined,
-      paragraph_properties_result: paragraphPropertiesResult ?? undefined,
-      row_height_result: rowHeightResult ?? undefined,
-      cell_padding_result: cellPaddingResult ?? undefined,
-      no_spacer_paragraphs: paragraphCountBefore === paragraphCountAfter,
-      paragraph_count_before: paragraphCountBefore,
-      paragraph_count_after: paragraphCountAfter,
-      warnings,
-      message: totalAffected > 0
-        ? 'Layout formatting applied with deterministic OOXML geometry mutations.'
-        : 'No document nodes matched the provided selectors.',
-    }, metadata));
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        strict,
+        mutation_summary: {
+          affected_paragraphs: affectedParagraphs,
+          affected_rows: affectedRows,
+          affected_cells: affectedCells,
+        },
+        paragraph_spacing_result: paragraphSpacingResult ?? undefined,
+        paragraph_properties_result: paragraphPropertiesResult ?? undefined,
+        row_height_result: rowHeightResult ?? undefined,
+        cell_padding_result: cellPaddingResult ?? undefined,
+        no_spacer_paragraphs: paragraphCountBefore === paragraphCountAfter,
+        paragraph_count_before: paragraphCountBefore,
+        paragraph_count_after: paragraphCountAfter,
+        warnings,
+        message: totalAffected > 0
+          ? 'Layout formatting applied with deterministic OOXML geometry mutations.'
+          : 'No document nodes matched the provided selectors.',
+      }, metadata));
+    });
   } catch (e: unknown) {
     if (e instanceof ParagraphPropertiesMutationError) {
       return err(e.code, e.message, 'Resolve the existing paragraph-property revision (for example with accept_changes), then retry.');

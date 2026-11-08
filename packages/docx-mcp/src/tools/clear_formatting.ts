@@ -71,92 +71,94 @@ export async function clearFormatting(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'clear_formatting' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const revisionCtx = ctx ?? await getRevisionContextForSession(session);
+    return await manager.mutateSession(session, async (session) => {
+      const revisionCtx = ctx ? { ...ctx, idState: session.revisionIdState ??= structuredClone(ctx.idState) } : await getRevisionContextForSession(session);
 
-    const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
-    const pids = params.paragraph_ids ?? nodes.map((n) => n.id);
-    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): number => {
-      let modifiedCount = 0;
+      const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
+      const pids = params.paragraph_ids ?? nodes.map((n) => n.id);
+      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): number => {
+        let modifiedCount = 0;
 
-      for (const pid of pids) {
-        const pEl = doc.getParagraphElementById(pid);
-        if (!pEl) continue;
+        for (const pid of pids) {
+          const pEl = doc.getParagraphElementById(pid);
+          if (!pEl) continue;
 
-        const rElems = Array.from(pEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
-        let pModified = false;
+          const rElems = Array.from(pEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
+          let pModified = false;
 
-        for (const r of rElems) {
-          const rPr = r.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0);
-          if (!rPr) continue;
+          for (const r of rElems) {
+            const rPr = r.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0);
+            if (!rPr) continue;
 
-          const oldRPrClone = activeCtx ? (rPr.cloneNode(true) as Element) : null;
-          const removeRunProps = activeCtx ? removeDirectChildrenByName : removeDescendantsByName;
-          let rModified = false;
+            const oldRPrClone = activeCtx ? (rPr.cloneNode(true) as Element) : null;
+            const removeRunProps = activeCtx ? removeDirectChildrenByName : removeDescendantsByName;
+            let rModified = false;
 
-          if (params.clear_highlight && removeRunProps(rPr, [W.highlight])) {
-            rModified = true;
-          }
-
-          if (params.clear_bold && removeRunProps(rPr, [W.b])) {
-            rModified = true;
-          }
-
-          if (params.clear_italic && removeRunProps(rPr, [W.i])) {
-            rModified = true;
-          }
-
-          if (params.clear_underline && removeRunProps(rPr, [W.u])) {
-            rModified = true;
-          }
-
-          if (params.clear_color && removeRunProps(rPr, [W.color])) {
-            rModified = true;
-          }
-
-          if (params.clear_font && removeRunProps(rPr, [W.rFonts, W.sz, W.szCs])) {
-            rModified = true;
-          }
-
-          if (activeCtx && rModified) {
-            for (const stale of getDirectChildrenByName(rPr, 'rPrChange')) {
-              rPr.removeChild(stale);
+            if (params.clear_highlight && removeRunProps(rPr, [W.highlight])) {
+              rModified = true;
             }
-            rPr.appendChild(buildRPrChangeElement(oldRPrClone, activeCtx));
-          }
 
-          if (rModified) {
-            pModified = true;
+            if (params.clear_bold && removeRunProps(rPr, [W.b])) {
+              rModified = true;
+            }
+
+            if (params.clear_italic && removeRunProps(rPr, [W.i])) {
+              rModified = true;
+            }
+
+            if (params.clear_underline && removeRunProps(rPr, [W.u])) {
+              rModified = true;
+            }
+
+            if (params.clear_color && removeRunProps(rPr, [W.color])) {
+              rModified = true;
+            }
+
+            if (params.clear_font && removeRunProps(rPr, [W.rFonts, W.sz, W.szCs])) {
+              rModified = true;
+            }
+
+            if (activeCtx && rModified) {
+              for (const stale of getDirectChildrenByName(rPr, 'rPrChange')) {
+                rPr.removeChild(stale);
+              }
+              rPr.appendChild(buildRPrChangeElement(oldRPrClone, activeCtx));
+            }
+
+            if (rModified) {
+              pModified = true;
+            }
           }
+          if (pModified) modifiedCount++;
         }
-        if (pModified) modifiedCount++;
-      }
+
+        if (modifiedCount > 0) {
+          invalidateDocumentCaches(doc);
+        }
+
+        return modifiedCount;
+      };
+
+      const revisionPreflight = await preflightAiRevisionMutation(
+        session,
+        revisionCtx,
+        (doc, activeCtx) => { mutate(doc, activeCtx); },
+      );
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
+
+      const modifiedCount = mutate(session.doc, revisionCtx);
 
       if (modifiedCount > 0) {
-        invalidateDocumentCaches(doc);
+        manager.markEdited(session);
       }
 
-      return modifiedCount;
-    };
-
-    const revisionPreflight = await preflightAiRevisionMutation(
-      session,
-      revisionCtx,
-      (doc, activeCtx) => { mutate(doc, activeCtx); },
-    );
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
-
-    const modifiedCount = mutate(session.doc, revisionCtx);
-
-    if (modifiedCount > 0) {
-      manager.markEdited(session);
-    }
-
-    return ok(mergeSessionResolutionMetadata({
-      success: true,
-      file_path: manager.normalizePath(session.originalPath),
-      paragraphs_modified: modifiedCount,
-      ...(revisionPreflight.warnings.length > 0 ? { warnings: revisionPreflight.warnings } : {}),
-    }, metadata));
+      return ok(mergeSessionResolutionMetadata({
+        success: true,
+        file_path: manager.normalizePath(session.originalPath),
+        paragraphs_modified: modifiedCount,
+        ...(revisionPreflight.warnings.length > 0 ? { warnings: revisionPreflight.warnings } : {}),
+      }, metadata));
+    });
   } catch (e: any) {
     return err('CLEAR_FORMATTING_ERROR', `Failed to clear formatting: ${e.message}`);
   }
