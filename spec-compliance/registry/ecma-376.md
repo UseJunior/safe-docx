@@ -142,7 +142,9 @@ DrawingML `wp:docPr/@id`, combined for the two stored copies of one twinned box
 identified boxes. A box with no counterpart stays whole in the body comparison,
 which tracks its anchor run as inserted or deleted, and every paragraph and text
 run of its story is marked with the same revision kind, in every stored copy.
-Anonymous boxes whose storage shapes disagree are still refused.
+An inserted or deleted box whose story holds a nested box or a prohibited
+reference is refused, as a changed one is. Anonymous boxes whose storage
+shapes disagree are still refused.
 
 ## [ECMA-PART4-19-1-2-22] VML text-box host (v:textbox)
 

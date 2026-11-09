@@ -1721,6 +1721,45 @@ export async function prepareTextBoxStoryComparison(
   const unpairedTextBoxes =
     pairedCopies.length !== originalTextBoxes.length ||
     pairedCopies.length !== revisedTextBoxes.length;
+  // A box with no counterpart is tracked whole, but its story must still be
+  // inside the supported subset: a nested box or a note/comment reference in
+  // it would be carried into the redline without its own lifecycle (#1380,
+  // #1385).
+  const sides = [
+    {
+      side: 'original' as const,
+      candidates: originalCandidates,
+      paired: new Set(pairing.pairs.map(([original]) => original)),
+      rawIndex: originalRawIndex,
+      ordinals: visualTextBoxOrdinals(originalDocument),
+    },
+    {
+      side: 'revised' as const,
+      candidates: revisedCandidates,
+      paired: new Set(pairing.pairs.map(([, revised]) => revised)),
+      rawIndex: revisedRawIndex,
+      ordinals: visualOrdinals,
+    },
+  ];
+  for (const { side, candidates, paired, rawIndex, ordinals } of sides) {
+    for (const [candidateIndex, candidate] of candidates.entries()) {
+      if (paired.has(candidateIndex)) continue;
+      for (const copy of candidate.copies) {
+        const reason = unsupportedStoryReason(copy);
+        if (!reason) continue;
+        const index = rawIndex.get(copy)!;
+        const paragraphId = textBoxParagraphId(copy);
+        throw new UnsupportedTextBoxRevisionError([{
+          index: ordinals[index] ?? index,
+          partPath: 'word/document.xml',
+          reason: `${side === 'original' ? 'deleted' : 'inserted'} text box: ${reason}`,
+          ...(side === 'original'
+            ? { originalParagraphId: paragraphId }
+            : { revisedParagraphId: paragraphId }),
+        }]);
+      }
+    }
+  }
 
   const changedCopies: Array<{ originalIndex: number; revisedIndex: number }> = [];
   for (const [originalTextBox, revisedTextBox] of pairedCopies) {
@@ -1884,7 +1923,7 @@ export async function assembleTextBoxStoryComparison(
       continue;
     }
     if (storyResult.partPath === 'word/document.xml') {
-      await spliceBodyTextBoxStory(targetDocument, storyResult, storyBody);
+      await spliceBodyTextBoxStory(targetDocument, outerArchive, storyResult, storyBody);
       continue;
     }
     const target = targetDocument
@@ -1944,12 +1983,28 @@ function anchorRevisionWrapper(
   return undefined;
 }
 
-async function storyBodyOf(document: Buffer): Promise<Element> {
-  const archive = await DocxArchive.load(document);
+/**
+ * One side's story body, with its relationship ids rebound to the compared
+ * package. The side story carries its own document's ids, which the compared
+ * package (built on the revised relationships) may number differently.
+ */
+async function reboundSideStoryBody(
+  side: Buffer,
+  outerArchive: DocxArchive,
+  visualIndex: number,
+): Promise<Element> {
+  const archive = await DocxArchive.load(side);
   const body = parseXml(await archive.getDocumentXml())
     .getElementsByTagNameNS(OOXML.W_NS, 'body')
     .item(0);
   if (!body) throw new Error('A text-box story document has no w:body');
+  await remapComparedStoryRelationshipIds(
+    archive,
+    outerArchive,
+    'word/document.xml',
+    body,
+    visualIndex,
+  );
   return body;
 }
 
@@ -1976,6 +2031,7 @@ function replaceStoryContent(target: Element, storyBody: Element): void {
  */
 async function spliceBodyTextBoxStory(
   targetDocument: Document,
+  outerArchive: DocxArchive,
   storyResult: {
     index: number;
     visualIndex: number;
@@ -1992,7 +2048,7 @@ async function spliceBodyTextBoxStory(
   const kept = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) === undefined);
   const tracked = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) !== undefined);
   const sideBody = async (side: Buffer | undefined): Promise<Element | undefined> =>
-    side ? storyBodyOf(side) : undefined;
+    side ? reboundSideStoryBody(side, outerArchive, storyResult.visualIndex) : undefined;
   const trackedBodies = new Map<Element, Element | undefined>();
   for (const textBox of tracked) {
     trackedBodies.set(

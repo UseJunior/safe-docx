@@ -49,6 +49,7 @@ const NAMESPACES = {
     wp: 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
     a: 'http://schemas.openxmlformats.org/drawingml/2006/main',
     wps: 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape',
+    r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
   },
   ignorablePrefixes: ['wps'],
 } as const;
@@ -421,6 +422,79 @@ describe('body text-box insertion and deletion', () => {
     await and('accept-all keeps only the revised story and reject-all only the original', () => {
       expect(paragraphTexts(acceptAllChanges(output)).filter(Boolean)).toEqual(['New address']);
       expect(paragraphTexts(rejectAllChanges(output)).filter(Boolean)).toEqual(['Old address']);
+    });
+  });
+
+  test('a relocated anchor rebinds the story hyperlink ids of both sides', async ({ given, when, then, and }: AllureBddContext) => {
+    // Peer review of #1031: the side stories spliced into a re-tracked anchor
+    // carry their own documents' relationship ids. The original numbers the
+    // unchanged link rId5, the revised rId6; the output keeps only rId6.
+    const anchored = (story: string, relationshipId: string): string =>
+      `<w:p><w:r><w:t>All notices under this agreement shall be delivered in writing to the address shown in the box</w:t></w:r>` +
+      `<w:r><w:pict><v:shape id="boxA" style="width:200pt;height:50pt"><v:textbox><w:txbxContent>` +
+      `<w:p><w:hyperlink r:id="${relationshipId}"><w:r><w:t>${story}</w:t></w:r></w:hyperlink></w:p>` +
+      `</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`;
+    const others = para('Second paragraph stays here with plenty of words.') + para('Third paragraph also stays put with words.');
+    const link = (id: string) => [{ id, target: 'https://acme.example/' }];
+    const original = await given('a linked box first, its link numbered rId5', () =>
+      buildDocxFromBodyXml(anchored('Acme Corp', 'rId5') + others, link('rId5'), NAMESPACES));
+    const revised = await given('the linked box last and edited, its link numbered rId6', () =>
+      buildDocxFromBodyXml(others + anchored('Acme Corporation', 'rId6'), link('rId6'), NAMESPACES));
+
+    const result = await when('the documents are compared', () => compareDocuments(original, revised));
+    const archive = await DocxArchive.load(result.document);
+    const output = await archive.getDocumentXml();
+    const relationshipIds = new Set(
+      Array.from(parseXml((await archive.getFile('word/_rels/document.xml.rels'))!)
+        .getElementsByTagName('Relationship')).map((relationship) => relationship.getAttribute('Id')),
+    );
+    const linkIds = (xml: string): Array<string | null> =>
+      Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'hyperlink')).map((hyperlink) =>
+        hyperlink.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id'));
+
+    await then('the anchor was re-tracked, so both side stories were spliced', () => {
+      expect(textBoxes(output).map(anchorWrapper).sort()).toEqual(['del', 'ins']);
+    });
+    await and('every hyperlink in the output, accept-all and reject-all resolves', () => {
+      for (const xml of [output, acceptAllChanges(output), rejectAllChanges(output)]) {
+        const ids = linkIds(xml);
+        expect(ids.length).toBeGreaterThan(0);
+        for (const id of ids) expect(relationshipIds.has(id)).toBe(true);
+      }
+    });
+  });
+
+  test('an inserted or deleted box holding a nested text box is refused', async ({ given, when, then }: AllureBddContext) => {
+    // Peer review of #1031: a whole-box lifecycle must not carry a story
+    // shape the comparison refuses for a paired box (#1380).
+    const nestedBox =
+      `<w:p><w:r><w:pict><v:shape id="outer" style="width:200pt;height:50pt"><v:textbox><w:txbxContent>` +
+      `<w:p><w:r><w:t>Outer</w:t></w:r><w:r><w:pict><v:shape id="inner"><v:textbox><w:txbxContent>` +
+      `${para('Inner')}</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>` +
+      `</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`;
+    const plain = await given('a document without boxes', () => docx(para('Lead.')));
+    const nested = await given('the same document with a box holding a nested box', () =>
+      docx(para('Lead.') + nestedBox));
+
+    const failures = await when('the box is inserted, then deleted', async () => {
+      const outcomes: unknown[] = [];
+      for (const [before, after] of [[plain, nested], [nested, plain]] as const) {
+        try {
+          await compareDocuments(before, after);
+          outcomes.push(undefined);
+        } catch (error) {
+          outcomes.push(error);
+        }
+      }
+      return outcomes;
+    });
+
+    await then('both directions are refused with the nested-box reason', () => {
+      for (const failure of failures) {
+        expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+        expect((failure as UnsupportedTextBoxRevisionError).changes[0]?.reason)
+          .toContain('nested text boxes');
+      }
     });
   });
 
