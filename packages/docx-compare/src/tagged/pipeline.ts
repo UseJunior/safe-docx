@@ -95,7 +95,7 @@ import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { coalesceProjectionEquivalentBookmarkSplits } from './bookmarkSplitCoalescing.js';
 import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
-import { alignedInlineFootnoteAnchorPair } from './inlineFootnoteAnchorPair.js';
+import { alignedInlineNoteAnchorPair } from './inlineFootnoteAnchorPair.js';
 import {
   collectBookmarkReferenceNamesInXml,
   collectWordPartBookmarkNames,
@@ -118,8 +118,8 @@ import {
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
 import {
-  compareFootnoteDefinitions,
-  findCorrespondingFootnotePairs,
+  compareNoteDefinitions,
+  findCorrespondingNotePairs,
 } from './ancillaryNoteComparison.js';
 
 const OFFICE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -200,12 +200,19 @@ export class TaggedPublicationSafetyError extends Error {
 }
 
 /**
- * Reconcile a collision-renumbered footnote reference with its independently
- * tagged definition while retaining the reference identifier semantics.
+ * Reconcile a collision-renumbered footnote or endnote reference with its
+ * independently tagged definition while retaining the reference identifier
+ * semantics. Each kind is reconciled against its own definitions part; the
+ * same bounded eligibility rules apply to both, and every ineligible pair keeps
+ * the collision-safe separate-definition fallback.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @see https://github.com/UseJunior/safe-docx/issues/979
+ * @see https://github.com/UseJunior/safe-docx/issues/996
  */
-async function reconcileTaggedFootnotes(options: {
+async function reconcileTaggedNotes(options: {
+  kind: 'footnote' | 'endnote';
   originalArchive: DocxArchive;
   revisedArchive: DocxArchive;
   resultArchive: DocxArchive;
@@ -215,31 +222,35 @@ async function reconcileTaggedFootnotes(options: {
   formatDetection: FormatDetectionSettings;
   auxiliaryIdRenumberings: readonly { label: string; fromId: string; toId: string }[];
   baseSide?: 'original' | 'revised';
-  baseFootnotesArchive?: DocxArchive;
+  baseNotesArchive?: DocxArchive;
   stabilizedNoteKinds: Set<'footnote' | 'endnote'>;
 }): Promise<string> {
-  const pairs = findCorrespondingFootnotePairs(
+  const { kind } = options;
+  const part = `word/${kind}s.xml`;
+  const referenceName = `${kind}Reference`;
+  const pairs = findCorrespondingNotePairs(
     options.documentXml,
     options.auxiliaryIdRenumberings,
+    kind,
   );
   if (pairs.length === 0) return options.documentXml;
 
   const [originalXml, revisedXml, resultXml, originalDocumentXml, revisedDocumentXml] =
     await Promise.all([
-      options.originalArchive.getFile('word/footnotes.xml'),
-      options.revisedArchive.getFile('word/footnotes.xml'),
-      (options.baseFootnotesArchive ?? options.resultArchive).getFile('word/footnotes.xml'),
+      options.originalArchive.getFile(part),
+      options.revisedArchive.getFile(part),
+      (options.baseNotesArchive ?? options.resultArchive).getFile(part),
       options.originalArchive.getDocumentXml(),
       options.revisedArchive.getDocumentXml(),
     ]);
   if (!originalXml || !revisedXml || !resultXml) return options.documentXml;
-  const original = parseEntries(originalXml, 'w:footnote');
-  const revised = parseEntries(revisedXml, 'w:footnote');
-  const result = parseEntries(resultXml, 'w:footnote');
+  const original = parseEntries(originalXml, `w:${kind}`);
+  const revised = parseEntries(revisedXml, `w:${kind}`);
+  const result = parseEntries(resultXml, `w:${kind}`);
   const document = parseXml(options.documentXml);
   const originalDocument = parseXml(originalDocumentXml);
   const revisedDocument = parseXml(revisedDocumentXml);
-  const repairingCopiedNotes = copiedParagraphNoteIds(document, 'footnote').size > 0;
+  const repairingCopiedNotes = copiedParagraphNoteIds(document, kind).size > 0;
   let changed = false;
   for (const pair of pairs) {
     const originalEntry = original.entries.get(pair.originalId);
@@ -252,15 +263,16 @@ async function reconcileTaggedFootnotes(options: {
     // definitions. Aligned inline edits instead keep one stable anchor and
     // track the definition: deleting an old duplicate anchor can make readers
     // discard the shared revised note body on Accept.
-    const references = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'footnoteReference'));
+    const references = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, referenceName));
     if (repairingCopiedNotes && references.some(ref => canonicalNoteId(ref.getAttributeNS(OOXML.W_NS, 'id') ?? '') === pair.originalId) &&
         references.some(ref => canonicalNoteId(ref.getAttributeNS(OOXML.W_NS, 'id') ?? '') === pair.revisedId)) continue;
     if (
-      footnoteDefinitionPairRequiresCollisionSafeFallback(originalEntry, revisedEntry) ||
-      !isOnlyFootnoteAnchorInSourceParagraph(originalDocument, pair.originalId) ||
-      !isOnlyFootnoteAnchorInSourceParagraph(revisedDocument, pair.revisedId) ||
-      !hasSafeEmittedFootnoteReferenceShape(
+      noteDefinitionPairRequiresCollisionSafeFallback(originalEntry, revisedEntry) ||
+      !isOnlyNoteAnchorInSourceParagraph(originalDocument, kind, pair.originalId) ||
+      !isOnlyNoteAnchorInSourceParagraph(revisedDocument, kind, pair.revisedId) ||
+      !hasSafeEmittedNoteReferenceShape(
         document,
+        kind,
         pair.originalId,
         pair.revisedId,
         () => ({
@@ -269,12 +281,12 @@ async function reconcileTaggedFootnotes(options: {
         }),
       )
     ) continue;
-    const stablePair = alignedInlineFootnoteAnchorPair(document, pair.originalId, pair.revisedId, options.author);
+    const stablePair = alignedInlineNoteAnchorPair(document, kind, pair.originalId, pair.revisedId, options.author);
     // Declining retains separate side definitions and coarse anchor history.
     // Superseded bodies remain until complete-package orphan-note pruning;
     // flattening changed anchor properties would lose their Reject semantics.
     if (!stablePair) continue;
-    const comparedChildren = compareFootnoteDefinitions(originalEntry, revisedEntry, {
+    const comparedChildren = compareNoteDefinitions(originalEntry, revisedEntry, {
       author: options.author,
       date: options.date,
       formatDetection: options.formatDetection,
@@ -293,8 +305,8 @@ async function reconcileTaggedFootnotes(options: {
     changed = true;
   }
   if (changed) {
-    options.stabilizedNoteKinds.add('footnote');
-    options.resultArchive.setFile('word/footnotes.xml', serializer.serializeToString(result.doc));
+    options.stabilizedNoteKinds.add(kind);
+    options.resultArchive.setFile(part, serializer.serializeToString(result.doc));
     return serializer.serializeToString(document);
   }
   return options.documentXml;
@@ -478,17 +490,20 @@ export async function buildStandaloneTaggedPackage(
 
   const resultArchive = await revisedArchive.clone();
   const stabilizedNoteKinds = new Set<'footnote' | 'endnote'>();
-  taggedXml = await reconcileTaggedFootnotes({
-    originalArchive,
-    revisedArchive,
-    resultArchive,
-    documentXml: taggedXml,
-    author: options.author,
-    date: options.date,
-    formatDetection: options.formatDetection,
-    auxiliaryIdRenumberings,
-    stabilizedNoteKinds,
-  });
+  for (const kind of ['footnote', 'endnote'] as const) {
+    taggedXml = await reconcileTaggedNotes({
+      kind,
+      originalArchive,
+      revisedArchive,
+      resultArchive,
+      documentXml: taggedXml,
+      author: options.author,
+      date: options.date,
+      formatDetection: options.formatDetection,
+      auxiliaryIdRenumberings,
+      stabilizedNoteKinds,
+    });
+  }
   resultArchive.setDocumentXml(taggedXml);
   await importReferencedRelationships(originalArchive, resultArchive, taggedXml);
   const noteMergeResults = new Map<'footnote' | 'endnote', AuxiliaryMergeResult>();
@@ -1610,16 +1625,20 @@ export interface AuxiliaryMergeResult {
   createdPart: boolean;
 }
 
-function isOnlyFootnoteAnchorInSourceParagraph(documentDoc: Document, id: string): boolean {
+function isOnlyNoteAnchorInSourceParagraph(
+  documentDoc: Document,
+  kind: 'footnote' | 'endnote',
+  id: string,
+): boolean {
   const matches: Element[] = [];
-  const references = documentDoc.getElementsByTagName('w:footnoteReference');
+  const references = documentDoc.getElementsByTagName(`w:${kind}Reference`);
   for (let i = 0; i < references.length; i++) {
     const reference = references[i] as Element;
     if (reference.getAttribute('w:id') === id) matches.push(reference);
   }
   if (matches.length !== 1) return false;
   const paragraph = ancestorElement(matches[0]!, 'w:p');
-  return paragraph?.getElementsByTagName('w:footnoteReference').length === 1;
+  return paragraph?.getElementsByTagName(`w:${kind}Reference`).length === 1;
 }
 
 function hasAncestorTag(element: Element, tagName: string): boolean {
@@ -1640,28 +1659,33 @@ function ancestorElement(element: Element, tagName: string): Element | null {
   return null;
 }
 
-interface FootnoteReferenceProjectionDocs {
+interface NoteReferenceProjectionDocs {
   accepted: Document;
   rejected: Document;
 }
 
 /**
  * Require either Word's explicit deleted/inserted reference pair or a single
- * unchanged live reference. Ambiguous multiplicity and mixed wrapper shapes
- * retain collision-safe definitions rather than rewriting every matching ID.
+ * unchanged live reference of one note kind. Ambiguous multiplicity and mixed
+ * wrapper shapes retain collision-safe definitions rather than rewriting every
+ * matching ID. Footnotes and endnotes share these rules; each kind is counted
+ * only against its own references.
  *
- * Endnote definition reconciliation is intentionally outside #763; endnotes
- * continue to use collision-safe renumbering and merge behavior.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @see https://github.com/UseJunior/safe-docx/issues/996
  */
-function hasSafeEmittedFootnoteReferenceShape(
+function hasSafeEmittedNoteReferenceShape(
   documentDoc: Document,
+  kind: 'footnote' | 'endnote',
   originalId: string,
   revisedId: string,
-  getProjectionDocs: () => FootnoteReferenceProjectionDocs,
+  getProjectionDocs: () => NoteReferenceProjectionDocs,
 ): boolean {
+  const referenceTag = `w:${kind}Reference`;
   const original: Element[] = [];
   const revised: Element[] = [];
-  const references = documentDoc.getElementsByTagName('w:footnoteReference');
+  const references = documentDoc.getElementsByTagName(referenceTag);
   for (let i = 0; i < references.length; i++) {
     const reference = references[i] as Element;
     const id = reference.getAttribute('w:id');
@@ -1673,7 +1697,7 @@ function hasSafeEmittedFootnoteReferenceShape(
   const pairParagraphIsUnambiguous =
     originalParagraph !== null &&
     originalParagraph === revisedParagraph &&
-    originalParagraph.getElementsByTagName('w:footnoteReference').length === 2;
+    originalParagraph.getElementsByTagName(referenceTag).length === 2;
   const explicitPair =
     original.length === 1 &&
     revised.length === 1 &&
@@ -1683,7 +1707,7 @@ function hasSafeEmittedFootnoteReferenceShape(
   const stableReference =
     original.length === 0 &&
     revised.length === 1 &&
-    revisedParagraph?.getElementsByTagName('w:footnoteReference').length === 1 &&
+    revisedParagraph?.getElementsByTagName(referenceTag).length === 1 &&
     !hasAncestorTag(revised[0]!, 'w:del') &&
     !hasAncestorTag(revised[0]!, 'w:ins');
   if (explicitPair || stableReference) return true;
@@ -1692,7 +1716,7 @@ function hasSafeEmittedFootnoteReferenceShape(
   const { accepted, rejected } = getProjectionDocs();
   const count = (doc: Document, id: string): number => {
     let matches = 0;
-    const refs = doc.getElementsByTagName('w:footnoteReference');
+    const refs = doc.getElementsByTagName(referenceTag);
     for (let i = 0; i < refs.length; i++) {
       if ((refs[i] as Element).getAttribute('w:id') === id) matches++;
     }
@@ -1704,13 +1728,13 @@ function hasSafeEmittedFootnoteReferenceShape(
     count(rejected, revisedId) === 0;
 }
 
-function footnoteDefinitionPairRequiresCollisionSafeFallback(
+function noteDefinitionPairRequiresCollisionSafeFallback(
   originalEntry: Element,
   revisedEntry: Element,
 ): boolean {
   if (
-    footnoteDefinitionRequiresCollisionSafeFallback(originalEntry) ||
-    footnoteDefinitionRequiresCollisionSafeFallback(revisedEntry)
+    noteDefinitionRequiresCollisionSafeFallback(originalEntry) ||
+    noteDefinitionRequiresCollisionSafeFallback(revisedEntry)
   ) return true;
   const blockKinds = (entry: Element): string[] => childElements(entry)
     .filter((child) => ['p', 'tbl'].includes(child.localName))
@@ -1728,7 +1752,7 @@ function footnoteDefinitionPairRequiresCollisionSafeFallback(
   return false;
 }
 
-export function footnoteDefinitionRequiresCollisionSafeFallback(entry: Element): boolean {
+export function noteDefinitionRequiresCollisionSafeFallback(entry: Element): boolean {
   const unsupportedTags = [
     'w:fldChar',
     'w:fldSimple',

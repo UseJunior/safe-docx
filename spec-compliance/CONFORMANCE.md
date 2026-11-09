@@ -31,6 +31,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts |
 | `ECMA-PART1-17-11-1` | w:continuationSeparator continuation separator note | 5 | 1 | 17.11.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:continuationSeparator` | packages/docx-core/src/primitives/footnote-shapes.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
+| `ECMA-PART1-17-11-7` | w:endnoteReference identifier binding | 5 | 1 | 17.11.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference` | packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/ancillaryNoteComparison.ts; packages/docx-compare/src/tagged/inlineFootnoteAnchorPair.ts; packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts |
 | `ECMA-PART1-17-11-9` | w:footnote special footnote list in document settings | 5 | 1 | 17.11.9 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
 | `ECMA-PART1-17-11-10` | w:footnote footnote content | 5 | 1 | 17.11.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnote` | packages/docx-core/src/generation/emit/footnotes-part.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/generation/generation-footnotes.test.ts; packages/docx-markdoc/src/create/footnotes.test.ts |
 | `ECMA-PART1-17-11-12` | w:footnotePr document-wide footnote properties | 5 | 1 | 17.11.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotePr` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-footnotes.test.ts |
@@ -463,6 +464,29 @@ separates the main story from a footnote continued from the previous page.
 The footnotes part that `add_footnote` bootstraps and that generation emits
 holds a `w:type="continuationSeparator"` note (id 0) whose run is this
 mark, as Word writes it.
+
+### ECMA-PART1-17-11-7 — w:endnoteReference identifier binding
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.7
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference`
+- **Verified by:** packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/ancillaryNoteComparison.ts; packages/docx-compare/src/tagged/inlineFootnoteAnchorPair.ts; packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts
+
+Part 1 §17.11.7 defines `w:endnoteReference` as an automatically numbered
+run that references one endnote, and its `w:id` attribute names "the
+footnote or endnote which is being referenced"; an ID absent from the
+endnotes part makes the document non-conformant. Like
+`w:footnoteReference` (§17.11.14), the identifier binds an anchor to its
+definition and is not the displayed number. When a comparison edits an
+endnote body beside unchanged endnotes, docx-compare keeps one stable
+anchor per aligned position and tracks the definition change inside the
+endnote, so every surviving reference still names the endnote whose body
+belongs to it after Accept and after Reject. Footnote and endnote
+identifiers are separate spaces and are reconciled independently.
+
+This claim covers that comparison reconciliation; it is not a claim about
+endnote numbering formats, placement or `w:customMarkFollows` display.
 
 ### ECMA-PART1-17-11-9 — w:footnote special footnote list in document settings
 

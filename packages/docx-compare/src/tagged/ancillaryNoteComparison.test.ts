@@ -2,7 +2,7 @@ import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml } from '@usejunior/docx-core';
 import { describe, expect } from 'vitest';
 import { testAllure } from '../testing/allure-test.js';
-import { compareFootnoteDefinitions } from './ancillaryNoteComparison.js';
+import { compareNoteDefinitions } from './ancillaryNoteComparison.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const TEST_FEATURE = 'Ancillary Note Comparison';
@@ -25,7 +25,7 @@ function serialize(elements: readonly Element[]): string {
 
 describe('ancillary note comparison normalization', () => {
   test('premerges safely compatible adjacent runs before publishing unchanged definitions', () => {
-    const result = compareFootnoteDefinitions(
+    const result = compareNoteDefinitions(
       definition(['Stable ', 'footnote']),
       definition(['Stable ', 'footnote']),
       { author: 'Comparison', date: new Date('2026-08-18T12:00:00Z') },
@@ -39,7 +39,7 @@ describe('ancillary note comparison normalization', () => {
   });
 
   test('keeps fragmented note edits projection-safe without extra revision ranges', () => {
-    const result = compareFootnoteDefinitions(
+    const result = compareNoteDefinitions(
       definition(['Shared ', 'before']),
       definition(['Shared ', 'after']),
       { author: 'Comparison', date: new Date('2026-08-18T12:00:00Z') },
