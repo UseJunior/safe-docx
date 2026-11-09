@@ -2056,6 +2056,78 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-3-1-13",
+      "title": "w:jc paragraph alignment",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.13"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc",
+      "claimRationale": "`w:jc` sets a paragraph's alignment. The `format_layout` tool writes the\ntransitional `ST_Jc` values `left`, `center`, `right` and `both` (the values\nWord writes) at the `w:jc` position in the `CT_PPrBase` sequence and records\nthe prior properties in a `w:pPrChange`. The bidi-relative `start`/`end` and\nthe distribution values, which the transitional schema also permits, are out\nof scope.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-14",
+      "title": "w:keepLines keep paragraph lines together",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.14"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines",
+      "claimRationale": "`w:keepLines` is a `CT_OnOff` property that keeps all lines of a paragraph on\none page. `format_layout` sets it as a bare element (on) or removes a direct\nelement that is on, so the style hierarchy decides the value again; a direct\nelement that is already explicitly off is left alone.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-15",
+      "title": "w:keepNext keep paragraph with next",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.15"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext",
+      "claimRationale": "`w:keepNext` is a `CT_OnOff` property that keeps a paragraph on the same page\nas the next paragraph. `format_layout` sets or removes the direct element with\nthe same on/off rules as `w:keepLines`.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-3-1-19",
       "title": "w:numPr paragraph numbering reference",
       "classification": "targeted",
@@ -2108,6 +2180,30 @@
         {
           "kind": "test",
           "path": "packages/docx-core/test-primitives/heading_provenance.traceability.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-23",
+      "title": "w:pageBreakBefore start paragraph on next page",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.23"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore",
+      "claimRationale": "`w:pageBreakBefore` is a `CT_OnOff` property that starts the paragraph on a\nnew page. `format_layout` sets or removes the direct element, which lets a\ncaller drop a property made redundant by a preceding `nextPage` section break.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
         }
       ]
     },
@@ -2236,6 +2332,30 @@
         {
           "kind": "test",
           "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-25",
+      "title": "w:r run content model excludes revision wrappers",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.25"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R",
+      "claimRationale": "Part 1 §17.3.2.25 defines `w:r` as a run of content with common properties.\nIts CT_R content model admits run properties and run content such as `w:t`\nand `w:fldChar`, but no `w:ins`, `w:del`, `w:moveFrom` or `w:moveTo`; those\nrevision particles wrap whole runs. When compared text shares a run with a\nfield character, safe-docx splits the run so each revision wraps a run\nfragment that repeats the source run properties.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts"
         }
       ]
     },
@@ -3983,7 +4103,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent",
-      "claimRationale": "Part 4 §14.9.1.1 defines `w:txbxContent` as the rich\nWordprocessingML-content container inside a drawing object. It prohibits\nreferences to comments, footnotes, and endnotes, as well as nested\n`w:txbxContent`. safe-docx compares a bounded subset of these stories\nindependently of the surrounding body, preserves the drawing scaffold around\neach one, and rejects the prohibited nested forms before comparison.\n\n**Text boxes authored in Microsoft Word are inside that subset.** Word stores\none modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`\nholding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`\nholding the VML spelling (`v:textbox`) — and renders exactly one of them.\nsafe-docx groups the two stored copies as the one visual box a reader sees,\nnumbers diagnostics by that visual ordinal, compares each stored copy as its own\nstory, and fails closed when the two sides' storage shapes do not correspond.\nAccepting every revision in the result reproduces the revised story text and\nrejecting every revision reproduces the original, in both stored branches.\n\nThe claim covers main-document stories and stories in relationship-selected\nheader and footer parts. It does not cover a **standalone** DrawingML text box —\na `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host\nanywhere above it. Such a box has no drawing scaffold this implementation can\nfingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,\nwhich aborts the whole comparison rather than emitting a partial redline. The\nclaim likewise does not cover inserted or deleted text-box topology, nor a\nchange to the relationship closure of any text-box story — that check runs\nahead of the twin carve-out and applies to twinned and untwinned boxes alike —\nnor a change to the containing scaffold of an untwinned box.",
+      "claimRationale": "Part 4 §14.9.1.1 defines `w:txbxContent` as the rich\nWordprocessingML-content container inside a drawing object. It prohibits\nreferences to comments, footnotes, and endnotes, as well as nested\n`w:txbxContent`. safe-docx compares a bounded subset of these stories\nindependently of the surrounding body, preserves the drawing scaffold around\neach one, and rejects the prohibited nested forms before comparison.\n\n**Text boxes authored in Microsoft Word are inside that subset.** Word stores\none modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`\nholding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`\nholding the VML spelling (`v:textbox`) — and renders exactly one of them.\nsafe-docx groups the two stored copies as the one visual box a reader sees,\nnumbers diagnostics by that visual ordinal, compares each stored copy as its own\nstory, and fails closed when the two sides' storage shapes do not correspond.\nAccepting every revision in the result reproduces the revised story text and\nrejecting every revision reproduces the original, in both stored branches.\n\nThe claim covers main-document stories and stories in relationship-selected\nheader and footer parts. It does not cover a **standalone** DrawingML text box —\na `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host\nanywhere above it. Such a box has no drawing scaffold this implementation can\nfingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,\nwhich aborts the whole comparison rather than emitting a partial redline. The\nclaim likewise does not cover a change to the relationship closure of any\ntext-box story — that check runs ahead of the twin carve-out and applies to\ntwinned and untwinned boxes alike — nor a change to the containing scaffold of\nan untwinned box.\n\n**Inserted and deleted main-document text boxes are inside the subset.** Boxes\npair across the two documents by anchor identity — the VML shape `id` and the\nDrawingML `wp:docPr/@id`, combined for the two stored copies of one twinned box\n— and only boxes without a usable identity fall back to their position between\nidentified boxes. A box with no counterpart stays whole in the body comparison,\nwhich tracks its anchor run as inserted or deleted, and every paragraph and text\nrun of its story is marked with the same revision kind, in every stored copy.\nAnonymous boxes whose storage shapes disagree are still refused.",
       "evidence": [
         {
           "kind": "source",
@@ -4823,6 +4943,69 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "jc",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:jc",
+          "declaredType": "CT_Jc",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_TblPrBase/sequence/element:jc",
+          "declaredType": "CT_JcTable",
+          "minOccurs": "0",
+          "maxOccurs": "1"
+        },
+        {
+          "contextPath": "schema/type:CT_TblPrExBase/sequence/element:jc",
+          "declaredType": "CT_JcTable",
+          "minOccurs": "0",
+          "maxOccurs": "1"
+        },
+        {
+          "contextPath": "schema/type:CT_TrPrBase/choice/element:jc",
+          "declaredType": "CT_JcTable",
+          "minOccurs": "0",
+          "maxOccurs": "1"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "keepLines",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:keepLines",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "keepNext",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:keepNext",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -5206,6 +5389,21 @@
         {
           "contextPath": "schema/type:CT_PPrBase/sequence/element:pStyle",
           "declaredType": "CT_String",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "pageBreakBefore",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:pageBreakBefore",
+          "declaredType": "CT_OnOff",
           "minOccurs": "0"
         }
       ]
@@ -6118,6 +6316,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_Fonts"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_R",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_R"
         }
       ]
     },
