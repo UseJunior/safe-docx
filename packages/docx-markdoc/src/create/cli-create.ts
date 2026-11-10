@@ -3,10 +3,16 @@ import { link, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, stat
 import path from 'node:path';
 import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
 import type { PdfRenderTools } from '../pdf/tools.js';
-import { DocxMarkdocError } from '../errors.js';
+import { CliUsageError, DocxMarkdocError } from '../errors.js';
+import { isOption } from '../cli-options.js';
 import { createDocumentFromMarkdoc, type CreatedDocument, type CrossReferenceCheck } from './create.js';
-import { PAGE_FIELD_TOKEN } from './lower.js';
+import { lowerCreationMarkdoc, NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN, type CreationLowering } from './lower.js';
 import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
+
+/** The pull record path for a certificate: `<stem>.pull.json` beside `<stem>.verification.json`. */
+export function pullRecordPath(certificatePath: string): string {
+  return path.join(path.dirname(certificatePath), `${path.basename(certificatePath).replace(/\.verification\.json$/u, '')}.pull.json`);
+}
 
 export type CreateCliArgs = {
   markdocPath: string;
@@ -25,8 +31,12 @@ export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts' | 'layoutPage
 
 export type CreateCliResult = {
   outputs: { docx: string; text: string; certificate: string; pdf?: string };
-  /** Set when `--dangerously-overwrite-edited-docx` displaced a DOCX that was not the last certified build. */
-  overwritten?: { docx: string; sha256: string; reason: string };
+  /**
+   * Set when the build displaced a DOCX that was not the last certified build:
+   * under `--dangerously-overwrite-edited-docx`, or (`pulled`) the edited DOCX
+   * a complete `pull --apply` reconciled into the source being built.
+   */
+  overwritten?: { docx: string; sha256: string; reason: string; pulled?: true };
   created: CreatedDocument;
   pdf: RecordedPdfVerdict | { status: 'skipped' };
   summary: string;
@@ -59,20 +69,20 @@ export function parseCreateCliArgs(args: string[]): CreateCliArgs {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     if (arg === '--style-profile') {
-      if (profilePath !== undefined) throw new Error('--style-profile may be supplied only once.');
+      if (profilePath !== undefined) throw new CliUsageError('--style-profile may be supplied only once.', 'create');
       profilePath = args[index + 1];
-      if (!profilePath) throw new Error('--style-profile requires a JSON path.');
+      if (!profilePath) throw new CliUsageError('--style-profile requires a JSON path.', 'create');
       index += 1;
     } else if (arg === '--no-pdf') pdf = false;
     else if (arg === '--require-pdf') requirePdf = true;
     else if (arg === '--replace') replace = true;
     else if (arg === '--dangerously-overwrite-edited-docx') overwriteEditedDocx = replace = true;
-    else if (arg.startsWith('--')) throw new Error(`Unknown option ${arg}.`);
+    else if (isOption(arg)) throw new CliUsageError(`Unknown option ${arg}.`, 'create');
     else positional.push(arg);
   }
   const [markdocPath, outputDir] = positional;
-  if (!markdocPath || !outputDir || positional.length !== 2) throw new Error('create requires a Markdoc file and an output directory.');
-  if (!pdf && requirePdf) throw new Error('--no-pdf and --require-pdf are mutually exclusive.');
+  if (!markdocPath || !outputDir || positional.length !== 2) throw new CliUsageError('create requires a Markdoc file and an output directory.', 'create');
+  if (!pdf && requirePdf) throw new CliUsageError('--no-pdf and --require-pdf are mutually exclusive.', 'create');
   return { markdocPath, outputDir, ...(profilePath ? { profilePath } : {}), pdf, requirePdf, replace, overwriteEditedDocx };
 }
 
@@ -118,14 +128,37 @@ function paragraphsAsLibreOfficeRenders(readback: CreatedDocument['readback']): 
   });
 }
 
-/** Text a rendered PDF must contain: the first and last paragraphs and every footer text. */
+/**
+ * The literal text of a header or footer line: the line itself, or, when it
+ * holds PAGE or NUMPAGES fields, each piece between them and its tabs that has
+ * a letter or digit ("Page <PAGE> of <NUMPAGES>" needs "Page" and "of"; the
+ * numbers depend on the page and are checked word by word).
+ */
+function literalPieces(line: string): string[] {
+  if (!line.includes(PAGE_FIELD_TOKEN) && !line.includes(NUMPAGES_FIELD_TOKEN)) return [line];
+  return line.split(new RegExp(`${PAGE_FIELD_TOKEN}|${NUMPAGES_FIELD_TOKEN}|\t`, 'u')).map((piece) => piece.trim()).filter((piece) => /[\p{L}\p{N}]/u.test(piece));
+}
+
+/**
+ * Text a rendered PDF must contain: the first and last paragraphs and the
+ * header and footer text each section is sure to show. A section without
+ * `w:titlePg` shows its own header and footer on every page; a section with
+ * it shows its first-page slots on its first page, and its other header and
+ * footer only from its second page, which a one-page section never has. The
+ * page-aware word check holds those to each continuation page.
+ */
 export function requiredPdfText(created: CreatedDocument): string[] {
   const paragraphs = paragraphsAsLibreOfficeRenders(created.readback).filter((paragraph) => paragraph.trim());
   const title = paragraphs[0];
   const last = paragraphs.at(-1) ?? '';
   const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
-  const footers = created.readback.footers.flatMap((footer) => footer ?? []).filter((line) => line !== PAGE_FIELD_TOKEN);
-  return [...new Set([title, lastNeedle, ...footers].filter((value): value is string => Boolean(value?.trim())))];
+  const { footers, headers, firstPage } = created.readback;
+  const stories = footers.flatMap((footer, section) => {
+    const first = firstPage[section];
+    return first ? [first.header, first.footer] : [headers[section] ?? null, footer];
+  });
+  const running = stories.flatMap((story) => story ?? []).flatMap(literalPieces);
+  return [...new Set([title, lastNeedle, ...running].filter((value): value is string => Boolean(value?.trim())))];
 }
 
 const sha256File = async (target: string): Promise<string> => createHash('sha256').update(await readFile(target)).digest('hex');
@@ -157,7 +190,28 @@ async function certifiedDocxFingerprint(certificatePath: string): Promise<DocxFi
  * aside: unless `force`, anything but the certified bytes is refused; with
  * `force`, anything but the certified bytes is kept.
  */
-type DocxGuard = { target: string; certified: string | null; force: boolean; displacedSha256?: string };
+type DocxGuard = { target: string; certified: string | null; force: boolean; displacedSha256?: string; pulled?: string };
+
+/**
+ * The edited DOCX a complete `pull --apply` reconciled, when its record
+ * (`<stem>.pull.json`) binds the DOCX on disk, the build the certificate
+ * records and the source being built: `--replace` may then replace it. The
+ * record proves the source reproduces that DOCX's body and running text, so
+ * nothing in it is lost; its bytes are still kept.
+ */
+async function pulledDocxSha256(recordPath: string, docxSha256: string, certifiedSha256: string, sourceSha256: string): Promise<string | undefined> {
+  if ((await existingKind(recordPath)) !== 'file') return undefined;
+  let record: unknown;
+  try {
+    record = JSON.parse(await readFile(recordPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
+  const { kind, complete, editedDocxSha256, baseDocxSha256, pulledSourceSha256 } = (record ?? {}) as Record<string, unknown>;
+  return kind === 'markdoc-pull' && complete === true && editedDocxSha256 === docxSha256 && baseDocxSha256 === certifiedSha256 && pulledSourceSha256 === sourceSha256
+    ? docxSha256
+    : undefined;
+}
 
 function editedDocxError(target: string, reason: string): DocxMarkdocError {
   return new DocxMarkdocError(
@@ -222,7 +276,7 @@ async function publish(
         // Check the bytes actually moved aside, so an edit made after the
         // preflight check is caught too; a failure here restores everything.
         guard.displacedSha256 = await sha256File(backup);
-        if (!guard.force && guard.displacedSha256 !== guard.certified) {
+        if (!guard.force && guard.displacedSha256 !== guard.certified && guard.displacedSha256 !== guard.pulled) {
           throw editedDocxError(target, 'it changed or appeared during the build and is not the DOCX the last build certified');
         }
       }
@@ -364,6 +418,50 @@ export function controlsSummary(controls: Record<string, boolean | 'not applicab
   return ok.length === 0 ? `${noun}: ${exceptions}` : `${noun} ok, except ${exceptions}`;
 }
 
+/** Read and parse a `--style-profile` JSON file; absent, both values are undefined. */
+async function readCreationProfile(profilePath: string | undefined): Promise<{ profile: unknown; profileSource: Buffer | undefined }> {
+  const profileSource = profilePath ? await readFile(profilePath) : undefined;
+  let profile: unknown;
+  if (profileSource) {
+    try {
+      profile = JSON.parse(profileSource.toString('utf8'));
+    } catch (error) {
+      throw new DocxMarkdocError('INVALID_CREATION_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { profile, profileSource };
+}
+
+/** What `validate --create` reports for a creation source that passes. */
+export type CreationLintResult = {
+  grammar: 'creation';
+  valid: true;
+  sections: number;
+  blocks: number;
+  frontmatter: CreationLowering['frontmatter'];
+};
+
+/**
+ * Lint a creation `.mdoc` the way `create` does before it renders anything:
+ * the source characters, the frontmatter, the closed tag grammar
+ * (`validateCreationAst`), each `{% section %}`'s running-text keys and the
+ * structure checks of the lowering, under the style profile when one is
+ * given. It throws the same `DocxMarkdocError`, with the same message and
+ * line, that `create` would, and it writes nothing: no DOCX is generated, no
+ * output directory is created and no lock is taken.
+ */
+export async function lintCreationSource(markdocPath: string, options: { profilePath?: string } = {}): Promise<CreationLintResult> {
+  const { profile } = await readCreationProfile(options.profilePath);
+  const lowering = lowerCreationMarkdoc(await readFile(markdocPath, 'utf8'), profile);
+  return {
+    grammar: 'creation',
+    valid: true,
+    sections: lowering.spec.sections.length,
+    blocks: lowering.blocks.length,
+    frontmatter: lowering.frontmatter,
+  };
+}
+
 export async function runCreateCommand(
   args: string[],
   deps: { renderTools?: PdfRenderTools; fileOps?: Partial<PublishFileOps> } = {},
@@ -469,24 +567,22 @@ async function createLocked(
   // --replace rebuilds only over the DOCX the last build certified. A DOCX with
   // no usable certificate, or whose bytes differ from it, may hold edits.
   const fingerprint = await certifiedDocxFingerprint(outputs.certificate);
-  let docxReason: string | undefined;
-  if ((await existingKind(outputs.docx)) === 'file') {
-    if (fingerprint.sha256 === null) docxReason = `${fingerprint.reason}, so it cannot be shown to be unedited`;
-    else if (fingerprint.sha256 !== (await sha256File(outputs.docx))) docxReason = 'its SHA-256 differs from the one recorded by the last build';
-    if (docxReason && !options.overwriteEditedDocx) throw editedDocxError(outputs.docx, docxReason);
-  }
-  const guard: DocxGuard = { target: outputs.docx, certified: fingerprint.sha256, force: options.overwriteEditedDocx };
-
-  const profileSource = options.profilePath ? await readFile(options.profilePath) : undefined;
-  let profile: unknown;
-  if (profileSource) {
-    try {
-      profile = JSON.parse(profileSource.toString('utf8'));
-    } catch (error) {
-      throw new DocxMarkdocError('INVALID_CREATION_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
   const source = await readFile(options.markdocPath, 'utf8');
+  let docxReason: string | undefined;
+  let pulled: string | undefined;
+  if ((await existingKind(outputs.docx)) === 'file') {
+    const current = await sha256File(outputs.docx);
+    if (fingerprint.sha256 === null) docxReason = `${fingerprint.reason}, so it cannot be shown to be unedited`;
+    else if (fingerprint.sha256 !== current) {
+      docxReason = 'its SHA-256 differs from the one recorded by the last build';
+      pulled = await pulledDocxSha256(pullRecordPath(outputs.certificate), current, fingerprint.sha256, createHash('sha256').update(source).digest('hex'));
+      if (pulled) docxReason = 'it is the edited DOCX a complete pull reconciled into this source';
+    }
+    if (docxReason && !pulled && !options.overwriteEditedDocx) throw editedDocxError(outputs.docx, docxReason);
+  }
+  const guard: DocxGuard = { target: outputs.docx, certified: fingerprint.sha256, force: options.overwriteEditedDocx, ...(pulled ? { pulled } : {}) };
+
+  const { profile, profileSource } = await readCreationProfile(options.profilePath);
   const created = await createDocumentFromMarkdoc(source, {
     ...(profile === undefined ? {} : { profile }),
     ...(profileSource === undefined ? {} : { profileSource }),
@@ -554,13 +650,21 @@ async function createLocked(
           { kept: path.join(backupDir, path.basename(outputs.docx)) },
         );
       }
-      overwritten = { docx: kept, sha256: guard.displacedSha256, reason: docxReason ?? 'it changed during the build' };
+      overwritten = {
+        docx: kept,
+        sha256: guard.displacedSha256,
+        reason: guard.displacedSha256 === guard.pulled ? 'it is the edited DOCX a complete pull reconciled into this source' : docxReason ?? 'it changed during the build',
+        ...(guard.displacedSha256 === guard.pulled ? { pulled: true as const } : {}),
+      };
+      // The record has done its job: the new certificate now describes the DOCX.
+      if (overwritten.pulled) await rm(pullRecordPath(outputs.certificate), { force: true }).catch(() => undefined);
     }
     const { checks } = created.certificate;
     const summary = [
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
       `readback ok (negative control ok)`,
       `footers ok (negative control ok)`,
+      ...(checks.headers ? [`headers ok (${plural(checks.headers.sections, 'section')}${checks.headers.firstPageSections > 0 ? `, ${checks.headers.firstPageSections} with a first page of its own` : ''}; ${controlsSummary({ 'header text': checks.headers.negativeControlDetected, ...(checks.headers.firstPageNegativeControlDetected === undefined ? {} : { 'first page': checks.headers.firstPageNegativeControlDetected }) })})`] : []),
       ...(checks.footnotes.notes > 0 || checks.footnotes.references.expected > 0
         ? [`footnotes ok (${plural(checks.footnotes.notes, 'note')}, ${plural(checks.footnotes.references.actual, 'reference')}; ${controlsSummary({ 'note text': checks.footnotes.negativeControlDetected, 'dropped reference': checks.footnotes.references.negativeControlDetected })})`]
         : []),
@@ -569,7 +673,8 @@ async function createLocked(
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
       pdf.status === 'skipped' ? 'pdf skipped' : `pdf ${pdf.status}${'pageCount' in pdf && pdf.pageCount ? ` (${pdf.pageCount} pages)` : ''}${pdf.status === 'not_run' ? ` (${pdf.reason})` : ''}${'words' in pdf && pdf.words ? `; pdf words ok (${pdf.words.expectedWords} source words)` : ''}`,
-      ...(overwritten ? [`WARNING: overwrote an edited ${path.basename(outputs.docx)} (${overwritten.reason}); its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
+      ...(overwritten?.pulled ? [`replaced the edited ${path.basename(outputs.docx)} that pull reconciled into this source; its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
+      ...(overwritten && !overwritten.pulled ? [`WARNING: overwrote an edited ${path.basename(outputs.docx)} (${overwritten.reason}); its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
     ].join('; ');
     return {
       outputs: { docx: outputs.docx, text: outputs.text, certificate: outputs.certificate, ...(produced.has(outputs.pdf) ? { pdf: outputs.pdf } : {}) },
