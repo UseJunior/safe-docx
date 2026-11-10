@@ -10,7 +10,63 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR supersedes the run for its previous head SHA, so cancel
+# that run instead of paying for it to finish. Pushes to main and manual
+# dispatches each get a unique group (the run id) and are never cancelled or
+# dropped from the queue: every main commit keeps its own full CI record.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Decides whether the heavy jobs (build, lint, tests, real-corpus, CodeQL,
+  # MCPB bundle) need to run. Required checks gate on this in-job, step by
+  # step, so they still report success on docs-only PRs; a workflow-level
+  # `paths:` filter would leave them pending forever and block merge.
+  #
+  # Docs-only means every changed path (including a rename's old path) is a
+  # Markdown file at the repo root or under docs/, .claude/, .cursor/ or
+  # memory/. Markdown elsewhere is NOT docs-only: tests read openspec/**,
+  # packages/**/docs/** and other in-tree .md files. Pushes to main, manual
+  # dispatches, and any classification error always run everything.
+  changes:
+    name: Classify changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      heavy: ${{ steps.classify.outputs.heavy }}
+    steps:
+      - name: Classify PR changes as docs-only or code
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          heavy=true
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if files=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+                --jq '.[] | .filename, (.previous_filename // empty)'); then
+              total=$(printf '%s\n' "$files" | grep -c . || true)
+              non_docs=$(printf '%s\n' "$files" | grep . \
+                | grep -cvE '^([^/]+|(docs|\.claude|\.cursor|memory)/.+)\.md$' || true)
+              echo "Changed paths: ${total}; non-docs paths: ${non_docs}"
+              # The PR files API stops at 3000 entries; treat a full page as unknown.
+              if [ "$total" -gt 0 ] && [ "$total" -lt 3000 ] && [ "$non_docs" -eq 0 ]; then
+                heavy=false
+              fi
+            else
+              echo "::warning::Could not list PR files; running the full CI."
+            fi
+          fi
+          echo "heavy=${heavy}" >> "$GITHUB_OUTPUT"
+          if [ "$heavy" = "false" ]; then
+            echo "::notice::Docs-only change: build, lint, test, real-corpus, CodeQL and MCPB jobs report success without running."
+          fi
+
   dependency-review:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
@@ -46,13 +102,19 @@ jobs:
 
   workspace-lint:
     runs-on: ubuntu-latest
+    needs: changes
+    env:
+      CI_RUN_HEAVY: ${{ needs.changes.outputs.heavy }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.CI_RUN_HEAVY == 'true'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: env.CI_RUN_HEAVY == 'true'
         with:
           node-version: 20
           cache: npm
       - name: Install dependencies (npm ci with retry)
+        if: env.CI_RUN_HEAVY == 'true'
         run: |
           for attempt in 1 2 3; do
             echo "npm ci attempt ${attempt}/3"
@@ -66,20 +128,28 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
       - name: Build workspaces
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run build
       - name: Lint/typecheck workspaces
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run lint:workspaces
       - name: Check for import cycles
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run check:cycles
       - name: Check for raw control bytes in source
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run check:control-bytes
       - name: Check release isolation (ODF decoupling guard)
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run check:release-isolation
       - name: Test release-isolation guard
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run test:release-isolation
       - name: Test formatting-loss detectors (unit tests + known-bad self-test)
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run test:docx-formatting-loss
       - name: Test real-corpus gate wrapper (mirrors the real-corpus-comparison job)
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run test:check-real-corpus
 
   spec-coverage:
@@ -238,6 +308,9 @@ jobs:
 
   codeql:
     runs-on: ubuntu-latest
+    needs: changes
+    # Not a required check, so a plain job-level skip is safe here.
+    if: needs.changes.outputs.heavy == 'true'
     permissions:
       actions: read
       contents: read
@@ -280,10 +353,18 @@ jobs:
 
   workspace-test:
     runs-on: ubuntu-latest
-    needs: workspace-lint
+    needs: [changes, workspace-lint]
     permissions:
       contents: read
       id-token: write
+    # Both matrix legs always start so the required `workspace-test (20)` and
+    # `workspace-test (22)` checks always report. On PRs only the Node 20 leg
+    # (coverage, ratchet, emitted-schema gate) does work; the Node 22 leg's
+    # steps are skipped and it passes in seconds. Pushes to main and manual
+    # dispatches run both legs in full. To get Node 22 results on a PR branch
+    # before merge, run `gh workflow run ci.yml --ref <branch>`.
+    env:
+      CI_RUN_HEAVY: ${{ needs.changes.outputs.heavy == 'true' && (matrix.coverage || github.event_name != 'pull_request') }}
     strategy:
       matrix:
         node-version: [20, 22]
@@ -294,19 +375,23 @@ jobs:
             coverage: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.CI_RUN_HEAVY == 'true'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: env.CI_RUN_HEAVY == 'true'
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
       # Schema-backed workspace tests invoke the same vendored-XSD validator as
       # the emitted-document gate below, so xmllint must exist before tests run.
       - name: Install XML schema validator
+        if: env.CI_RUN_HEAVY == 'true'
         run: |
           if ! command -v xmllint >/dev/null; then
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends libxml2-utils
           fi
       - name: Install dependencies (npm ci with retry)
+        if: env.CI_RUN_HEAVY == 'true'
         run: |
           for attempt in 1 2 3; do
             echo "npm ci attempt ${attempt}/3"
@@ -320,9 +405,10 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
       - name: Build workspaces
+        if: env.CI_RUN_HEAVY == 'true'
         run: npm run build
       - name: Isolated package runtime smoke test
-        if: matrix.coverage
+        if: ${{ env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
         run: |
           pack_dir="$(mktemp -d)"
           run_dir="$(mktemp -d)"
@@ -351,7 +437,7 @@ jobs:
           echo "runtime smoke failed after 3 attempts"
           exit 1
       - name: Test workspaces (with coverage)
-        if: matrix.coverage
+        if: ${{ env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
         env:
           SDX_SCHEMA_CORPUS_DIR: ${{ runner.temp }}/schema-corpus
         run: |
@@ -362,23 +448,24 @@ jobs:
           npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
       - name: Test workspaces
-        if: ${{ !matrix.coverage }}
+        if: ${{ env.CI_RUN_HEAVY == 'true' && !matrix.coverage }}
         env:
           SDX_SCHEMA_CORPUS_DIR: ${{ runner.temp }}/schema-corpus
         run: npm run test
       - name: Validate emitted document.xml corpus against ECMA-376 schema
+        if: env.CI_RUN_HEAVY == 'true'
         run: |
           node scripts/check_emitted_document_schema.mjs --self-test \
             --known-failures coverage/emitted-schema-known-failures.json \
             "$RUNNER_TEMP/schema-corpus"
       - name: Generate package coverage dashboard + enforce ratchet
-        if: matrix.coverage
+        if: ${{ env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
         run: |
           mkdir -p coverage
           npm run coverage:packages:check > coverage/package-coverage-table.txt
           cat coverage/package-coverage-table.txt
       - name: Upload package coverage artifacts
-        if: ${{ matrix.coverage && always() }}
+        if: ${{ always() && env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-coverage
@@ -396,7 +483,7 @@ jobs:
             packages/docx-markdoc/coverage/lcov.info
             packages/docx-mcp/coverage/lcov.info
       - name: Upload coverage to Codecov
-        if: ${{ matrix.coverage && !cancelled() }}
+        if: ${{ !cancelled() && env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
         continue-on-error: true
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -406,7 +493,7 @@ jobs:
           fail_ci_if_error: false
           verbose: true
       - name: Upload allure results
-        if: matrix.coverage
+        if: ${{ env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: allure-results
@@ -418,16 +505,21 @@ jobs:
   real-corpus-comparison:
     name: Real-corpus comparison gates
     runs-on: ubuntu-latest
-    needs: workspace-lint
+    needs: [changes, workspace-lint]
     permissions:
       contents: read
+    env:
+      CI_RUN_HEAVY: ${{ needs.changes.outputs.heavy }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.CI_RUN_HEAVY == 'true'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: env.CI_RUN_HEAVY == 'true'
         with:
           node-version: 20
           cache: npm
       - name: Install dependencies (npm ci with retry)
+        if: env.CI_RUN_HEAVY == 'true'
         run: |
           for attempt in 1 2 3; do
             echo "npm ci attempt ${attempt}/3"
@@ -441,10 +533,12 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
       - name: Materialize SHA-256-verified comparison corpus
+        if: env.CI_RUN_HEAVY == 'true'
         env:
           SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
         run: node scripts/prepare_real_comparison_corpus.mjs "$SAFE_DOCX_REAL_CORPUS_DIR"
       - name: Run real-corpus comparison gates
+        if: env.CI_RUN_HEAVY == 'true'
         env:
           SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
           SAFE_DOCX_REAL_CORPUS_REQUIRED: "1"
@@ -453,7 +547,9 @@ jobs:
 
   mcpb-bundle:
     runs-on: ubuntu-latest
-    needs: workspace-test
+    needs: [changes, workspace-test]
+    # Not a required check, so a plain job-level skip is safe here.
+    if: needs.changes.outputs.heavy == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
