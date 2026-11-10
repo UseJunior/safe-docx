@@ -623,7 +623,7 @@ Before anything is published, every build checks its own output. Besides the
 package, determinism, read-back and brownfield-import checks:
 
 - **Round trip.** The DOCX is re-imported with `docx-markdoc import`, and its
-  body and footer paragraphs are compared with text read straight from the
+  body, header and footer paragraphs are compared with text read straight from the
   Markdoc source, not from the document model the build produced. Only
   Unicode NFC and whitespace collapsing are applied. A deleted word,
   paragraph, table cell and footer text must each be detected as negative
@@ -873,7 +873,83 @@ such as an unclosed tag, and headings below `###`.
 - `{% page-break /%}` starts the next block on a new page.
 - `{% section %}` starts a next-page section. With no `footer` or
   `page-numbers` attribute, the section keeps the previous section's footer.
-  `page-numbers=false` alone gives the section its own empty footer.
+  `page-numbers=false` alone gives the section its own empty footer. The
+  same holds for the header (below): with no `header` or `header-first`
+  attribute, the section keeps the previous section's header.
+
+### Running headers, footers and first pages
+
+The frontmatter sets the first section's header and footer, and the same
+keys as `{% section %}` attributes set the next section's:
+
+| Key | Values | Default |
+|---|---|---|
+| `header` | the header text; on `{% section %}`, `header=false` for an empty header | no header |
+| `header-align` | `left`, `center`, `right` | `center` |
+| `header-first` | the first page's header text, or `none` | the header |
+| `footer` | the footer text | no footer text |
+| `footer-align` | `left`, `center`, `right` | `center` |
+| `footer-italic` | `true`, `false` (upright) | `true` |
+| `footer-layout` | `stacked`, `one-line` | `stacked` |
+| `footer-first` | the first page's footer text, or `none` | the footer |
+| `page-numbers` | `true`, `false` | `false` |
+| `page-number-align` | `left`, `center`, `right` | `center` |
+| `page-number-format` | `plain` (`1`), `dashed` (`- 1 -`), `page-of-total` (`Page 1 of 3`) | `plain` |
+
+```markdoc
+---
+title: Engagement Letter
+header: Acme Matter | Engagement Letter
+header-align: right
+header-first: none
+page-numbers: true
+page-number-format: page-of-total
+---
+
+Dear Client:
+
+**Re: Acme Matter**
+```
+
+This letter has no header on page 1 and the right-aligned header from
+page 2, with a centred `Page 1 of 2`, `Page 2 of 2` on every page.
+
+- The header is one paragraph in the Header style, aligned on the paragraph
+  itself. `page-of-total` writes the total as a `NUMPAGES` field.
+- `footer-layout: one-line` puts the footer text at the left margin and the
+  page number at the right margin, after a right tab stop, in one paragraph.
+  It needs both `footer` and `page-numbers: true` and takes no
+  `footer-align` or `page-number-align`.
+- `header-first` and `footer-first` are independent. A variant gives the
+  section `w:titlePg`. On a first page Word and LibreOffice show only the
+  first-page header and footer and never fall back to the others, so both
+  are written: the variant where there is one, and a copy of the section's
+  header or footer where there is not. `header-first: none` therefore keeps
+  the page number on page 1. `footer-first` text replaces the footer text on
+  the first page and keeps the page number when the footer has one;
+  `footer-first: none` leaves the first page's footer empty. First-page text
+  on its own (`header-first: Letterhead` with no `header`) gives an empty
+  header on the other pages.
+- A section that declares no header or footer inherits the previous one,
+  first-page variant included. Without a variant there is no `w:titlePg`.
+- A key that shapes text needs that text in the same place: `header-align`
+  needs header text (the header's or its first page's); `footer-align` and
+  `footer-italic` need footer text; `page-number-align` and
+  `page-number-format` need `page-numbers: true`; `header-first: none` and
+  `footer-first: none` need a header or footer. Otherwise the build fails
+  with `UNSUPPORTED_CREATION_FRONTMATTER` or, on a section, `INVALID_SECTION`
+  and its line.
+- Verification covers them like the footer. Read-back compares each
+  section's header and, under `w:titlePg`, its first-page header and footer
+  (`checks.headers`, with negative controls). The round trip compares them
+  with the source (controls `deletedHeaderText`, `changedFirstPageHeader`,
+  `changedFirstPageFooter`). The PDF word check expects each page's header
+  and then its footer at the head of the page, as LibreOffice writes them,
+  with the first-page variant on the first page of each section and the
+  generated words `Page`, the number, `of` and the total. These certificate
+  entries appear only when the document has a header or a first-page
+  variant. A source without the new keys builds the same bytes and
+  certificate as before.
 
 ### Migrating from a per-matter python-docx renderer
 
@@ -922,6 +998,7 @@ discard those edits.
 | `<!-- pagebreak -->` | `{% page-break /%}` |
 | `<!-- page-numbers -->` | frontmatter `page-numbers: true` |
 | `<!-- section: x footer="…" -->` | `{% section footer="…" /%}` |
+| header or page number added with python-docx after the build | frontmatter `header:`, `header-first:`, `page-number-format:` (see Running headers) |
 | `## 1. Heading` with a literal number, `(a) text` | `## Heading` plus an ordered list (real numbering) |
 | `<u>Purchase Price</u>` | `{% u %}Purchase Price{% /u %}` |
 | `[Effective Date]` as a highlighted blank | `{% fill %}Effective Date{% /fill %}` (or frontmatter `fill-ins: brackets`) |

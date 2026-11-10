@@ -5,7 +5,7 @@ import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
 import type { PdfRenderTools } from '../pdf/tools.js';
 import { DocxMarkdocError } from '../errors.js';
 import { createDocumentFromMarkdoc, type CreatedDocument, type CrossReferenceCheck } from './create.js';
-import { PAGE_FIELD_TOKEN } from './lower.js';
+import { NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN } from './lower.js';
 import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
 
 export type CreateCliArgs = {
@@ -118,14 +118,27 @@ function paragraphsAsLibreOfficeRenders(readback: CreatedDocument['readback']): 
   });
 }
 
-/** Text a rendered PDF must contain: the first and last paragraphs and every footer text. */
+/**
+ * The literal text of a header or footer line: the line itself, or, when it
+ * holds PAGE or NUMPAGES fields, each piece between them and its tabs that has
+ * a letter or digit ("Page <PAGE> of <NUMPAGES>" needs "Page" and "of"; the
+ * numbers depend on the page and are checked word by word).
+ */
+function literalPieces(line: string): string[] {
+  if (!line.includes(PAGE_FIELD_TOKEN) && !line.includes(NUMPAGES_FIELD_TOKEN)) return [line];
+  return line.split(new RegExp(`${PAGE_FIELD_TOKEN}|${NUMPAGES_FIELD_TOKEN}|\t`, 'u')).map((piece) => piece.trim()).filter((piece) => /[\p{L}\p{N}]/u.test(piece));
+}
+
+/** Text a rendered PDF must contain: the first and last paragraphs and every header and footer text. */
 export function requiredPdfText(created: CreatedDocument): string[] {
   const paragraphs = paragraphsAsLibreOfficeRenders(created.readback).filter((paragraph) => paragraph.trim());
   const title = paragraphs[0];
   const last = paragraphs.at(-1) ?? '';
   const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
-  const footers = created.readback.footers.flatMap((footer) => footer ?? []).filter((line) => line !== PAGE_FIELD_TOKEN);
-  return [...new Set([title, lastNeedle, ...footers].filter((value): value is string => Boolean(value?.trim())))];
+  const { footers, headers, firstPage } = created.readback;
+  const stories = [...headers, ...footers, ...firstPage.flatMap((entry) => (entry ? [entry.header, entry.footer] : []))];
+  const running = stories.flatMap((story) => story ?? []).flatMap(literalPieces);
+  return [...new Set([title, lastNeedle, ...running].filter((value): value is string => Boolean(value?.trim())))];
 }
 
 const sha256File = async (target: string): Promise<string> => createHash('sha256').update(await readFile(target)).digest('hex');
@@ -561,6 +574,7 @@ async function createLocked(
       `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
       `readback ok (negative control ok)`,
       `footers ok (negative control ok)`,
+      ...(checks.headers ? [`headers ok (${plural(checks.headers.sections, 'section')}${checks.headers.firstPageSections > 0 ? `, ${checks.headers.firstPageSections} with a first page of its own` : ''}; ${controlsSummary({ 'header text': checks.headers.negativeControlDetected, ...(checks.headers.firstPageNegativeControlDetected === undefined ? {} : { 'first page': checks.headers.firstPageNegativeControlDetected }) })})`] : []),
       ...(checks.footnotes.notes > 0 || checks.footnotes.references.expected > 0
         ? [`footnotes ok (${plural(checks.footnotes.notes, 'note')}, ${plural(checks.footnotes.references.actual, 'reference')}; ${controlsSummary({ 'note text': checks.footnotes.negativeControlDetected, 'dropped reference': checks.footnotes.references.negativeControlDetected })})`]
         : []),

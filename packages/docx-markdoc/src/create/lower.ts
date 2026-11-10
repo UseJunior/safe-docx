@@ -9,6 +9,7 @@ import {
   creationDefaults,
   creationStyles,
   resolveCreationProfile,
+  textWidthTwips,
   twipsFromIn,
   twipsFromPt,
   type CreationProfile,
@@ -16,6 +17,7 @@ import {
 import { HEADING_CLAUSE_ILVL } from './list-numbering.js';
 import { CreationTheme, creationPlugins } from './theme.js';
 import {
+  FIRST_PAGE_NONE,
   checkCreationSourceCharacters,
   creationError,
   lineOf,
@@ -23,6 +25,9 @@ import {
   soleInlineTag,
   validateCreationAst,
   type CreationFrontmatter,
+  type FooterLayout,
+  type PageNumberFormat,
+  type RunningTextAlignment,
 } from './validate.js';
 
 export { parseCreationFrontmatter, type CreationFrontmatter } from './validate.js';
@@ -31,13 +36,23 @@ export { parseCreationFrontmatter, type CreationFrontmatter } from './validate.j
 export const CREATION_EPOCH_ISO = '2006-01-01T00:00:00Z';
 /** Read-back token for a PAGE field. */
 export const PAGE_FIELD_TOKEN = '<PAGE>';
+/** Read-back token for a NUMPAGES field (the total page count). */
+export const NUMPAGES_FIELD_TOKEN = '<NUMPAGES>';
 
 /**
- * Footer per section: its paragraph texts when the section declares its own
- * footer, or null when it has no footer reference (the first section then has
- * no footer; later sections inherit the previous one, as in Word).
+ * Footer (or header) per section: its paragraph texts when the section
+ * declares its own, or null when it has no reference (the first section then
+ * has none; later sections inherit the previous one, as in Word).
  */
 export type FooterProjection = string[] | null;
+
+/**
+ * Per section: null when the section shows its header and footer on its
+ * first page too. With `header-first` or `footer-first` in effect, the
+ * section has `w:titlePg`, and this holds its first-page header and footer
+ * texts (null for a slot without a reference).
+ */
+export type FirstPageProjection = { header: FooterProjection; footer: FooterProjection } | null;
 
 /** Where a footnote reference sits: its body paragraph (index into `paragraphs`) and character offset. */
 export type FootnoteReferencePosition = { paragraph: number; offset: number };
@@ -52,6 +67,8 @@ export type FootnoteReferencePosition = { paragraph: number; offset: number };
 export type CreationProjection = {
   paragraphs: string[];
   footers: FooterProjection[];
+  headers: FooterProjection[];
+  firstPage: FirstPageProjection[];
   footnoteReferences: FootnoteReferencePosition[];
   footnotes: string[][];
 };
@@ -70,9 +87,21 @@ export type CreationLowering = {
   blocks: Array<{ kind: CreationBlockKind; line?: number; section: number }>;
 };
 
-type FooterDeclaration = { text?: string; pageNumbers?: boolean };
+type FooterDeclaration = {
+  text?: string;
+  pageNumbers?: boolean;
+  align?: RunningTextAlignment;
+  italic?: boolean;
+  numberAlign?: RunningTextAlignment;
+  numberFormat?: PageNumberFormat;
+  layout?: FooterLayout;
+  /** The first page's footer text in place of `text`, or `none`; absent, the first page shows this footer. */
+  first?: string;
+};
+/** A declared header: its text, or none for an empty header (`header=false`); `first` as for a footer. */
+type HeaderDeclaration = { text?: string; align?: RunningTextAlignment; first?: string };
 type Entry = { kind: CreationBlockKind; line?: number; blocks: BlockSpec[]; pageBreakBefore: boolean };
-type SectionState = { entries: Entry[]; footer?: FooterDeclaration };
+type SectionState = { entries: Entry[]; footer?: FooterDeclaration; header?: HeaderDeclaration };
 
 /**
  * A soft break (an ordinary line wrap in the source) reads as one space. Turn
@@ -157,7 +186,7 @@ function runText(runs: InlineSpec[], references: ReferenceTexts = NO_REFERENCES,
       if (shown === undefined) throw new Error(`cross-reference to '${run.bookmark}' has no ${run.show === 'text' ? 'target' : 'numbered target'} in the lowering`);
       return shown;
     }
-    return PAGE_FIELD_TOKEN;
+    return run.field === 'NUMPAGES' ? NUMPAGES_FIELD_TOKEN : PAGE_FIELD_TOKEN;
   }).join('');
 }
 
@@ -334,13 +363,125 @@ function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs:
   return out;
 }
 
-function footerSpec(footer: FooterDeclaration): HeaderFooterSpec {
+/** The runs of a page number in `format`: "1", "- 1 -" or "Page 1 of 3". */
+function pageNumberRuns(format: PageNumberFormat = 'plain'): InlineSpec[] {
+  const page: InlineSpec = { kind: 'field', field: 'PAGE', cachedResult: '1' };
+  if (format === 'dashed') return [{ kind: 'text', text: '- ' }, page, { kind: 'text', text: ' -' }];
+  if (format === 'page-of-total') return [{ kind: 'text', text: 'Page ' }, page, { kind: 'text', text: ' of ' }, { kind: 'field', field: 'NUMPAGES', cachedResult: '1' }];
+  return [page];
+}
+
+/** A page number in `format` as read back: its fields as tokens. */
+function pageNumberText(format: PageNumberFormat = 'plain'): string {
+  if (format === 'dashed') return `- ${PAGE_FIELD_TOKEN} -`;
+  if (format === 'page-of-total') return `Page ${PAGE_FIELD_TOKEN} of ${NUMPAGES_FIELD_TOKEN}`;
+  return PAGE_FIELD_TOKEN;
+}
+
+function footerSpec(footer: FooterDeclaration, profile: CreationProfile): HeaderFooterSpec {
   // A declared footer with neither text nor page numbers is an unlinked, empty footer.
   if (!footer.text && !footer.pageNumbers) return { blocks: [{ kind: 'paragraph', styleId: CREATION_STYLE.footer, runs: [] }] };
+  const text: InlineSpec[] = footer.text ? [{ kind: 'text', text: footer.text, ...(footer.italic === false ? {} : { italic: true }) }] : [];
+  if (footer.layout === 'one-line') {
+    // The text at the left margin, then a right tab stop at the right margin for the number.
+    return {
+      blocks: [{
+        kind: 'paragraph',
+        styleId: CREATION_STYLE.footer,
+        alignment: 'left',
+        tabs: [{ posTwips: textWidthTwips(profile), align: 'right' }],
+        runs: [...text, { kind: 'tab' }, ...pageNumberRuns(footer.numberFormat)],
+      }],
+    };
+  }
   const blocks: ParagraphSpec[] = [];
-  if (footer.text) blocks.push({ kind: 'paragraph', styleId: CREATION_STYLE.footer, runs: [{ kind: 'text', text: footer.text, italic: true }] });
-  if (footer.pageNumbers) blocks.push({ kind: 'paragraph', styleId: CREATION_STYLE.footer, runs: [{ kind: 'field', field: 'PAGE', cachedResult: '1' }] });
+  if (footer.text) blocks.push({ kind: 'paragraph', styleId: CREATION_STYLE.footer, ...(footer.align ? { alignment: footer.align } : {}), runs: text });
+  if (footer.pageNumbers) blocks.push({ kind: 'paragraph', styleId: CREATION_STYLE.footer, ...(footer.numberAlign ? { alignment: footer.numberAlign } : {}), runs: pageNumberRuns(footer.numberFormat) });
   return { blocks };
+}
+
+/** A footer's paragraphs as read back. */
+function footerLines(footer: FooterDeclaration): string[] {
+  if (!footer.text && !footer.pageNumbers) return [''];
+  if (footer.layout === 'one-line') return [`${footer.text}\t${pageNumberText(footer.numberFormat)}`];
+  return [...(footer.text ? [footer.text] : []), ...(footer.pageNumbers ? [pageNumberText(footer.numberFormat)] : [])];
+}
+
+/** One header paragraph, aligned as declared (centred by default); an empty header has no text. */
+function headerSpec(header: HeaderDeclaration): HeaderFooterSpec {
+  return {
+    blocks: [{
+      kind: 'paragraph',
+      styleId: CREATION_STYLE.header,
+      ...(header.text ? { alignment: header.align ?? 'center' } : {}),
+      runs: header.text ? [{ kind: 'text', text: header.text }] : [],
+    }],
+  };
+}
+
+/**
+ * The footer a section's first page shows: its `first` text in place of its
+ * own (laid out the same, with the page number when it has one), an empty
+ * footer for `none`, or the footer itself.
+ */
+function firstPageFooter(footer: FooterDeclaration): FooterDeclaration {
+  if (footer.first === undefined) return footer;
+  if (footer.first === FIRST_PAGE_NONE) return {};
+  return { ...footer, text: footer.first };
+}
+
+/** The header a section's first page shows: its `first` text, aligned like the header, none, or the header itself. */
+function firstPageHeader(header: HeaderDeclaration): HeaderDeclaration {
+  if (header.first === undefined) return header;
+  if (header.first === FIRST_PAGE_NONE) return {};
+  return { ...header, text: header.first };
+}
+
+/** The footer declared by the frontmatter, for the first section. */
+function frontmatterFooter(frontmatter: CreationFrontmatter): FooterDeclaration | undefined {
+  // First-page text alone declares a footer that is empty on the other pages.
+  if (!frontmatter.footer && !frontmatter.pageNumbers && !frontmatter.footerFirst) return undefined;
+  return {
+    ...(frontmatter.footer ? { text: frontmatter.footer } : {}),
+    ...(frontmatter.pageNumbers ? { pageNumbers: true } : {}),
+    ...(frontmatter.footerAlign ? { align: frontmatter.footerAlign } : {}),
+    ...(frontmatter.footerItalic === undefined ? {} : { italic: frontmatter.footerItalic }),
+    ...(frontmatter.pageNumberAlign ? { numberAlign: frontmatter.pageNumberAlign } : {}),
+    ...(frontmatter.pageNumberFormat ? { numberFormat: frontmatter.pageNumberFormat } : {}),
+    ...(frontmatter.footerLayout ? { layout: frontmatter.footerLayout } : {}),
+    ...(frontmatter.footerFirst ? { first: frontmatter.footerFirst } : {}),
+  };
+}
+
+/** The footer a `{% section %}` declares, or undefined when it declares none (it then inherits). */
+function sectionFooter(attributes: Record<string, unknown>): FooterDeclaration | undefined {
+  const footer = attributes.footer as string | undefined;
+  const pageNumbers = attributes['page-numbers'] as boolean | undefined;
+  // Any footer attribute, including an explicit page-numbers=false, unlinks the footer; none inherits.
+  // The attributes that shape the footer need footer text or page numbers beside them (validation).
+  // First-page text alone declares a footer that is empty on the other pages.
+  if (footer === undefined && pageNumbers === undefined && attributes['footer-first'] === undefined) return undefined;
+  const word = <T>(key: string) => attributes[key] as T | undefined;
+  return {
+    ...(footer ? { text: footer } : {}),
+    ...(pageNumbers ? { pageNumbers: true } : {}),
+    ...(word<RunningTextAlignment>('footer-align') ? { align: word<RunningTextAlignment>('footer-align')! } : {}),
+    ...(word<boolean>('footer-italic') === undefined ? {} : { italic: word<boolean>('footer-italic')! }),
+    ...(word<RunningTextAlignment>('page-number-align') ? { numberAlign: word<RunningTextAlignment>('page-number-align')! } : {}),
+    ...(word<PageNumberFormat>('page-number-format') ? { numberFormat: word<PageNumberFormat>('page-number-format')! } : {}),
+    ...(word<FooterLayout>('footer-layout') ? { layout: word<FooterLayout>('footer-layout')! } : {}),
+    ...(word<string>('footer-first') ? { first: word<string>('footer-first')! } : {}),
+  };
+}
+
+/** The header a `{% section %}` declares: header="…" or header=false; undefined inherits. */
+function sectionHeader(attributes: Record<string, unknown>): HeaderDeclaration | undefined {
+  const header = attributes.header as string | false | undefined;
+  // First-page text alone declares a header that is empty on the other pages.
+  if (header === undefined && attributes['header-first'] === undefined) return undefined;
+  const align = attributes['header-align'] as RunningTextAlignment | undefined;
+  const first = attributes['header-first'] as string | undefined;
+  return { ...(typeof header === 'string' ? { text: header } : {}), ...(align ? { align } : {}), ...(first ? { first } : {}) };
 }
 
 /** Signer, legend, table and page-break rules that relate a block to its neighbours. */
@@ -408,10 +549,11 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     },
   });
 
-  const firstFooter = frontmatter.footer || frontmatter.pageNumbers
-    ? { ...(frontmatter.footer ? { text: frontmatter.footer } : {}), ...(frontmatter.pageNumbers ? { pageNumbers: true } : {}) }
+  const firstFooter = frontmatterFooter(frontmatter);
+  const firstHeader: HeaderDeclaration | undefined = frontmatter.header || frontmatter.headerFirst
+    ? { ...(frontmatter.header ? { text: frontmatter.header } : {}), ...(frontmatter.headerAlign ? { align: frontmatter.headerAlign } : {}), ...(frontmatter.headerFirst ? { first: frontmatter.headerFirst } : {}) }
     : undefined;
-  const sections: SectionState[] = [{ entries: [], ...(firstFooter ? { footer: firstFooter } : {}) }];
+  const sections: SectionState[] = [{ entries: [], ...(firstFooter ? { footer: firstFooter } : {}), ...(firstHeader ? { header: firstHeader } : {}) }];
   let pendingPageBreak: MarkdocNode | null = null;
   let titleBlocks: BlockSpec[] | undefined;
   for (const node of ast.children) {
@@ -428,11 +570,9 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     if (tag?.tag === 'section') {
       if (pendingPageBreak) creationError('PAGE_BREAK_BEFORE_SECTION', '{% page-break /%} directly before {% section /%} is redundant; a section starts a new page.', node);
       if (current.entries.length === 0) creationError('EMPTY_CREATION_SECTION', '{% section /%} must follow at least one block.', node);
-      const footer = tag.attributes.footer as string | undefined;
-      const pageNumbersAttribute = tag.attributes['page-numbers'] as boolean | undefined;
-      // Any footer attribute, including an explicit page-numbers=false, unlinks the footer; none inherits.
-      const declared = footer !== undefined || pageNumbersAttribute !== undefined;
-      sections.push({ entries: [], ...(declared ? { footer: { ...(footer ? { text: footer } : {}), ...(pageNumbersAttribute ? { pageNumbers: true } : {}) } } : {}) });
+      const footer = sectionFooter(tag.attributes);
+      const header = sectionHeader(tag.attributes);
+      sections.push({ entries: [], ...(footer ? { footer } : {}), ...(header ? { header } : {}) });
       continue;
     }
     const blocks = api.renderBlocks([node], { listDepth: 0 });
@@ -448,17 +588,41 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   for (const section of sections) applyNeighbourRules(section, profile);
 
   const margin = twipsFromIn(profile.marginsIn);
+  // A section that declares no header or footer inherits the one before it, as in Word, first-page
+  // variants included. With `header-first` or `footer-first` in effect the section has w:titlePg, and Word
+  // and LibreOffice then show only the first-page slots on its first page, never falling back to the
+  // default ones. So both slots are written for each such section: the variant where there is one, and a
+  // copy of the section's header or footer otherwise, so the first page never silently loses either.
+  const effective: Array<{ header?: HeaderDeclaration; footer?: FooterDeclaration }> = [];
+  for (const [index, section] of sections.entries()) {
+    const header = section.header ?? effective[index - 1]?.header;
+    const footer = section.footer ?? effective[index - 1]?.footer;
+    effective.push({ ...(header ? { header } : {}), ...(footer ? { footer } : {}) });
+  }
+  const firstPageOff = (index: number) => effective[index]!.header?.first !== undefined || effective[index]!.footer?.first !== undefined;
   const specSections: SectionSpec[] = sections.map((section, index) => {
     const blocks = section.entries.flatMap((entry) => entry.blocks);
     const isFinal = index === sections.length - 1;
     const endsWithTable = blocks.at(-1)?.kind === 'table';
+    const titlePage = firstPageOff(index);
+    const { header: runningHeader, footer: runningFooter } = effective[index]!;
+    const headers = {
+      ...(section.header ? { default: headerSpec(section.header) } : {}),
+      ...(titlePage && runningHeader ? { first: headerSpec(firstPageHeader(runningHeader)) } : {}),
+    };
+    const footers = {
+      ...(section.footer ? { default: footerSpec(section.footer, profile) } : {}),
+      ...(titlePage && runningFooter ? { first: footerSpec(firstPageFooter(runningFooter), profile) } : {}),
+    };
     return {
       page: {
         sizeTwips: { w: PAGE_WIDTH_TWIPS, h: PAGE_HEIGHT_TWIPS },
         marginsTwips: { top: margin, right: margin, bottom: margin, left: margin, header: 720, footer: 720, gutter: 0 },
       },
       ...(isFinal ? {} : { breakType: 'nextPage' as const, breakPlacement: endsWithTable ? 'ownParagraph' as const : 'lastParagraph' as const }),
-      ...(section.footer ? { footers: { default: footerSpec(section.footer) } } : {}),
+      ...(titlePage ? { titlePg: true } : {}),
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(Object.keys(footers).length > 0 ? { footers } : {}),
       blocks,
     };
   });
@@ -480,7 +644,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       createdIso: frontmatter.date ? (frontmatter.date.includes('T') ? frontmatter.date : `${frontmatter.date}T00:00:00Z`) : CREATION_EPOCH_ISO,
     },
     defaults: creationDefaults(profile),
-    styles: creationStyles(profile),
+    styles: creationStyles(profile, { header: sections.some((section) => section.header !== undefined) }),
     ...(theme.numbering.length > 0 ? { numbering: [...theme.numbering] } : {}),
     sections: specSections,
   };
@@ -490,11 +654,13 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       paragraphs,
       footnoteReferences: projected.footnoteReferences,
       footnotes: projected.footnotes,
-      footers: sections.map((section) => (section.footer
-        ? (section.footer.text || section.footer.pageNumbers
-          ? [...(section.footer.text ? [section.footer.text] : []), ...(section.footer.pageNumbers ? [PAGE_FIELD_TOKEN] : [])]
-          : [''])
-        : null)),
+      footers: sections.map((section) => (section.footer ? footerLines(section.footer) : null)),
+      headers: sections.map((section) => (section.header ? [section.header.text ?? ''] : null)),
+      firstPage: sections.map((_, index) => {
+        if (!firstPageOff(index)) return null;
+        const { header, footer } = effective[index]!;
+        return { header: header ? [firstPageHeader(header).text ?? ''] : null, footer: footer ? footerLines(firstPageFooter(footer)) : null };
+      }),
     },
     frontmatter,
     profile,
