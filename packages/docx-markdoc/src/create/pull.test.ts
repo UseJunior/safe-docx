@@ -812,6 +812,11 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         expect(pattern.test(xml)).toBe(true);
         return xml.replace(pattern, '');
       } });
+      const addedAfterItem = (text: string, added: string): Surgery => ({ document: (xml) => {
+        const pattern = new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${text}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        expect(pattern.test(xml)).toBe(true);
+        return xml.replace(pattern, (paragraph) => paragraph + paragraph.replace(`>${text}<`, `>${added}<`));
+      } });
       const once2 = (old: string, now: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, `<w:t xml:space="preserve">${now}</w:t>`) });
       const retype = (old: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, '<w:t xml:space="preserve">Entirely fresh sentence.</w:t>') });
       for (const [listSource, surgery, expected] of [
@@ -834,6 +839,12 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['- Apple\n\nBridge.\n\n- Banana\n\n* Cherry\n\nBody.\n', dropParagraph('Bridge.'), '- Apple\n\n+ Banana\n\n* Cherry\n\nBody.\n'],
         ['- Apple\n\nB1.\n\n- Banana\n\nB2.\n\n- Cherry\n\nBody.\n', all(dropParagraph('B1.'), dropParagraph('B2.')), '- Apple\n\n* Banana\n\n- Cherry\n\nBody.\n'],
         ['1. Apple\n\nB1.\n\n1. Banana\n\nB2.\n\n1. Cherry\n\nBody.\n', all(dropParagraph('B1.'), dropParagraph('B2.')), '1. Apple\n\n1) Banana\n\n1. Cherry\n\nBody.\n'],
+        // The second list's first item deleted too (its heir's marker takes the new delimiter), and an item added to
+        // or retyped in the second list, which takes it as well.
+        ['1. Apple\n\nBridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), dropParagraph('Banana'), once2('Cherry', 'Cherry changed')), '1. Apple\n\n1) Cherry changed\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Banana', 'Added')), '- Apple\n\n* Banana\n* Added\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '- Apple\n\n* Entirely fresh sentence.\n* Cherry\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Cherry', 'Appended')), '1. Apple\n\n1) Banana\n2) Cherry\n2) Appended\n\nBody.\n'],
       ] as const) {
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });

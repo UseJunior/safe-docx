@@ -1020,6 +1020,9 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     byEntry.set(entry, [...(byEntry.get(entry) ?? []), index]);
   }
   const entryPlans = new Map<number, Plan>();
+  /** The heir-marker edits by offset, and the delimiter each list a deletion re-delimits takes (for added items too). */
+  const heirMarkers = new Map<number, Splice>();
+  const listDelimiters = new Map<MarkdocNode, string>();
   for (const [entry, indexes] of byEntry) {
     const reports = indexes.map((index) => {
       const sp = map.paragraphs[index]!;
@@ -1100,6 +1103,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
             }
             const at = starts[heir.ownLines[0]]! + heir.listItem!.indent.length;
             heirMarker = { start: at, end: at + heir.listItem!.marker.length, text: item.marker };
+            heirMarkers.set(at, heirMarker);
           }
         }
       }
@@ -1156,11 +1160,15 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const pick = choices.find((choice) => choice !== assigned && choice !== nextDelimiter) ?? choices.find((choice) => choice !== assigned)!;
       assigned = pick;
       if (!joinedBy) continue;
+      listDelimiters.set(node, pick);
       for (const paragraph of items) {
         if (deletedSet.has(paragraph.index)) continue;
         const { indent, marker } = paragraph.listItem!;
         const at = starts[paragraph.ownLines![0]]! + indent.length;
-        joinedBy.splices.push({ start: at, end: at + marker.length, text: ordered ? `${marker.slice(0, -1)}${pick}` : pick });
+        // A marker an heir already takes over changes delimiter in that one edit.
+        const heir = heirMarkers.get(at);
+        if (heir) heir.text = `${heir.text.slice(0, -1)}${pick}`;
+        else joinedBy.splices.push({ start: at, end: at + marker.length, text: ordered ? `${marker.slice(0, -1)}${pick}` : pick });
       }
     }
   }
@@ -1224,11 +1232,14 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
         fail('PULL_UNMAPPED_INSERTION', 'the list item it follows has no source lines');
         continue;
       }
+      // A list a deletion re-delimits gives its added items the same delimiter.
+      const delimiter = listDelimiters.get(item.list);
+      if (delimiter !== undefined) item = { ...item, marker: /^\d/u.test(item.marker) ? `${item.marker.slice(0, -1)}${delimiter}` : delimiter };
       // Items replacing a list's first items (the whole list retyped) start it where it started.
       if (replacing && /^\d+[.)]$/u.test(item.marker)) {
         const siblings = map.paragraphs.filter((other) => other.listItem?.list === item.list && other.listItem.indent === item.indent);
         const first = siblings[0]!.listItem!;
-        if (siblings.slice(0, siblings.indexOf(context) + 1).every((other) => deletedSet.has(other.index))) item = { ...item, marker: first.marker };
+        if (siblings.slice(0, siblings.indexOf(context) + 1).every((other) => deletedSet.has(other.index))) item = { ...item, marker: delimiter === undefined ? first.marker : `${first.marker.slice(0, -1)}${delimiter}` };
       }
       const text = blocks.map((block) => `${item.indent}${item.marker} ${block.markdown.replaceAll('\\\n', `\\\n${item.indent}${' '.repeat(item.marker.length + 1)}`)}\n`).join('');      // A list whose every item was deleted takes the blank line after it along: the new items keep one.
       const survivors = map.paragraphs.some((other) => other.listItem?.list === item.list && !deletedSet.has(other.index));
