@@ -876,6 +876,10 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['Bridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(once2('Bridge.', 'Completely novel wording.'), dropParagraph('Banana')), 'Completely novel wording.\n\n- Cherry\n\nBody.\n'],
         ['Bridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(once2('Bridge.', 'Completely novel wording.'), dropParagraph('Banana')), 'Completely novel wording.\n\n1. Cherry\n\nBody.\n'],
         ['Bridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(addedLike('Bridge.', 'Bridge.', 'New prose.'), dropParagraph('Banana')), 'Bridge.\n\nNew prose.\n\n- Cherry\n\nBody.\n'],
+        // The first paragraph after a table deleted: the next takes the spacing create puts after a table.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Banana\n- Cherry\n\nBody.\n', dropParagraph('Banana'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Cherry\n\nBody.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Banana\n2. Cherry\n\nBody.\n', dropParagraph('Banana'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Cherry\n\nBody.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nMore.\n', dropParagraph('After.'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nMore.\n'],
         // The last paragraph, after a table, retyped from scratch: alone, its deletion leaves the table last.
         ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n', once2('After.', 'Completely new wording.'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nCompletely new wording.\n'],
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', addedLike('Apple', 'Bridge.', 'New prose.'), '- Apple\n\nNew prose.\n\nBridge.\n\n- Banana\n\nBody.\n'],
