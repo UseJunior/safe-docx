@@ -259,6 +259,26 @@ function paragraphPropertySignature(pPr: Element | undefined): string {
   return parts.join(';');
 }
 
+/**
+ * The formatting of a field, read from all its runs: one format when they agree. When they do not, each format in
+ * run order with the length of displayed text it covers, so that formatting moved within a cached result (italics
+ * from one word of a cross-reference to the next) differs although the same formats remain. Neighbouring runs of one
+ * format merge, so Word splitting a run is not an edit.
+ */
+function fieldFormatSignature(fieldRuns: readonly Element[]): string {
+  const segments: Array<{ format: string; length: number }> = [];
+  for (const run of fieldRuns) {
+    const format = runFormatSignature(run);
+    let length = 0;
+    for (const node of Array.from(run.getElementsByTagNameNS(W, 't'))) length += (node.textContent ?? '').length;
+    const last = segments.at(-1);
+    if (last && last.format === format) last.length += length;
+    else segments.push({ format, length });
+  }
+  if (segments.length === 1) return segments[0]!.format;
+  return segments.map(({ format, length }) => `${format}#${length}`).join('&');
+}
+
 /** Read one paragraph: its read-back text, the formatting of each character and its properties. */
 function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph {
   const formats: string[] = [];
@@ -271,8 +291,7 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     undefined,
     undefined,
     (start, end, run, fieldRuns) => {
-      // A field reads with the formatting of all its runs: one format when they agree, all of them when they do not.
-      const signature = fieldRuns ? [...new Set(fieldRuns.map(runFormatSignature))].sort().join('&') : runFormatSignature(run);
+      const signature = fieldRuns ? fieldFormatSignature(fieldRuns) : runFormatSignature(run);
       for (let index = start; index < end; index += 1) formats[index] = signature;
     },
   );
