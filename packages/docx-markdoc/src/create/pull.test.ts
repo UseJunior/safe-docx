@@ -777,6 +777,15 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_DIRECT_FORMATTING']);
       }
+      // The heading's paragraph mark set in 72 pt or explicitly not bold, alone and beside a wording edit.
+      for (const markRun of ['<w:sz w:val="144"/>', '<w:b w:val="0"/>']) {
+        const markSized: Surgery = { document: (xml) => xml.replace('</w:pPr>', `<w:rPr>${markRun}</w:rPr></w:pPr>`) };
+        for (const surgery of [markSized, all(markSized, consult)]) {
+          const result = await pullCreationEdits({ source: rangeSource, base: rangeBase, edited: await edit(rangeBase.docx, surgery) });
+          expect(result.complete).toBe(false);
+          expect(codes(result)).toEqual(['PULL_PARAGRAPH_FORMATTING']);
+        }
+      }
       // The same when only a footnote cross-references the heading.
       const noteRangeSource = '## Alpha Beta {% #target %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
       const noteRangeBase = await build(noteRangeSource);

@@ -1061,7 +1061,7 @@ dropped without a line:
 |---|---|
 | `PULL_EDIT_CROSSES_MARKUP` | changes markup it cannot keep: half a fill-in's brackets, an emptied span, a footnote mark or a line break |
 | `PULL_EDIT_IN_CROSS_REFERENCE`, `PULL_EDIT_IN_GENERATED_TEXT` | edits the text of a cross-reference, retargets, moves or re-switches it, or edits text the markup generates (`Section `, a signature line) |
-| `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`, `PULL_STYLE_CHANGED` | formatting create does not express: a word made bold, a paragraph re-aligned or indented, a changed style, a cross-reference's cached result reformatted or given a tab or line break |
+| `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`, `PULL_STYLE_CHANGED` | formatting create does not express: a word made bold, a paragraph re-aligned or indented, a paragraph mark resized or reformatted, a changed style, a cross-reference's cached result reformatted or given a tab or line break |
 | `PULL_ADDED_PARAGRAPH_STYLE` | an added paragraph in a style with no creation markup |
 | `PULL_PAGE_SETUP`, `PULL_SECTION_STRUCTURE` | changed page size, margins or sections |
 | `PULL_DOCUMENT_SETTINGS`, `PULL_DOCUMENT_PROPERTIES` | a layout setting (default tab stop, hyphenation, mirrored margins, book folds) or the title, author, subject, description or keywords |

@@ -244,8 +244,8 @@ function alignmentOf(pPr: Element | undefined): string | undefined {
 /**
  * The paragraph properties `pull` compares: style, alignment, numbering,
  * indentation, spacing, keep and page-break options, tab stops, outline level
- * and borders or shading. The paragraph mark's own run formatting and any
- * `w:sectPr` are left out.
+ * and borders or shading, the paragraph mark's own run formatting, and any
+ * other property; any `w:sectPr` is left out.
  */
 function paragraphPropertySignature(pPr: Element | undefined): string {
   if (!pPr) return '';
@@ -268,7 +268,11 @@ function paragraphPropertySignature(pPr: Element | undefined): string {
     const element = child(pPr, name);
     if (element) parts.push(`${name}=${on(element)}`);
   }
-  // Any other paragraph property, so that none is lost unseen. The mark's run properties and the section are not the paragraph's.
+  // The paragraph mark's own run formatting: a mark set in 72 pt changes the paragraph's last line, and an empty
+  // paragraph's height. Read like a run's, so the language and proofing marks Word adds are left out here too.
+  const mark = runFormatSignature(pPr);
+  if (mark) parts.push(`mark(${mark})`);
+  // Any other paragraph property, so that none is lost unseen. The section is not the paragraph's.
   parts.push(...otherProperties(pPr, [
     'pStyle', 'jc', 'numPr', 'ind', 'spacing', 'tabs', 'pBdr', 'shd', 'outlineLvl', 'framePr', 'textDirection',
     'keepNext', 'keepLines', 'pageBreakBefore', 'widowControl', 'contextualSpacing', 'suppressAutoHyphens', 'bidi',
