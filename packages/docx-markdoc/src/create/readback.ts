@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { OOXML, parseXml } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
-import { PAGE_FIELD_TOKEN, type FooterProjection, type FootnoteReferencePosition } from './lower.js';
+import { PAGE_FIELD_TOKEN, type FirstPageProjection, type FooterProjection, type FootnoteReferencePosition } from './lower.js';
 
 const W = OOXML.W_NS;
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -14,6 +14,10 @@ export type CreationReadback = {
   inTableCell: boolean[];
   /** Per section: the default footer's paragraph texts, or null without a footer reference. */
   footers: FooterProjection[];
+  /** Per section: the default header's paragraph texts, or null without a header reference. */
+  headers: FooterProjection[];
+  /** Per section: null without `w:titlePg`; with it, the first-page header and footer texts (null without a reference). */
+  firstPage: FirstPageProjection[];
   /** Every body `w:footnoteReference`, in document order: its paragraph (index into `paragraphs`) and offset. */
   footnoteReferences: FootnoteReferencePosition[];
   /** The note each reference names, in the same order: its paragraph texts (the number mark reads as nothing). */
@@ -200,24 +204,35 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   const targets = new Map(Array.from(rels.getElementsByTagName('Relationship'))
     .map((rel) => [rel.getAttribute('Id') ?? '', rel.getAttribute('Target') ?? '']));
   const footers: FooterProjection[] = [];
-  for (const sectPr of Array.from(document.getElementsByTagNameNS(W, 'sectPr'))) {
-    const reference = elementChildren(sectPr).find((child) => isW(child, 'footerReference')
-      && (child.getAttributeNS(W, 'type') || child.getAttribute('w:type')) === 'default');
-    if (!reference) {
-      footers.push(null);
-      continue;
-    }
+  const headers: FooterProjection[] = [];
+  const firstPage: FirstPageProjection[] = [];
+  /** The paragraph texts of the part a sectPr's header or footer reference of `type` selects, or null without one. */
+  const story = async (sectPr: Element, kind: 'header' | 'footer', type: 'default' | 'first'): Promise<FooterProjection> => {
+    const reference = elementChildren(sectPr).find((child) => isW(child, `${kind}Reference`)
+      && (child.getAttributeNS(W, 'type') || child.getAttribute('w:type')) === type);
+    if (!reference) return null;
     const target = targets.get(reference.getAttributeNS(R, 'id') || reference.getAttribute('r:id') || '');
-    if (!target) throw new DocxMarkdocError('CREATION_READBACK_FAILED', 'A footer reference does not resolve.');
-    const footer = parseXml(await read(`word/${target.replace(/^\//, '').replace(/^word\//, '')}`));
+    if (!target) throw new DocxMarkdocError('CREATION_READBACK_FAILED', `A ${kind} reference does not resolve.`);
+    const part = parseXml(await read(`word/${target.replace(/^\//, '').replace(/^word\//, '')}`));
     const lines: string[] = [];
-    blockParagraphs(footer.documentElement!, lines);
-    footers.push(lines);
+    blockParagraphs(part.documentElement!, lines);
+    return lines;
+  };
+  for (const sectPr of Array.from(document.getElementsByTagNameNS(W, 'sectPr'))) {
+    footers.push(await story(sectPr, 'footer', 'default'));
+    headers.push(await story(sectPr, 'header', 'default'));
+    // w:titlePg is an on/off property: present and not turned off with w:val.
+    const titlePg = elementChildren(sectPr).find((child) => isW(child, 'titlePg'));
+    const value = titlePg ? titlePg.getAttributeNS(W, 'val') || titlePg.getAttribute('w:val') : null;
+    const on = titlePg !== undefined && !['0', 'false', 'off'].includes(value ?? '');
+    firstPage.push(on ? { header: await story(sectPr, 'header', 'first'), footer: await story(sectPr, 'footer', 'first') } : null);
   }
   return {
     paragraphs,
     inTableCell,
     footers,
+    headers,
+    firstPage,
     footnoteReferences: references.map(({ paragraph, offset }) => ({ paragraph, offset })),
     footnotes,
     ...(crossReferences.length ? { crossReferences } : {}),
