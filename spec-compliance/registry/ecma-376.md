@@ -379,6 +379,32 @@ The footnotes part that `add_footnote` bootstraps and that generation emits
 holds a `w:type="continuationSeparator"` note (id 0) whose run is this
 mark, as Word writes it.
 
+## [ECMA-PART1-17-11-7] w:endnoteReference identifier binding
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.7"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference
+verifiedBy: packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/ancillaryNoteComparison.ts; packages/docx-compare/src/tagged/inlineFootnoteAnchorPair.ts; packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts
+```
+
+Part 1 §17.11.7 defines `w:endnoteReference` as an automatically numbered
+run that references one endnote, and its `w:id` attribute names "the
+footnote or endnote which is being referenced"; an ID absent from the
+endnotes part makes the document non-conformant. Like
+`w:footnoteReference` (§17.11.14), the identifier binds an anchor to its
+definition and is not the displayed number. When a comparison edits an
+endnote body beside unchanged endnotes, docx-compare keeps one stable
+anchor per aligned position and tracks the definition change inside the
+endnote, so every surviving reference still names the endnote whose body
+belongs to it after Accept and after Reject. Footnote and endnote
+identifiers are separate spaces and are reconciled independently.
+
+This claim covers that comparison reconciliation; it is not a claim about
+endnote numbering formats, placement or `w:customMarkFollows` display.
+
 ## [ECMA-PART1-17-11-9] w:footnote special footnote list in document settings
 
 ```yaml

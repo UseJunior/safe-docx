@@ -4,14 +4,19 @@ import { canonicalNoteId } from './ancillaryFieldSafety.js';
 
 const serializer = new XMLSerializer();
 
-/** A reader workaround for one unchanged anchor position, not a general
- * anchor-history flattening rule. Preserve ambiguous or foreign shapes.
+/** A reader workaround for one unchanged footnote or endnote anchor position,
+ * not a general anchor-history flattening rule. Preserve ambiguous or foreign
+ * shapes. Only references of the requested kind are considered; the other
+ * kind's identifiers are a separate space.
  * This internal predicate is not exported from the public package entry point.
  * @internal
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  * @see https://github.com/UseJunior/safe-docx/issues/979
+ * @see https://github.com/UseJunior/safe-docx/issues/996
  */
-export function alignedInlineFootnoteAnchorPair(document: Document, oldId: string, newId: string, author: string): [Element, Element, Element, Element] | undefined {
-  const refs = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'footnoteReference'));
+export function alignedInlineNoteAnchorPair(document: Document, kind: 'footnote' | 'endnote', oldId: string, newId: string, author: string): [Element, Element, Element, Element] | undefined {
+  const refs = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, `${kind}Reference`));
   const old = refs.filter(ref => canonicalNoteId(ref.getAttributeNS(OOXML.W_NS, 'id') ?? '') === oldId);
   const fresh = refs.filter(ref => canonicalNoteId(ref.getAttributeNS(OOXML.W_NS, 'id') ?? '') === newId);
   if (old.length !== 1 || fresh.length !== 1) return;

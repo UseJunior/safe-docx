@@ -59,7 +59,8 @@ function prepareDefinition(entry: Element): string {
 }
 
 /**
- * Compare one corresponding footnote definition as an independent Word story.
+ * Compare one corresponding footnote or endnote definition as an independent
+ * Word story.
  * Tagged construction and publication are reused so paragraphs, runs, fields,
  * and formatting receive the same structural treatment as the main story
  * while matches cannot leak across definition boundaries.
@@ -67,8 +68,9 @@ function prepareDefinition(entry: Element): string {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @see https://github.com/UseJunior/safe-docx/issues/763
+ * @see https://github.com/UseJunior/safe-docx/issues/996
  */
-export function compareFootnoteDefinitions(
+export function compareNoteDefinitions(
   originalEntry: Element,
   revisedEntry: Element,
   options: NoteDefinitionComparisonOptions,
@@ -80,7 +82,7 @@ export function compareFootnoteDefinitions(
     compareSourceProjectedFormattingFidelity(originalXml, revisedXml, revisedXml).reject.score === 1
   ) {
     const unchangedBody = parseXml(revisedXml).getElementsByTagName('w:body').item(0);
-    if (!unchangedBody) throw new Error('Footnote comparison emitted no story body');
+    if (!unchangedBody) throw new Error('Note definition comparison emitted no story body');
     return Array.from(unchangedBody.childNodes)
       .filter((node): node is Element => node.nodeType === 1);
   }
@@ -101,15 +103,15 @@ export function compareFootnoteDefinitions(
   const actualAccepted = extractRoundTripComparisonText(acceptAllChanges(comparedXml));
   const actualRejected = extractRoundTripComparisonText(rejectAllChanges(comparedXml));
   if (actualAccepted !== expectedAccepted || actualRejected !== expectedRejected) {
-    throw new Error('Footnote definition comparison failed accept/reject projection safety');
+    throw new Error('Note definition comparison failed accept/reject projection safety');
   }
   const comparedBody = parseXml(comparedXml).getElementsByTagName('w:body').item(0);
-  if (!comparedBody) throw new Error('Footnote comparison emitted no story body');
+  if (!comparedBody) throw new Error('Note definition comparison emitted no story body');
   return Array.from(comparedBody.childNodes)
     .filter((node): node is Element => node.nodeType === 1);
 }
 
-export interface CorrespondingFootnotePair {
+export interface CorrespondingNotePair {
   originalId: string;
   revisedId: string;
 }
@@ -124,21 +126,28 @@ function hasAncestor(element: Element, tagName: string): boolean {
 }
 
 /**
- * Reconcile only collision-renumbered references that final tagged markup puts
- * in the same paragraph as one delete/insert pair. This keeps arbitrary same-ID
- * definitions from independently authored documents collision-safe without a
- * dependency on the legacy merged-atom stream.
+ * Reconcile only collision-renumbered references of one note kind that final
+ * tagged markup puts in the same paragraph as one delete/insert pair. This
+ * keeps arbitrary same-ID definitions from independently authored documents
+ * collision-safe without a dependency on the legacy merged-atom stream.
+ * Footnote and endnote identifiers are separate spaces, so a renumbering of
+ * one kind never pairs references of the other.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @see https://github.com/UseJunior/safe-docx/issues/996
  */
-export function findCorrespondingFootnotePairs(
+export function findCorrespondingNotePairs(
   documentXml: string,
   renumberings: readonly { label: string; fromId: string; toId: string }[],
-): CorrespondingFootnotePair[] {
+  kind: 'footnote' | 'endnote',
+): CorrespondingNotePair[] {
   const document = parseXml(documentXml);
-  const candidates: CorrespondingFootnotePair[] = [];
+  const candidates: CorrespondingNotePair[] = [];
   for (const { label, fromId, toId } of renumberings) {
-    if (label !== 'footnote') continue;
+    if (label !== kind) continue;
     for (const paragraph of Array.from(document.getElementsByTagName('w:p'))) {
-      const references = Array.from(paragraph.getElementsByTagName('w:footnoteReference'));
+      const references = Array.from(paragraph.getElementsByTagName(`w:${kind}Reference`));
       if (references.length !== 2) continue;
       const deleted = references.filter((reference) =>
         reference.getAttribute('w:id') === fromId && hasAncestor(reference, 'w:del'));
