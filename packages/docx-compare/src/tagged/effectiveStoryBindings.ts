@@ -302,8 +302,9 @@ function wordValue(element: Element, name: string): string {
  * A border collection (`w:pBdr`, `w:tblBorders`, `w:tcBorders`) is visible
  * when one of its edges has an `ST_Border` style other than `nil` or `none`,
  * both of which mean no border. Shading (`w:shd`) is visible unless its
- * `ST_Shd` pattern is `clear` or `nil` and its fill is absent or `auto`,
- * which Word writes on unshaded paragraphs and cells. A table style may carry
+ * `ST_Shd` pattern is `clear` or `nil`, its fill is absent or `auto` and it
+ * names no theme fill, which is what Word writes on unshaded paragraphs and
+ * cells. A table style may carry
  * borders, so it always counts.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.24
@@ -314,7 +315,11 @@ function drawsSomething(property: Element): boolean {
   if (property.localName === 'shd') {
     const pattern = wordValue(property, 'val');
     const fill = wordValue(property, 'fill');
-    return !((pattern === '' || pattern === 'clear' || pattern === 'nil') && (fill === '' || fill === 'auto'));
+    return !(
+      (pattern === '' || pattern === 'clear' || pattern === 'nil') &&
+      (fill === '' || fill === 'auto') &&
+      wordValue(property, 'themeFill') === ''
+    );
   }
   if (property.localName === 'tblStyle') return true;
   return childElements(property).some((edge) => {

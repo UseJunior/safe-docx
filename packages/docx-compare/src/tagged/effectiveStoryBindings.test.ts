@@ -258,6 +258,9 @@ describe('effective header/footer bindings', () => {
         `<w:tbl><w:tblPr><w:tblBorders><w:top w:val="nil"/><w:bottom w:val="single"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>`,
       ))).toBe(false);
       expect(isBlankStoryPart(footer('<w:p><w:pPr><w:shd w:val="solid" w:color="auto" w:fill="auto"/></w:pPr></w:p>'))).toBe(false);
+      // Review round 3: a theme fill shades the background whatever w:fill says.
+      expect(isBlankStoryPart(footer('<w:p><w:pPr><w:shd w:val="clear" w:themeFill="accent1"/></w:pPr></w:p>'))).toBe(false);
+      expect(isBlankStoryPart(footer('<w:p><w:pPr><w:shd w:val="clear" w:fill="auto" w:themeFill="accent1"/></w:pPr></w:p>'))).toBe(false);
     });
     await then('a twin text box whose branches are both emptied is blank', () => {
       expect(isBlankStoryPart(footer(
