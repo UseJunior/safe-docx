@@ -1122,9 +1122,18 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   // each run of lists that end up adjacent, a list that would share the delimiter of the one before takes another
   // (`-`, `*`, `+`; `.`, `)`), not the next one's where it can. Its marker edits go with the deletion that joined the run.
   {
+    // A list whose items were all retyped stays a list: numbered paragraphs added after one of its deleted items.
+    const replacedLists = new Set<MarkdocNode>();
+    let lastBuilt = -1;
+    for (const pair of pairing) {
+      if (pair.o !== undefined) lastBuilt = pair.o;
+      else if (lastBuilt >= 0 && deletedSet.has(lastBuilt) && map.paragraphs[lastBuilt]!.listItem && E[pair.e!]!.numbered) replacedLists.add(map.paragraphs[lastBuilt]!.listItem!.list);
+    }
     const entryGone = (entry: number) => {
+      const node = map.ast.children[entry];
+      if (node && replacedLists.has(node)) return false;
       const held = entryParagraphs(entry);
-      return held.length > 0 ? held.every((index) => deletedSet.has(index)) : map.ast.children[entry]?.type === 'tag' && map.ast.children[entry]!.tag === 'page-break' && entryPlans.has(entry + 1);
+      return held.length > 0 ? held.every((index) => deletedSet.has(index)) : node?.type === 'tag' && node.tag === 'page-break' && entryPlans.has(entry + 1);
     };
     const topItems = (list: MarkdocNode) => {
       const items = map.paragraphs.filter((paragraph) => paragraph.listItem?.list === list && paragraph.ownLines);

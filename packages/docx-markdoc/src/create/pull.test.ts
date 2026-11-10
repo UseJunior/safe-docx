@@ -845,6 +845,10 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Banana', 'Added')), '- Apple\n\n* Banana\n* Added\n* Cherry\n\nBody.\n'],
         ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '- Apple\n\n* Entirely fresh sentence.\n* Cherry\n\nBody.\n'],
         ['1. Apple\n\nBridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Cherry', 'Appended')), '1. Apple\n\n1) Banana\n2) Cherry\n2) Appended\n\nBody.\n'],
+        // The second list's every item retyped: it is still a list, and keeps apart.
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '- Apple\n\n* Entirely fresh sentence.\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '1. Apple\n\n1) Entirely fresh sentence.\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Banana', 'Fresh one.'), once2('Cherry', 'Fresh two.')), '- Apple\n\n* Fresh one.\n* Fresh two.\n\nBody.\n'],
       ] as const) {
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });

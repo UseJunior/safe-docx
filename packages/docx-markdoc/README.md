@@ -1079,6 +1079,8 @@ written. Make these edits in the source by hand:
   stay (`PULL_UNMAPPED_DELETION`);
 - a separate list inserted directly before another list
   (`PULL_UNMAPPED_INSERTION`);
+- the first nested item added under a list item that had none
+  (`PULL_PARAGRAPH_FORMATTING`, as it is written at the outer level);
 - the paragraph deleted between a list and an indented paragraph that would
   then join the list (`PULL_EDIT_NOT_VERIFIED`).
 
