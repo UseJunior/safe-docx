@@ -57,7 +57,7 @@ export type PullDocx = {
   comments: number;
   /** Content `create` never writes and `pull` cannot carry, by element name, across the body and the running text. */
   unsupported: Record<string, number>;
-  /** Each note's paragraph texts, in reference order. */
+  /** Each note's paragraphs (text, properties and run formatting, as signatures), in reference order. */
   footnotes: string[][];
   /** The style definitions creation uses and the document defaults, as signatures by style id. */
   styles: Record<string, string>;
@@ -165,11 +165,28 @@ export function runFormatSignature(run: Element | null): string {
   if (fonts && attr(fonts, 'ascii')) parts.push(`font=${attr(fonts, 'ascii')}`);
   const shading = child(rPr, 'shd');
   if (shading && attr(shading, 'fill') && attr(shading, 'fill') !== 'auto') parts.push(`shd=${attr(shading, 'fill')}`);
+  // The attributes of those properties not read above (an underline's colour, a theme colour, the font of other
+  // Latin text), so that no attribute is lost unseen either.
+  for (const [name, read] of RUN_ATTRIBUTES_READ) {
+    const element = child(rPr, name);
+    const rest = element ? attributeSignature(element, read) : '';
+    if (rest) parts.push(`@${name}(${rest})`);
+  }
   // Everything else a run can carry (character spacing, scaling, position, kerning, borders, effects, …), so that no
   // property is lost unseen: only the complex-script twins, language and proofing marks are left out.
   parts.push(...otherProperties(rPr, RUN_PROPERTIES_READ));
   return parts.join(',');
 }
+
+/**
+ * For each property read above, the attributes it reads (or that do not
+ * change Latin text: the East Asian and complex-script fonts and the font hint).
+ */
+const RUN_ATTRIBUTES_READ: ReadonlyArray<[string, readonly string[]]> = [
+  ['rStyle', ['val']], ['u', ['val']], ['vertAlign', ['val']], ['highlight', ['val']], ['sz', ['val']], ['color', ['val']],
+  ['shd', ['fill']], ['rFonts', ['ascii', 'hint', 'eastAsia', 'eastAsiaTheme', 'cs', 'cstheme']],
+  ...['b', 'i', 'strike', 'dstrike', 'caps', 'smallCaps', 'vanish', 'emboss', 'imprint', 'outline', 'shadow'].map((name): [string, readonly string[]] => [name, ['val']]),
+];
 
 /** The run properties read above or deliberately left out. */
 const RUN_PROPERTIES_READ = [
@@ -186,11 +203,11 @@ function otherProperties(properties: Element, read: readonly string[]): string[]
     .sort();
 }
 
-/** An element's attributes, sorted, without revision ids. */
-function attributeSignature(element: Element | undefined): string {
+/** An element's attributes, sorted, without revision ids (and without those named in `skip`). */
+function attributeSignature(element: Element | undefined, skip: readonly string[] = []): string {
   if (!element) return '';
   return Array.from(element.attributes)
-    .filter((attribute) => !/^rsid/u.test(attribute.localName) && attribute.prefix !== 'xmlns' && attribute.name !== 'xmlns')
+    .filter((attribute) => !/^rsid/u.test(attribute.localName) && attribute.prefix !== 'xmlns' && attribute.name !== 'xmlns' && !skip.includes(attribute.localName))
     .map((attribute) => `${attribute.localName}=${attribute.value}`)
     .sort()
     .join(' ');
@@ -471,6 +488,18 @@ function countElements(roots: readonly Element[], names: readonly string[], into
   }
 }
 
+/** Formats as runs: `signature*count` for each stretch of equal formatting. */
+function runLengths(formats: readonly string[]): string {
+  const out: string[] = [];
+  for (let index = 0; index < formats.length;) {
+    let end = index;
+    while (end < formats.length && formats[end] === formats[index]) end += 1;
+    out.push(`${formats[index]}*${end - index}`);
+    index = end;
+  }
+  return out.join('/');
+}
+
 /** The page setup of a section: size, orientation, margins, columns, vertical alignment, page numbering and line numbers. */
 function pageSetupSignature(sectPr: Element): string {
   const parts: string[] = [];
@@ -478,15 +507,22 @@ function pageSetupSignature(sectPr: Element): string {
   parts.push(`size(${attributeSignature(size).replace(/\s*code=\S+/u, '')})`);
   parts.push(`margins(${attributeSignature(child(sectPr, 'pgMar'))})`);
   const cols = child(sectPr, 'cols');
-  parts.push(`columns=${cols ? attr(cols, 'num') ?? '1' : '1'}`);
+  // Word writes w:cols w:space="720" (one column, the default spacing) on save.
+  const columns = cols ? attributeSignature(cols).split(' ').filter((part) => part && part !== 'space=720' && part !== 'num=1').join(' ') : '';
+  parts.push(`columns(${[columns, ...(cols ? elementChildren(cols).map((col) => `col(${attributeSignature(col)})`) : [])].filter(Boolean).join(' ')})`);
   const vAlign = child(sectPr, 'vAlign');
   parts.push(`vAlign=${vAlign ? attr(vAlign, 'val') ?? 'top' : 'top'}`);
   const numbering = child(sectPr, 'pgNumType');
   if (numbering && attributeSignature(numbering)) parts.push(`pageNumbers(${attributeSignature(numbering)})`);
-  if (child(sectPr, 'lnNumType')) parts.push('lineNumbers');
   const type = child(sectPr, 'type');
   parts.push(`break=${type ? attr(type, 'val') ?? 'nextPage' : 'nextPage'}`);
-  for (const name of ['bidi', 'rtlGutter', 'textDirection', 'pgBorders']) if (child(sectPr, name)) parts.push(name);
+  // Every other section property (borders, line numbering, grid, note properties, …), so none is lost unseen. A
+  // w:docGrid with the default line pitch and no type is what Word writes for none.
+  const grid = child(sectPr, 'docGrid');
+  const gridSignature = grid ? attributeSignature(grid).split(' ').filter((part) => part && part !== 'linePitch=360' && part !== 'type=default').join(' ') : '';
+  if (gridSignature) parts.push(`docGrid(${gridSignature})`);
+  parts.push(...otherProperties(sectPr, ['headerReference', 'footerReference', 'titlePg', 'sectPrChange', 'pgSz', 'pgMar', 'cols', 'vAlign', 'pgNumType', 'lnNumType', 'type', 'docGrid']));
+  if (child(sectPr, 'lnNumType')) parts.push(`lineNumbers(${attributeSignature(child(sectPr, 'lnNumType'))})`);
   return parts.join(';');
 }
 
@@ -634,7 +670,8 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
   }
   const footnotes = Array.from(body.getElementsByTagNameNS(W, 'footnoteReference')).map((reference) => {
     const note = notes.get(attr(reference, 'id') ?? '');
-    return note ? readBlocks(note, []).map((paragraph) => paragraph.text) : [];
+    // A note's paragraphs with their run formatting and properties, so a formatting edit in a note is seen too.
+    return note ? readBlocks(note, []).map((paragraph) => `${paragraph.text}|${paragraph.properties}|${runLengths(paragraph.formats)}`) : [];
   });
 
   // Tracked changes are refused wherever they are: every header, footer and note part the document relates,

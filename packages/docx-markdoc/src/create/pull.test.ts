@@ -650,6 +650,28 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const wordSave = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => xml.replace('<w:tblLayout w:type="fixed"/>', '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>') }) });
       expect(wordSave).toMatchObject({ changes: [], diagnostics: [], complete: true });
 
+      // An underline recoloured, a footnote run letter-spaced and a used style deleted: each beside an applied wording edit.
+      const noteSource = 'Greetings {% u %}world{% /u %}.{% fnref id="n" /%}\n\n{% footnote id="n" %}A note.{% /footnote %}\n';
+      const noteBase = await build(noteSource);
+      const greeting: Surgery = { document: (xml) => once(xml, '>Greetings <', '>Hello <') };
+      const recoloured = await pullCreationEdits({ source: noteSource, base: noteBase, edited: await edit(noteBase.docx, all(greeting, { document: (xml) => once(xml, '<w:u w:val="single"/>', '<w:u w:val="single" w:color="FF0000"/>') })) });
+      expect(codes(recoloured)).toEqual(['PULL_DIRECT_FORMATTING']);
+      const spacedNote = await pullCreationEdits({ source: noteSource, base: noteBase, edited: await edit(noteBase.docx, all(greeting, { parts: { 'word/footnotes.xml': (xml) => once(xml, '<w:r><w:t xml:space="preserve">A note.</w:t></w:r>', '<w:r><w:rPr><w:spacing w:val="60"/></w:rPr><w:t xml:space="preserve">A note.</w:t></w:r>') } })) });
+      expect(codes(spacedNote)).toEqual(['PULL_FOOTNOTES_CHANGED']);
+      const styleGone = await pullCreationEdits({ source: noteSource, base: noteBase, edited: await edit(noteBase.docx, all(greeting, { parts: { 'word/styles.xml': (xml) => xml.replace(/<w:style w:type="paragraph" w:styleId="BodyText">(?:(?!<\/w:style>).)*<\/w:style>/u, '') } })) });
+      expect(codes(styleGone)).toContain('PULL_STYLE_CHANGED');
+      for (const result of [recoloured, spacedNote, styleGone]) expect(result.complete).toBe(false);
+
+      // A footer paragraph indented, and a section set in two columns: running-text and section layout create does not write.
+      const indentedFooter = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(MUTATIONS[0]!.surgery, { parts: { 'word/footer2.xml': (xml) => xml.replace('<w:pStyle w:val="Footer"/>', '<w:pStyle w:val="Footer"/><w:ind w:left="720"/>') } })) });
+      expect(indentedFooter.complete).toBe(false);
+      expect(codes(indentedFooter).some((code) => code === 'PULL_FOOTER_UNMAPPED' || code === 'PULL_REBUILD_DIFFERS')).toBe(true);
+      const columns = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(MUTATIONS[0]!.surgery, { document: (xml) => xml.replace('<w:pgMar ', '<w:cols w:num="2" w:space="720"/><w:pgMar ') })) });
+      expect(codes(columns)).toEqual(['PULL_PAGE_SETUP']);
+      // Word's own one-column w:cols and default w:docGrid are not an edit.
+      const wordSections = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, { document: (xml) => xml.replaceAll('<w:pgMar ', '<w:cols w:space="720"/><w:docGrid w:linePitch="360"/><w:pgMar ').replaceAll('<w:type w:val="nextPage"/>', '') }) });
+      expect(wordSections).toMatchObject({ changes: [], diagnostics: [], complete: true });
+
       // An edit beside a span keeps the span's markup.
       const literalSource = 'Keep foo{% literal %}bar{% /literal %} safe.\n';
       const literalBase = await build(literalSource);

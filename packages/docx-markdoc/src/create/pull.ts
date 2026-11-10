@@ -370,7 +370,9 @@ function storyLines(story: PullStory, doc: Pick<PullDocx, 'styleAlignments'>, de
     const literal = new Set<string>();
     const fieldless = paragraph.text.replaceAll(PAGE_FIELD_TOKEN, '\u0001'.repeat(PAGE_FIELD_TOKEN.length)).replaceAll(NUMPAGES_FIELD_TOKEN, '\u0001'.repeat(NUMPAGES_FIELD_TOKEN.length));
     for (let index = 0; index < fieldless.length; index += 1) if (/[^\s\u0001]/u.test(fieldless[index]!)) literal.add(paragraph.formats[index] ?? '');
-    return { text: paragraph.text, signature: `${alignment}|${[...literal].sort().join('+')}` };
+    // Alignment, the formats of its literal text, and its other paragraph properties (indentation, spacing, tabs, …).
+    const others = paragraph.properties.split(';').filter((part) => part && !part.startsWith('jc=')).join(';');
+    return { text: paragraph.text, signature: `${alignment}|${[...literal].sort().join('+')}|${others}` };
   });
 }
 
@@ -1197,10 +1199,11 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   });
   for (const [style, signature] of Object.entries(built.styles)) {
     const now = edited.styles[style];
-    if (now !== undefined && now !== signature) diagnostics.push({ code: 'PULL_STYLE_CHANGED', message: `style ${style} changed (${signature} to ${now}); create sets its styles from the style profile` });
+    if (now === undefined) diagnostics.push({ code: 'PULL_STYLE_CHANGED', message: `style ${style} was deleted; create sets its styles from the style profile, so a rebuild would restore it` });
+    else if (now !== signature) diagnostics.push({ code: 'PULL_STYLE_CHANGED', message: `style ${style} changed (${signature} to ${now}); create sets its styles from the style profile` });
   }
   if (JSON.stringify(edited.footnotes) !== JSON.stringify(built.footnotes)) {
-    diagnostics.push({ code: 'PULL_FOOTNOTES_CHANGED', message: 'the footnotes changed; pull does not write footnote edits, so they are not carried' });
+    diagnostics.push({ code: 'PULL_FOOTNOTES_CHANGED', message: 'the footnotes changed (their text, formatting or number); pull does not write footnote edits, so they are not carried' });
   }
 
   // Apply and verify each body plan, last in the source first.
