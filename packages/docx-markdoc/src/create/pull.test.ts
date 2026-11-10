@@ -749,7 +749,9 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       // The mark made bold, alone and beside a wording edit; Word dropping its direct superscript, which the
       // FootnoteReference style carries, is not an edit.
       const boldMark: Surgery = { document: (xml) => once(xml, '<w:rStyle w:val="FootnoteReference"/><w:vertAlign', '<w:rStyle w:val="FootnoteReference"/><w:b/><w:vertAlign') };
-      for (const surgery of [boldMark, all(boldMark, read)]) {
+      // An explicit baseline overrides the style's superscript.
+      const baselineMark: Surgery = { document: (xml) => once(xml, '<w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference', '<w:vertAlign w:val="baseline"/></w:rPr><w:footnoteReference') };
+      for (const surgery of [boldMark, all(boldMark, read), baselineMark, all(baselineMark, read)]) {
         const result = await pullCreationEdits({ source: markSource, base: markBase, edited: await edit(markBase.docx, surgery) });
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_FOOTNOTES_CHANGED']);
@@ -764,6 +766,14 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       expect((await readPullDocx(await edit(rangeBase.docx, shortened))).paragraphs[0]!.bookmarkRanges).toEqual(['target@0-5']);
       for (const surgery of [shortened, all(shortened, consult)]) {
         const result = await pullCreationEdits({ source: rangeSource, base: rangeBase, edited: await edit(rangeBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_BOOKMARKS_CHANGED']);
+      }
+      // The same when only a footnote cross-references the heading.
+      const noteRangeSource = '## Alpha Beta {% #target %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
+      const noteRangeBase = await build(noteRangeSource);
+      for (const surgery of [shortened, all(shortened, below)]) {
+        const result = await pullCreationEdits({ source: noteRangeSource, base: noteRangeBase, edited: await edit(noteRangeBase.docx, surgery) });
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_BOOKMARKS_CHANGED']);
       }

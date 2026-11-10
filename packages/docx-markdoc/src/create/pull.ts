@@ -1360,7 +1360,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     }
     // Where a bookmark ends is compared only for one a cross-reference shows, as Word may leave text typed at a
     // heading's end outside its bookmark; there the range is what an updated cross-reference displays.
-    const targets = new Set(E.flatMap((paragraph) => paragraph.crossReferences.map((reference) => reference.instruction.split(' ')[1] ?? '')));
+    const targets = new Set([...edited.referenceTargets, ...rebuiltDoc.referenceTargets]);
     const shownRanges = (paragraph: PullParagraph | undefined) => (paragraph?.bookmarkRanges ?? []).filter((range) => targets.has(range.slice(0, range.indexOf('@'))));
     const anchored = E.findIndex((paragraph, k) => JSON.stringify(paragraph.bookmarks) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.bookmarks ?? []));
     // A moved bookmark is reported once, by where it starts.

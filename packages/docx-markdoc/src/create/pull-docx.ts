@@ -70,6 +70,8 @@ export type PullDocx = {
   unsupported: Record<string, number>;
   /** Each note's paragraphs (text, properties and run formatting, as signatures), in reference order. */
   footnotes: string[][];
+  /** The bookmark names every cross-reference targets, in the body, the notes and the running text, sorted. */
+  referenceTargets: string[];
   /** The style definitions creation uses and the document defaults, as signatures by style id. */
   styles: Record<string, string>;
   /** Each paragraph style's alignment, through its basedOn chain, when it sets one. */
@@ -362,6 +364,9 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     // Word drops the mark's direct superscript on save when the FootnoteReference style carries it, as create's does
     // (a changed style is compared on its own).
     const parts = runFormatSignature(run).split(',').filter(Boolean);
+    // An explicit baseline, which the run signature reads as no alignment, overrides the style's superscript.
+    const vertAlign = child(child(run, 'rPr'), 'vertAlign');
+    if (vertAlign && attr(vertAlign, 'val') === 'baseline') parts.push('vertAlign=baseline');
     return parts.includes('style=FootnoteReference') ? parts.filter((part) => part !== 'vertAlign=superscript').join(',') : parts.join(',');
   });
   const pPr = child(paragraph, 'pPr');
@@ -753,12 +758,18 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
     storyRoots.push(root);
     for (const note of Array.from(root.getElementsByTagNameNS(W, 'footnote'))) notes.set(attr(note, 'id') ?? '', note);
   }
+  const noteParagraphs: PullParagraph[] = [];
   const footnotes = Array.from(body.getElementsByTagNameNS(W, 'footnoteReference')).map((reference) => {
     const note = notes.get(attr(reference, 'id') ?? '');
     // A note's paragraphs with their run formatting and properties, so a formatting edit in a note is seen too.
     // Its fields too, each with where it reads: a cross-reference retargeted or moved keeps the note's text.
-    return note ? readBlocks(note, []).map((paragraph) => `${paragraph.text}|${paragraph.properties}|${runLengths(paragraph.formats)}|${fieldPlacement(paragraph)}`) : [];
+    const read = note ? readBlocks(note, []) : [];
+    noteParagraphs.push(...read);
+    return read.map((paragraph) => `${paragraph.text}|${paragraph.properties}|${runLengths(paragraph.formats)}|${fieldPlacement(paragraph)}`);
   });
+  const storyParagraphs = [...headers, ...footers, ...firstPage.flatMap((slots) => (slots ? [slots.header, slots.footer] : []))].flatMap((story) => story ?? []);
+  const referenceTargets = [...new Set([...paragraphs, ...noteParagraphs, ...storyParagraphs]
+    .flatMap((paragraph) => paragraph.crossReferences.map((reference) => reference.instruction.split(' ')[1] ?? '')))].filter(Boolean).sort();
 
   // Tracked changes are refused wherever they are: every header, footer and note part the document relates,
   // read or not (an even-page header is not), and the numbering definitions.
@@ -798,6 +809,7 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
     comments,
     unsupported,
     footnotes,
+    referenceTargets,
     ...readStyles(await readOptional('word/styles.xml')),
     tables,
     evenPageStories,
