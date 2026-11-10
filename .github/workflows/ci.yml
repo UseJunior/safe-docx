@@ -26,9 +26,11 @@ jobs:
   #
   # Docs-only means every changed path (including a rename's old path) is a
   # Markdown file at the repo root or under docs/, .claude/, .cursor/ or
-  # memory/. Markdown elsewhere is NOT docs-only: tests read openspec/**,
-  # packages/**/docs/** and other in-tree .md files. Pushes to main, manual
-  # dispatches, and any classification error always run everything.
+  # memory/, except GEMINI.md (the Gemini extension context file, whose
+  # contents a docx-mcp test asserts). Markdown elsewhere is NOT docs-only:
+  # tests read openspec/**, packages/**/docs/** and other in-tree .md files.
+  # Pushes to main, manual dispatches, and any classification error always
+  # run everything.
   changes:
     name: Classify changed paths
     runs-on: ubuntu-latest
@@ -44,6 +46,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          DOCS_ONLY_RE: '^([^/]+|(docs|\.claude|\.cursor|memory)/.+)\.md$'
+          # Markdown matched above that tests or builds read anyway.
+          CODE_MD_RE: '^GEMINI\.md$'
         run: |
           set -uo pipefail
           heavy=true
@@ -51,8 +56,9 @@ jobs:
             if files=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
                 --jq '.[] | .filename, (.previous_filename // empty)'); then
               total=$(printf '%s\n' "$files" | grep -c . || true)
-              non_docs=$(printf '%s\n' "$files" | grep . \
-                | grep -cvE '^([^/]+|(docs|\.claude|\.cursor|memory)/.+)\.md$' || true)
+              non_docs=$(printf '%s\n' "$files" | awk '
+                NF && ($0 !~ ENVIRON["DOCS_ONLY_RE"] || $0 ~ ENVIRON["CODE_MD_RE"]) { n++ }
+                END { print n + 0 }')
               echo "Changed paths: ${total}; non-docs paths: ${non_docs}"
               # The PR files API stops at 3000 entries; treat a full page as unknown.
               if [ "$total" -gt 0 ] && [ "$total" -lt 3000 ] && [ "$non_docs" -eq 0 ]; then
@@ -359,10 +365,11 @@ jobs:
       id-token: write
     # Both matrix legs always start so the required `workspace-test (20)` and
     # `workspace-test (22)` checks always report. On PRs only the Node 20 leg
-    # (coverage, ratchet, emitted-schema gate) does work; the Node 22 leg's
-    # steps are skipped and it passes in seconds. Pushes to main and manual
-    # dispatches run both legs in full. To get Node 22 results on a PR branch
-    # before merge, run `gh workflow run ci.yml --ref <branch>`.
+    # does work: it tests every workspace (the coverage set plus a step for
+    # all the others), then runs the ratchet and emitted-schema gate. The
+    # Node 22 leg's steps are skipped and it passes in seconds. Pushes to main
+    # and manual dispatches run both legs in full. To get Node 22 results on
+    # a PR branch before merge, run `gh workflow run ci.yml --ref <branch>`.
     env:
       CI_RUN_HEAVY: ${{ needs.changes.outputs.heavy == 'true' && (matrix.coverage || github.event_name != 'pull_request') }}
     strategy:
@@ -447,6 +454,23 @@ jobs:
           npm run test:coverage -w @usejunior/docx-mcp
           npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
+      # The coverage step above names six workspaces. On PRs the Node 22 leg
+      # (which runs `npm run test` across all of them) is skipped, so test the
+      # rest here. Discovered from packages/* so a new workspace is never
+      # silently left out of pre-merge testing.
+      - name: Test remaining workspaces
+        if: ${{ env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
+        env:
+          SDX_SCHEMA_CORPUS_DIR: ${{ runner.temp }}/schema-corpus
+        run: |
+          covered=" @usejunior/docx-core @usejunior/docx-compare @usejunior/docx-markdoc @usejunior/docx-mcp @usejunior/safe-docx @usejunior/safedocx-mcpb "
+          for manifest in packages/*/package.json; do
+            name=$(node -p "require('./${manifest}').name")
+            case "$covered" in *" ${name} "*) continue ;; esac
+            echo "::group::test:run ${name}"
+            npm run test:run --if-present -w "$name"
+            echo "::endgroup::"
+          done
       - name: Test workspaces
         if: ${{ env.CI_RUN_HEAVY == 'true' && !matrix.coverage }}
         env:
