@@ -445,6 +445,34 @@ describe('content the projection check must not read as blank (review of PR #140
     });
   });
 
+  test('control: a removed footer whose table borders are all nil still publishes', async ({ given, when, then }: AllureBddContext) => {
+    // Review round 2 of PR #1409: an unbordered layout table draws nothing
+    // once Accept All empties its cells, so it must not read as content.
+    const edges = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
+      .map((edge) => `<w:${edge} w:val="nil"/>`).join('');
+    const table =
+      `<w:tbl><w:tblPr><w:tblBorders>${edges}</w:tblBorders></w:tblPr>` +
+      '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+    const removed: Part = {
+      id: 'rIdRemoved', kind: 'footer', target: 'footer1.xml',
+      xml: story('footer', 'Removed footer line', paragraph('Removed box')).replace('</w:ftr>', `${table}<w:p/></w:ftr>`),
+    };
+    const [original, revised] = await given('a removed section whose footer holds an unbordered table', () =>
+      Promise.all([
+        packageWith(
+          paragraph('Stable body') + sectionParagraph('End of section', reference('footer', 'rIdRemoved')) + paragraph('Final section'),
+          '<w:sectPr/>',
+          [removed],
+        ),
+        packageWith(paragraph('Stable body') + paragraph('End of section') + paragraph('Final section'), '<w:sectPr/>', []),
+      ]));
+
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('the redline publishes and passes the schema gate', async () => {
+      await assertSchema(result.document);
+    });
+  });
+
   test('turning on different even pages alongside a text-box edit fails closed', async ({ given, when }: AllureBddContext) => {
     // The compared package carries the revised settings part, so Reject All
     // leaves w:evenAndOddHeaders on: the original's even pages showed the

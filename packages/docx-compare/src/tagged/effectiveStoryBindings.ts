@@ -293,6 +293,36 @@ const VML_SHAPES = new Set([
 /** Graphics that are visible whatever else the carrier holds. */
 const VISIBLE_GRAPHICS = new Set(['imagedata', 'blip', 'pic', 'chart', 'oleObject', 'OLEObject', 'binData']);
 
+function wordValue(element: Element, name: string): string {
+  return element.getAttributeNS(OOXML.W_NS, name) || element.getAttribute(`w:${name}`) || '';
+}
+
+/**
+ * Whether one of the properties `VISIBLE_PROPERTIES` names draws anything.
+ * A border collection (`w:pBdr`, `w:tblBorders`, `w:tcBorders`) is visible
+ * when one of its edges has an `ST_Border` style other than `nil` or `none`,
+ * both of which mean no border. Shading (`w:shd`) is visible unless its
+ * `ST_Shd` pattern is `clear` or `nil` and its fill is absent or `auto`,
+ * which Word writes on unshaded paragraphs and cells. A table style may carry
+ * borders, so it always counts.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.38
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.32
+ */
+function drawsSomething(property: Element): boolean {
+  if (property.localName === 'shd') {
+    const pattern = wordValue(property, 'val');
+    const fill = wordValue(property, 'fill');
+    return !((pattern === '' || pattern === 'clear' || pattern === 'nil') && (fill === '' || fill === 'auto'));
+  }
+  if (property.localName === 'tblStyle') return true;
+  return childElements(property).some((edge) => {
+    const style = wordValue(edge, 'val');
+    return style !== 'nil' && style !== 'none';
+  });
+}
+
 function childElements(element: Element): Element[] {
   const children: Element[] = [];
   for (let node = element.firstChild; node; node = node.nextSibling) {
@@ -341,9 +371,10 @@ function pureTextBoxStories(carrier: Element): Element[] | undefined {
  * is what Accept All (Reject All) leaves of a lifecycle story whose content
  * is entirely a tracked deletion (insertion): the carrier run is not tracked,
  * so a blank part reads the same as no binding. A table counts only when it
- * draws something (borders, shading or a table style). Anything else counts
- * as content: a paragraph border or shading, a page number or other run
- * content, a field, a picture or a shape without a text box.
+ * draws something (a border edge that is not `nil`/`none`, shading, or a
+ * table style), and so does a paragraph border or shading. Anything else counts
+ * as content: a page number or other run content, a field, a picture or a
+ * shape without a text box.
  *
  * Pass the part after the same Accept All / Reject All as the document.
  */
@@ -354,7 +385,7 @@ export function isBlankStoryPart(partXml: string): boolean {
       const visible = VISIBLE_PROPERTIES.get(element.localName);
       if (visible) {
         return childElements(element).every(
-          (child) => !(child.namespaceURI === OOXML.W_NS && visible.has(child.localName)),
+          (child) => !(child.namespaceURI === OOXML.W_NS && visible.has(child.localName) && drawsSomething(child)),
         );
       }
       if (BLANK_PROPERTIES.has(element.localName)) return true;

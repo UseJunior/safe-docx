@@ -243,6 +243,22 @@ describe('effective header/footer bindings', () => {
           '<w:tr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>',
       ))).toBe(true);
     });
+    await then('borders set to nil or none and clear automatic shading draw nothing', () => {
+      // Review round 2 of PR #1409: Word writes these on unbordered tables and unshaded paragraphs.
+      const noEdges = (tag: string, style: string): string =>
+        `<w:${tag}>${['top', 'left', 'bottom', 'right'].map((edge) => `<w:${edge} w:val="${style}"/>`).join('')}</w:${tag}>`;
+      for (const style of ['nil', 'none']) {
+        expect(isBlankStoryPart(footer(
+          `<w:tbl><w:tblPr>${noEdges('tblBorders', style)}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>` +
+            `<w:tr><w:tc><w:tcPr>${noEdges('tcBorders', style)}<w:shd w:val="clear" w:color="auto" w:fill="auto"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>` +
+            `<w:p><w:pPr>${noEdges('pBdr', style)}<w:shd w:val="clear" w:color="auto" w:fill="auto"/></w:pPr></w:p>`,
+        )), style).toBe(true);
+      }
+      expect(isBlankStoryPart(footer(
+        `<w:tbl><w:tblPr><w:tblBorders><w:top w:val="nil"/><w:bottom w:val="single"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>`,
+      ))).toBe(false);
+      expect(isBlankStoryPart(footer('<w:p><w:pPr><w:shd w:val="solid" w:color="auto" w:fill="auto"/></w:pPr></w:p>'))).toBe(false);
+    });
     await then('a twin text box whose branches are both emptied is blank', () => {
       expect(isBlankStoryPart(footer(
         '<w:p><w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
