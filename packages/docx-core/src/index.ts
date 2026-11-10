@@ -31,6 +31,7 @@ export {
   createRevisionContainer,
   createRevisionContext,
   createRevisionIdState,
+  inferStartingRevisionIdState,
   escapeXmlAttr,
   formatDate,
   prepareElementForDeletion,
@@ -40,6 +41,8 @@ export {
   wrapElementWithDel,
   wrapElementWithIns,
 } from './primitives/track-changes-emitter.js';
+export { RevisionIdAllocator } from './primitives/revision-id-allocator.js';
+export { getSidePartRevisionSeedDocs } from './primitives/revision-parts.js';
 export type {
   RevisionContext,
   RevisionContextOptions,

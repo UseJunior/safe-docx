@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { OOXML, parseXml } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
-import { PAGE_FIELD_TOKEN, type FooterProjection, type FootnoteReferencePosition } from './lower.js';
+import { PAGE_FIELD_TOKEN, type FirstPageProjection, type FooterProjection, type FootnoteReferencePosition } from './lower.js';
 
 const W = OOXML.W_NS;
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -14,6 +14,10 @@ export type CreationReadback = {
   inTableCell: boolean[];
   /** Per section: the default footer's paragraph texts, or null without a footer reference. */
   footers: FooterProjection[];
+  /** Per section: the default header's paragraph texts, or null without a header reference. */
+  headers: FooterProjection[];
+  /** Per section: null without `w:titlePg`; with it, the first-page header and footer texts (null without a reference). */
+  firstPage: FirstPageProjection[];
   /** Every body `w:footnoteReference`, in document order: its paragraph (index into `paragraphs`) and offset. */
   footnoteReferences: FootnoteReferencePosition[];
   /** The note each reference names, in the same order: its paragraph texts (the number mark reads as nothing). */
@@ -50,6 +54,10 @@ function elementChildren(node: Node): Element[] {
  * footer projection does not depend on the page a reader rendered. A REF
  * field (a cross-reference) reads as its cached result: the number generation
  * computed for its target, which the projection predicts independently.
+ * `onRunText` is told the run each piece of text came from, so a caller can
+ * read its formatting; a field's piece comes with every run of the field
+ * (begin, instruction, result and end), since any of them can carry the
+ * formatting its displayed result shows.
  */
 export function paragraphReadbackText(
   paragraph: Element,
@@ -57,9 +65,18 @@ export function paragraphReadbackText(
   onCrossReference?: (offset: number, text: string, instruction: string) => void,
   onBookmark?: (name: string, id: string, offset: number) => void,
   onBookmarkEnd?: (id: string, offset: number) => void,
+  onRunText?: (start: number, end: number, run: Element | null, fieldRuns?: readonly Element[]) => void,
+  onField?: (offset: number, instruction: string) => void,
 ): string {
   let text = '';
-  let field: { instruction: string; inResult: boolean; result: string } | null = null;
+  let field: { instruction: string; inResult: boolean; result: string; runs: Element[] } | null = null;
+  let run: Element | null = null;
+  /** Append read-back text, telling `onRunText` which run (or field) it came from. */
+  const append = (value: string, from: Element | null = run, fieldRuns?: readonly Element[]): void => {
+    if (!value) return;
+    onRunText?.(text.length, text.length + value.length, from, fieldRuns);
+    text += value;
+  };
   const visit = (node: Element): void => {
     for (const child of elementChildren(node)) {
       if (child.namespaceURI !== W) continue;
@@ -69,28 +86,44 @@ export function paragraphReadbackText(
           break;
         case 'fldChar': {
           const type = child.getAttributeNS(W, 'fldCharType') || child.getAttribute('w:fldCharType');
-          if (type === 'begin') field = { instruction: '', inResult: false, result: '' };
+          if (type === 'begin') field = { instruction: '', inResult: false, result: '', runs: run ? [run] : [] };
           else if (type === 'separate' && field) field.inResult = true;
           else if (type === 'end' && field) {
             const name = field.instruction.trim().split(/\s+/)[0] ?? '';
+            onField?.(text.length, field.instruction);
             if (name === 'REF') onCrossReference?.(text.length, field.result, field.instruction);
-            text += name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? field.result : `<${name}>`;
+            const runs = field.runs;
+            append(name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? field.result : `<${name}>`, run, runs);
             field = null;
           }
+          break;
+        }
+        case 'fldSimple': {
+          // A simple field (Word writes some this way): its instruction is an
+          // attribute and its cached result the runs inside. It reads like
+          // the complex form; create never writes one.
+          if (field) break;
+          const instruction = child.getAttributeNS(W, 'instr') || child.getAttribute('w:instr') || '';
+          const name = instruction.trim().split(/\s+/)[0] ?? '';
+          const result = Array.from(child.getElementsByTagNameNS(W, 't')).map((t) => t.textContent ?? '').join('');
+          const runs = Array.from(child.getElementsByTagNameNS(W, 'r'));
+          onField?.(text.length, instruction);
+          if (name === 'REF') onCrossReference?.(text.length, result, instruction);
+          append(name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? result : `<${name}>`, runs[0] ?? null, runs);
           break;
         }
         case 'instrText':
           if (field) field.instruction += child.textContent ?? '';
           break;
         case 't':
-          if (!field) text += child.textContent ?? '';
+          if (!field) append(child.textContent ?? '');
           else if (field.inResult) field.result += child.textContent ?? '';
           break;
         case 'tab':
-          if (!field) text += '\t';
+          if (!field) append('\t');
           break;
         case 'br':
-          if (!field) text += '\n';
+          if (!field) append('\n');
           break;
         case 'bookmarkStart':
           onBookmark?.(child.getAttributeNS(W, 'name') || child.getAttribute('w:name') || '', child.getAttributeNS(W, 'id') || child.getAttribute('w:id') || '', text.length);
@@ -101,6 +134,14 @@ export function paragraphReadbackText(
         case 'footnoteReference':
           onFootnoteReference?.(text.length, child.getAttributeNS(W, 'id') || child.getAttribute('w:id') || '');
           break;
+        case 'r': {
+          const outer = run;
+          run = child;
+          if (field && !field.runs.includes(child)) field.runs.push(child);
+          visit(child);
+          run = outer;
+          break;
+        }
         default:
           visit(child);
       }
@@ -200,24 +241,35 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   const targets = new Map(Array.from(rels.getElementsByTagName('Relationship'))
     .map((rel) => [rel.getAttribute('Id') ?? '', rel.getAttribute('Target') ?? '']));
   const footers: FooterProjection[] = [];
-  for (const sectPr of Array.from(document.getElementsByTagNameNS(W, 'sectPr'))) {
-    const reference = elementChildren(sectPr).find((child) => isW(child, 'footerReference')
-      && (child.getAttributeNS(W, 'type') || child.getAttribute('w:type')) === 'default');
-    if (!reference) {
-      footers.push(null);
-      continue;
-    }
+  const headers: FooterProjection[] = [];
+  const firstPage: FirstPageProjection[] = [];
+  /** The paragraph texts of the part a sectPr's header or footer reference of `type` selects, or null without one. */
+  const story = async (sectPr: Element, kind: 'header' | 'footer', type: 'default' | 'first'): Promise<FooterProjection> => {
+    const reference = elementChildren(sectPr).find((child) => isW(child, `${kind}Reference`)
+      && (child.getAttributeNS(W, 'type') || child.getAttribute('w:type')) === type);
+    if (!reference) return null;
     const target = targets.get(reference.getAttributeNS(R, 'id') || reference.getAttribute('r:id') || '');
-    if (!target) throw new DocxMarkdocError('CREATION_READBACK_FAILED', 'A footer reference does not resolve.');
-    const footer = parseXml(await read(`word/${target.replace(/^\//, '').replace(/^word\//, '')}`));
+    if (!target) throw new DocxMarkdocError('CREATION_READBACK_FAILED', `A ${kind} reference does not resolve.`);
+    const part = parseXml(await read(`word/${target.replace(/^\//, '').replace(/^word\//, '')}`));
     const lines: string[] = [];
-    blockParagraphs(footer.documentElement!, lines);
-    footers.push(lines);
+    blockParagraphs(part.documentElement!, lines);
+    return lines;
+  };
+  for (const sectPr of Array.from(document.getElementsByTagNameNS(W, 'sectPr'))) {
+    footers.push(await story(sectPr, 'footer', 'default'));
+    headers.push(await story(sectPr, 'header', 'default'));
+    // w:titlePg is an on/off property: present and not turned off with w:val.
+    const titlePg = elementChildren(sectPr).find((child) => isW(child, 'titlePg'));
+    const value = titlePg ? titlePg.getAttributeNS(W, 'val') || titlePg.getAttribute('w:val') : null;
+    const on = titlePg !== undefined && !['0', 'false', 'off'].includes(value ?? '');
+    firstPage.push(on ? { header: await story(sectPr, 'header', 'first'), footer: await story(sectPr, 'footer', 'first') } : null);
   }
   return {
     paragraphs,
     inTableCell,
     footers,
+    headers,
+    firstPage,
     footnoteReferences: references.map(({ paragraph, offset }) => ({ paragraph, offset })),
     footnotes,
     ...(crossReferences.length ? { crossReferences } : {}),

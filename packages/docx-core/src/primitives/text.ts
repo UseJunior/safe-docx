@@ -954,6 +954,51 @@ function getContainerBoundaryError(
   );
 }
 
+/** Refuse stale or inconsistent run endpoints before boundary splitting writes. */
+function validateSiblingRange(start: Element, end: Element): void {
+  if (!start.parentNode || !end.parentNode) throw new Error('Run has no parent');
+  if (start.parentNode === end.parentNode) {
+    for (let node: Node | null = start; node; node = node.nextSibling) {
+      if (node === end) return;
+    }
+  }
+  throw new SafeDocxError(
+    'UNSAFE_CONTAINER_BOUNDARY',
+    'Replacement range start and end runs are not reachable siblings',
+  );
+}
+
+/**
+ * Emit deletions at their original positions. Preserved objects and markers
+ * close the segment so rejecting the edit restores the original order.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see #1312
+ */
+function createDeletionSegmentBuilder(doc: Document, ctx?: RevisionContext) {
+  let currentDeletion: Element | null = null;
+  return {
+    terminate(): void {
+      currentDeletion = null;
+    },
+    removeRun(run: Element): void {
+      const parent = run.parentNode;
+      if (!parent) return;
+      if (ctx && runCarriesDeletableContent(run)) {
+        if (!currentDeletion) {
+          currentDeletion = createRevisionContainer(doc, 'del', ctx);
+          parent.insertBefore(currentDeletion, run);
+        }
+        parent.removeChild(run);
+        currentDeletion.appendChild(prepareElementForDeletion(run));
+      } else {
+        parent.removeChild(run);
+      }
+    },
+  };
+}
+
 /**
  * Replace a visible paragraph range while keeping tracked runs inside their
  * existing run container. In particular, edits wholly inside `w:hyperlink`
@@ -1021,6 +1066,7 @@ export function replaceParagraphTextRange(
     fullText,
   );
   if (containerBoundaryError) throw containerBoundaryError;
+  validateSiblingRange(startRun.r, endRun.r);
 
   // A cached result may span many runs, but every touched run must belong to
   // the same complex field. Moving ordinary text, a field marker, or another
@@ -1170,25 +1216,7 @@ export function replaceParagraphTextRange(
       cur = nextNode;
     }
   } else {
-    // The open deletion segment; reset to null whenever preserved embedded
-    // content interrupts the removed stretch so the next removed run starts
-    // a new w:del at its own position.
-    let currentDeletion: Element | null = null;
-
-    const removeRunInPlace = (runEl: Element): void => {
-      const parentNode = runEl.parentNode;
-      if (!parentNode) return;
-      if (ctx && runCarriesDeletableContent(runEl)) {
-        if (!currentDeletion) {
-          currentDeletion = createRevisionContainer(doc, 'del', ctx);
-          parentNode.insertBefore(currentDeletion, runEl);
-        }
-        parentNode.removeChild(runEl);
-        currentDeletion.appendChild(prepareElementForDeletion(runEl));
-      } else {
-        parentNode.removeChild(runEl);
-      }
-    };
+    const deletionSegments = createDeletionSegmentBuilder(doc, ctx);
 
     // Split a run holding both text and embedded content into consecutive
     // homogeneous runs (formatting cloned), inserted at the run's position in
@@ -1220,26 +1248,26 @@ export function replaceParagraphTextRange(
       if (cur.nodeType === 1 && !isW(cur as Element, W.r)) {
         // A sibling marker stays where it is; the next removed run opens a
         // new w:del after it (issue #1083).
-        currentDeletion = null;
+        deletionSegments.terminate();
       } else if (cur.nodeType === 1) {
         const runEl = cur as Element;
         const embeddedContent = getEmbeddedContentElements(runEl);
         if (embeddedContent.length === 0) {
-          removeRunInPlace(runEl);
+          deletionSegments.removeRun(runEl);
         } else if (!runCarriesDeletableContent(runEl)) {
           // Embedded-only run: the replaced text lives entirely in sibling
           // runs. Leave it in the paragraph as-is. A run that also holds a
           // w:sym is mixed, not embedded-only: the split below keeps the
           // embedded content live and deletes the symbol with the range.
           preservedEmbeddedContent = true;
-          currentDeletion = null;
+          deletionSegments.terminate();
         } else {
           for (const piece of splitMixedRun(runEl)) {
             if (piece.embedded) {
               preservedEmbeddedContent = true;
-              currentDeletion = null;
+              deletionSegments.terminate();
             } else {
-              removeRunInPlace(piece.el);
+              deletionSegments.removeRun(piece.el);
             }
           }
         }

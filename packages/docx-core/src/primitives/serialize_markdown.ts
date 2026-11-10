@@ -15,6 +15,7 @@
 // grammar independently and drifts from the emitter in `formatting_tags.ts`.
 
 import { tokenizeToonInline } from './document_view.js';
+import { iterateSerializerBlocks } from './serialize_blocks.js';
 import type { DocumentViewNode } from './document_view.js';
 import { LabelType } from './list_labels.js';
 import type { Footnote } from './footnotes.js';
@@ -266,66 +267,42 @@ export function serializeToMarkdown(
   _opts: SerializeMarkdownOptions = {},
 ): string {
   const blocks: string[] = [];
-  let inList = false;
-
-  const closeList = (): void => {
-    if (inList) {
-      blocks.push('');
-      inList = false;
-    }
-  };
-
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i]!;
-
-    // ── Tables: consume the whole run of same-table_id nodes at once ──
-    if (node.table_context) {
-      closeList();
-      const tableId = node.table_context.table_id;
-      const group: DocumentViewNode[] = [];
-      while (i < nodes.length && nodes[i]!.table_context?.table_id === tableId) {
-        group.push(nodes[i]!);
-        i++;
+  for (const block of iterateSerializerBlocks(nodes, { isHeading: isStructuralHeading })) {
+    switch (block.kind) {
+      case 'table': {
+        const tableLines = renderTable(block.nodes);
+        if (tableLines.length > 0) {
+          blocks.push(tableLines.join('\n'));
+          blocks.push('');
+        }
+        break;
       }
-      i--; // for-loop will re-increment
-      const tableLines = renderTable(group);
-      if (tableLines.length > 0) {
-        blocks.push(tableLines.join('\n'));
+      case 'heading': {
+        const level = Math.min(6, Math.max(1, block.level));
+        const text = inlineTagsToMarkdown(block.node.tagged_text).trim();
+        blocks.push(`${'#'.repeat(level)} ${text}`.trimEnd());
         blocks.push('');
+        break;
       }
-      continue;
-    }
-
-    // ── Structural (Word-styled) headings ──
-    if (isStructuralHeading(node)) {
-      closeList();
-      const level = Math.min(6, Math.max(1, node.heading!.level as number));
-      const text = inlineTagsToMarkdown(node.tagged_text).trim();
-      blocks.push(`${'#'.repeat(level)} ${text}`.trimEnd());
-      blocks.push('');
-      continue;
-    }
-
-    // ── List items ──
-    if (node.list_metadata.list_level >= 0) {
-      inList = true;
-      blocks.push(renderListItem(node));
-      continue;
-    }
-
-    // ── Normal paragraphs (heuristic headings land here: their run-in bold already lives
-    //     in the inline tags, so we keep them as paragraphs rather than inventing a `#`). ──
-    closeList();
-    const text = escapeLeadingBlockSyntax(inlineTagsToMarkdown(node.tagged_text));
-    if (text.trim() === '') {
-      blocks.push('');
-    } else {
-      blocks.push(text);
-      blocks.push('');
+      case 'list': {
+        for (const node of block.nodes) {
+          blocks.push(renderListItem(node));
+        }
+        blocks.push('');
+        break;
+      }
+      case 'paragraph': {
+        const text = escapeLeadingBlockSyntax(inlineTagsToMarkdown(block.node.tagged_text));
+        if (text.trim() === '') {
+          blocks.push('');
+        } else {
+          blocks.push(text);
+          blocks.push('');
+        }
+        break;
+      }
     }
   }
-
-  closeList();
 
   // ── Footnote definitions ──
   const defs = footnotes.filter((fn) => fn.displayNumber > 0);

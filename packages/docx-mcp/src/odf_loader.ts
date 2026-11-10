@@ -4,15 +4,10 @@
 // import that returns null when odf-core is unavailable) so an install with a missing or
 // broken odf-core degrades to structured ODF_UNAVAILABLE errors on the ODF tools instead
 // of crashing the whole server at import time.
-let cached: typeof import('@usejunior/odf-core') | null | undefined;
+import { ProviderLoader } from './provider_loader.js';
 
-export async function loadOdfCore(): Promise<typeof import('@usejunior/odf-core') | null> {
-  if (cached !== undefined) return cached;
-  try {
-    cached = await import('@usejunior/odf-core');
-    return cached;
-  } catch {
-    cached = null;
-    return null;
-  }
+export const odfProviderLoader = new ProviderLoader(() => import('@usejunior/odf-core'));
+
+export function loadOdfCore(): Promise<typeof import('@usejunior/odf-core') | null> {
+  return odfProviderLoader.load();
 }

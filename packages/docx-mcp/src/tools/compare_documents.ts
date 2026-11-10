@@ -77,8 +77,8 @@ export async function compareDocuments_tool(
       sessionMetadata = metadata;
 
       // Lazily generate comparison baselines if not yet available.
-      await manager.ensureBaselines(session);
-      originalBuffer = session.comparisonBaselineWithBookmarks ?? session.originalBuffer;
+      const baselines = await manager.ensureBaselines(session);
+      originalBuffer = baselines.withBookmarks;
       const revised = await session.doc.toBuffer({ cleanBookmarks: false });
       revisedBuffer = revised.buffer;
       originalFilePath = manager.normalizePath(session.originalPath);
