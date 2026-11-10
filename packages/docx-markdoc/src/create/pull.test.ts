@@ -683,18 +683,21 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       }
 
       // Italics moved within a cross-reference's cached result, alone and beside a wording edit: the same formats
-      // remain, in other places. Word splitting a result run is not an edit.
+      // remain, in other places. Word splitting a result run, or marking where it laid out a page, is not an edit.
       const refSource = '## *Alpha* Beta {% #target %}\n\nSee {% xref to="target" show="text" /%}.\n';
       const refBase = await build(refSource);
       const refResult = '<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">Alpha</w:t></w:r><w:r><w:t xml:space="preserve"> Beta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>';
       const italicMoved: Surgery = { document: (xml) => once(xml, refResult, '<w:r><w:t xml:space="preserve">Alpha</w:t></w:r><w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve"> Beta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') };
       const consult: Surgery = { document: (xml) => once(xml, '<w:t xml:space="preserve">See </w:t>', '<w:t xml:space="preserve">Consult </w:t>') };
-      for (const surgery of [italicMoved, all(italicMoved, consult)]) {
+      // A tab or a line break typed into the cached result, which read-back does not show as text.
+      const resultTab: Surgery = { document: (xml) => once(xml, refResult, refResult.replace('Alpha</w:t>', 'Alpha</w:t><w:tab/>')) };
+      const resultBreak: Surgery = { document: (xml) => once(xml, refResult, refResult.replace('Alpha</w:t>', 'Alpha</w:t><w:br/>')) };
+      for (const surgery of [italicMoved, all(italicMoved, consult), resultTab, all(resultTab, consult), resultBreak, all(resultBreak, consult)]) {
         const result = await pullCreationEdits({ source: refSource, base: refBase, edited: await edit(refBase.docx, surgery) });
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_DIRECT_FORMATTING']);
       }
-      const refSplit = await pullCreationEdits({ source: refSource, base: refBase, edited: await edit(refBase.docx, { document: (xml) => once(xml, refResult, '<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">Al</w:t></w:r><w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">pha</w:t></w:r><w:r><w:t xml:space="preserve"> Be</w:t></w:r><w:r><w:t xml:space="preserve">ta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') }) });
+      const refSplit = await pullCreationEdits({ source: refSource, base: refBase, edited: await edit(refBase.docx, { document: (xml) => once(xml, refResult, '<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">Al</w:t></w:r><w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">pha</w:t></w:r><w:r><w:lastRenderedPageBreak/><w:t xml:space="preserve"> Be</w:t></w:r><w:r><w:t xml:space="preserve">ta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') }) });
       expect(refSplit).toMatchObject({ changes: [], diagnostics: [], complete: true });
 
       // An edit beside a span keeps the span's markup.

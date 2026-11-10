@@ -259,24 +259,43 @@ function paragraphPropertySignature(pPr: Element | undefined): string {
   return parts.join(';');
 }
 
+/** Field-run children that carry no displayed content of their own: the field's markers and Word's layout hint. */
+const FIELD_RUN_MARKUP = new Set(['rPr', 'fldChar', 'instrText', 'lastRenderedPageBreak']);
+
 /**
- * The formatting of a field, read from all its runs: one format when they agree. When they do not, each format in
- * run order with the length of displayed text it covers, so that formatting moved within a cached result (italics
- * from one word of a cross-reference to the next) differs although the same formats remain. Neighbouring runs of one
- * format merge, so Word splitting a run is not an edit.
+ * The formatting and shape of a field, read from all its runs. It is one format when the runs agree and hold only
+ * text. Otherwise it lists each format in run order with the length of displayed text it covers and any other
+ * content (a tab, a break) where it falls, so that formatting moved within a cached result (italics from one word of
+ * a cross-reference to the next) or a tab typed into it differs, although read-back keeps only the result's text.
+ * Neighbouring runs of one format merge, so Word splitting a run is not an edit.
  */
 function fieldFormatSignature(fieldRuns: readonly Element[]): string {
-  const segments: Array<{ format: string; length: number }> = [];
+  const segments: Array<{ format: string; parts: Array<number | string> }> = [];
+  let content = false;
   for (const run of fieldRuns) {
     const format = runFormatSignature(run);
-    let length = 0;
-    for (const node of Array.from(run.getElementsByTagNameNS(W, 't'))) length += (node.textContent ?? '').length;
-    const last = segments.at(-1);
-    if (last && last.format === format) last.length += length;
-    else segments.push({ format, length });
+    let segment = segments.at(-1);
+    if (!segment || segment.format !== format) {
+      segment = { format, parts: [] };
+      segments.push(segment);
+    }
+    for (const node of Array.from(run.childNodes)) {
+      if (node.nodeType !== 1) continue;
+      const element = node as Element;
+      if (FIELD_RUN_MARKUP.has(element.localName)) continue;
+      const last = segment.parts.at(-1);
+      if (element.localName === 't') {
+        const length = (element.textContent ?? '').length;
+        if (typeof last === 'number') segment.parts[segment.parts.length - 1] = last + length;
+        else segment.parts.push(length);
+      } else {
+        content = true;
+        segment.parts.push(`<${element.localName}>`);
+      }
+    }
   }
-  if (segments.length === 1) return segments[0]!.format;
-  return segments.map(({ format, length }) => `${format}#${length}`).join('&');
+  if (segments.length === 1 && !content) return segments[0]!.format;
+  return segments.map(({ format, parts }) => `${format}#${parts.join('/')}`).join('&');
 }
 
 /** Read one paragraph: its read-back text, the formatting of each character and its properties. */
