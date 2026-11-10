@@ -297,7 +297,8 @@ function describeFormat(signature: string): string {
   if (!signature) return 'plain';
   // A field whose runs disagree, or whose result holds a tab or break: each format, with what it covers.
   if (signature.includes('#')) return `a field laid out as ${signature.split('&').map((segment) => { const [format = '', parts = ''] = segment.split('#'); return `${describeFormat(format)} [${parts}]`; }).join(' then ')}`;
-  return signature.split(',').map((part) => ({ b: 'bold', i: 'italic', strike: 'struck through', caps: 'caps', smallCaps: 'small caps', vanish: 'hidden' }[part] ?? part)).join(', ');
+  const names: Record<string, string> = { b: 'bold', i: 'italic', strike: 'struck through', caps: 'caps', smallCaps: 'small caps', vanish: 'hidden', u: 'underlined', vertAlign: 'raised or lowered', highlight: 'highlighted', color: 'coloured' };
+  return signature.split(',').map((part) => (part.endsWith('=off') ? `explicitly not ${names[part.slice(0, -4)] ?? part.slice(0, -4)}` : names[part] ?? part)).join(', ');
 }
 
 /** The run formatting `pull` can write as markup: bold, italic and single underline. */

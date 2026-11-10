@@ -163,17 +163,22 @@ export function runFormatSignature(run: Element | null): string {
   const parts: string[] = [];
   const style = child(rPr, 'rStyle');
   if (style) parts.push(`style=${attr(style, 'val') ?? ''}`);
+  // An explicit "off" (`w:b w:val="0"`, `w:u w:val="none"`, a baseline, no highlight, automatic colour) is kept apart
+  // from no property: it overrides what a style applies, as a word un-bolded in a bold heading does.
   for (const name of ['b', 'i', 'strike', 'dstrike', 'caps', 'smallCaps', 'vanish', 'emboss', 'imprint', 'outline', 'shadow']) {
-    if (on(child(rPr, name))) parts.push(name);
+    const element = child(rPr, name);
+    if (on(element)) parts.push(name);
+    else if (element) parts.push(`${name}=off`);
   }
   const underline = child(rPr, 'u');
-  if (underline && (attr(underline, 'val') ?? 'single') !== 'none') parts.push(`u=${attr(underline, 'val') ?? 'single'}`);
+  if (underline) parts.push((attr(underline, 'val') ?? 'single') === 'none' ? 'u=off' : `u=${attr(underline, 'val') ?? 'single'}`);
   for (const name of ['vertAlign', 'highlight', 'sz']) {
     const value = child(rPr, name);
-    if (value && attr(value, 'val') && attr(value, 'val') !== 'none' && attr(value, 'val') !== 'baseline') parts.push(`${name}=${attr(value, 'val')}`);
+    if (!value || !attr(value, 'val')) continue;
+    parts.push(attr(value, 'val') === 'none' || attr(value, 'val') === 'baseline' ? `${name}=off` : `${name}=${attr(value, 'val')}`);
   }
   const color = child(rPr, 'color');
-  if (color && attr(color, 'val') && attr(color, 'val') !== 'auto') parts.push(`color=${attr(color, 'val')!.toUpperCase()}`);
+  if (color && attr(color, 'val')) parts.push(attr(color, 'val') === 'auto' ? 'color=off' : `color=${attr(color, 'val')!.toUpperCase()}`);
   const fonts = child(rPr, 'rFonts');
   if (fonts && attr(fonts, 'ascii')) parts.push(`font=${attr(fonts, 'ascii')}`);
   const shading = child(rPr, 'shd');
@@ -364,9 +369,6 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     // Word drops the mark's direct superscript on save when the FootnoteReference style carries it, as create's does
     // (a changed style is compared on its own).
     const parts = runFormatSignature(run).split(',').filter(Boolean);
-    // An explicit baseline, which the run signature reads as no alignment, overrides the style's superscript.
-    const vertAlign = child(child(run, 'rPr'), 'vertAlign');
-    if (vertAlign && attr(vertAlign, 'val') === 'baseline') parts.push('vertAlign=baseline');
     return parts.includes('style=FootnoteReference') ? parts.filter((part) => part !== 'vertAlign=superscript').join(',') : parts.join(',');
   });
   const pPr = child(paragraph, 'pPr');

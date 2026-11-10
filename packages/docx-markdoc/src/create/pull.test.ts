@@ -769,6 +769,14 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_BOOKMARKS_CHANGED']);
       }
+      // A word explicitly un-bolded or un-underlined (`w:val="0"`, `none`), which overrides a style: not the same as
+      // no property.
+      for (const off of ['<w:b w:val="0"/>', '<w:u w:val="none"/>', '<w:color w:val="auto"/>']) {
+        const unbolded: Surgery = { document: (xml) => once(xml, '<w:r><w:t xml:space="preserve">Alpha Beta</w:t></w:r><w:bookmarkEnd', `<w:r><w:rPr>${off}</w:rPr><w:t xml:space="preserve">Alpha Beta</w:t></w:r><w:bookmarkEnd`) };
+        const result = await pullCreationEdits({ source: rangeSource, base: rangeBase, edited: await edit(rangeBase.docx, all(unbolded, consult)) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_DIRECT_FORMATTING']);
+      }
       // The same when only a footnote cross-references the heading.
       const noteRangeSource = '## Alpha Beta {% #target %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
       const noteRangeBase = await build(noteRangeSource);
