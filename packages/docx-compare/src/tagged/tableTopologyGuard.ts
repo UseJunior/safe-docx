@@ -8,6 +8,12 @@ export type UnsupportedTableTopologyFeature =
   | 'gridAfter' | 'vMerge' | 'hMerge' | 'topologyRevision' | 'occupancy'
   | 'emptyTable' | 'tableContainer' | 'projection';
 
+/** Which projection of the comparison output disagreed with its source. */
+export interface TableProjectionMismatch {
+  readonly projection: 'accept' | 'reject';
+  readonly mismatch: TableFootprintMismatch;
+}
+
 export class UnsupportedTableTopologyComparisonError extends Error {
   readonly partPath = 'word/document.xml';
   constructor(
@@ -16,9 +22,12 @@ export class UnsupportedTableTopologyComparisonError extends Error {
     readonly rowIndex?: number,
     readonly cellIndex?: number,
     readonly columnIndex?: number,
+    /** Set when `feature` is `projection`: the side and first footprint difference. */
+    readonly projectionMismatch?: TableProjectionMismatch,
   ) {
     super(`Unsupported table comparison topology: ${feature} at table ${tableIndex}`
-      + (rowIndex === undefined ? '' : `, row ${rowIndex}`));
+      + (rowIndex === undefined ? '' : `, row ${rowIndex}`)
+      + (projectionMismatch ? ` (${projectionMismatch.projection} projection ${projectionMismatch.mismatch.feature})` : ''));
     this.name = 'UnsupportedTableTopologyComparisonError';
   }
 }
@@ -184,11 +193,115 @@ export function guardBodyTableTopology(tree: TaggedNode): void {
   visit(tree);
 }
 
-/** Structural projection signature: table-bearing block order and depth-first row containers. */
-export function bodyTableFootprint(xml: string): string {
+export type FootprintMergeState = 'none' | 'restart' | 'continue';
+
+/** One physical cell in logical grid coordinates: columns `[start, end)`. */
+export interface TableCellFootprint {
+  readonly start: number;
+  readonly end: number;
+  readonly vMerge: FootprintMergeState;
+  readonly hMerge: FootprintMergeState;
+}
+
+/** One `w:tr`, including rows reached through row-level `w:sdt`/`w:customXml`. */
+export interface TableRowFootprint {
+  readonly gridBefore: number;
+  readonly gridAfter: number;
+  readonly cells: readonly TableCellFootprint[];
+}
+
+export interface TableFootprint {
+  /** Number of `w:tbl` ancestors inside the body. */
+  readonly depth: number;
+  /** Direct `w:tr`/`w:sdt`/`w:customXml` children of the table. */
+  readonly rowContainers: number;
+  /** `w:gridCol/@w:w` in grid order; its length is the grid column count. */
+  readonly gridColumnWidths: readonly (string | null)[];
+  readonly rows: readonly TableRowFootprint[];
+}
+
+/** Structural projection of every body table, in document order. */
+export interface BodyTableFootprint {
+  /** Local names of the top-level body blocks that are or contain a table. */
+  readonly topLevelTableBlocks: readonly string[];
+  readonly tables: readonly TableFootprint[];
+}
+
+export type TableFootprintMismatchFeature =
+  | 'tableBlocks' | 'tableCount' | 'nesting' | 'rowContainers' | 'rowCount'
+  | 'gridColumns' | 'gridColumnWidth' | 'gridBefore' | 'gridAfter' | 'cellCount'
+  | 'cellInterval' | 'vMerge' | 'hMerge';
+
+/** The first structural difference between two footprints, located for reporting. */
+export interface TableFootprintMismatch {
+  readonly feature: TableFootprintMismatchFeature;
+  /** Document-order table index; -1 for a body-level block difference. */
+  readonly tableIndex: number;
+  readonly rowIndex?: number;
+  readonly cellIndex?: number;
+  readonly columnIndex?: number;
+  readonly expected: unknown;
+  readonly actual: unknown;
+}
+
+const ROW_CONTAINERS = new Set(['tr', 'sdt', 'customXml']);
+const CONTENT_WRAPPERS = new Set(['sdt', 'sdtContent', 'customXml']);
+
+function gridNumber(element: Element | undefined, fallback: number, minimum: number): number {
+  const raw = val(element);
+  const parsed = raw === null ? NaN : Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : fallback;
+}
+
+function mergeState(cell: Element, name: 'vMerge' | 'hMerge'): FootprintMergeState {
+  const state = cellProperty(cell, name);
+  if (state === null) return 'none';
+  return state === 'restart' ? 'restart' : 'continue';
+}
+
+/** Children named `names`, looking through `w:sdt`/`w:customXml` content wrappers. */
+function wrappedChildren(parent: Element, names: ReadonlySet<string>): Element[] {
+  const found: Element[] = [];
+  for (const child of childElements(parent)) {
+    if (child.namespaceURI !== W_NS) continue;
+    if (names.has(child.localName)) found.push(child);
+    else if (CONTENT_WRAPPERS.has(child.localName)) found.push(...wrappedChildren(child, names));
+  }
+  return found;
+}
+
+function rowFootprint(row: Element): TableRowFootprint {
+  const trPr = direct(row, 'trPr')[0];
+  const gridBefore = gridNumber(trPr && direct(trPr, 'gridBefore')[0], 0, 0);
+  const gridAfter = gridNumber(trPr && direct(trPr, 'gridAfter')[0], 0, 0);
+  let column = gridBefore;
+  const cells = wrappedChildren(row, new Set(['tc'])).map((cell): TableCellFootprint => {
+    const tcPr = direct(cell, 'tcPr')[0];
+    const start = column;
+    column += gridNumber(tcPr && direct(tcPr, 'gridSpan')[0], 1, 1);
+    return { start, end: column, vMerge: mergeState(cell, 'vMerge'), hMerge: mergeState(cell, 'hMerge') };
+  });
+  return { gridBefore, gridAfter, cells };
+}
+
+/**
+ * Structural projection signature of the body's tables: table-bearing block
+ * order, nesting depth, row containers, the grid (column count and widths),
+ * each row's offsets, and each cell's grid interval and merge states.
+ *
+ * Intervals are derived from the markup without validating occupancy, so a
+ * malformed source table still yields a footprint that compares equal to an
+ * identical projection rather than throwing.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
+ * @see https://github.com/UseJunior/safe-docx/issues/1395
+ */
+export function bodyTableFootprint(xml: string): BodyTableFootprint {
   const document = parseXml(xml);
   const body = document.getElementsByTagNameNS(W_NS, 'body')[0];
-  if (!body) return '';
+  if (!body) return { topLevelTableBlocks: [], tables: [] };
   // Paragraph-mark projection can legitimately retain an empty paragraph.
   // Its count is not a table-topology fact, so only table-bearing top-level
   // blocks participate in this guard.
@@ -196,14 +309,84 @@ export function bodyTableFootprint(xml: string): string {
     .filter((child) => child.namespaceURI === W_NS
       && (child.localName === 'tbl' || child.getElementsByTagNameNS(W_NS, 'tbl').length > 0))
     .map((child) => child.localName);
-  const tables = Array.from(body.getElementsByTagNameNS(W_NS, 'tbl')).map((table) => {
+  const tables = Array.from(body.getElementsByTagNameNS(W_NS, 'tbl')).map((table): TableFootprint => {
     let depth = 0;
     for (let parent = table.parentNode; parent && parent !== body; parent = parent.parentNode) {
       if (parent.nodeType === 1 && (parent as Element).namespaceURI === W_NS
         && (parent as Element).localName === 'tbl') depth++;
     }
-    return [depth, childElements(table).filter((child) =>
-      child.namespaceURI === W_NS && ['tr', 'sdt', 'customXml'].includes(child.localName)).length];
+    return {
+      depth,
+      rowContainers: childElements(table).filter((child) =>
+        child.namespaceURI === W_NS && ROW_CONTAINERS.has(child.localName)).length,
+      gridColumnWidths: grid(table),
+      rows: wrappedChildren(table, new Set(['tr'])).map(rowFootprint),
+    };
   });
-  return JSON.stringify({ topLevelTableBlocks, tables });
+  return { topLevelTableBlocks, tables };
+}
+
+/**
+ * Locate the first structural difference between an expected projection
+ * footprint and the comparison output's, or return null when they agree.
+ */
+export function findTableFootprintMismatch(
+  expected: BodyTableFootprint,
+  actual: BodyTableFootprint,
+): TableFootprintMismatch | null {
+  const blocks = (left: readonly string[], right: readonly string[]) =>
+    left.length === right.length && left.every((name, index) => name === right[index]);
+  if (!blocks(expected.topLevelTableBlocks, actual.topLevelTableBlocks)) {
+    return { feature: 'tableBlocks', tableIndex: -1,
+      expected: expected.topLevelTableBlocks, actual: actual.topLevelTableBlocks };
+  }
+  if (expected.tables.length !== actual.tables.length) {
+    return { feature: 'tableCount', tableIndex: Math.min(expected.tables.length, actual.tables.length),
+      expected: expected.tables.length, actual: actual.tables.length };
+  }
+  for (let tableIndex = 0; tableIndex < expected.tables.length; tableIndex++) {
+    const left = expected.tables[tableIndex]!;
+    const right = actual.tables[tableIndex]!;
+    const at = { tableIndex };
+    if (left.depth !== right.depth) return { feature: 'nesting', ...at, expected: left.depth, actual: right.depth };
+    if (left.rowContainers !== right.rowContainers) {
+      return { feature: 'rowContainers', ...at, expected: left.rowContainers, actual: right.rowContainers };
+    }
+    if (left.gridColumnWidths.length !== right.gridColumnWidths.length) {
+      return { feature: 'gridColumns', ...at,
+        columnIndex: Math.min(left.gridColumnWidths.length, right.gridColumnWidths.length),
+        expected: left.gridColumnWidths.length, actual: right.gridColumnWidths.length };
+    }
+    const widthIndex = left.gridColumnWidths.findIndex((width, column) => width !== right.gridColumnWidths[column]);
+    if (widthIndex >= 0) {
+      return { feature: 'gridColumnWidth', ...at, columnIndex: widthIndex,
+        expected: left.gridColumnWidths[widthIndex], actual: right.gridColumnWidths[widthIndex] };
+    }
+    if (left.rows.length !== right.rows.length) {
+      return { feature: 'rowCount', ...at, rowIndex: Math.min(left.rows.length, right.rows.length),
+        expected: left.rows.length, actual: right.rows.length };
+    }
+    for (let rowIndex = 0; rowIndex < left.rows.length; rowIndex++) {
+      const a = left.rows[rowIndex]!;
+      const b = right.rows[rowIndex]!;
+      const row = { ...at, rowIndex };
+      if (a.gridBefore !== b.gridBefore) return { feature: 'gridBefore', ...row, expected: a.gridBefore, actual: b.gridBefore };
+      if (a.gridAfter !== b.gridAfter) return { feature: 'gridAfter', ...row, expected: a.gridAfter, actual: b.gridAfter };
+      if (a.cells.length !== b.cells.length) {
+        return { feature: 'cellCount', ...row, cellIndex: Math.min(a.cells.length, b.cells.length),
+          expected: a.cells.length, actual: b.cells.length };
+      }
+      for (let cellIndex = 0; cellIndex < a.cells.length; cellIndex++) {
+        const x = a.cells[cellIndex]!;
+        const y = b.cells[cellIndex]!;
+        const cell = { ...row, cellIndex, columnIndex: x.start };
+        if (x.start !== y.start || x.end !== y.end) {
+          return { feature: 'cellInterval', ...cell, expected: [x.start, x.end], actual: [y.start, y.end] };
+        }
+        if (x.vMerge !== y.vMerge) return { feature: 'vMerge', ...cell, expected: x.vMerge, actual: y.vMerge };
+        if (x.hMerge !== y.hMerge) return { feature: 'hMerge', ...cell, expected: x.hMerge, actual: y.hMerge };
+      }
+    }
+  }
+  return null;
 }

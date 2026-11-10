@@ -821,6 +821,7 @@ export function acceptAllChanges(documentXml: string, options: ChangeProjectionO
   removeAllByTagName(root, 'w:pPrChange');
   removeAllByTagName(root, 'w:trPrChange');
   removeAllByTagName(root, 'w:tcPrChange');
+  acceptTableLevelPropertyChanges(root);
   removeAcceptedSectionBreakRemovals(root);
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
@@ -975,6 +976,7 @@ export function rejectAllChanges(documentXml: string, options: ChangeProjectionO
   restoreParagraphPropertiesFromChanges(root);
   restoreContainerPropertiesFromChanges(root, 'w:trPrChange', 'w:trPr');
   restoreContainerPropertiesFromChanges(root, 'w:tcPrChange', 'w:tcPr');
+  restoreTableLevelPropertiesFromChanges(root);
   restoreSectionPropertiesFromChanges(root);
 
   // Remove remaining format change tracking
@@ -982,6 +984,7 @@ export function rejectAllChanges(documentXml: string, options: ChangeProjectionO
   removeAllByTagName(root, 'w:pPrChange');
   removeAllByTagName(root, 'w:trPrChange');
   removeAllByTagName(root, 'w:tcPrChange');
+  acceptTableLevelPropertyChanges(root);
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
 
@@ -1017,8 +1020,8 @@ function restoreRunPropertiesFromChanges(root: Element): void {
 
 function restoreContainerPropertiesFromChanges(
   root: Element,
-  changeTag: 'w:trPrChange' | 'w:tcPrChange',
-  propertyTag: 'w:trPr' | 'w:tcPr',
+  changeTag: TablePropertyChangeTag,
+  propertyTag: TablePropertyContainerTag,
 ): void {
   for (const change of findAllByTagName(root, changeTag)) {
     const live = change.parentNode as Element | null;
@@ -1027,6 +1030,66 @@ function restoreContainerPropertiesFromChanges(
     if (!snapshot) continue;
     for (const child of childElements(live)) live.removeChild(child);
     for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));
+  }
+}
+
+type TablePropertyChangeTag =
+  | 'w:trPrChange' | 'w:tcPrChange' | 'w:tblGridChange' | 'w:tblPrChange' | 'w:tblPrExChange';
+type TablePropertyContainerTag = 'w:trPr' | 'w:tcPr' | 'w:tblGrid' | 'w:tblPr' | 'w:tblPrEx';
+
+/**
+ * Table-level revisions whose single child is the complete prior state of
+ * their live parent: `w:tblGridChange` holds the former `w:gridCol` list,
+ * `w:tblPrChange` the former table properties and `w:tblPrExChange` the
+ * former row-level table-property exceptions.
+ */
+const TABLE_LEVEL_PROPERTY_CHANGES: ReadonlyArray<readonly [TablePropertyChangeTag, TablePropertyContainerTag]> = [
+  ['w:tblGridChange', 'w:tblGrid'],
+  ['w:tblPrChange', 'w:tblPr'],
+  ['w:tblPrExChange', 'w:tblPrEx'],
+];
+
+/**
+ * Accept table-grid, table-property and table-property-exception revisions:
+ * the live parent already holds the current state, so only the revision record
+ * goes. A `w:tblPrEx` left empty by that removal recorded no exception other
+ * than the revision itself and is dropped; `w:tblGrid` and `w:tblPr` are
+ * required children of `w:tbl` and stay even when empty.
+ *
+ * Reject runs this after {@link restoreTableLevelPropertiesFromChanges} to
+ * clear any record that had no snapshot to restore.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
+ * @see https://github.com/UseJunior/safe-docx/issues/1395
+ */
+function acceptTableLevelPropertyChanges(root: Element): void {
+  for (const [changeTag] of TABLE_LEVEL_PROPERTY_CHANGES) {
+    for (const change of findAllByTagName(root, changeTag)) {
+      const live = change.parentNode as Element | null;
+      live?.removeChild(change);
+      if (live?.tagName === 'w:tblPrEx' && childElements(live).length === 0) {
+        live.parentNode?.removeChild(live);
+      }
+    }
+  }
+}
+
+/**
+ * Reject table-grid, table-property and table-property-exception revisions by
+ * replacing the live parent's children with the revision's prior-state
+ * snapshot (`CT_TblGridBase`, `CT_TblPrBase`, `CT_TblPrExBase`). The snapshot
+ * types exclude the revision element, so the restored parent carries none.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
+ * @see https://github.com/UseJunior/safe-docx/issues/1395
+ */
+function restoreTableLevelPropertiesFromChanges(root: Element): void {
+  for (const [changeTag, propertyTag] of TABLE_LEVEL_PROPERTY_CHANGES) {
+    restoreContainerPropertiesFromChanges(root, changeTag, propertyTag);
   }
 }
 

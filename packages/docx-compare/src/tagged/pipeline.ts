@@ -85,7 +85,11 @@ import {
   buildTaggedTreePublication,
   consumeTaggedPublicationStatistics,
 } from './taggedTreeShadow.js';
-import { bodyTableFootprint, UnsupportedTableTopologyComparisonError } from './tableTopologyGuard.js';
+import {
+  bodyTableFootprint,
+  findTableFootprintMismatch,
+  UnsupportedTableTopologyComparisonError,
+} from './tableTopologyGuard.js';
 import {
   compareSourceProjectedFormattingFidelity,
   type FormattingDivergence,
@@ -571,9 +575,15 @@ export async function buildStandaloneTaggedPackage(
   const originalProjectionXml = rejectAllChanges(originalXml);
   const revisedProjectionXml = acceptAllChanges(revisedXml);
   if (options.guardTableTopology ?? true) {
-    if (bodyTableFootprint(rejectAllChanges(taggedXml)) !== bodyTableFootprint(originalProjectionXml)
-      || bodyTableFootprint(acceptAllChanges(taggedXml)) !== bodyTableFootprint(revisedProjectionXml)) {
-      throw new UnsupportedTableTopologyComparisonError('projection', -1);
+    for (const [projection, expectedXml, actualXml] of [
+      ['reject', originalProjectionXml, rejectAllChanges(taggedXml)],
+      ['accept', revisedProjectionXml, acceptAllChanges(taggedXml)],
+    ] as const) {
+      const mismatch = findTableFootprintMismatch(bodyTableFootprint(expectedXml), bodyTableFootprint(actualXml));
+      if (mismatch) {
+        throw new UnsupportedTableTopologyComparisonError('projection', mismatch.tableIndex,
+          mismatch.rowIndex, mismatch.cellIndex, mismatch.columnIndex, { projection, mismatch });
+      }
     }
   }
   const publicationSafety = (options.publicationSafetyEvaluator ?? evaluateSafetyChecks)(
