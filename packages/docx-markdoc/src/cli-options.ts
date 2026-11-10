@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { FootnoteRunStyle } from '@usejunior/docx-core';
 import { CliUsageError, DocxMarkdocError } from './errors.js';
 import type { AnnotationAudience, AnnotationPresentation, ValidationIssue } from './types.js';
 
@@ -215,12 +216,45 @@ export function formatCliError(error: unknown, debug: boolean): string {
 
 /**
  * A Node file-system error on a named path (`ENOENT`, `EEXIST`, `EACCES`, …):
- * it has a string `code`, `syscall` and `path`. It reports a path the caller
- * supplied, not a defect in this package, so the CLI prints it on one line.
+ * it has a string `code`, `syscall` and `path`. The CLI reads and writes only
+ * paths derived from its arguments, so such an error almost always means an
+ * input that is missing or an output that already exists; it names the path,
+ * and `DEBUG` restores the stack for the rare case where it does not.
  */
 function isFileSystemError(error: unknown): error is NodeJS.ErrnoException & { code: string; path: string } {
   if (!(error instanceof Error)) return false;
   const candidate = error as NodeJS.ErrnoException;
   return typeof candidate.code === 'string' && /^E[A-Z0-9]+$/u.test(candidate.code)
     && typeof candidate.syscall === 'string' && typeof candidate.path === 'string';
+}
+
+export type WordHighlight = NonNullable<FootnoteRunStyle['highlight']>;
+/** Word's highlight colours, as `FootnoteRunStyle['highlight']` admits them. */
+export const WORD_HIGHLIGHTS = [
+  'black', 'blue', 'cyan', 'green', 'magenta', 'red', 'yellow', 'white',
+  'darkBlue', 'darkCyan', 'darkGreen', 'darkMagenta', 'darkRed',
+  'darkYellow', 'darkGray', 'lightGray', 'none',
+] as const satisfies readonly WordHighlight[];
+// Compile-time check that the list above names every highlight the type admits.
+const _everyHighlightListed: WordHighlight extends (typeof WORD_HIGHLIGHTS)[number] ? true : never = true;
+void _everyHighlightListed;
+
+/**
+ * A `comments-to-footnotes` colour option: six hexadecimal digits. Checked at
+ * the CLI boundary so a mistyped value is a usage error, not a stack trace
+ * from the conversion.
+ */
+export function wordColor(value: string | undefined, flag: string, command?: string): string | undefined {
+  if (value !== undefined && !/^[0-9A-Fa-f]{6}$/u.test(value)) {
+    throw new CliUsageError(`${flag} must be six hexadecimal digits (RRGGBB), got '${value}'.`, command);
+  }
+  return value;
+}
+
+/** A `comments-to-footnotes` highlight option: one of Word's highlight colours. */
+export function wordHighlight(value: string | undefined, flag: string, command?: string): WordHighlight | undefined {
+  if (value !== undefined && !(WORD_HIGHLIGHTS as readonly string[]).includes(value)) {
+    throw new CliUsageError(`${flag} must be one of ${WORD_HIGHLIGHTS.join(', ')}, got '${value}'.`, command);
+  }
+  return value as WordHighlight | undefined;
 }

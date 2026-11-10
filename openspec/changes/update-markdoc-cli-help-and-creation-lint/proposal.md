@@ -29,7 +29,9 @@ throwaway `create --no-pdf` into a scratch directory.
   `ERROR CLI_USAGE: <message> Run 'docx-markdoc <command> --help' for usage.`
   line to stderr and exits 1, with no stack. Every subcommand now parses its
   arguments strictly; `comments-to-footnotes` used to ignore unknown flags and
-  `compile`/`verify` extra positional arguments. A Node file-system error on a
+  `compile`/`verify` extra positional arguments. `comments-to-footnotes`
+  checks its colour and highlight values before converting, so a mistyped
+  value is a usage error rather than a stack from the conversion. A Node file-system error on a
   named path (`ENOENT`, `EEXIST`, …) prints one `ERROR <code>: <message>` line.
   Both append their stack under `DEBUG`. Any other exception keeps printing
   its stack, so a defect stays visible.

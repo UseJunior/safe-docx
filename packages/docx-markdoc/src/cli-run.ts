@@ -1,6 +1,6 @@
 import { mkdir, readFile, rmdir } from 'node:fs/promises';
 import path from 'node:path';
-import { convertCommentsToFootnotes, type FootnoteRunStyle } from '@usejunior/docx-core';
+import { convertCommentsToFootnotes } from '@usejunior/docx-core';
 import { commandHelp, COMMAND_HELP, topLevelUsage } from './cli-help.js';
 import {
   assertDistinctInternalPath,
@@ -11,6 +11,8 @@ import {
   parseRenderingFlags,
   wantsHelp,
   warnedInternalPath,
+  wordColor,
+  wordHighlight,
 } from './cli-options.js';
 import { compileMarkdoc, validateMarkdocAgainstSource } from './compile.js';
 import { lintCreationSource, runCreateCommand } from './create/cli-create.js';
@@ -263,8 +265,10 @@ async function dispatch(command: string | undefined, args: string[], io: CliIo):
       if (values.has(flag) && values.has(alias)) throw new CliUsageError(`${flag} and ${alias} are the same option; give one.`, command);
       return values.get(flag) ?? values.get(alias);
     };
-    const bodyColor = either('--body-color', '--color');
-    const bodyHighlight = either('--body-highlight', '--highlight') as FootnoteRunStyle['highlight'];
+    const bodyColor = wordColor(either('--body-color', '--color'), values.has('--color') ? '--color' : '--body-color', command);
+    const bodyHighlight = wordHighlight(either('--body-highlight', '--highlight'), values.has('--highlight') ? '--highlight' : '--body-highlight', command);
+    const prefixColor = wordColor(values.get('--prefix-color'), '--prefix-color', command);
+    const prefixHighlight = wordHighlight(values.get('--prefix-highlight'), '--prefix-highlight', command);
     const result = await convertCommentsToFootnotes(await readFile(inputPath!), {
       flattenThreads: booleans.has('--flatten-threads'),
       presentation: {
@@ -272,8 +276,8 @@ async function dispatch(command: string | undefined, args: string[], io: CliIo):
         prefixSeparator: values.get('--prefix-separator'),
         prefixStyle: {
           bold: booleans.has('--bold-prefix'),
-          color: values.get('--prefix-color'),
-          highlight: values.get('--prefix-highlight') as FootnoteRunStyle['highlight'],
+          color: prefixColor,
+          highlight: prefixHighlight,
         },
         bodyStyle: { color: bodyColor, highlight: bodyHighlight },
       },
@@ -286,3 +290,4 @@ async function dispatch(command: string | undefined, args: string[], io: CliIo):
   // A command registered in COMMAND_HELP but not handled above is a defect, not a usage error.
   throw new Error(`docx-markdoc: command '${command}' has help but no handler.`);
 }
+

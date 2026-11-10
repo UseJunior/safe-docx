@@ -167,6 +167,28 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
         expect(result.code, argv.join(' ')).toBe(1);
         expectOneLine(result.stderr, pattern);
       }
+      // Option values the conversion would refuse are usage errors, checked before the input is read.
+      const conversionDir = await scratchDir();
+      const input = path.join(conversionDir, 'input.docx');
+      await writeFile(input, await buildSyntheticDocx({ paragraphs: ['A paragraph.'] }));
+      const badValues: Array<[string[], RegExp]> = [
+        [['--body-color', 'red'], /--body-color must be six hexadecimal digits \(RRGGBB\), got 'red'\./u],
+        [['--color', '12345'], /--color must be six hexadecimal digits/u],
+        [['--prefix-color', 'ZZZZZZ'], /--prefix-color must be six hexadecimal digits/u],
+        [['--body-highlight', 'bogus'], /--body-highlight must be one of black, .*, none, got 'bogus'\./u],
+        [['--highlight', 'Yellow'], /--highlight must be one of /u],
+        [['--prefix-highlight', 'pink'], /--prefix-highlight must be one of /u],
+      ];
+      for (const [flags, pattern] of badValues) {
+        const result = await run(['comments-to-footnotes', input, path.join(conversionDir, 'out.docx'), ...flags]);
+        expect(result.code, flags.join(' ')).toBe(1);
+        expectOneLine(result.stderr, new RegExp(`^ERROR CLI_USAGE: ${pattern.source}.* Run 'docx-markdoc comments-to-footnotes --help' for usage\\.$`, 'u'));
+      }
+      expect((await readdir(conversionDir)).sort()).toEqual(['input.docx']);
+      const converted = await run(['comments-to-footnotes', input, path.join(conversionDir, 'out.docx'), '--body-color', '1F4E79', '--highlight', 'yellow']);
+      expect(converted.stderr).toBe('');
+      expect(converted.code).toBe(0);
+
       const missing = await run(['validate', path.join(await scratchDir(), 'missing.mdoc')]);
       expect(missing.code).toBe(1);
       expectOneLine(missing.stderr, /^ERROR ENOENT: ENOENT: no such file or directory, open '.*missing\.mdoc'$/u);
@@ -197,6 +219,8 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
       const help = commandHelp('create')!;
       const lines = help.split('\n');
       expect(help).not.toContain(UNDOCUMENTED);
+      // Descriptions say what each key does: title is the document property, not a visible paragraph.
+      expect(lines.find((line) => line.startsWith('  title '))).toMatch(/document title property, not a visible paragraph/u);
       for (const key of CREATION_FRONTMATTER_KEYS) {
         expect(lines.some((line) => new RegExp(`^  ${key} +\\S`, 'u').test(line)), `frontmatter key ${key}`).toBe(true);
       }

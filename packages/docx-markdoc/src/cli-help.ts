@@ -1,3 +1,4 @@
+import { WORD_HIGHLIGHTS } from './cli-options.js';
 import { HEADING_NUMBER_SCHEMES } from './create/list-numbering.js';
 import {
   CREATION_BLOCK_TAGS,
@@ -186,9 +187,9 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       ['--prefix-separator <text>', 'Text between the prefix and the body.'],
       ['--bold-prefix', 'Make the prefix bold.'],
       ['--prefix-color <RRGGBB>', 'Colour of the prefix.'],
-      ['--prefix-highlight <color>', 'Highlight of the prefix.'],
+      ['--prefix-highlight <color>', `Highlight of the prefix: ${WORD_HIGHLIGHTS.join(', ')}.`],
       ['--body-color <RRGGBB>', 'Colour of the footnote body (alias --color).'],
-      ['--body-highlight <color>', 'Highlight of the footnote body (alias --highlight).'],
+      ['--body-highlight <color>', `Highlight of the footnote body (alias --highlight): ${WORD_HIGHLIGHTS.join(', ')}.`],
       ['--flatten-threads', 'Also convert comments that have replies, folding the thread into one footnote (lossy); without it such a comment is refused.'],
       HELP_OPTION,
     ],
@@ -248,7 +249,7 @@ const either = (values: readonly string[]): string => values.join(' | ');
  * here; a key added there without an entry here prints {@link UNDOCUMENTED}.
  */
 const CREATION_KEY_VALUES: Readonly<Record<string, string>> = {
-  title: '<text>: the title paragraph',
+  title: '<text>: the document title property, not a visible paragraph (write a # heading for that); default the first # heading',
   author: '<text>: the document author property',
   date: 'YYYY-MM-DD or a UTC ISO timestamp: the document date properties',
   header: `<text>: the running header (on {% section %}, header=false for an empty one)`,
