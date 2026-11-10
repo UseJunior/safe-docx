@@ -25,6 +25,13 @@ export type PullParagraph = {
   alignment?: string;
   /** True when the paragraph has its own `w:numPr`. */
   numbered: boolean;
+  /**
+   * The list label the paragraph shows, computed from `word/numbering.xml`
+   * (start values, overrides, formats, level text and restarts), with the
+   * level's justification, suffix and indentation; '' when unnumbered.
+   * Filled in by `readPullDocx` for body paragraphs.
+   */
+  label: string;
   /** REF fields (cross-references), in order: offset and cached result. */
   crossReferences: Array<{ offset: number; text: string }>;
   /** Offsets of the footnote references in `text`. */
@@ -57,6 +64,12 @@ export type PullDocx = {
   styles: Record<string, string>;
   /** Each paragraph style's alignment, through its basedOn chain, when it sets one. */
   styleAlignments: Record<string, string | undefined>;
+  /** Each body table's structure (rows, cells, grid, spans and merges), as a signature, in reading order. */
+  tables: string[];
+  /** Even-page header and footer references across the sections. */
+  evenPageStories: number;
+  /** `w:evenAndOddHeaders` in word/settings.xml. */
+  evenAndOddHeaders: boolean;
 };
 
 const elementChildren = (node: Node): Element[] => Array.from(node.childNodes).filter((child): child is Element => child.nodeType === 1);
@@ -206,6 +219,7 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     ...(style && attr(style, 'val') ? { style: attr(style, 'val')! } : {}),
     ...(alignment ? { alignment } : {}),
     numbered: child(pPr, 'numPr') !== undefined,
+    label: '',
     crossReferences,
     footnoteReferences,
     fields,
@@ -218,28 +232,165 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
  * content controls and custom XML, which Word writes around page-number
  * footers and which `create` never writes.
  */
-function readBlocks(container: Element, out: PullParagraph[], inTableCell = false): PullParagraph[] {
+function readBlocks(container: Element, out: PullParagraph[], inTableCell = false, elements: Element[] = [], tables: string[] = []): PullParagraph[] {
   for (const node of elementChildren(container)) {
-    if (isW(node, 'p')) out.push(readParagraph(node, inTableCell));
+    if (isW(node, 'p')) {
+      out.push(readParagraph(node, inTableCell));
+      elements.push(node);
+    }
     else if (isW(node, 'tbl')) {
+      if (!inTableCell) tables.push(tableSignature(node));
       for (const row of elementChildren(node)) {
         const wrapped = row.namespaceURI === W && (row.localName === 'sdt' || row.localName === 'customXml');
         const rows: Element[] = isW(row, 'tr') ? [row] : wrapped ? Array.from((row as Element).getElementsByTagNameNS(W, 'tr')) : [];
         for (const tr of rows) {
-          for (const cell of elementChildren(tr).filter((candidate) => isW(candidate, 'tc'))) readBlocks(cell, out, true);
+          for (const cell of elementChildren(tr).filter((candidate) => isW(candidate, 'tc'))) readBlocks(cell, out, true, elements, tables);
         }
       }
     } else if (isW(node, 'sdt')) {
       const content = child(node, 'sdtContent');
-      if (content) readBlocks(content, out, inTableCell);
+      if (content) readBlocks(content, out, inTableCell, elements, tables);
     } else if (isW(node, 'customXml')) {
-      readBlocks(node, out, inTableCell);
+      readBlocks(node, out, inTableCell, elements, tables);
     }
   }
   return out;
 }
 
 /** Counts of each named element under `root`, kept when non-zero. */
+/** A table's structure: its grid and, per row, each cell's span and merge, nested tables included. */
+function tableSignature(table: Element): string {
+  const grid = child(table, 'tblGrid');
+  const columns = grid ? elementChildren(grid).filter((node) => isW(node, 'gridCol')).length : 0;
+  const rows: string[] = [];
+  const rowsOf = (container: Element): Element[] => elementChildren(container).flatMap((node: Element): Element[] => {
+    if (node.namespaceURI !== W) return [];
+    if (node.localName === 'tr') return [node];
+    return node.localName === 'sdt' || node.localName === 'customXml' ? Array.from(node.getElementsByTagNameNS(W, 'tr')) : [];
+  });
+  for (const row of rowsOf(table)) {
+    const cells = elementChildren(row).filter((node) => isW(node, 'tc')).map((cell) => {
+      const tcPr = child(cell, 'tcPr');
+      const span = child(tcPr, 'gridSpan');
+      const vMerge = child(tcPr, 'vMerge');
+      const hMerge = child(tcPr, 'hMerge');
+      const nested = elementChildren(cell).filter((node) => isW(node, 'tbl')).map(tableSignature);
+      return `${span ? attr(span, 'val') : '1'}${vMerge ? `v${attr(vMerge, 'val') ?? 'continue'}` : ''}${hMerge ? `h${attr(hMerge, 'val') ?? 'continue'}` : ''}${nested.length ? `[${nested.join(',')}]` : ''}`;
+    });
+    const header = child(child(row, 'trPr'), 'tblHeader');
+    rows.push(`${header && on(header) ? 'H' : ''}${cells.join(' ')}`);
+  }
+  return `${columns}:${rows.join('/')}`;
+}
+
+type NumberingLevel = { start: number; format: string; text: string; restart?: number; legal: boolean; shape: string };
+
+/** The levels of each `w:num`, with its overrides applied, and the abstract definition it counts with. */
+function readNumbering(xml: string | null): Map<string, { abstract: string; levels: Map<number, NumberingLevel>; starts: Map<number, number> }> {
+  const out = new Map<string, { abstract: string; levels: Map<number, NumberingLevel>; starts: Map<number, number> }>();
+  if (xml === null) return out;
+  const root = parseXml(xml).documentElement!;
+  const level = (lvl: Element): NumberingLevel => {
+    const value = (name: string) => { const element = child(lvl, name); return element ? attr(element, 'val') : null; };
+    const restart = value('lvlRestart');
+    const pPr = child(lvl, 'pPr');
+    const ind = child(pPr, 'ind');
+    return {
+      start: Number(value('start') ?? '0'),
+      format: value('numFmt') ?? 'decimal',
+      text: value('lvlText') ?? '',
+      ...(restart !== null ? { restart: Number(restart) } : {}),
+      legal: on(child(lvl, 'isLgl')),
+      shape: `${value('lvlJc') ?? ''}|${value('suff') ?? 'tab'}|${ind ? attributeSignature(ind) : ''}`,
+    };
+  };
+  const abstracts = new Map<string, Map<number, NumberingLevel>>();
+  for (const abstract of elementChildren(root).filter((node) => isW(node, 'abstractNum'))) {
+    const levels = new Map<number, NumberingLevel>();
+    for (const lvl of elementChildren(abstract).filter((node) => isW(node, 'lvl'))) levels.set(Number(attr(lvl, 'ilvl') ?? '0'), level(lvl));
+    abstracts.set(attr(abstract, 'abstractNumId') ?? '', levels);
+  }
+  for (const num of elementChildren(root).filter((node) => isW(node, 'num'))) {
+    const abstractRef = child(num, 'abstractNumId');
+    const abstract = abstractRef ? attr(abstractRef, 'val') ?? '' : '';
+    const levels = new Map(abstracts.get(abstract) ?? []);
+    const starts = new Map<number, number>();
+    for (const override of elementChildren(num).filter((node) => isW(node, 'lvlOverride'))) {
+      const ilvl = Number(attr(override, 'ilvl') ?? '0');
+      const replaced = child(override, 'lvl');
+      if (replaced) levels.set(ilvl, level(replaced));
+      const startOverride = child(override, 'startOverride');
+      if (startOverride) starts.set(ilvl, Number(attr(startOverride, 'val') ?? '0'));
+    }
+    out.set(attr(num, 'numId') ?? '', { abstract, levels, starts });
+  }
+  return out;
+}
+
+function formatNumber(value: number, format: string): string {
+  const letters = (n: number) => { let out = ''; for (let k = n; k > 0; k = Math.floor((k - 1) / 26)) out = String.fromCharCode(97 + ((k - 1) % 26)) + out; return out; };
+  const roman = (n: number) => {
+    const table: Array<[number, string]> = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+    let out = '';
+    let rest = n;
+    for (const [size, glyph] of table) while (rest >= size) { out += glyph; rest -= size; }
+    return out;
+  };
+  switch (format) {
+    case 'decimal': return String(value);
+    case 'decimalZero': return value < 10 ? `0${value}` : String(value);
+    case 'lowerLetter': return letters(value);
+    case 'upperLetter': return letters(value).toUpperCase();
+    case 'lowerRoman': return roman(value);
+    case 'upperRoman': return roman(value).toUpperCase();
+    case 'bullet': case 'none': return '';
+    default: return `${format}:${value}`;
+  }
+}
+
+/**
+ * Each numbered paragraph's label, counting as Word does: one counter set per
+ * abstract definition, a `w:startOverride` restarting it where its `w:num` is
+ * first used, and a level restarting after a higher one. A model, not Word
+ * itself, but it reads every input that shapes a label, so two documents
+ * with the same labels have the same numbering inputs where they show.
+ */
+function labelParagraphs(paragraphs: readonly Element[], read: PullParagraph[], numbering: ReturnType<typeof readNumbering>): void {
+  const counters = new Map<string, number[]>();
+  const started = new Set<string>();
+  for (const [index, paragraph] of paragraphs.entries()) {
+    const numPr = child(child(paragraph, 'pPr'), 'numPr');
+    if (!numPr) continue;
+    const numId = child(numPr, 'numId') ? attr(child(numPr, 'numId')!, 'val') ?? '' : '';
+    const ilvl = Number(child(numPr, 'ilvl') ? attr(child(numPr, 'ilvl')!, 'val') ?? '0' : '0');
+    const num = numbering.get(numId);
+    if (numId === '0' || !num) {
+      read[index]!.label = numId === '0' ? '' : `?num${numId}`;
+      continue;
+    }
+    const levels = num.levels;
+    const counter = counters.get(num.abstract) ?? Array.from({ length: 9 }, (_, k) => (levels.get(k)?.start ?? 1) - 1);
+    counters.set(num.abstract, counter);
+    if (!started.has(numId)) {
+      started.add(numId);
+      for (const [k, start] of num.starts) counter[k] = start - 1;
+    }
+    counter[ilvl] = (counter[ilvl] ?? 0) + 1;
+    // A deeper level restarts after any higher one by default; w:lvlRestart N restarts it only after levels 1..N, 0 never.
+    for (let deeper = ilvl + 1; deeper < counter.length; deeper += 1) {
+      const restart = levels.get(deeper)?.restart;
+      if (restart === undefined || (restart > 0 && ilvl < restart)) counter[deeper] = (num.starts.get(deeper) ?? levels.get(deeper)?.start ?? 1) - 1;
+    }
+    const level = levels.get(ilvl);
+    if (!level) {
+      read[index]!.label = `?lvl${ilvl}`;
+      continue;
+    }
+    const text = level.text.replace(/%([1-9])/gu, (_, n: string) => formatNumber(counter[Number(n) - 1] ?? 0, level.legal ? 'decimal' : levels.get(Number(n) - 1)?.format ?? 'decimal'));
+    read[index]!.label = `${level.format === 'bullet' ? `bullet(${level.text})` : text}|${level.shape}`;
+  }
+}
+
 function countElements(roots: readonly Element[], names: readonly string[], into: Record<string, number>): void {
   for (const root of roots) {
     for (const name of names) {
@@ -347,7 +498,11 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
   const document = parseXml(await read('word/document.xml'));
   const body = document.getElementsByTagNameNS(W, 'body').item(0);
   if (!body) throw new DocxMarkdocError('PULL_UNREADABLE_DOCX', 'The DOCX has no w:body.');
-  const paragraphs = readBlocks(body, []);
+  const bodyElements: Element[] = [];
+  const tables: string[] = [];
+  const paragraphs = readBlocks(body, [], false, bodyElements, tables);
+  const numberingXml = await readOptional('word/numbering.xml');
+  labelParagraphs(bodyElements, paragraphs, readNumbering(numberingXml));
 
   const relsXml = await readOptional('word/_rels/document.xml.rels');
   const targets = new Map(relsXml === null ? [] : Array.from(parseXml(relsXml).getElementsByTagName('Relationship'))
@@ -372,9 +527,11 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
   const footers: PullStory[] = [];
   const firstPage: PullDocx['firstPage'] = [];
   const pageSetup: string[] = [];
+  let evenPageStories = 0;
   for (const sectPr of Array.from(document.getElementsByTagNameNS(W, 'sectPr'))) {
     // A sectPr inside w:sectPrChange is a tracked change, refused separately.
     if (sectPr.parentNode && isW(sectPr.parentNode, 'sectPrChange')) continue;
+    evenPageStories += elementChildren(sectPr).filter((node) => (isW(node, 'headerReference') || isW(node, 'footerReference')) && attr(node, 'type') === 'even').length;
     headers.push(await story(sectPr, 'header', 'default'));
     footers.push(await story(sectPr, 'footer', 'default'));
     firstPage.push(on(child(sectPr, 'titlePg')) ? { header: await story(sectPr, 'header', 'first'), footer: await story(sectPr, 'footer', 'first') } : null);
@@ -393,8 +550,23 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
     return note ? readBlocks(note, []).map((paragraph) => paragraph.text) : [];
   });
 
+  // Tracked changes are refused wherever they are: every header, footer and note part the document relates,
+  // read or not (an even-page header is not), and the numbering definitions.
+  const scanned = new Set<string>();
+  const trackedRoots: Element[] = [body];
+  const relatedParts = relsXml === null ? [] : Array.from(parseXml(relsXml).getElementsByTagName('Relationship'))
+    .filter((rel) => /\/(header|footer|footnotes|endnotes|comments|numbering)$/u.test(rel.getAttribute('Type') ?? '') && rel.getAttribute('TargetMode') !== 'External')
+    .map((rel) => partPath(rel.getAttribute('Target') ?? ''));
+  for (const part of relatedParts) {
+    if (scanned.has(part)) continue;
+    scanned.add(part);
+    const xml = await readOptional(part);
+    if (xml !== null) trackedRoots.push(parseXml(xml).documentElement!);
+  }
   const trackedChanges: Record<string, number> = {};
-  countElements([body, ...storyRoots], TRACKED_CHANGE_ELEMENTS, trackedChanges);
+  countElements(trackedRoots, TRACKED_CHANGE_ELEMENTS, trackedChanges);
+  const settingsXml = await readOptional('word/settings.xml');
+  const evenAndOddHeaders = settingsXml !== null && on(child(parseXml(settingsXml).documentElement!, 'evenAndOddHeaders'));
   const unsupported: Record<string, number> = {};
   // A content control in a header or footer is how Word wraps an inserted page number: its text is read, and the
   // wrapper carries nothing create expresses, so only the body's count.
@@ -416,5 +588,8 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
     unsupported,
     footnotes,
     ...readStyles(await readOptional('word/styles.xml')),
+    tables,
+    evenPageStories,
+    evenAndOddHeaders,
   };
 }

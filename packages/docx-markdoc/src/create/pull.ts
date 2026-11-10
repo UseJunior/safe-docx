@@ -674,9 +674,14 @@ function planHunk(
   type Unit = { parent: number; rawStart: number; rawEnd: number; start: number; end: number; holder?: SourceHolder; crossReference?: boolean };
   const units: Unit[] = [];
   const seen = new Set<number>();
+  // The characters that really changed: markup is removed only around text inside them, never around text the edit keeps.
+  const tight = trimHunk(built.text, edited.text, hunk) ?? hunk;
   for (const [index, piece] of touched.entries()) {
     const covered = chain(piece.holder).filter((holder) => holder.kind !== 'root' && holder.kind !== 'attribute' && a <= holder.start && holder.end <= b).at(-1);
     if (covered) {
+      if (!(tight.oStart <= covered.start && covered.end <= tight.oEnd)) {
+        return new PlanProblem('PULL_EDIT_CROSSES_MARKUP', `the edit would remove the ${covered.kind === 'fill' ? 'fill-in' : `${covered.kind} markup`} around text it keeps ("${built.text.slice(covered.start, covered.end)}")`);
+      }
       if (seen.has(covered.id)) continue;
       seen.add(covered.id);
       units.push({ parent: covered.parent!, rawStart: covered.rawStart!, rawEnd: covered.rawEnd!, start: covered.start, end: covered.end, holder: covered });
@@ -943,7 +948,9 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const wordNotes: PullDiagnostic[] = [];
       let planned = planHunk(source, sp, before, after, hunk, wordNotes);
       const narrow = trimHunk(before.text, after.text, hunk);
-      if ((planned instanceof PlanProblem || wordNotes.length > 0) && narrow) {
+      // A word plan that removes markup is also retried narrowly: "foo{% literal %}bar" to "quxbar" edits "foo" only.
+      const removes = !(planned instanceof PlanProblem) && planned.removesMarkup === true;
+      if ((planned instanceof PlanProblem || wordNotes.length > 0 || removes) && narrow) {
         const narrowNotes: PullDiagnostic[] = [];
         const retry = planHunk(source, sp, before, after, narrow, narrowNotes);
         if (!(retry instanceof PlanProblem) && narrowNotes.length === 0) {
@@ -1041,7 +1048,20 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
           if (nestedReport) covered.push(nestedReport);
         }
       }
-      plans.push({ changes: covered, splices: [lineDeletion(source, starts, own)], apply: (slots) => { for (const r of removed) slots.items[r]!.text = null; }, keepsSkeleton: false, where: { line: report.line, paragraph: index + 1 } });
+      const splices = [lineDeletion(source, starts, own)];
+      // The first item of an ordered list sets its start: the first item that stays takes its marker.
+      const item = sp.listItem;
+      if (item && /^\d+[.)]$/u.test(item.marker)) {
+        const siblings = map.paragraphs.filter((other) => other.listItem?.list === item.list && other.listItem.indent === item.indent);
+        if (siblings[0] === sp) {
+          const heir = siblings.find((other) => !deletedSet.has(other.index));
+          if (heir?.ownLines && heir.listItem!.marker !== item.marker) {
+            const at = starts[heir.ownLines[0]]! + heir.listItem!.indent.length;
+            splices.push({ start: at, end: at + heir.listItem!.marker.length, text: item.marker });
+          }
+        }
+      }
+      plans.push({ changes: covered, splices, apply: (slots) => { for (const r of removed) slots.items[r]!.text = null; }, keepsSkeleton: false, where: { line: report.line, paragraph: index + 1 } });
     }
   }
 
@@ -1093,7 +1113,11 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     if (kind === 'list' && (prev?.listItem || nextParagraph?.listItem)) {
       const context = prev?.listItem ? prev : nextParagraph!;
       const item = context.listItem!;
-      const line = context === prev ? context.ownLines?.[1] : context.ownLines?.[0];
+      let line = context === prev ? context.ownLines?.[1] : context.ownLines?.[0];
+      // Directly after the item's own text, not after the blank line that ends the list.
+      if (line !== undefined && context === prev) {
+        while (line - 1 > context.ownLines![0] && source.slice(starts[line - 1]!, starts[line] ?? source.length).trim() === '') line -= 1;
+      }
       if (line === undefined) {
         fail('PULL_UNMAPPED_INSERTION', 'the list item it follows has no source lines');
         continue;
@@ -1149,6 +1173,9 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   for (const [element, count] of Object.entries(edited.unsupported)) {
     const was = built.unsupported[element] ?? 0;
     if (count > was) diagnostics.push({ code: 'PULL_UNSUPPORTED_CONTENT', message: `the edited DOCX has ${count - was} w:${element} element(s) create does not write; their content is not carried` });
+  }
+  if (edited.evenPageStories !== built.evenPageStories || edited.evenAndOddHeaders !== built.evenAndOddHeaders) {
+    diagnostics.push({ code: 'PULL_HEADER_UNMAPPED', message: `the edited DOCX has ${edited.evenPageStories} even-page header or footer reference(s)${edited.evenAndOddHeaders ? ' and different odd and even pages' : ''}; create writes no even-page running text, so they are not carried` });
   }
   if (edited.pageSetup.length !== built.pageSetup.length) {
     diagnostics.push({ code: 'PULL_SECTION_STRUCTURE', message: `the edited DOCX has ${edited.pageSetup.length} section(s), the build ${built.pageSetup.length}; pull does not add or remove {% section %} tags` });
@@ -1277,8 +1304,30 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     for (const report of reports) report.applied = true;
   }
 
+  /**
+   * What the paragraph texts, formats and running text do not show: list
+   * labels and table structure, compared once the texts agree. With nothing
+   * applied the build stands for the rebuild, so a numbering or table edit
+   * alone is still reported.
+   */
+  const structureDiagnostics = (rebuiltDoc: PullDocx): PullDiagnostic[] => {
+    const out: PullDiagnostic[] = [];
+    const index = E.findIndex((paragraph, k) => paragraph.label !== rebuiltDoc.paragraphs[k]?.label);
+    if (index !== -1) {
+      const label = (value: string | undefined) => quote((value ?? '').split('|')[0] || '(none)');
+      out.push({ code: 'PULL_NUMBERING_CHANGED', message: `paragraph ${index + 1} is numbered ${label(E[index]!.label)} in the edited DOCX and ${label(rebuiltDoc.paragraphs[index]?.label)} in the rebuild; pull does not write list numbering (start values, restarts, formats), so it is not carried` });
+    }
+    if (JSON.stringify(edited.tables) !== JSON.stringify(rebuiltDoc.tables)) {
+      out.push({ code: 'PULL_TABLE_STRUCTURE', message: `the table structure differs (${edited.tables.join('; ') || 'no tables'} in the edited DOCX, ${rebuiltDoc.tables.join('; ') || 'no tables'} in the rebuild); pull does not write table rows, merges or spans, so it is not carried` });
+    }
+    return out;
+  };
+
   const appliedAny = changes.some((change) => change.applied);
-  if (!appliedAny) return { changes, diagnostics, complete: changes.length === 0 && diagnostics.length === 0 };
+  if (!appliedAny) {
+    if (changes.length === 0) diagnostics.push(...structureDiagnostics(built));
+    return { changes, diagnostics, complete: changes.length === 0 && diagnostics.length === 0 };
+  }
 
   // The pulled source must build with every create check, and read back as the edited DOCX.
   let rebuilt: CreatedDocument;
@@ -1300,6 +1349,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     if (index !== -1) differs = `paragraph ${index + 1}'s run formatting differs between the rebuild and the edited DOCX`;
     else if (JSON.stringify(docStories(rebuiltDoc)) !== JSON.stringify(editedStories)) differs = 'the visible header or footer differs between the rebuild and the edited DOCX';
   }
+  if (!differs) diagnostics.push(...structureDiagnostics(rebuiltDoc));
   if (differs && allApplied && diagnostics.length === 0) diagnostics.push({ code: 'PULL_REBUILD_DIFFERS', message: `${differs}; create --replace will not accept the rebuild over the edited DOCX` });
   return { changes, diagnostics, pulledSource: current, complete: allApplied && diagnostics.length === 0 && differs === undefined };
 }

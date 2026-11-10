@@ -354,6 +354,9 @@ describe('Traceability: pull brings Word edits on a create output back into its 
           expect(result.complete, mutation.name).toBe(false);
         }
       }
+      // Deleting the first item of an ordered list hands its marker on, so the list still starts at 1.
+      const list = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, MUTATIONS[6]!.surgery) });
+      expect(list.pulledSource).toContain('1. Second item of legal work\n2. Review the closing documents\n\n> A quoted remark');
       // The issue's scenario at once: wording, a defined term, a deleted heading, and an added header and page-number footer.
       const together = all(MUTATIONS[0]!.surgery, MUTATIONS[1]!.surgery, MUTATIONS[2]!.surgery, MUTATIONS[8]!.surgery);
       const edited = await edit(base.docx, together);
@@ -550,5 +553,48 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       }
     },
     90_000,
+  );
+
+  test.openspec('[SDX-MDOC-PULL-06] numbering, table structure, even-page running text and kept markup are never lost silently')(
+    'Scenario: numbering, table structure, even-page running text and kept markup are never lost silently',
+    async () => {
+      const base = await build();
+      const codes = (result: PullResult) => result.diagnostics.map((diagnostic) => diagnostic.code);
+      // A list restarted at 7 in Word: alone, and beside an edit pull does write.
+      const restart: Surgery = { parts: { 'word/numbering.xml': (xml) => xml.replace(/<w:start w:val="1"\/>/u, '<w:start w:val="7"/>') } };
+      const numberingAlone = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, restart) });
+      expect(codes(numberingAlone)).toEqual(['PULL_NUMBERING_CHANGED']);
+      expect(numberingAlone.complete).toBe(false);
+      const numberingAndWording = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(restart, MUTATIONS[0]!.surgery)) });
+      expect(codes(numberingAndWording)).toEqual(['PULL_NUMBERING_CHANGED']);
+      expect(numberingAndWording.complete).toBe(false);
+
+      // An even-page header, plain and as a tracked insertion.
+      const even = (text: string): Surgery => ({
+        document: (xml) => xml.replace('<w:sectPr>', '<w:sectPr><w:headerReference w:type="even" r:id="rIdPullEven"/>'),
+        parts: { 'word/settings.xml': (xml) => xml.replace(/(<w:settings[^>]*>)/u, '$1<w:evenAndOddHeaders/>') },
+        add: { 'word/headerEven.xml': `<w:hdr ${W_NS}><w:p><w:pPr><w:pStyle w:val="Header"/></w:pPr>${text}</w:p></w:hdr>` },
+        relationships: [['rIdPullEven', 'header', 'headerEven.xml']],
+      });
+      const evenHeader = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, even('<w:r><w:t>Even page</w:t></w:r>')) });
+      expect(codes(evenHeader)).toEqual(['PULL_HEADER_UNMAPPED']);
+      await expect(pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, even('<w:ins w:id="7" w:author="Reviewer"><w:r><w:t>Even page</w:t></w:r></w:ins>')) }))
+        .rejects.toMatchObject({ code: 'PULL_TRACKED_CHANGES' });
+
+      // Two table cells merged: the text is the same, the structure is not.
+      const tableSource = ['Terms:', '', '{% table %}', '* Term', '* Value', '---', '* Price', '* Ten', '{% /table %}', ''].join('\n');
+      const tableBase = await build(tableSource);
+      const merged = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => xml.replace('<w:tcPr>', '<w:tcPr><w:gridSpan w:val="2"/>') }) });
+      expect(codes(merged)).toEqual(['PULL_TABLE_STRUCTURE']);
+      expect(merged.complete).toBe(false);
+
+      // An edit beside a span keeps the span's markup.
+      const literalSource = 'Keep foo{% literal %}bar{% /literal %} safe.\n';
+      const literalBase = await build(literalSource);
+      const beside = await pullCreationEdits({ source: literalSource, base: literalBase, edited: await edit(literalBase.docx, { document: (xml) => once(xml, 'Keep foobar safe.', 'Keep quxbar safe.') }) });
+      expect(beside.complete).toBe(true);
+      expect(beside.pulledSource).toBe('Keep qux{% literal %}bar{% /literal %} safe.\n');
+    },
+    60_000,
   );
 });

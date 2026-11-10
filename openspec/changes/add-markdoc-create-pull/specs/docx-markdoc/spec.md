@@ -44,3 +44,9 @@ record binds that DOCX to the source being built.
 - **WHEN** `create --replace` builds the original source, the pulled source with a later edit, and exactly the pulled source
 - **THEN** the first two SHALL be refused with `CREATION_OUTPUT_EDITED`, and the last SHALL pass every check, keep the edited bytes, note the replacement, reproduce the edited body text and remove the record
 - **AND** an incomplete pull SHALL write no record, so `create --replace` still refuses
+
+#### Scenario: [SDX-MDOC-PULL-06] numbering, table structure, even-page running text and kept markup are never lost silently
+- **GIVEN** a list restarted at 7 in `word/numbering.xml` (alone and beside a wording edit), an even-page header (plain and as a tracked insertion), two table cells merged with `w:gridSpan`, and an edit beside a `{% literal %}` span
+- **WHEN** each is pulled
+- **THEN** the restart SHALL raise `PULL_NUMBERING_CHANGED`, the merge `PULL_TABLE_STRUCTURE` and the even-page header `PULL_HEADER_UNMAPPED`, each leaving the pull incomplete so no pull record is written, and the tracked insertion SHALL be refused with `PULL_TRACKED_CHANGES`
+- **AND** the edit beside the span SHALL be written without removing the span's markup

@@ -40,7 +40,8 @@ command needs.
   - Each planned change is applied alone and kept only when the source
     still builds and reads back as expected. The whole pulled source must
     then pass every `create` check and reproduce the edited body text,
-    character formatting, headers and footers.
+    character formatting, headers and footers, list labels (computed from
+    `word/numbering.xml`) and table structure.
   - What it cannot express it reports as a typed diagnostic and leaves out
     (the paragraph stays as it was): `PULL_EDIT_CROSSES_MARKUP`,
     `PULL_EDIT_IN_CROSS_REFERENCE`, `PULL_EDIT_IN_GENERATED_TEXT`,
@@ -48,12 +49,14 @@ command needs.
     `PULL_UNMAPPED_INSERTION`, `PULL_ADDED_PARAGRAPH_STYLE`,
     `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`,
     `PULL_STYLE_CHANGED`, `PULL_PAGE_SETUP`, `PULL_SECTION_STRUCTURE`,
+    `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE`,
     `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_HEADER_UNMAPPED`,
     `PULL_FOOTER_UNMAPPED`, `PULL_UNSUPPORTED_CONTENT`, `PULL_FIELD_CHANGED`,
     `PULL_UNEXPRESSIBLE_TEXT`, `PULL_EDIT_NOT_VERIFIED` and
     `PULL_REBUILD_DIFFERS`.
   - Tracked changes are refused (`PULL_TRACKED_CHANGES`, exit 1): the
-    reviewer accepts or rejects them in Word first. Reading the accepted
+    reviewer accepts or rejects them in Word first. They are looked for in
+    every header, footer, note and numbering part the document relates. Reading the accepted
     view silently would write rejected-by-default text into the source.
   - Exit codes: 0 no changes, 2 changes or diagnostics reported, 1 error.
 - `create --replace` and the edited-output guard. A complete pull (no

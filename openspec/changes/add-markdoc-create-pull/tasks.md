@@ -1,7 +1,7 @@
 ## 1. Spec
 
 - [x] 1.1 Add the `Pull Word edits on a create output back into its creation
-      source` requirement with scenarios `SDX-MDOC-PULL-01`–`-05`.
+      source` requirement with scenarios `SDX-MDOC-PULL-01`–`-06`.
 
 ## 2. Implementation
 

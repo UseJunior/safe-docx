@@ -1035,7 +1035,8 @@ How it works:
   across a markup boundary deletes from each side, and new text whose
   formatting changes at the boundary goes to each side; deleting or typing
   over a whole fill-in, span or cross-reference (with its field) removes its
-  markup. New text is escaped so Markdown reads it as text. Added
+  markup; markup around text the edit keeps always stays. Deleting the first
+  item of a numbered list gives its number to the next item. New text is escaped so Markdown reads it as text. Added
   paragraphs take their markup from their Word style (`#`, `##`, `###`,
   `>`, `{% center %}`, `{% legend %}`, list items, body text) and their bold,
   italic and underline. A one-line header or footer text and page numbers
@@ -1043,9 +1044,10 @@ How it works:
 - Every change is applied on its own and kept only when the source still
   builds and reads back as expected; then the whole pulled source must pass
   every `create` check and reproduce the edited body text, character
-  formatting, headers and footers.
-- Tracked changes are refused (`PULL_TRACKED_CHANGES`): accept or reject them
-  in Word first, so the source records what the reviewer decided.
+  formatting, headers and footers, list numbers and table structure.
+- Tracked changes are refused (`PULL_TRACKED_CHANGES`) wherever they are,
+  headers, footers and notes included: accept or reject them in Word first,
+  so the source records what the reviewer decided.
 
 What `pull` cannot express it reports as a `DIAGNOSTIC <code>` line and
 leaves out; the paragraph it touches stays as it was, and nothing is
@@ -1058,7 +1060,8 @@ dropped without a line:
 | `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`, `PULL_STYLE_CHANGED` | formatting create does not express: a word made bold, a paragraph re-aligned or indented, a changed style |
 | `PULL_ADDED_PARAGRAPH_STYLE` | an added paragraph in a style with no creation markup |
 | `PULL_PAGE_SETUP`, `PULL_SECTION_STRUCTURE` | changed page size, margins or sections |
-| `PULL_HEADER_UNMAPPED`, `PULL_FOOTER_UNMAPPED` | running text the keys cannot express: several lines, fields, formatting |
+| `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE` | list numbering changed (a start value, a restart, a format) or table structure (merged cells, spans) |
+| `PULL_HEADER_UNMAPPED`, `PULL_FOOTER_UNMAPPED` | running text the keys cannot express: several lines, fields, formatting, even-page headers and footers |
 | `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_FIELD_CHANGED`, `PULL_UNSUPPORTED_CONTENT` | comments, footnote edits, new fields, images, hyperlinks, content controls |
 | `PULL_UNEXPRESSIBLE_TEXT` | text creation Markdoc cannot write, such as a tab |
 | `PULL_PARAGRAPH_NOT_MAPPED`, `PULL_UNMAPPED_DELETION`, `PULL_UNMAPPED_INSERTION` | a paragraph, deletion or insertion pull could not place in the source |
