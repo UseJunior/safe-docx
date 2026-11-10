@@ -537,4 +537,67 @@ describe('canonical annotation round trips', { timeout: LOAD_SENSITIVE_TIMEOUT_M
       code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId: 'comment:1', topology: 'orphan-or-cycle' },
     });
   });
+
+  commentsConformance('[SDX-MDOC-82][SDX-MDOC-90] imports and round-trips Google Docs export comments with paragraph layout properties while rejecting content-bearing pPr children', async () => {
+    const source = await sourceWithComment(6, 10);
+    const googleExportZip = await JSZip.loadAsync(source);
+    const commentsXml = await googleExportZip.file('word/comments.xml')!.async('string');
+    const googleCommentPPr =
+      '<w:pPr>' +
+      '<w:pStyle w:val="CommentText"/>' +
+      '<w:keepNext w:val="0"/>' +
+      '<w:keepLines w:val="0"/>' +
+      '<w:pageBreakBefore w:val="0"/>' +
+      '<w:widowControl/>' +
+      '<w:pBdr>' +
+      '<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>' +
+      '<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>' +
+      '<w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/>' +
+      '<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>' +
+      '<w:between w:val="none" w:sz="0" w:space="0" w:color="auto"/>' +
+      '<w:bar w:val="none" w:sz="0" w:space="0" w:color="auto"/>' +
+      '</w:pBdr>' +
+      '<w:shd w:val="clear" w:color="auto" w:fill="auto"/>' +
+      '<w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs>' +
+      '<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>' +
+      '<w:ind w:left="0" w:right="0" w:firstLine="0"/>' +
+      '<w:contextualSpacing w:val="0"/>' +
+      '<w:jc w:val="left"/>' +
+      '<w:bidi w:val="0"/>' +
+      '<w:outlineLvl w:val="9"/>' +
+      '</w:pPr>';
+    googleExportZip.file(
+      'word/comments.xml',
+      commentsXml.replace(/<w:p\b[^>]*>(?:<w:pPr>[\s\S]*?<\/w:pPr>)?/u, (match) => {
+        const openTag = /^<w:p\b[^>]*>/u.exec(match)![0];
+        return `${openTag}${googleCommentPPr}`;
+      }),
+    );
+    const googleExport = await googleExportZip.generateAsync({ type: 'nodebuffer' });
+
+    const imported = await importDocxToMarkdoc(googleExport);
+    expect(imported.annotations).toHaveLength(1);
+    expect(imported.annotations[0]?.body[0]?.runs.map((run) => run.text).join('')).toBe('Original note');
+
+    const markdoc = imported.markdoc
+      .replace('Original', 'Edited')
+      .replace('source-presentation="comment"', 'source-presentation="comment" presentation="comment"');
+    const compiled = await compileMarkdoc(imported.anchoredSource, markdoc);
+    expect(compiled.certificate.passed).toBe(true);
+    const trackedZip = await JSZip.loadAsync(compiled.tracked);
+    const trackedCommentsXml = await trackedZip.file('word/comments.xml')!.async('string');
+    expect(trackedCommentsXml).toContain('<w:keepNext w:val="0"/>');
+    expect(trackedCommentsXml).toContain('<w:pBdr>');
+    expect(trackedCommentsXml).toContain('Edited ');
+
+    const numberedCommentZip = await JSZip.loadAsync(source);
+    numberedCommentZip.file(
+      'word/comments.xml',
+      commentsXml.replace(/<w:p\b[^>]*>/u, (openTag) => `${openTag}<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>`),
+    );
+    await expect(importDocxToMarkdoc(await numberedCommentZip.generateAsync({ type: 'nodebuffer' }))).rejects.toMatchObject({
+      code: 'ANNOTATION_IMPORT_UNSUPPORTED',
+      details: { annotationId: 'comment:0', element: 'w:numPr' },
+    });
+  });
 });
