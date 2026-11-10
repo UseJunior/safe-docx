@@ -16,6 +16,7 @@ import {
 } from './cli-options.js';
 import { compileMarkdoc, validateMarkdocAgainstSource } from './compile.js';
 import { lintCreationSource, runCreateCommand } from './create/cli-create.js';
+import { runPullCommand } from './create/cli-pull.js';
 import { CliUsageError, DocxMarkdocError } from './errors.js';
 import { exportEditPairs } from './export.js';
 import { compileGreenfieldMarkdoc, type GreenfieldStyleProfile } from './greenfield.js';
@@ -126,6 +127,13 @@ async function dispatch(command: string | undefined, args: string[], io: CliIo):
     const result = await runCreateCommand(args);
     io.stdout(`${result.summary}\n`);
     return 0;
+  }
+
+  if (command === 'pull') {
+    // 0: the edited DOCX reads as the build; 2: changes or diagnostics were reported (and, with --apply, written).
+    const result = await runPullCommand(args);
+    io.stdout(`${result.text}\n`);
+    return result.exitCode;
   }
 
   if (command === 'compile-greenfield') {

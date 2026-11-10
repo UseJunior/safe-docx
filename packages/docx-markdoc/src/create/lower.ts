@@ -85,6 +85,14 @@ export type CreationLowering = {
   frontmatter: CreationFrontmatter;
   profile: CreationProfile;
   blocks: Array<{ kind: CreationBlockKind; line?: number; section: number }>;
+  /**
+   * Parallel to `projection.paragraphs`: the index into the parsed source's
+   * top-level nodes (`Markdoc.parse(source).children`) of the block each
+   * paragraph came from, or -1 for a paragraph generation adds (the empty
+   * paragraph after a section-ending table). `pull` maps read-back
+   * paragraphs back to the source through it. Not part of the certificate.
+   */
+  paragraphEntries: number[];
 };
 
 type FooterDeclaration = {
@@ -100,7 +108,7 @@ type FooterDeclaration = {
 };
 /** A declared header: its text, or none for an empty header (`header=false`); `first` as for a footer. */
 type HeaderDeclaration = { text?: string; align?: RunningTextAlignment; first?: string };
-type Entry = { kind: CreationBlockKind; line?: number; blocks: BlockSpec[]; pageBreakBefore: boolean };
+type Entry = { kind: CreationBlockKind; line?: number; blocks: BlockSpec[]; pageBreakBefore: boolean; node: number };
 type SectionState = { entries: Entry[]; footer?: FooterDeclaration; header?: HeaderDeclaration };
 
 /**
@@ -556,7 +564,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   const sections: SectionState[] = [{ entries: [], ...(firstFooter ? { footer: firstFooter } : {}), ...(firstHeader ? { header: firstHeader } : {}) }];
   let pendingPageBreak: MarkdocNode | null = null;
   let titleBlocks: BlockSpec[] | undefined;
-  for (const node of ast.children) {
+  for (const [nodeIndex, node] of ast.children.entries()) {
     const tag = node.type === 'tag' ? node : soleInlineTag(node);
     const current = sections.at(-1)!;
     // A footnote body is not a block of the body: a pending page break
@@ -579,7 +587,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     bookmarkTargets(node, blocks);
     const kind = kindOf(node);
     if (kind === 'title' && titleBlocks === undefined) titleBlocks = blocks;
-    current.entries.push({ kind, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), blocks, pageBreakBefore: pendingPageBreak !== null });
+    current.entries.push({ kind, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), blocks, pageBreakBefore: pendingPageBreak !== null, node: nodeIndex });
     pendingPageBreak = null;
   }
   if (pendingPageBreak) creationError('DANGLING_PAGE_BREAK', '{% page-break /%} must be followed by a block.', pendingPageBreak);
@@ -636,6 +644,14 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     if (section.blocks.at(-1)?.kind === 'table') projected.paragraphs.push('');
   }
   const { paragraphs } = projected;
+  const paragraphEntries: number[] = [];
+  const countParagraphs = (blocks: readonly BlockSpec[]): number => blocks.reduce((sum, block) => sum
+    + (block.kind === 'table' ? block.rows.reduce((cells, row) => cells + row.cells.reduce((total, cell) => total + countParagraphs(cell.blocks), 0), 0) : 1), 0);
+  for (const section of sections) {
+    for (const entry of section.entries) paragraphEntries.push(...Array.from({ length: countParagraphs(entry.blocks) }, () => entry.node));
+    if (section.entries.at(-1)?.blocks.at(-1)?.kind === 'table') paragraphEntries.push(-1);
+  }
+  if (paragraphEntries.length !== paragraphs.length) throw new Error('the lowering lost track of which block a paragraph came from');
   const title = frontmatter.title ?? titleText;
   const spec: DocumentSpec = {
     meta: {
@@ -665,5 +681,6 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     frontmatter,
     profile,
     blocks: sections.flatMap((section, index) => section.entries.map((entry) => ({ kind: entry.kind, ...(entry.line === undefined ? {} : { line: entry.line }), section: index }))),
+    paragraphEntries,
   };
 }

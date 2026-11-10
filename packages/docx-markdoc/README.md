@@ -640,7 +640,10 @@ the displaced DOCX, byte for byte, in
 `.<stem>.create-overwritten-<uuid>/<stem>.docx` and names that path in its
 output. These checks see edits saved before publication moves the DOCX aside;
 a program still writing to the file after that point writes into the kept
-copy.
+copy. To keep the edits instead, bring them into the source with
+[`docx-markdoc pull`](#pulling-word-edits-back-into-the-source): after a
+complete pull, `--replace` accepts the edited DOCX when it builds exactly the
+pulled source.
 
 An output that would overwrite an input, including through a
 symlinked directory or a hard link, is refused. Use `--no-pdf` to skip the PDF, or
@@ -985,6 +988,150 @@ page 2, with a centred `Page 1 of 2`, `Page 2 of 2` on every page.
   variant. A source without the new keys builds the same bytes and
   certificate as before.
 
+### Pulling Word edits back into the source
+
+A created DOCX often goes out for review and comes back edited in Word. `pull`
+reads those edits back into the creation `.mdoc`, so the source again
+describes the document and the next build keeps them:
+
+```bash
+docx-markdoc create letter.mdoc out/                 # out/letter.docx + certificate
+# ... the reviewer edits out/letter.docx in Word and saves it ...
+docx-markdoc pull out/letter.docx letter.mdoc         # report only; exit 2 when edited
+docx-markdoc pull out/letter.docx letter.mdoc --apply # writes letter.pulled.mdoc
+mv letter.pulled.mdoc letter.mdoc                     # after reading the diff
+docx-markdoc create letter.mdoc out/ --replace        # rebuilds over the edited DOCX
+```
+
+```text
+pull letter.docx against letter.mdoc: 3 change(s) (3 applied), 0 diagnostic(s)
+  line 10: paragraph 3 changed: "fees" -> "charges"; "charge" -> "bill"
+  line 12: paragraph 4 deleted: "Fees"
+  line 14: paragraph 5 changed: "Company" -> "Client"
+wrote letter.pulled.mdoc
+wrote out/letter.pull.json: create --replace accepts the edited letter.docx when it builds exactly this pulled source into that output directory
+```
+
+How it works:
+
+- `pull` reads `<stem>.verification.json` beside the edited DOCX
+  (`--certificate` names another). The `.mdoc` must be the source that
+  certificate records (`PULL_SOURCE_CHANGED` otherwise). `pull` rebuilds
+  that build from it (`PULL_BASE_MISMATCH` when it cannot be reproduced; pass
+  the build's `--style-profile`), so the comparison is with the exact DOCX
+  that went out.
+- Body paragraphs are paired with the edited ones and diffed word by word.
+  Each change is reported with its source line: a changed paragraph with its
+  word edits, a deleted paragraph with its lines, added paragraphs after a
+  line, and each section's changed header or footer at the frontmatter
+  (line 1) or its `{% section %}` tag. The pairing is a heuristic: where
+  several paragraphs changed at once it can report two edits where a reader
+  sees a deletion and an insertion; either reading rebuilds the same text.
+- With `--apply` the changes it can express go into a new file,
+  `<stem>.pulled.mdoc` beside the source or `--output new.mdoc`; an existing
+  file is never overwritten and the inputs are only read. Markup around
+  unchanged text stays as written. Edits inside a fill-in, bold, italic or
+  underlined text, or a signer's name or date, are made in place. A deletion
+  across a markup boundary deletes from each side, and new text whose
+  formatting changes at the boundary goes to each side; deleting or typing
+  over a whole fill-in, span or cross-reference (with its field) removes its
+  markup; markup around text the edit keeps always stays. Deleting the first
+  item of a numbered list gives its number to the next item. New text is escaped so Markdown reads it as text. Added
+  paragraphs take their markup from their Word style (`#`, `##`, `###`,
+  `>`, `{% center %}`, `{% legend %}`, list items, body text) and their bold,
+  italic and underline. A one-line header or footer text and page numbers
+  map to the [running-text keys](#running-headers-footers-and-first-pages).
+- Every change is applied on its own and kept only when the source still
+  builds and reads back as expected; then the whole pulled source must pass
+  every `create` check and reproduce the edited body text, character
+  formatting, headers and footers, list numbers and table structure.
+- What Word for Mac changes when it merely saves a create output is not an
+  edit: the outline level it states on the built-in heading styles, a left
+  alignment it drops as redundant, and the cell margins it adds to a table.
+  An unedited DOCX opened and saved in Word pulls as `no changes`.
+- Tracked changes are refused (`PULL_TRACKED_CHANGES`) wherever they are,
+  headers, footers and notes included: accept or reject them in Word first,
+  so the source records what the reviewer decided.
+
+What `pull` cannot express it reports as a `DIAGNOSTIC <code>` line and
+leaves out; the paragraph it touches stays as it was, and nothing is
+dropped without a line:
+
+| Code | Edit |
+|---|---|
+| `PULL_EDIT_CROSSES_MARKUP` | changes markup it cannot keep: half a fill-in's brackets, an emptied span, a footnote mark or a line break |
+| `PULL_EDIT_IN_CROSS_REFERENCE`, `PULL_EDIT_IN_GENERATED_TEXT` | edits the text of a cross-reference, retargets, moves or re-switches it, or edits text the markup generates (`Section `, a signature line) |
+| `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`, `PULL_STYLE_CHANGED` | formatting create does not express: a word made bold, a paragraph re-aligned or indented, a paragraph mark resized or reformatted, a changed style, a cross-reference's cached result reformatted or given a tab or line break |
+| `PULL_ADDED_PARAGRAPH_STYLE` | an added paragraph in a style with no creation markup |
+| `PULL_PAGE_SETUP`, `PULL_SECTION_STRUCTURE` | changed page size, margins or sections |
+| `PULL_DOCUMENT_SETTINGS`, `PULL_DOCUMENT_PROPERTIES` | a layout setting (default tab stop, hyphenation, mirrored margins, book folds) or the title, author, subject, description or keywords |
+| `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE` | list numbering (a start value, a restart, a format, the label's look) or table structure and layout (merged cells, column widths, borders, captions) |
+| `PULL_HEADER_UNMAPPED`, `PULL_FOOTER_UNMAPPED` | running text the keys cannot express: several lines, fields (or a page number given a switch such as `\* roman`), formatting, even-page headers and footers |
+| `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_FIELD_CHANGED`, `PULL_BOOKMARKS_CHANGED`, `PULL_UNSUPPORTED_CONTENT` | comments, footnote edits or moved or reformatted footnote marks, new or changed fields, bookmarks (anchors) added, removed or moved, or a cross-referenced one resized (Word's hidden `_…` bookmarks are not compared), images, hyperlinks, content controls |
+| `PULL_UNEXPRESSIBLE_TEXT` | text creation Markdoc cannot write, such as a tab |
+| `PULL_PARAGRAPH_NOT_MAPPED`, `PULL_UNMAPPED_DELETION`, `PULL_UNMAPPED_INSERTION` | a paragraph, deletion or insertion pull could not place in the source |
+| `PULL_EDIT_NOT_VERIFIED`, `PULL_REBUILD_DIFFERS` | a planned change that did not read back as the edited DOCX |
+
+Some edits that creation Markdoc could express are still reported rather than
+written. Make these edits in the source by hand:
+
+- the text of a parent list item retyped from scratch while its nested items
+  stay (`PULL_UNMAPPED_DELETION`);
+- a separate list inserted directly before another list
+  (`PULL_UNMAPPED_INSERTION`);
+- the first nested item added under a list item that had none
+  (`PULL_PARAGRAPH_FORMATTING`, as it is written at the outer level);
+- a list item added after a paragraph that was itself added after the list,
+  continuing that list in Word (`PULL_EDIT_NOT_VERIFIED`, as create starts a
+  new list there);
+- the last paragraph deleted after a table, which leaves the empty paragraph
+  Word keeps after a final table (`PULL_UNMAPPED_INSERTION`);
+- the paragraph deleted between a list and an indented paragraph that would
+  then join the list (`PULL_EDIT_NOT_VERIFIED`).
+
+When the paragraph between two lists of one kind is deleted, pull keeps them
+two lists by giving the second another delimiter (`*` for `-`, `)` for `.`).
+This holds when either list, or both, is wholly retyped in the same edit: the
+retyped items carry their list's Word numbering, which places them.
+
+`pull` compares the body, headers, footers, footnotes, every style the build
+defines, numbering, tables, sections and page setup, the layout settings and
+the document properties above. It does not compare the theme, the font
+table, web and compatibility settings, custom XML parts, or table cell
+margins (which Word adds when it saves a table); an edit made only there is
+not reported.
+
+The spacing above the first paragraph after a table is create's own: a
+rebuild sets it on whatever paragraph follows a table. `pull` therefore does
+not report that spacing where it moves with an edit. Two cases are covered:
+the paragraph that now follows a table, and a paragraph added next to one
+that has it, which Word gives the same spacing when you press Enter. That
+spacing given to an added paragraph by hand reads the same as Word's copy,
+so it is not reported either. Any other spacing is.
+
+Keep-with-next works the same way. A rebuild sets it on the paragraph before
+a legend or a signature block, so `pull` does not report it where it moves
+with an edit: on the paragraph that now comes before one, or on one that has
+lost it because what follows it changed. Any other keep-with-next change is
+reported.
+
+Exit codes: `0` when the edited DOCX reads as the build, `2` when changes or
+diagnostics are reported (with `--apply`, after writing), `1` on an error.
+`--json` prints the report as JSON.
+
+**`create --replace` after a pull.** A pull is complete when every change
+was written and no diagnostic was raised. Then `--apply` also writes
+`<stem>.pull.json` beside the certificate, binding the edited DOCX's
+SHA-256, the certified build and the pulled source's SHA-256. `create
+--replace` accepts that one edited DOCX in place of the certified one when
+it builds exactly the pulled source (copied over the original, as above). It
+keeps the edited bytes in `.<stem>.create-overwritten-<uuid>/`, says so in
+its output, and removes the record. Any other source, another edit to the
+DOCX, or an incomplete pull still fails with `CREATION_OUTPUT_EDITED`. After
+an incomplete pull, read the diagnostics, make those edits in the source by
+hand, and rebuild with `--dangerously-overwrite-edited-docx`, which also
+keeps the edited bytes.
+
 ### Migrating from a per-matter python-docx renderer
 
 Projects that build new instruments (consents, resolutions, certificates)
@@ -1020,7 +1167,7 @@ fails with `LEGACY_MARKUP`, and the error names the tag to use instead.
 Make later edits through `docx-markdoc import` / `compile`, which produce
 tracked changes. Once someone edits the `.docx` itself, `--replace` refuses
 to rebuild over it (`CREATION_OUTPUT_EDITED`), so a rebuild cannot silently
-discard those edits.
+discard those edits; `docx-markdoc pull` brings them back into the `.mdoc`.
 
 ### Moving from per-matter pseudo-HTML `.mdoc`
 
