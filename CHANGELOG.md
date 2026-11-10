@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- The comparison's header/footer story checks now judge what Word shows
+  after Accept All and Reject All, not the literal `w:headerReference` and
+  `w:footerReference` elements. They project with Word's carry of a removed
+  section break's references (#1144) and resolve each section's header and
+  footer through inheritance from the previous section, with `w:titlePg` and
+  `w:evenAndOddHeaders` deciding which types show; a story that projects to
+  blank counts as no story. A redline whose final section names a footer it
+  used to inherit is no longer refused. A redline that Word would accept or
+  reject into a blank footer, because the carried story replaced the footer
+  the section inherited, is now refused with `UnsupportedTextBoxRevisionError`
+  instead of being published. The resolver behind this
+  (`effectiveStoryBindings.ts`) is internal for now. docx-compare's
+  `acceptAllChanges`/`rejectAllChanges` lose their undocumented
+  `{ carryHeaderFooterReferences }` option; they always carry, as Word does.
+  (#1204)
+
 - `docx-markdoc create` no longer fails its PDF word check when a word that
   holds a hyphen, such as `re-evaluate`, wraps right after the hyphen at a
   line end. `pdftotext -raw` reads that as `re-` and `evaluate`. The check

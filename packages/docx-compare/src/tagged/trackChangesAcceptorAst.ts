@@ -24,17 +24,6 @@ import {
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-export interface ChangeProjectionOptions {
-  /**
-   * When accept or reject removes a paragraph-owned section boundary, copy its
-   * header/footer references onto a following section that has none, as Word
-   * does (docx-core `carryForwardHeaderFooterRefs`, #1144). Default `true`.
-   * The comparison pipeline's header/footer story checks pass `false`: they
-   * model which stories stay selected by surviving references only.
-   */
-  carryHeaderFooterReferences?: boolean;
-}
-
 /**
  * Remove w:hyperlink elements left with no element children after change
  * resolution. Word drops a hyperlink whose entire content was a resolved
@@ -321,7 +310,6 @@ function canSafelyRemoveEmptyParagraph(p: Element): boolean {
 function resolveParagraphMarkRevision(
   p: Element,
   projection: 'accept' | 'reject',
-  carryReferences: boolean,
 ): void {
   const parent = p.parentNode;
   if (!parent) return;
@@ -329,7 +317,7 @@ function resolveParagraphMarkRevision(
   const target = findFollowingSiblingParagraph(p);
   if (!target) {
     if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
-      if (carryReferences) carryHeaderFooterRefsFromRemovedBoundary(p);
+      carryHeaderFooterRefsFromRemovedBoundary(p);
       parent.removeChild(p);
     }
     return;
@@ -349,7 +337,7 @@ function resolveParagraphMarkRevision(
   // The paragraph's own section boundary, if any, leaves with its mark; its
   // header/footer references move to the following section as in docx-core
   // (#1144).
-  if (carryReferences) carryHeaderFooterRefsFromRemovedBoundary(p);
+  carryHeaderFooterRefsFromRemovedBoundary(p);
   parent.removeChild(p);
 }
 
@@ -723,10 +711,9 @@ function preserveCrossParagraphBookmarksForReject(
  * - Removes format change tracking elements
  *
  * @param documentXml - The document.xml content with track changes
- * @param options - See {@link ChangeProjectionOptions}
  * @returns Document XML with all changes accepted
  */
-export function acceptAllChanges(documentXml: string, options: ChangeProjectionOptions = {}): string {
+export function acceptAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
   // Row revisions are empty markers under w:trPr, not content wrappers.
@@ -836,7 +823,7 @@ export function acceptAllChanges(documentXml: string, options: ChangeProjectionO
     ...findAllByTagName(root, 'w:bookmarkStart'), ...findAllByTagName(root, 'w:bookmarkEnd')]);
   for (const p of markDeletedParagraphs) {
     rescueBookmarksFromUnmergedEmptyParagraph(root, p, bookmarksById);
-    resolveParagraphMarkRevision(p, 'accept', options.carryHeaderFooterReferences ?? true);
+    resolveParagraphMarkRevision(p, 'accept');
   }
 
   // Drop hyperlink wrappers emptied by the accepted deletions above.
@@ -854,10 +841,9 @@ export function acceptAllChanges(documentXml: string, options: ChangeProjectionO
  * - Removes format change tracking elements
  *
  * @param documentXml - The document.xml content with track changes
- * @param options - See {@link ChangeProjectionOptions}
  * @returns Document XML with all changes rejected
  */
-export function rejectAllChanges(documentXml: string, options: ChangeProjectionOptions = {}): string {
+export function rejectAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
   // Rejecting an inserted row removes the row itself before the generic w:ins
@@ -991,7 +977,7 @@ export function rejectAllChanges(documentXml: string, options: ChangeProjectionO
   // leading format after the merge. Process in document order so consecutive
   // inserted paragraph breaks still cascade into the first surviving one.
   for (const p of markInsertedParagraphs) {
-    resolveParagraphMarkRevision(p, 'reject', options.carryHeaderFooterReferences ?? true);
+    resolveParagraphMarkRevision(p, 'reject');
   }
 
   // Strip paragraph-level markers now that changes are rejected.
