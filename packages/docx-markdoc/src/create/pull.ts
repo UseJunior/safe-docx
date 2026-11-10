@@ -1033,7 +1033,8 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     if (wanted === undefined) return undefined;
     let back = after;
     while (back >= 0 && deletedSet.has(back) && !(map.paragraphs[back]!.listItem && numberingOf(O[back]!.properties) === wanted)) back -= 1;
-    if (back === after || back < 0 || !deletedSet.has(back)) return undefined;
+    // A surviving item of that list ends the stretch too: an item added to the list before a deleted bridge.
+    if (back === after || back < 0 || !map.paragraphs[back]!.listItem || numberingOf(O[back]!.properties) !== wanted) return undefined;
     let ahead = after + 1;
     while (ahead < O.length && deletedSet.has(ahead)) ahead += 1;
     return ahead < O.length && map.paragraphs[ahead]!.listItem && numberingOf(O[ahead]!.properties) === wanted ? undefined : back;
@@ -1141,8 +1142,11 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   // (`-`, `*`, `+`; `.`, `)`), not the next one's where it can. Its marker edits go with the deletion that joined the run.
   {
     // A list whose items were all retyped stays a list: numbered paragraphs added after one of its deleted items.
+    // Entries an added unnumbered paragraph follows: it is written after the entry, so lists either side stay apart.
+    const separated = new Set<number>();
     for (const pair of pairing) {
       if (pair.o !== undefined) lastBuilt = pair.o;
+      else if (lastBuilt >= 0 && !E[pair.e!]!.numbered) separated.add(map.paragraphs[lastBuilt]!.entry);
       else if (lastBuilt >= 0 && E[pair.e!]!.numbered) {
         const behind = listItemBehind(lastBuilt, pair.e!) ?? lastBuilt;
         if (deletedSet.has(behind) && map.paragraphs[behind]!.listItem) replacedLists.add(map.paragraphs[behind]!.listItem!.list);
@@ -1174,7 +1178,9 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const ordered = /^\d/u.test(items[0]!.listItem!.marker);
       const original = delimiterOf(items[0]!.listItem!.marker);
       const previous = survivors[k - 1];
-      const adjacentSameKind = assigned !== undefined && previous && previous.node.type === 'list' && /^\d/u.test(topItems(previous.node)[0]!.listItem!.marker) === ordered;
+      let apart = false;
+      for (let gap = previous?.entry ?? entry; gap < entry; gap += 1) apart ||= separated.has(gap);
+      const adjacentSameKind = !apart && assigned !== undefined && previous && previous.node.type === 'list' && /^\d/u.test(topItems(previous.node)[0]!.listItem!.marker) === ordered;
       // The deletion that joins this list to the one before, when one does.
       for (let gap = (previous?.entry ?? -1) + 1; gap < entry; gap += 1) joinedBy = entryPlans.get(gap) ?? joinedBy;
       if (!adjacentSameKind || original !== assigned) {
@@ -1211,9 +1217,10 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       continue;
     }
     const open = runs.at(-1);
-    // Numbered paragraphs of another numbering instance start a run of their own: they may replace another list.
+    // Numbered paragraphs of another numbering instance, and a numbered paragraph next to an unnumbered one, start a
+    // run of their own: each goes to its own list, or after the block before it.
     const last = open?.paragraphs.at(-1);
-    const sameList = last === undefined || !E[pair.e!]!.numbered || !E[last]!.numbered || numberingOf(E[last]!.properties) === numberingOf(E[pair.e!]!.properties);
+    const sameList = last === undefined || (E[pair.e!]!.numbered === E[last]!.numbered && (!E[last]!.numbered || numberingOf(E[last]!.properties) === numberingOf(E[pair.e!]!.properties)));
     if (open && open.after === lastO && open.next === undefined && sameList) open.paragraphs.push(pair.e!);
     else runs.push({ after: lastO, next: undefined, paragraphs: [pair.e!] });
   }
