@@ -369,10 +369,15 @@ function storyLines(story: PullStory, doc: Pick<PullDocx, 'styleAlignments'>, de
     const alignment = paragraph.alignment ?? doc.styleAlignments[paragraph.style ?? defaultStyle] ?? 'left';
     const literal = new Set<string>();
     const fieldless = paragraph.text.replaceAll(PAGE_FIELD_TOKEN, '\u0001'.repeat(PAGE_FIELD_TOKEN.length)).replaceAll(NUMPAGES_FIELD_TOKEN, '\u0001'.repeat(NUMPAGES_FIELD_TOKEN.length));
-    for (let index = 0; index < fieldless.length; index += 1) if (/[^\s\u0001]/u.test(fieldless[index]!)) literal.add(paragraph.formats[index] ?? '');
-    // Alignment, the formats of its literal text, and its other paragraph properties (indentation, spacing, tabs, …).
+    const field = new Set<string>();
+    for (let index = 0; index < fieldless.length; index += 1) {
+      if (fieldless[index] === '\u0001') field.add(paragraph.formats[index] ?? '');
+      else if (/\S/u.test(fieldless[index]!)) literal.add(paragraph.formats[index] ?? '');
+    }
+    // Alignment, the formats of its literal text, its other paragraph properties (indentation, spacing, tabs, …) and the
+    // formats of its page-number fields (the field's own runs; the cached number is not read).
     const others = paragraph.properties.split(';').filter((part) => part && !part.startsWith('jc=')).join(';');
-    return { text: paragraph.text, signature: `${alignment}|${[...literal].sort().join('+')}|${others}` };
+    return { text: paragraph.text, signature: `${alignment}|${[...literal].sort().join('+')}|${others}|${[...field].sort().join('+')}` };
   });
 }
 
@@ -438,6 +443,12 @@ function inferRunningKeys(doc: PullDocx, section: number): { keys: RunningKeys; 
   const plainText = (line: { text: string }) => !/[\t\n]/u.test(line.text) && !line.text.includes(PAGE_FIELD_TOKEN) && !line.text.includes(NUMPAGES_FIELD_TOKEN) && !/<[A-Z]+>/u.test(line.text);
   const alignmentOf = (line: { signature: string }) => line.signature.split('|')[0]!;
   const formatsOf = (line: { signature: string }) => line.signature.split('|')[1]!.split('+').filter(Boolean);
+  const fieldFormatsOf = (line: { signature: string }) => (line.signature.split('|')[3] ?? '').split('+').filter(Boolean);
+  for (const [slot, story] of [['header', doc.headers[section]], ['footer', doc.footers[section]]] as const) {
+    for (const line of storyLines(story ?? null, doc, slot === 'header' ? CREATION_STYLE.header : CREATION_STYLE.footer) ?? []) {
+      if (fieldFormatsOf(line).length > 0) problems.push(`its ${slot}'s page number is formatted (${fieldFormatsOf(line).map(describeFormat).join('; ')}), which create does not express`);
+    }
+  }
   const header = storyLines(doc.headers[section] ?? null, doc, CREATION_STYLE.header);
   if (header !== null) {
     if (header.length === 0) {

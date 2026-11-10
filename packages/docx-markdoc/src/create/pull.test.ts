@@ -672,6 +672,14 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const wordSections = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, { document: (xml) => xml.replaceAll('<w:pgMar ', '<w:cols w:space="720"/><w:docGrid w:linePitch="360"/><w:pgMar ').replaceAll('<w:type w:val="nextPage"/>', '') }) });
       expect(wordSections).toMatchObject({ changes: [], diagnostics: [], complete: true });
 
+      // A page number made bold, alone and beside an applied wording edit: the cached number is not read, its look is.
+      const boldPage: Surgery = { parts: { 'word/footer1.xml': (xml) => xml.replaceAll('<w:r>', '<w:r><w:rPr><w:b/></w:rPr>') } };
+      for (const surgery of [boldPage, all(boldPage, MUTATIONS[0]!.surgery)]) {
+        const result = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_FOOTER_UNMAPPED']);
+      }
+
       // An edit beside a span keeps the span's markup.
       const literalSource = 'Keep foo{% literal %}bar{% /literal %} safe.\n';
       const literalBase = await build(literalSource);
