@@ -674,7 +674,9 @@ describe('Traceability: pull brings Word edits on a create output back into its 
 
       // A page number made bold, alone and beside an applied wording edit: the cached number is not read, its look is.
       const boldPage: Surgery = { parts: { 'word/footer1.xml': (xml) => xml.replaceAll('<w:r>', '<w:r><w:rPr><w:b/></w:rPr>') } };
-      for (const surgery of [boldPage, all(boldPage, MUTATIONS[0]!.surgery)]) {
+      // Only the run that displays the number, as Word's font controls do when the number alone is selected.
+      const boldResult: Surgery = { parts: { 'word/footer1.xml': (xml) => xml.replace(/(<w:fldChar w:fldCharType="separate"\/><\/w:r>)<w:r>(<w:t)/u, '$1<w:r><w:rPr><w:b/></w:rPr>$2') } };
+      for (const surgery of [boldPage, all(boldPage, MUTATIONS[0]!.surgery), boldResult, all(boldResult, MUTATIONS[0]!.surgery)]) {
         const result = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, surgery) });
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_FOOTER_UNMAPPED']);

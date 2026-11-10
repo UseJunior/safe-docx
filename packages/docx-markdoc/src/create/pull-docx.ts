@@ -270,8 +270,9 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     (offset, result) => crossReferences.push({ offset, text: result }),
     undefined,
     undefined,
-    (start, end, run) => {
-      const signature = runFormatSignature(run);
+    (start, end, run, fieldRuns) => {
+      // A field reads with the formatting of all its runs: one format when they agree, all of them when they do not.
+      const signature = fieldRuns ? [...new Set(fieldRuns.map(runFormatSignature))].sort().join('&') : runFormatSignature(run);
       for (let index = start; index < end; index += 1) formats[index] = signature;
     },
   );
