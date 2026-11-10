@@ -1348,12 +1348,26 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const label = (value: string | undefined) => quote((value ?? '').split('|')[0] || '(none)');
       out.push({ code: 'PULL_NUMBERING_CHANGED', message: `paragraph ${index + 1} is numbered ${label(E[index]!.label)} in the edited DOCX and ${label(rebuiltDoc.paragraphs[index]?.label)} in the rebuild; pull does not write list numbering (start values, restarts, formats), so it is not carried` });
     }
-    // A footnote mark or a bookmark moved within text that reads the same: the texts and the notes do not show it.
+    // A footnote mark moved or reformatted, or a bookmark moved, within text that reads the same: the texts and the
+    // notes do not show it.
     const marked = E.findIndex((paragraph, k) => JSON.stringify(paragraph.footnoteReferences) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.footnoteReferences ?? []));
     if (marked !== -1) {
       out.push({ code: 'PULL_FOOTNOTES_CHANGED', message: `paragraph ${marked + 1}'s footnote marks read at offsets ${JSON.stringify(E[marked]!.footnoteReferences)} in the edited DOCX and ${JSON.stringify(rebuiltDoc.paragraphs[marked]?.footnoteReferences ?? [])} in the rebuild; pull does not move a footnote mark, so it is not carried` });
     }
+    const markFormatted = E.findIndex((paragraph, k) => JSON.stringify(paragraph.footnoteMarks) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.footnoteMarks ?? []));
+    if (markFormatted !== -1) {
+      out.push({ code: 'PULL_FOOTNOTES_CHANGED', message: `paragraph ${markFormatted + 1}'s footnote mark is formatted ${E[markFormatted]!.footnoteMarks.map((format) => describeFormat(format)).join('; ') || '(none)'} in the edited DOCX and ${(rebuiltDoc.paragraphs[markFormatted]?.footnoteMarks ?? []).map((format) => describeFormat(format)).join('; ') || '(none)'} in the rebuild; pull does not write a footnote mark's formatting, so it is not carried` });
+    }
+    // Where a bookmark ends is compared only for one a cross-reference shows, as Word may leave text typed at a
+    // heading's end outside its bookmark; there the range is what an updated cross-reference displays.
+    const targets = new Set(E.flatMap((paragraph) => paragraph.crossReferences.map((reference) => reference.instruction.split(' ')[1] ?? '')));
+    const shownRanges = (paragraph: PullParagraph | undefined) => (paragraph?.bookmarkRanges ?? []).filter((range) => targets.has(range.slice(0, range.indexOf('@'))));
     const anchored = E.findIndex((paragraph, k) => JSON.stringify(paragraph.bookmarks) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.bookmarks ?? []));
+    // A moved bookmark is reported once, by where it starts.
+    const ranged = anchored !== -1 ? -1 : E.findIndex((paragraph, k) => JSON.stringify(shownRanges(paragraph)) !== JSON.stringify(shownRanges(rebuiltDoc.paragraphs[k])));
+    if (ranged !== -1) {
+      out.push({ code: 'PULL_BOOKMARKS_CHANGED', message: `paragraph ${ranged + 1}'s cross-referenced bookmarks cover ${shownRanges(E[ranged]).map((range) => quote(range)).join(', ') || '(none)'} in the edited DOCX and ${shownRanges(rebuiltDoc.paragraphs[ranged]).map((range) => quote(range)).join(', ') || '(none)'} in the rebuild; pull does not change what an anchor covers, so it is not carried` });
+    }
     if (anchored !== -1) {
       const shown = (paragraph: PullParagraph | undefined) => (paragraph?.bookmarks ?? []).map((bookmark) => quote(bookmark)).join(', ') || '(none)';
       out.push({ code: 'PULL_BOOKMARKS_CHANGED', message: `paragraph ${anchored + 1}'s bookmarks are ${shown(E[anchored])} in the edited DOCX and ${shown(rebuiltDoc.paragraphs[anchored])} in the rebuild; pull does not add, remove or move a bookmark (an anchor such as \`{% #target %}\`), so the change is not carried` });

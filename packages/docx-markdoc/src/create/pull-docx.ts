@@ -44,6 +44,10 @@ export type PullParagraph = {
   fieldPositions: string[];
   /** Where each bookmark starts (`target@0`), in order; Word's hidden `_…` bookmarks aside. */
   bookmarks: string[];
+  /** Each bookmark's range (`target@0-5`; `target@0-` when it ends in a later paragraph), in the order they close. */
+  bookmarkRanges: string[];
+  /** The run formatting of each footnote mark, in order. */
+  footnoteMarks: string[];
 };
 
 /** A header or footer part's paragraphs, or null for a slot without a reference. */
@@ -318,17 +322,25 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
   const fieldInstructions: string[] = [];
   const fieldPositions: string[] = [];
   const bookmarks: string[] = [];
+  const bookmarkRanges: string[] = [];
+  const open = new Map<string, { name: string; start: number }>();
   const text = paragraphReadbackText(
     paragraph,
     (offset) => footnoteReferences.push(offset),
     (offset, result, instruction) => crossReferences.push({ offset, text: result, instruction: instruction.trim().replace(/\s+/gu, ' ') }),
-    // Where it ends is not compared: Word may leave text typed at a heading's end outside its bookmark.
     // Hidden bookmarks (`_GoBack`, `_Hlk…`, `_Toc…`, `_Ref…`) are Word's own: create's anchors start with a letter, and a
     // cross-reference pointed at a hidden one changes its instruction, which is compared.
-    (name, _id, offset) => {
-      if (name && !name.startsWith('_')) bookmarks.push(`${name}@${offset}`);
+    (name, id, offset) => {
+      if (!name || name.startsWith('_')) return;
+      bookmarks.push(`${name}@${offset}`);
+      open.set(id, { name, start: offset });
     },
-    undefined,
+    (id, offset) => {
+      const started = open.get(id);
+      if (!started) return;
+      open.delete(id);
+      bookmarkRanges.push(`${started.name}@${started.start}-${offset}`);
+    },
     (start, end, run, fieldRuns) => {
       const signature = fieldRuns ? fieldFormatSignature(fieldRuns) : runFormatSignature(run);
       for (let index = start; index < end; index += 1) formats[index] = signature;
@@ -341,6 +353,17 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     },
   );
   const fields = fieldInstructions.map((instruction) => instruction.split(' ')[0]!);
+  // A bookmark this paragraph does not close reads to its end here.
+  for (const started of open.values()) bookmarkRanges.push(`${started.name}@${started.start}-`);
+  // The formatting of each footnote mark's run: the mark reads as no text, so the formats above do not hold it.
+  const footnoteMarks = Array.from(paragraph.getElementsByTagNameNS(W, 'footnoteReference')).map((reference) => {
+    const run = reference.parentNode as Element | null;
+    if (!run || run.localName !== 'r') return '';
+    // Word drops the mark's direct superscript on save when the FootnoteReference style carries it, as create's does
+    // (a changed style is compared on its own).
+    const parts = runFormatSignature(run).split(',').filter(Boolean);
+    return parts.includes('style=FootnoteReference') ? parts.filter((part) => part !== 'vertAlign=superscript').join(',') : parts.join(',');
+  });
   const pPr = child(paragraph, 'pPr');
   const style = child(pPr, 'pStyle');
   const alignment = alignmentOf(pPr);
@@ -359,6 +382,8 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     fieldInstructions,
     fieldPositions,
     bookmarks,
+    bookmarkRanges,
+    footnoteMarks,
   };
 }
 
