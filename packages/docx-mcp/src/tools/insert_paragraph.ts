@@ -18,6 +18,7 @@ import { preflightAiRevisionMutation } from './ai_revision_guard.js';
 import {
   splitTaggedText,
   segmentAddRunProps,
+  collectUnknownMarkupTagWarnings,
   type ParsedReplacementSegment,
 } from './tag_parser.js';
 
@@ -256,7 +257,10 @@ export async function insertParagraph(
       // Same optional `warnings?: string[]` channel #701 gave the other mutating
       // tools; insert_paragraph was left without one, which would have made the
       // convention check unobservable on this path.
-      const warnings = revisionPreflight?.warnings ?? [];
+      const warnings = [
+        ...(revisionPreflight?.warnings ?? []),
+        ...collectUnknownMarkupTagWarnings(inputText),
+      ];
       if (warnings.length > 0) responseData.warnings = warnings;
       return ok(mergeSessionResolutionMetadata(responseData, metadata));
     });

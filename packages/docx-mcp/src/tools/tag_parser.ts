@@ -471,3 +471,113 @@ export function segmentAddRunProps(seg: ParsedReplacementSegment): NonNullable<R
   if (seg.fontName) add.fontName = seg.fontName;
   return Object.keys(add).length > 0 ? add : undefined;
 }
+
+export const UNKNOWN_MARKUP_TAG_WARNING_CODE = 'UNKNOWN_MARKUP_TAG';
+
+const ATTRIBUTE_LIST_RE = /^(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))+\s*$/;
+
+interface CandidateUnknownTag {
+  name: string;
+  isClose: boolean;
+  selfClosing: boolean;
+  hasAttribute: boolean;
+  end: number;
+}
+
+function tryMatchCandidateUnknownTag(text: string, start: number): CandidateUnknownTag | null {
+  const isClose = text[start + 1] === '/';
+  const nameStart = isClose ? start + 2 : start + 1;
+  if (nameStart >= text.length || !/[A-Za-z]/.test(text[nameStart]!)) return null;
+
+  let nameEnd = nameStart + 1;
+  while (nameEnd < text.length && /[A-Za-z0-9_:-]/.test(text[nameEnd]!)) {
+    nameEnd++;
+  }
+  const tagName = text.slice(nameStart, nameEnd);
+  if (KNOWN_TAG_NAMES.has(tagName)) return null;
+
+  if (isClose) {
+    let j = nameEnd;
+    while (j < text.length && (text[j] === ' ' || text[j] === '\t')) j++;
+    if (j >= text.length || text[j] !== '>') return null;
+    return { name: tagName, isClose: true, selfClosing: false, hasAttribute: false, end: j + 1 };
+  }
+
+  let j = nameEnd;
+  while (j < text.length && text[j] !== '>' && text[j] !== '\n' && text[j] !== '\r') {
+    const ch = text[j]!;
+    if (ch === '"' || ch === "'") {
+      j++;
+      while (j < text.length && text[j] !== ch && text[j] !== '\n' && text[j] !== '\r') j++;
+      if (j >= text.length || text[j] !== ch) return null;
+      j++;
+    } else if (ch === '<') {
+      return null;
+    } else {
+      j++;
+    }
+  }
+  if (j >= text.length || text[j] !== '>') return null;
+
+  const innerTail = text.slice(nameEnd, j);
+  const selfClosing = innerTail.endsWith('/');
+  const attrSection = selfClosing ? innerTail.slice(0, -1) : innerTail;
+  if (attrSection.length === 0) {
+    return { name: tagName, isClose: false, selfClosing, hasAttribute: false, end: j + 1 };
+  }
+  if (!/^\s/.test(attrSection)) return null;
+  if (attrSection.trim().length === 0) {
+    return { name: tagName, isClose: false, selfClosing, hasAttribute: false, end: j + 1 };
+  }
+  if (!ATTRIBUTE_LIST_RE.test(attrSection)) return null;
+  return { name: tagName, isClose: false, selfClosing, hasAttribute: true, end: j + 1 };
+}
+
+export function findUnknownMarkupTags(text: string): string[] {
+  const candidates: CandidateUnknownTag[] = [];
+  const closedTagNames = new Set<string>();
+  let i = 0;
+
+  while (i < text.length) {
+    if (text[i] !== '<') {
+      i++;
+      continue;
+    }
+    const known = tryMatchKnownTag(text, i);
+    if (known) {
+      i = known.end;
+      continue;
+    }
+    const candidate = tryMatchCandidateUnknownTag(text, i);
+    if (candidate) {
+      candidates.push(candidate);
+      if (candidate.isClose) closedTagNames.add(candidate.name);
+      i = candidate.end;
+      continue;
+    }
+    i++;
+  }
+
+  const seen = new Set<string>();
+  const unknownTags: string[] = [];
+  for (const candidate of candidates) {
+    if (candidate.isClose || candidate.selfClosing || candidate.hasAttribute || closedTagNames.has(candidate.name)) {
+      if (!seen.has(candidate.name)) {
+        seen.add(candidate.name);
+        unknownTags.push(candidate.name);
+      }
+    }
+  }
+  return unknownTags;
+}
+
+export function formatUnknownMarkupTagWarning(tag: string): string {
+  return (
+    `${UNKNOWN_MARKUP_TAG_WARNING_CODE}: Unknown inline tag <${tag}> was written as literal text. ` +
+    `Supported tags: b, i, u, highlight, header, RunInHeader, font.`
+  );
+}
+
+export function collectUnknownMarkupTagWarnings(text: string): string[] {
+  return findUnknownMarkupTags(text).map(formatUnknownMarkupTagWarning);
+}

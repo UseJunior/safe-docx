@@ -38,6 +38,17 @@ function getCommentAnchorParagraphId(comment: Comment): string | null {
   return comment.anchoredParagraphId ?? comment.endParagraphId ?? null;
 }
 
+function isRunInsideRemovedRevision(runEl: Element, paragraphEl: Element): boolean {
+  let cur = runEl.parentNode as Element | null;
+  while (cur && cur !== paragraphEl) {
+    if (cur.namespaceURI === OOXML.W_NS && (cur.localName === W.del || cur.localName === W.moveFrom)) {
+      return true;
+    }
+    cur = cur.parentNode as Element | null;
+  }
+  return false;
+}
+
 function getParagraphRunVisibleLengths(paragraphEl: Element, traversal: FieldTraversal): number[] {
   const runLengths: number[] = [];
   const runElements = Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
@@ -50,6 +61,10 @@ function getParagraphRunVisibleLengths(paragraphEl: Element, traversal: FieldTra
       parent = parent.parentNode;
     }
     if (parent !== paragraphEl) continue;
+    if (isRunInsideRemovedRevision(runEl, paragraphEl)) {
+      runLengths.push(0);
+      continue;
+    }
     let visibleLength = 0;
 
     for (const child of Array.from(runEl.childNodes)) {
