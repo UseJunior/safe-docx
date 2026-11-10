@@ -113,7 +113,9 @@ import {
   deletedAncillaryStoryOutputPaths,
   markDeletedAncillaryStoryParagraphs,
   markInsertedAncillaryStoryParagraphs,
+  markTrackedTextBoxLifecycles,
   prepareTextBoxStoryComparison,
+  type TextBoxStoryInput,
   rejectedSelectedAncillaryStoryPaths,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
@@ -1352,6 +1354,7 @@ async function compareDocumentsTagged(
     container: 'textBox' | 'ancillaryPart';
     ancillaryMode?: 'ordinary' | 'inserted' | 'deleted';
     result: CompareResult;
+    story: TextBoxStoryInput;
   }> = [];
   const rejectedSelectedStoryPaths =
     await rejectedSelectedAncillaryStoryPaths(
@@ -1461,19 +1464,31 @@ async function compareDocumentsTagged(
       container: story.container,
       ancillaryMode: story.ancillaryMode,
       result,
+      story,
     });
   }
 
-  const document = await assembleTextBoxStoryComparison(
+  const assembled = await assembleTextBoxStoryComparison(
     outerResult.document,
-    storyResults.map(({ index, visualIndex, partPath, container, result }) => ({
+    storyResults.map(({ index, visualIndex, partPath, container, result, story }) => ({
       index,
       visualIndex,
       partPath,
       container,
       document: result.document,
+      original: story.original,
+      revised: story.revised,
     })),
   );
+  // Unpaired body text boxes stay whole in the outer comparison, which tracks
+  // their anchor runs; their stories are marked to match (#1031).
+  const lifecycle = await markTrackedTextBoxLifecycles(
+    assembled,
+    options.author ?? 'Comparison',
+    options.date ?? new Date(),
+    Math.max(nextPackageRevisionId, await firstAvailablePackageRevisionId(assembled)),
+  );
+  const document = lifecycle.document;
   const comparedArchive = await DocxArchive.load(document);
   const comparedDocumentXml = await comparedArchive.getDocumentXml();
   const assembledBookmarkDiagnostics = collectBookmarkDiagnostics(comparedDocumentXml);
