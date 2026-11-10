@@ -46,6 +46,30 @@ export class GoogleDocsDocument {
   private documentViewCache: { revisionId: string; nodes: DocumentViewNodeGdocs[] } | null = null;
   private editCount = 0;
   private editRevision = 0;
+  private confirmedWriteVersion = 0;
+  private structureState: 'unloaded' | 'current' | 'stale_after_write' = 'unloaded';
+  private operationTail: Promise<unknown> = Promise.resolve();
+
+  /** Confirmed remote writes survive a subsequent failed structure refresh. */
+  getConfirmedWriteVersion(): number { return this.confirmedWriteVersion; }
+  isStructureStale(): boolean { return this.structureState === 'stale_after_write'; }
+  getStructureState(): 'unloaded' | 'current' | 'stale_after_write' { return this.structureState; }
+
+  /** Own planning, remote acknowledgement, and refresh as one operation. */
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operationTail.then(operation);
+    this.operationTail = result.catch(() => undefined);
+    return result;
+  }
+
+  /** Refresh before callers inspect cached selectors; writes must plan in the queue. */
+  async ensureCurrentStructure(): Promise<void> {
+    return this.serialize(() => this.ensureCurrentStructureInternal());
+  }
+
+  private async ensureCurrentStructureInternal(): Promise<void> {
+    if (this.structureState !== 'current') await this.fetchDocumentInternal();
+  }
 
   private constructor(
     client: GoogleApiClient,
@@ -68,6 +92,10 @@ export class GoogleDocsDocument {
 
   /** Fetch/refresh the document structure */
   async fetchDocument(): Promise<void> {
+    return this.serialize(() => this.fetchDocumentInternal());
+  }
+
+  private async fetchDocumentInternal(): Promise<void> {
     const doc = await withRetry(() => this.client.getDocument(this.docId));
 
     const revisionId = extractRevisionId(doc);
@@ -110,6 +138,7 @@ export class GoogleDocsDocument {
 
     this.concurrency = { revisionId, fetchedAt: new Date() };
     this.documentViewCache = null; // Invalidate view cache
+    this.structureState = 'current';
   }
 
   /** Find the named range anchor for a paragraph by matching startIndex */
@@ -130,6 +159,11 @@ export class GoogleDocsDocument {
 
   /** Inject named range anchors into all paragraphs that don't have one */
   async injectAnchors(tabId?: string): Promise<{ injectedCount: number }> {
+    return this.serialize(() => this.injectAnchorsInternal(tabId));
+  }
+
+  private async injectAnchorsInternal(tabId?: string): Promise<{ injectedCount: number }> {
+    await this.ensureCurrentStructureInternal();
     if (!this.cache) throw new Error('Document not loaded');
 
     const paragraphs = tabId
@@ -151,6 +185,10 @@ export class GoogleDocsDocument {
           : undefined,
       }),
     );
+
+    // Anchor maintenance is not a user edit, but its refresh can fail too.
+    this.structureState = 'stale_after_write';
+    this.documentViewCache = null;
 
     // Map responses to _bk_ names
     const startCounter = this.anchorMapping.size;
@@ -181,7 +219,7 @@ export class GoogleDocsDocument {
     }
 
     // Re-fetch to get updated indices
-    await this.fetchDocument();
+    await this.fetchDocumentInternal();
 
     return { injectedCount: newMappings.size };
   }
@@ -191,11 +229,17 @@ export class GoogleDocsDocument {
    * Finds `findText` within the paragraph and replaces it with `replaceWith`.
    */
   async replaceText(anchorId: AnchorId, findText: string, replaceWith: string): Promise<void> {
+    return this.serialize(() => this.replaceTextInternal(anchorId, findText, replaceWith));
+  }
+
+  private async replaceTextInternal(anchorId: AnchorId, findText: string, replaceWith: string): Promise<void> {
+    await this.ensureCurrentStructureInternal();
     const para = this.getParagraphByAnchorId(anchorId);
     if (!para) throw new Error(`ANCHOR_NOT_FOUND: No paragraph for anchor ${anchorId}`);
 
     const offset = para.text.indexOf(findText);
     if (offset === -1) throw new Error(`TEXT_NOT_FOUND: "${findText}" not found in paragraph`);
+    if (findText === replaceWith) return;
 
     const startIndex = para.startIndex + offset;
     const endIndex = startIndex + findText.length;
@@ -221,9 +265,9 @@ export class GoogleDocsDocument {
       },
     ];
 
-    await this.executeBatchUpdate(requests);
+    await this.executeBatchUpdateInternal(requests);
     this.markEdited();
-    await this.fetchDocument();
+    await this.fetchDocumentInternal();
   }
 
   /**
@@ -234,6 +278,15 @@ export class GoogleDocsDocument {
     position: 'BEFORE' | 'AFTER',
     text: string,
   ): Promise<{ newAnchorId: AnchorId }> {
+    return this.serialize(() => this.insertParagraphInternal(anchorId, position, text));
+  }
+
+  private async insertParagraphInternal(
+    anchorId: AnchorId,
+    position: 'BEFORE' | 'AFTER',
+    text: string,
+  ): Promise<{ newAnchorId: AnchorId }> {
+    await this.ensureCurrentStructureInternal();
     const para = this.getParagraphByAnchorId(anchorId);
     if (!para) throw new Error(`ANCHOR_NOT_FOUND: No paragraph for anchor ${anchorId}`);
 
@@ -254,12 +307,12 @@ export class GoogleDocsDocument {
       },
     ];
 
-    await this.executeBatchUpdate(requests);
+    await this.executeBatchUpdateInternal(requests);
     this.markEdited();
-    await this.fetchDocument();
+    await this.fetchDocumentInternal();
 
     // After re-fetch, inject anchor for the new paragraph
-    await this.injectAnchors(para.tabId);
+    await this.injectAnchorsInternal(para.tabId);
 
     // Find the newly created paragraph by text
     const newPara = this.cache?.paragraphs.find(
@@ -269,10 +322,29 @@ export class GoogleDocsDocument {
     return { newAnchorId: newPara?.anchorId ?? '' };
   }
 
-  /** Execute a raw batchUpdate with write control */
+  /**
+   * Execute caller-supplied absolute requests with write control. For requests
+   * derived from cached indexes, use executePlannedBatchUpdate instead.
+   */
   async executeBatchUpdate(
     requests: GDocsRequest[],
   ): Promise<GDocsBatchUpdateResponse> {
+    return this.serialize(() => this.executeBatchUpdateInternal(requests));
+  }
+
+  /** Plan synchronously against current structure while owning the write queue. */
+  async executePlannedBatchUpdate(
+    plan: () => GDocsRequest[],
+  ): Promise<GDocsBatchUpdateResponse> {
+    return this.serialize(async () => {
+      await this.ensureCurrentStructureInternal();
+      const requests = plan();
+      if (requests.length === 0) return { replies: [] };
+      return this.executeBatchUpdateInternal(requests);
+    });
+  }
+
+  private async executeBatchUpdateInternal(requests: GDocsRequest[]): Promise<GDocsBatchUpdateResponse> {
     const response = await withRetry(() =>
       this.client.batchUpdate(this.docId, {
         requests,
@@ -281,6 +353,10 @@ export class GoogleDocsDocument {
           : undefined,
       }),
     );
+
+    this.confirmedWriteVersion++;
+    this.structureState = 'stale_after_write';
+    this.documentViewCache = null;
 
     // Update revision
     if (response.writeControl?.requiredRevisionId) {

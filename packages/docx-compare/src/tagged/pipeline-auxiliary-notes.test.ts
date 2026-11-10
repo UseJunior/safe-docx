@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
-import { compareDocumentsAtomizer, footnoteDefinitionRequiresCollisionSafeFallback } from './pipeline.js';
+import { compareDocumentsAtomizer, noteDefinitionRequiresCollisionSafeFallback } from './pipeline.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
@@ -266,10 +266,10 @@ describe('pipeline auxiliary note publication', () => {
       `<w:footnote xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${content}</w:footnote>`,
       'application/xml',
     ).documentElement as unknown as Element;
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p>'))).toBe(true);
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(true);
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:drawing r:embed="rId8"/></w:p>'))).toBe(true);
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:t>plain</w:t></w:r></w:p>'))).toBe(false);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p>'))).toBe(true);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(true);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:drawing r:embed="rId8"/></w:p>'))).toBe(true);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:t>plain</w:t></w:r></w:p>'))).toBe(false);
   });
 
   test('rsid-split two-run definitions do not duplicate retained text', async ({
@@ -366,7 +366,7 @@ describe('pipeline auxiliary note publication', () => {
     });
   });
 
-  test('two edited footnotes in one aligned paragraph skip ambiguous ID reconciliation', async ({
+  test('two edited footnotes in one aligned paragraph reconcile by anchor ordinal', async ({
     given,
     when,
     then,
@@ -390,36 +390,32 @@ describe('pipeline auxiliary note publication', () => {
       revised = await addSecondFootnote(revised, 'Revised second note');
     });
 
-    await when('the pair is compared in rebuild mode', async () => {
+    await when('the pair is compared', async () => {
       result = await compareDocumentsAtomizer(original, revised, {
         moveDetection: { detectMoves: false },
       });
     });
 
-    await then('the ambiguous pairs are not rewritten and projections retain both anchors', async () => {
+    await then('each anchor stays live and each definition carries its own tracked history', async () => {
       const parts = await resultParts(result.document);
-      expect(parts.footnotesXml).toContain('Original first note');
-      expect(parts.footnotesXml).toContain('Original second note');
-      expect(parts.footnotesXml).toContain('Revised first note');
-      expect(parts.footnotesXml).not.toContain('<w:ins');
-      expect(parts.footnotesXml).not.toContain('<w:del');
-
-      const accepted = acceptAllChanges(parts.documentXml!);
-      const rejected = rejectAllChanges(parts.documentXml!);
-      expect(accepted.match(/<w:footnoteReference\b/g)?.length ?? 0).toBeGreaterThan(0);
-      expect(rejected.match(/<w:footnoteReference\b/g)?.length ?? 0).toBeGreaterThan(0);
-      expect(accepted).not.toContain('<w:del');
-      expect(rejected).not.toContain('<w:ins');
-
-      const definitionIds = new Set(
-        [...parts.footnotesXml!.matchAll(/<w:footnote\b[^>]*w:id="([^\"]+)"/g)]
-          .map((match) => match[1]),
-      );
-      for (const projection of [accepted, rejected]) {
-        for (const match of projection.matchAll(/<w:footnoteReference\b[^>]*w:id="([^\"]+)"/g)) {
-          expect(definitionIds.has(match[1]!)).toBe(true);
+      const document = new DOMParser().parseFromString(parts.documentXml!, 'text/xml');
+      const references = Array.from(document.getElementsByTagName('w:footnoteReference'));
+      expect(references.map((reference) => reference.getAttribute('w:id'))).toEqual(['1', '2']);
+      for (const reference of references) {
+        for (let node = reference.parentNode; node; node = node.parentNode) {
+          expect(['w:ins', 'w:del']).not.toContain(node.nodeName);
         }
       }
+
+      const footnotes = new DOMParser().parseFromString(parts.footnotesXml!, 'text/xml');
+      const userNotes = Array.from(footnotes.getElementsByTagName('w:footnote'))
+        .filter((note) => !note.getAttribute('w:type'));
+      expect(userNotes.map((note) => note.getAttribute('w:id'))).toEqual(['1', '2']);
+      const projected = (xml: string) => Array.from(
+        new DOMParser().parseFromString(xml, 'text/xml').getElementsByTagName('w:footnote'),
+      ).filter((note) => !note.getAttribute('w:type')).map((note) => note.textContent);
+      expect(projected(acceptAllChanges(parts.footnotesXml!))).toEqual(['Revised first note', 'Revised second note']);
+      expect(projected(rejectAllChanges(parts.footnotesXml!))).toEqual(['Original first note', 'Original second note']);
     });
   });
 });

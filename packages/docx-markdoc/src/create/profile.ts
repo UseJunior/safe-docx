@@ -106,6 +106,7 @@ export const CREATION_STYLE = {
   list: 'ListParagraph',
   table: 'TableText',
   footer: 'Footer',
+  header: 'Header',
 } as const;
 
 /**
@@ -113,7 +114,7 @@ export const CREATION_STYLE = {
  * ("heading 1", "Title", "Quote", "footer") let Word and LibreOffice map
  * them to their own heading and quote semantics.
  */
-export function creationStyles(profile: CreationProfile): StyleSpec[] {
+export function creationStyles(profile: CreationProfile, options: { header?: boolean } = {}): StyleSpec[] {
   const prose = profile.justify ? 'justify' : 'left';
   const style = (styleId: string, name: string, extra: Partial<StyleSpec>): StyleSpec => ({
     styleId,
@@ -158,5 +159,7 @@ export function creationStyles(profile: CreationProfile): StyleSpec[] {
     style(CREATION_STYLE.list, 'List Paragraph', { paragraph: { alignment: prose } }),
     style(CREATION_STYLE.table, 'Table Text', { paragraph: { alignment: 'left', spacing: { afterTwips: 0 } } }),
     style(CREATION_STYLE.footer, 'footer', { paragraph: { alignment: 'center', spacing: { afterTwips: 0 } } }),
+    // Declared only when a section has a header, so a document without one keeps its styles part unchanged.
+    ...(options.header ? [style(CREATION_STYLE.header, 'header', { paragraph: { alignment: 'center', spacing: { afterTwips: 0 } } })] : []),
   ];
 }
