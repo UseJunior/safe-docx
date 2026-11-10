@@ -3,9 +3,10 @@ import { link, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, stat
 import path from 'node:path';
 import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
 import type { PdfRenderTools } from '../pdf/tools.js';
-import { DocxMarkdocError } from '../errors.js';
+import { CliUsageError, DocxMarkdocError } from '../errors.js';
+import { isOption } from '../cli-options.js';
 import { createDocumentFromMarkdoc, type CreatedDocument, type CrossReferenceCheck } from './create.js';
-import { NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN } from './lower.js';
+import { lowerCreationMarkdoc, NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN, type CreationLowering } from './lower.js';
 import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
 
 export type CreateCliArgs = {
@@ -59,20 +60,20 @@ export function parseCreateCliArgs(args: string[]): CreateCliArgs {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     if (arg === '--style-profile') {
-      if (profilePath !== undefined) throw new Error('--style-profile may be supplied only once.');
+      if (profilePath !== undefined) throw new CliUsageError('--style-profile may be supplied only once.', 'create');
       profilePath = args[index + 1];
-      if (!profilePath) throw new Error('--style-profile requires a JSON path.');
+      if (!profilePath) throw new CliUsageError('--style-profile requires a JSON path.', 'create');
       index += 1;
     } else if (arg === '--no-pdf') pdf = false;
     else if (arg === '--require-pdf') requirePdf = true;
     else if (arg === '--replace') replace = true;
     else if (arg === '--dangerously-overwrite-edited-docx') overwriteEditedDocx = replace = true;
-    else if (arg.startsWith('--')) throw new Error(`Unknown option ${arg}.`);
+    else if (isOption(arg)) throw new CliUsageError(`Unknown option ${arg}.`, 'create');
     else positional.push(arg);
   }
   const [markdocPath, outputDir] = positional;
-  if (!markdocPath || !outputDir || positional.length !== 2) throw new Error('create requires a Markdoc file and an output directory.');
-  if (!pdf && requirePdf) throw new Error('--no-pdf and --require-pdf are mutually exclusive.');
+  if (!markdocPath || !outputDir || positional.length !== 2) throw new CliUsageError('create requires a Markdoc file and an output directory.', 'create');
+  if (!pdf && requirePdf) throw new CliUsageError('--no-pdf and --require-pdf are mutually exclusive.', 'create');
   return { markdocPath, outputDir, ...(profilePath ? { profilePath } : {}), pdf, requirePdf, replace, overwriteEditedDocx };
 }
 
@@ -387,6 +388,50 @@ export function controlsSummary(controls: Record<string, boolean | 'not applicab
   return ok.length === 0 ? `${noun}: ${exceptions}` : `${noun} ok, except ${exceptions}`;
 }
 
+/** Read and parse a `--style-profile` JSON file; absent, both values are undefined. */
+async function readCreationProfile(profilePath: string | undefined): Promise<{ profile: unknown; profileSource: Buffer | undefined }> {
+  const profileSource = profilePath ? await readFile(profilePath) : undefined;
+  let profile: unknown;
+  if (profileSource) {
+    try {
+      profile = JSON.parse(profileSource.toString('utf8'));
+    } catch (error) {
+      throw new DocxMarkdocError('INVALID_CREATION_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { profile, profileSource };
+}
+
+/** What `validate --create` reports for a creation source that passes. */
+export type CreationLintResult = {
+  grammar: 'creation';
+  valid: true;
+  sections: number;
+  blocks: number;
+  frontmatter: CreationLowering['frontmatter'];
+};
+
+/**
+ * Lint a creation `.mdoc` the way `create` does before it renders anything:
+ * the source characters, the frontmatter, the closed tag grammar
+ * (`validateCreationAst`), each `{% section %}`'s running-text keys and the
+ * structure checks of the lowering, under the style profile when one is
+ * given. It throws the same `DocxMarkdocError`, with the same message and
+ * line, that `create` would, and it writes nothing: no DOCX is generated, no
+ * output directory is created and no lock is taken.
+ */
+export async function lintCreationSource(markdocPath: string, options: { profilePath?: string } = {}): Promise<CreationLintResult> {
+  const { profile } = await readCreationProfile(options.profilePath);
+  const lowering = lowerCreationMarkdoc(await readFile(markdocPath, 'utf8'), profile);
+  return {
+    grammar: 'creation',
+    valid: true,
+    sections: lowering.spec.sections.length,
+    blocks: lowering.blocks.length,
+    frontmatter: lowering.frontmatter,
+  };
+}
+
 export async function runCreateCommand(
   args: string[],
   deps: { renderTools?: PdfRenderTools; fileOps?: Partial<PublishFileOps> } = {},
@@ -500,15 +545,7 @@ async function createLocked(
   }
   const guard: DocxGuard = { target: outputs.docx, certified: fingerprint.sha256, force: options.overwriteEditedDocx };
 
-  const profileSource = options.profilePath ? await readFile(options.profilePath) : undefined;
-  let profile: unknown;
-  if (profileSource) {
-    try {
-      profile = JSON.parse(profileSource.toString('utf8'));
-    } catch (error) {
-      throw new DocxMarkdocError('INVALID_CREATION_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+  const { profile, profileSource } = await readCreationProfile(options.profilePath);
   const source = await readFile(options.markdocPath, 'utf8');
   const created = await createDocumentFromMarkdoc(source, {
     ...(profile === undefined ? {} : { profile }),

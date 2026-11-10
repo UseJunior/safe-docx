@@ -52,6 +52,12 @@ export type FooterLayout = (typeof FOOTER_LAYOUTS)[number];
  * word for an empty header or footer on the first page.
  */
 export const FIRST_PAGE_NONE = 'none';
+/**
+ * `fill-ins` values: `markup` (the default) makes only `{% fill %}…{% /fill %}`
+ * a fill-in; `brackets` makes every `[…]` one (the v0.24 behaviour).
+ */
+export const FILL_IN_MODES = ['markup', 'brackets'] as const;
+export type FillInMode = (typeof FILL_IN_MODES)[number];
 
 /** Block tags and the attributes each admits. */
 export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
@@ -78,7 +84,7 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
  * (an engine branch or a creation theme plugin) and, when it changes the text,
  * a case in the round-trip oracle.
  */
-const INLINE_TAGS: Record<string, ReadonlySet<string>> = {
+export const CREATION_INLINE_TAGS: Record<string, ReadonlySet<string>> = {
   literal: new Set(),
   fill: new Set(),
   u: new Set(),
@@ -172,10 +178,10 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
     let value = match[2]!.trim();
     if (/^(["']).*\1$/.test(value)) value = value.slice(1, -1);
     if (key === 'fill-ins') {
-      if (value !== 'markup' && value !== 'brackets') {
-        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be markup or brackets, got '${value}'.`);
+      if (!(FILL_IN_MODES as readonly string[]).includes(value)) {
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be ${orList(FILL_IN_MODES)}, got '${value}'.`);
       }
-      result.fillIns = value;
+      result.fillIns = value as FillInMode;
     } else if (key === 'heading-numbers') {
       if (!(HEADING_NUMBER_SCHEMES as readonly string[]).includes(value)) {
         throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `heading-numbers must be ${HEADING_NUMBER_SCHEMES.join(' or ')}, got '${value}'.`);
@@ -381,7 +387,7 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         if (inFootnoteBody && (node.tag === 'fnref' || node.tag === 'footnote')) {
           creationError('NESTED_FOOTNOTE', 'A footnote cannot contain another footnote or a footnote reference.', node, line);
         }
-        const allowed = INLINE_TAGS[node.tag ?? ''];
+        const allowed = CREATION_INLINE_TAGS[node.tag ?? ''];
         if (!allowed) creationError('UNSUPPORTED_CREATION_SYNTAX', `Tag '{% ${node.tag} %}' cannot appear inside text.`, node, line);
         checkAttributes(node, allowed);
         if (node.tag === 'fnref') {

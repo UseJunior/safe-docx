@@ -11,7 +11,20 @@ Install it from npm and inspect the complete CLI surface with:
 ```bash
 npm install @usejunior/docx-markdoc
 npx docx-markdoc --help
+npx docx-markdoc create --help
 ```
+
+`--help` or `-h` on any subcommand prints its usage, arguments, options and
+outputs and exits 0. `create --help` also lists every frontmatter key with its
+values, the `{% section %}` attributes and the block and inline tags with their
+attributes, read from the grammar the build enforces. A command line the CLI
+cannot run (an unknown command or option, a missing or extra argument, an
+option without its value, flags that cannot be combined) prints one
+`ERROR CLI_USAGE: <message> Run 'docx-markdoc <command> --help' for usage.`
+line to stderr and exits 1. A path that cannot be read or written prints one
+`ERROR <code>: <message>` line, such as `ERROR ENOENT: …`. Neither prints a
+stack trace unless `DEBUG` is set; an unexpected internal error still prints
+its stack.
 
 ```markdoc
 {% source sha256="..." paragraphs=2 /%}
@@ -80,7 +93,8 @@ The CLI can perform the whole workflow without a JavaScript wrapper:
 docx-markdoc import source.docx anchored.docx revision.mdoc
 
 # Optional fast lint/editor/CI feedback. Compile runs this same validation
-# automatically before it mutates or compares any document.
+# automatically before it mutates or compares any document. (A creation
+# source for `create` is linted with `validate --create`; see below.)
 docx-markdoc validate revision.mdoc
 
 # Compile the edited revision file. External-facing rationales are included by
@@ -574,7 +588,24 @@ docx-markdoc create consent.mdoc outbound/draft --replace
 # round trip ok (26 paragraphs; negative controls ok); pdf passed (2 pages); pdf words ok (201 source words)
 ```
 
-It writes four files:
+Lint a creation source without building it with `validate --create`:
+
+```bash
+docx-markdoc validate --create consent.mdoc
+docx-markdoc validate --create consent.mdoc --style-profile house.json
+```
+
+It runs the checks `create` runs before rendering anything: the source
+characters, the frontmatter, the closed tag grammar, the running-text keys and
+the section structure. It prints the same `ERROR <code>: <message> (line N)`
+lines `create` would and exits 1 on any problem, or prints a JSON summary
+(sections, blocks and the parsed frontmatter) and exits 0. It writes nothing:
+no DOCX, no output directory, no lock. Plain `validate` reads only brownfield
+Markdoc from `import` and does not detect creation sources, so its results
+are unchanged; a creation source fails it with `tag-undefined` and
+`MISSING_SOURCE`.
+
+`create` writes four files:
 
 - `consent.docx`;
 - `consent.txt`, read back from the DOCX and never from the source;
