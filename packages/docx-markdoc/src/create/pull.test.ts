@@ -1,0 +1,1298 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, readdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import JSZip from 'jszip';
+import { describe, expect } from 'vitest';
+import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
+import { COMPLETE_PAGE_FIELD } from '../../../docx-core/src/testing/ooxml-fixtures.js';
+import { runCli } from '../cli-run.js';
+import type { PdfRenderTools } from '../pdf/tools.js';
+import { runCreateCommand } from './cli-create.js';
+import { createDocumentFromMarkdoc } from './create.js';
+import { pullCreationEdits, type PullChange, type PullResult } from './pull.js';
+import { readPullDocx, type PullStory } from './pull-docx.js';
+import { readCreatedDocx } from './readback.js';
+
+const TEST_FEATURE = 'add-markdoc-create-pull';
+const test = testAllure.epic('DOCX Markdoc').withLabels({
+  feature: TEST_FEATURE,
+  story: 'Issue 1223 pull Word edits on a create output back into its creation source',
+  severity: 'critical',
+});
+
+const noPdf: PdfRenderTools = { resolve: () => null, run: async () => ({ code: 1, stdout: '', stderr: '' }) };
+const sha256 = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
+const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** A synthetic engagement letter that uses the creation markup pull must keep. */
+const LETTER = [
+  '---',
+  'title: Engagement Letter',
+  'author: Jane Roe',
+  'page-numbers: true',
+  '---',
+  '',
+  '# ENGAGEMENT LETTER',
+  '',
+  'Dear Client:',
+  '',
+  '**Re: Acme Matter**',
+  '',
+  'This letter confirms the terms of our engagement and the fees we charge for the work.',
+  '',
+  '## Fees',
+  '',
+  '## Scope {% #scope %}',
+  '',
+  'We will advise the "Company" on the {% fill %}Transaction{% /fill %} under {% xref to="scope" show="text" /%} and nothing else.',
+  '',
+  'The {% u %}Purchase Price{% /u %} is payable in cash at closing, plus **all costs** we incur.',
+  '',
+  '1. First item of work',
+  '2. Second item of work',
+  '',
+  '> A quoted remark for the record.',
+  '',
+  '{% section footer="Acceptance Page" /%}',
+  '',
+  '{% signer name="Jane Roe" date="Date: ________" /%}',
+  '',
+].join('\n');
+
+/** The 1-based line of the first source line containing `needle`. */
+function lineOf(source: string, needle: string): number {
+  const index = source.split('\n').findIndex((line) => line.includes(needle));
+  if (index === -1) throw new Error(`no line holds ${needle}`);
+  return index + 1;
+}
+
+type Surgery = {
+  /** Rewrites of word/document.xml. */
+  document?: (xml: string) => string;
+  /** Rewrites of other parts by name. */
+  parts?: Record<string, (xml: string) => string>;
+  /** A rewrite of every header and footer part. */
+  stories?: (xml: string) => string;
+  /** New parts. */
+  add?: Record<string, string>;
+  /** New document relationships: id, type (last path segment) and target. */
+  relationships?: Array<[string, string, string]>;
+};
+
+/** Edit a DOCX by XML surgery, as a reviewer's save would, and return the new bytes. */
+async function edit(docx: Buffer, surgery: Surgery): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(docx);
+  if (surgery.document) zip.file('word/document.xml', surgery.document(await zip.file('word/document.xml')!.async('string')));
+  for (const [name, rewrite] of Object.entries(surgery.parts ?? {})) zip.file(name, rewrite(await zip.file(name)!.async('string')));
+  if (surgery.stories) {
+    for (const name of Object.keys(zip.files).filter((part) => /^word\/(header|footer)\d+\.xml$/u.test(part))) zip.file(name, surgery.stories(await zip.file(name)!.async('string')));
+  }
+  for (const [name, xml] of Object.entries(surgery.add ?? {})) zip.file(name, xml);
+  if (surgery.relationships) {
+    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string');
+    const added = surgery.relationships.map(([id, type, target]) => `<Relationship Id="${id}" Type="${R_NS}/${type}" Target="${target}"/>`).join('');
+    zip.file('word/_rels/document.xml.rels', rels.replace('</Relationships>', `${added}</Relationships>`));
+  }
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+/** Replace exactly one occurrence, so a surgery that misses its target fails loudly. */
+function once(xml: string, before: string, after: string): string {
+  const at = xml.indexOf(before);
+  if (at === -1 || xml.indexOf(before, at + 1) !== -1) throw new Error(`surgery target must occur once: ${before}`);
+  return xml.slice(0, at) + after + xml.slice(at + before.length);
+}
+
+/** The w:p element whose text run holds `text`. */
+function paragraphHolding(xml: string, text: string): string {
+  const at = xml.indexOf(`>${text}<`);
+  if (at === -1) throw new Error(`no paragraph holds ${text}`);
+  const start = xml.lastIndexOf('<w:p>', at);
+  const end = xml.indexOf('</w:p>', at) + '</w:p>'.length;
+  return xml.slice(start, end);
+}
+
+const bodyParagraph = (text: string, style = 'BodyText', runProperties = '') => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r>${runProperties}<w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+const header = (lines: string[], jc = 'right') => `<w:hdr ${W_NS}>${lines.map((line) => `<w:p><w:pPr><w:pStyle w:val="Header"/><w:jc w:val="${jc}"/></w:pPr><w:r><w:t xml:space="preserve">${line}</w:t></w:r></w:p>`).join('')}</w:hdr>`;
+/** A Word-style "Page X of Y" footer: the page number a complex field inside a content control, NUMPAGES a simple field (the shape under test). */
+const pageOfTotalFooter = `<w:ftr ${W_NS}><w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Page Numbers (Bottom of Page)"/></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:pPr><w:pStyle w:val="Footer"/><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">Page </w:t></w:r>${COMPLETE_PAGE_FIELD}<w:r><w:t xml:space="preserve"> of </w:t></w:r><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>2</w:t></w:r></w:fldSimple></w:p></w:sdtContent></w:sdt></w:ftr>`;
+
+/** Add a header part to the first section. */
+function withFirstSectionHeader(lines: string[], jc = 'right'): Surgery {
+  return {
+    // The first w:sectPr is the first section's; later sections inherit the header.
+    document: (xml) => xml.replace('<w:sectPr>', '<w:sectPr><w:headerReference w:type="default" r:id="rIdPullHeader"/>'),
+    add: { 'word/headerPull.xml': header(lines, jc) },
+    relationships: [['rIdPullHeader', 'header', 'headerPull.xml']],
+  };
+}
+
+/** Replace `before` with `after` in every header and footer that holds it. */
+const inStories = (before: string, after: string): Surgery => ({ stories: (xml) => xml.replaceAll(before, after) });
+
+/** Compose surgeries in order. */
+function all(...surgeries: Surgery[]): Surgery {
+  return {
+    document: (xml) => surgeries.reduce((out, surgery) => (surgery.document ? surgery.document(out) : out), xml),
+    parts: Object.assign({}, ...surgeries.map((surgery) => surgery.parts ?? {})),
+    add: Object.assign({}, ...surgeries.map((surgery) => surgery.add ?? {})),
+    relationships: surgeries.flatMap((surgery) => surgery.relationships ?? []),
+    stories: (xml) => surgeries.reduce((out, surgery) => (surgery.stories ? surgery.stories(out) : out), xml),
+  };
+}
+
+/**
+ * One known edit: the surgery that makes it, the change pull must report
+ * (its kind and source line), and whether the creation grammar expresses it.
+ */
+type Mutation = {
+  name: string;
+  surgery: Surgery;
+  expect: Array<{ kind: PullChange['kind']; line: number }>;
+  /** Diagnostic codes that must be raised; empty for an edit pull writes in full. */
+  diagnostics: string[];
+};
+
+const FIRST_SECTION_PARAGRAPH = '<w:p><w:pPr><w:pStyle w:val="Quote"/><w:sectPr>';
+
+const MUTATIONS: Mutation[] = [
+  {
+    name: 'a wording change',
+    surgery: { document: (xml) => once(xml, 'the fees we charge for the work', 'the charges we bill for the work') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, 'the fees we charge') }],
+    diagnostics: [],
+  },
+  {
+    name: 'a defined-term change',
+    surgery: { document: (xml) => once(xml, 'We will advise the "Company" on the ', 'We will advise the "Client" on the ') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '"Company"') }],
+    diagnostics: [],
+  },
+  {
+    name: 'a deleted heading',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Fees'), '') },
+    expect: [{ kind: 'deleted', line: lineOf(LETTER, '## Fees') }],
+    diagnostics: [],
+  },
+  {
+    name: 'an added paragraph',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}${bodyParagraph('Thank you for choosing us.')}`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: [],
+  },
+  {
+    name: 'a fill-in filled inside its brackets',
+    surgery: { document: (xml) => once(xml, '[Transaction]', '[Merger]') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% fill %}') }],
+    diagnostics: [],
+  },
+  {
+    name: 'an edit inside underlined and bold text',
+    surgery: { document: (xml) => once(once(xml, '>Purchase Price<', '>Purchase Amount<'), '>Re: Acme Matter<', '>Re: Acme Holdings Matter<') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% u %}') }, { kind: 'changed', line: lineOf(LETTER, '**Re:') }],
+    diagnostics: [],
+  },
+  {
+    name: 'a list item edited, one deleted and one added',
+    surgery: {
+      document: (xml) => {
+        const first = paragraphHolding(xml, 'First item of work');
+        const second = paragraphHolding(xml, 'Second item of work');
+        return once(once(xml, first, ''), second, `${second.replace('Second item of work', 'Second item of legal work')}${second.replace('Second item of work', 'Review the closing documents')}`);
+      },
+    },
+    expect: [
+      { kind: 'changed', line: lineOf(LETTER, '2. Second item') },
+      { kind: 'deleted', line: lineOf(LETTER, '1. First item') },
+      { kind: 'added', line: lineOf(LETTER, '2. Second item') },
+    ],
+    diagnostics: [],
+  },
+  {
+    name: 'a signer name changed',
+    surgery: { document: (xml) => once(xml, '>Jane Roe<', '>Jane Q. Roe<') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% signer') }],
+    diagnostics: [],
+  },
+  {
+    name: 'an added running header and a Page X of Y footer',
+    surgery: all(withFirstSectionHeader(['Acme Matter | Engagement Letter']), { parts: { 'word/footer1.xml': () => pageOfTotalFooter } }),
+    expect: [{ kind: 'running-text', line: 1 }, { kind: 'running-text', line: 1 }],
+    diagnostics: [],
+  },
+  {
+    name: 'a changed footer on the second section',
+    surgery: { parts: { 'word/footer2.xml': (xml) => once(xml, 'Acceptance Page', 'Acceptance and Signature Page') } },
+    expect: [{ kind: 'running-text', line: lineOf(LETTER, '{% section') }],
+    diagnostics: [],
+  },
+  {
+    // What Word for Mac 16 does to an unedited create output on save: it states the built-in heading outline levels and drops a redundant left alignment.
+    name: 'a Word save restating style defaults',
+    surgery: {
+      parts: {
+        'word/styles.xml': (xml) => once(once(xml, '<w:pPr><w:keepNext/><w:spacing w:before="200"/></w:pPr>', '<w:pPr><w:keepNext/><w:spacing w:before="200"/><w:outlineLvl w:val="0"/></w:pPr>'), '<w:spacing w:before="600"/><w:jc w:val="left"/></w:pPr>', '<w:spacing w:before="600"/></w:pPr>'),
+      },
+    },
+    expect: [],
+    diagnostics: [],
+  },
+  {
+    name: 'a Word save stating default settings',
+    surgery: { parts: { 'word/settings.xml': (xml) => xml.replace(/(<w:settings[^>]*>)/u, '$1<w:zoom w:percent="80"/><w:defaultTabStop w:val="720"/><w:characterSpacingControl w:val="doNotCompress"/>') } },
+    expect: [],
+    diagnostics: [],
+  },
+  // Edits the creation grammar cannot express, or pull cannot place: each must be diagnosed.
+  {
+    name: 'a default tab stop changed',
+    surgery: { parts: { 'word/settings.xml': (xml) => xml.replace(/(<w:settings[^>]*>)/u, '$1<w:defaultTabStop w:val="360"/>') } },
+    expect: [],
+    diagnostics: ['PULL_DOCUMENT_SETTINGS'],
+  },
+  {
+    name: 'the document title changed',
+    surgery: { parts: { 'docProps/core.xml': (xml) => once(xml, '<dc:title>Engagement Letter</dc:title>', '<dc:title>Engagement Letter (Revised)</dc:title>') } },
+    expect: [],
+    diagnostics: ['PULL_DOCUMENT_PROPERTIES'],
+  },
+  {
+    name: 'a style re-aligned',
+    surgery: { parts: { 'word/styles.xml': (xml) => once(xml, '<w:spacing w:before="600"/><w:jc w:val="left"/></w:pPr>', '<w:spacing w:before="600"/><w:jc w:val="center"/></w:pPr>') } },
+    expect: [],
+    diagnostics: ['PULL_STYLE_CHANGED'],
+  },
+  {
+    name: 'an edit inside a cross-reference result',
+    surgery: { document: (xml) => once(xml, '<w:t xml:space="preserve">Scope</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>', '<w:t xml:space="preserve">Scoping</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% xref') }],
+    diagnostics: ['PULL_EDIT_IN_CROSS_REFERENCE'],
+  },
+  {
+    name: 'changed page margins',
+    surgery: { document: (xml) => xml.replaceAll('w:left="1440"', 'w:left="1800"') },
+    expect: [],
+    diagnostics: ['PULL_PAGE_SETUP'],
+  },
+  {
+    name: 'a word made bold',
+    surgery: { document: (xml) => once(xml, '<w:r><w:t xml:space="preserve">Dear Client:</w:t></w:r>', '<w:r><w:t xml:space="preserve">Dear </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Client:</w:t></w:r>') },
+    expect: [],
+    diagnostics: ['PULL_DIRECT_FORMATTING'],
+  },
+  {
+    name: 'a paragraph re-aligned',
+    surgery: { document: (xml) => once(xml, `<w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t xml:space="preserve">Dear Client:`, `<w:pPr><w:pStyle w:val="BodyText"/><w:jc w:val="right"/></w:pPr><w:r><w:t xml:space="preserve">Dear Client:`) },
+    expect: [],
+    diagnostics: ['PULL_PARAGRAPH_FORMATTING'],
+  },
+  {
+    name: 'a comment',
+    surgery: {
+      document: (xml) => once(xml, '<w:r><w:t xml:space="preserve">Dear Client:</w:t></w:r>', '<w:commentRangeStart w:id="0"/><w:r><w:t xml:space="preserve">Dear Client:</w:t></w:r><w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/></w:r>'),
+      add: { 'word/comments.xml': `<w:comments ${W_NS}><w:comment w:id="0" w:author="Reviewer"><w:p><w:r><w:t>Check the salutation.</w:t></w:r></w:p></w:comment></w:comments>` },
+      relationships: [['rIdPullComments', 'comments', 'comments.xml']],
+    },
+    expect: [],
+    diagnostics: ['PULL_COMMENTS'],
+  },
+  {
+    name: 'a two-line header',
+    surgery: withFirstSectionHeader(['Acme Matter', 'Engagement Letter']),
+    expect: [{ kind: 'running-text', line: 1 }],
+    diagnostics: ['PULL_HEADER_UNMAPPED'],
+  },
+  {
+    name: 'a tab typed into a paragraph',
+    surgery: { document: (xml) => once(xml, '>Dear Client:<', '>Dear</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">Client:<') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_UNEXPRESSIBLE_TEXT'],
+  },
+  {
+    name: 'added headings, a centred line and a legend',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}${bodyParagraph('A New Part', 'Title')}${bodyParagraph('New Section', 'Heading1')}${bodyParagraph('New Subsection', 'Heading2')}${bodyParagraph('Centred words.', 'Centered')}${bodyParagraph('Legend words.', 'Legend')}`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: [],
+  },
+  {
+    name: 'an added quote',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}${bodyParagraph('Quoted words.', 'Quote')}`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: [],
+  },
+  {
+    name: 'an added heading holding a line break',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>New</w:t><w:br/><w:t>Section</w:t></w:r></w:p>`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_UNEXPRESSIBLE_TEXT'],
+  },
+  {
+    name: 'an added paragraph in a style create does not write',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}${bodyParagraph('Captioned words.', 'Caption')}`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_ADDED_PARAGRAPH_STYLE'],
+  },
+  {
+    name: 'an added paragraph holding a tab',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}<w:p><w:r><w:t>Tab</w:t><w:tab/><w:t>bed</w:t></w:r></w:p>`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_UNEXPRESSIBLE_TEXT'],
+  },
+  {
+    name: 'an added paragraph with leading spaces',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}<w:p><w:r><w:t xml:space="preserve">  Indented by spaces.</w:t></w:r></w:p>`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_UNEXPRESSIBLE_TEXT'],
+  },
+  {
+    name: 'an added paragraph holding a page field',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}<w:p><w:r><w:t xml:space="preserve">Page </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_FIELD_CHANGED'],
+  },
+  {
+    name: 'a page field typed into a paragraph',
+    surgery: { document: (xml) => once(xml, '>Dear Client:</w:t></w:r>', '>Dear Client:</w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple>') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_FIELD_CHANGED'],
+  },
+  {
+    name: 'a header justified',
+    surgery: withFirstSectionHeader(['Acme Matter'], 'both'),
+    expect: [{ kind: 'running-text', line: 1 }],
+    diagnostics: ['PULL_HEADER_UNMAPPED'],
+  },
+  {
+    name: 'a footer of text and a page number on one line',
+    surgery: { parts: { 'word/footer1.xml': () => `<w:ftr ${W_NS}><w:p><w:pPr><w:pStyle w:val="Footer"/><w:tabs><w:tab w:val="right" w:pos="9360"/></w:tabs><w:jc w:val="left"/></w:pPr><w:r><w:t xml:space="preserve">Acme Matter</w:t></w:r><w:r><w:tab/></w:r>${COMPLETE_PAGE_FIELD}</w:p></w:ftr>` } },
+    expect: [{ kind: 'running-text', line: 1 }],
+    diagnostics: [],
+  },
+  {
+    name: 'a footer with tabs create cannot lay out',
+    surgery: { parts: { 'word/footer1.xml': () => `<w:ftr ${W_NS}><w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr><w:r><w:t xml:space="preserve">Acme</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">Matter</w:t></w:r><w:r><w:tab/></w:r>${COMPLETE_PAGE_FIELD}</w:p></w:ftr>` } },
+    expect: [{ kind: 'running-text', line: 1 }],
+    diagnostics: ['PULL_FOOTER_UNMAPPED'],
+  },
+  {
+    name: 'a footer justified',
+    surgery: { parts: { 'word/footer2.xml': (xml) => xml.replace(/<w:pStyle w:val="Footer"\/>/u, '<w:pStyle w:val="Footer"/><w:jc w:val="both"/>') } },
+    expect: [{ kind: 'running-text', line: lineOf(LETTER, '{% section') }],
+    diagnostics: ['PULL_FOOTER_UNMAPPED'],
+  },
+  {
+    name: 'a footer of two text lines',
+    surgery: { parts: { 'word/footer2.xml': () => `<w:ftr ${W_NS}><w:p><w:pPr><w:pStyle w:val="Footer"/><w:jc w:val="center"/></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Footer"/><w:jc w:val="center"/></w:pPr><w:r><w:t>Two</w:t></w:r></w:p></w:ftr>` } },
+    expect: [{ kind: 'running-text', line: lineOf(LETTER, '{% section') }],
+    diagnostics: ['PULL_FOOTER_UNMAPPED'],
+  },
+  {
+    name: 'a symbol character inserted',
+    surgery: { document: (xml) => once(xml, '>Dear Client:</w:t></w:r>', '>Dear Client:</w:t></w:r><w:r><w:sym w:font="Symbol" w:char="F0B7"/></w:r>') },
+    expect: [],
+    diagnostics: ['PULL_UNSUPPORTED_CONTENT'],
+  },
+  {
+    name: 'an added quote paragraph after the quote',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'A quoted remark for the record.'), `${paragraphHolding(xml, 'A quoted remark for the record.')}${bodyParagraph('Another remark.', 'Quote')}`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, '> A quoted remark') }],
+    diagnostics: [],
+  },
+  {
+    name: 'a body paragraph added between two list items',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'First item of work'), `${paragraphHolding(xml, 'First item of work')}${bodyParagraph('An aside.')}`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, '1. First item') }],
+    diagnostics: ['PULL_UNMAPPED_INSERTION'],
+  },
+  {
+    name: 'text typed into the signature line',
+    surgery: { document: (xml) => once(xml, '_'.repeat(30), `${'_'.repeat(15)}X${'_'.repeat(15)}`) },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% signer') }],
+    diagnostics: ['PULL_EDIT_IN_GENERATED_TEXT'],
+  },
+  {
+    name: 'the signature line shortened',
+    surgery: { document: (xml) => once(xml, '_'.repeat(30), '_'.repeat(20)) },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% signer') }],
+    diagnostics: ['PULL_EDIT_IN_GENERATED_TEXT'],
+  },
+  {
+    name: 'a letter typed inside a cross-reference result',
+    surgery: { document: (xml) => once(xml, '<w:t xml:space="preserve">Scope</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>', '<w:t xml:space="preserve">Scoope</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% xref') }],
+    diagnostics: ['PULL_EDIT_IN_CROSS_REFERENCE'],
+  },
+  {
+    name: 'an added paragraph in bold, italic and underlined words',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t xml:space="preserve">Plain, </w:t></w:r><w:r><w:rPr><w:b/><w:i/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">stressed</w:t></w:r><w:r><w:t xml:space="preserve"> words.</w:t></w:r></w:p>`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: [],
+  },
+  {
+    name: 'an added paragraph with a coloured word',
+    surgery: { document: (xml) => once(xml, paragraphHolding(xml, 'Dear Client:'), `${paragraphHolding(xml, 'Dear Client:')}<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t xml:space="preserve">A </w:t></w:r><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t xml:space="preserve">red</w:t></w:r><w:r><w:t xml:space="preserve"> word.</w:t></w:r></w:p>`) },
+    expect: [{ kind: 'added', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_DIRECT_FORMATTING'],
+  },
+  {
+    name: 'plain words typed after bold text, and bold words before plain text',
+    surgery: { document: (xml) => once(xml, '<w:t xml:space="preserve"> we incur', '<w:t xml:space="preserve">, taxes, we incur') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '**all costs**') }],
+    diagnostics: [],
+  },
+  {
+    name: 'a date field typed into a paragraph',
+    surgery: { document: (xml) => once(xml, '>Dear Client:</w:t></w:r>', '>Dear Client:</w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> DATE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>today</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_FIELD_CHANGED'],
+  },
+  {
+    name: 'a page number field typed into a paragraph',
+    surgery: { document: (xml) => once(xml, '>Dear Client:</w:t></w:r>', '>Dear Client:</w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_FIELD_CHANGED'],
+  },
+  {
+    name: 'a cross-reference typed into a paragraph as a simple field',
+    surgery: { document: (xml) => once(xml, '>Dear Client:</w:t></w:r>', '>Dear Client:</w:t></w:r><w:fldSimple w:instr=" REF scope \\h "><w:r><w:t>Scope</w:t></w:r></w:fldSimple>') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, 'Dear Client:') }],
+    diagnostics: ['PULL_EDIT_IN_CROSS_REFERENCE'],
+  },
+  {
+    name: 'a footnote reference typed into a paragraph',
+    surgery: { document: (xml) => once(xml, '>Dear Client:</w:t></w:r>', '>Dear Client:</w:t></w:r><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>') },
+    expect: [],
+    diagnostics: ['PULL_FOOTNOTES_CHANGED'],
+  },
+  {
+    name: 'the second section footer emptied',
+    surgery: { parts: { 'word/footer2.xml': (xml) => once(xml, '>Acceptance Page<', '><') } },
+    expect: [{ kind: 'running-text', line: lineOf(LETTER, '{% section') }],
+    diagnostics: [],
+  },
+  {
+    name: 'an edit that empties a fill-in bracket',
+    surgery: { document: (xml) => once(xml, '[Transaction]', 'Transaction]') },
+    expect: [{ kind: 'changed', line: lineOf(LETTER, '{% fill %}') }],
+    diagnostics: ['PULL_EDIT_CROSSES_MARKUP'],
+  },
+];
+
+/**
+ * Body paragraphs, read by create's own read-back, and each section's header
+ * and footer text, read by pull's reader (create's read-back does not descend
+ * the content control Word wraps a page-number footer in).
+ */
+async function readbackText(docx: Buffer) {
+  const readback = await readCreatedDocx(docx);
+  const stories = await readPullDocx(docx);
+  const lines = (list: PullStory[]) => list.map((story) => (story ?? []).map((paragraph) => paragraph.text).filter((line) => line.trim()));
+  return { paragraphs: readback.paragraphs, headers: lines(stories.headers), footers: lines(stories.footers) };
+}
+
+/**
+ * The harness's account of one pull, which must hold for every mutation:
+ * each expected change is reported at its source line, and nothing is lost
+ * in silence. Either the pull is complete, its pulled source rebuilding (with
+ * every create check) to the edited DOCX's body text, headers and footers,
+ * or a diagnostic names what it did not write. Returns the problems found;
+ * the negative controls feed it doctored results and require problems.
+ */
+async function account(mutation: Mutation, result: PullResult, editedDocx: Buffer): Promise<string[]> {
+  const problems: string[] = [];
+  for (const expected of mutation.expect) {
+    const matches = result.changes.filter((change) => change.kind === expected.kind && (change.kind === 'added' ? change.afterLine === expected.line : change.line === expected.line));
+    if (matches.length === 0) problems.push(`${mutation.name}: no ${expected.kind} change reported at line ${expected.line}`);
+  }
+  const codes = new Set(result.diagnostics.map((diagnostic) => diagnostic.code));
+  for (const code of mutation.diagnostics) if (!codes.has(code)) problems.push(`${mutation.name}: diagnostic ${code} missing`);
+  if (mutation.diagnostics.length === 0 && result.diagnostics.length > 0) problems.push(`${mutation.name}: unexpected diagnostics ${result.diagnostics.map((d) => d.code).join(', ')}`);
+  if (result.complete) {
+    if (result.diagnostics.length > 0) problems.push(`${mutation.name}: complete with diagnostics`);
+    if (result.pulledSource === undefined && result.changes.length > 0) problems.push(`${mutation.name}: complete without a pulled source`);
+    if (result.pulledSource !== undefined) {
+      const rebuilt = await createDocumentFromMarkdoc(result.pulledSource);
+      const [got, want] = [await readbackText(rebuilt.docx), await readbackText(editedDocx)];
+      if (JSON.stringify(got.paragraphs) !== JSON.stringify(want.paragraphs)) problems.push(`${mutation.name}: rebuild body ${JSON.stringify(got.paragraphs)} is not the edited ${JSON.stringify(want.paragraphs)}`);
+      const visible = (text: Awaited<ReturnType<typeof readbackText>>) => JSON.stringify([text.headers[0] ?? [], text.footers.map((footer, index) => footer.length ? footer : text.footers[index - 1] ?? [])]);
+      if (visible(got) !== visible(want)) problems.push(`${mutation.name}: rebuild running text ${visible(got)} is not the edited ${visible(want)}`);
+    }
+  } else if (result.diagnostics.length === 0) {
+    problems.push(`${mutation.name}: incomplete without a diagnostic, so something was dropped silently`);
+  }
+  return problems;
+}
+
+/** The creation markup a pulled source must keep wherever it was not edited. */
+const KEPT_MARKUP = ['---\ntitle: Engagement Letter\nauthor: Jane Roe\n', '{% section footer=', '{% signer name=', '{% fill %}', '{% /fill %}', '{% xref to="scope" show="text" /%}', '{% u %}', '**all costs**', '## Scope {% #scope %}', '> A quoted remark', '2. Second item'];
+
+async function build(source = LETTER) {
+  return createDocumentFromMarkdoc(source);
+}
+
+async function scratch(prefix: string): Promise<string> {
+  return realpath(await mkdtemp(path.join(os.tmpdir(), prefix)));
+}
+
+type CliRun = { code: number; stdout: string; stderr: string };
+async function cli(argv: string[]): Promise<CliRun> {
+  let stdout = '';
+  let stderr = '';
+  const code = await runCli(argv, { stdout: (text) => { stdout += text; }, stderr: (text) => { stderr += text; } });
+  return { code, stdout, stderr };
+}
+
+describe('Traceability: pull brings Word edits on a create output back into its creation source', () => {
+  test.openspec('[SDX-MDOC-PULL-01] each known edit is reported at its source line and nothing is dropped silently')(
+    'Scenario: each known edit is reported at its source line and nothing is dropped silently',
+    async () => {
+      const base = await build();
+      for (const mutation of MUTATIONS) {
+        const edited = await edit(base.docx, mutation.surgery);
+        const result = await pullCreationEdits({ source: LETTER, base, edited });
+        expect(await account(mutation, result, edited), mutation.name).toEqual([]);
+        if (mutation.diagnostics.length === 0 && mutation.expect.length === 0) {
+          // Nothing to pull: no change, no diagnostic, nothing to write.
+          expect(result, mutation.name).toMatchObject({ changes: [], diagnostics: [], complete: true });
+          expect(result.pulledSource, mutation.name).toBeUndefined();
+        } else if (mutation.diagnostics.length === 0) {
+          expect(result.complete, mutation.name).toBe(true);
+          for (const kept of KEPT_MARKUP.filter((markup) => !(mutation.name.includes('list') && markup.startsWith('2.')) && !(mutation.name.includes('footer emptied') && markup.startsWith('{% section footer=')))) expect(result.pulledSource, `${mutation.name} keeps ${kept}`).toContain(kept);
+        } else {
+          expect(result.complete, mutation.name).toBe(false);
+        }
+      }
+      // Deleting the first item of an ordered list hands its marker on, so the list still starts at 1.
+      const list = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, MUTATIONS[6]!.surgery) });
+      expect(list.pulledSource).toContain('1. Second item of legal work\n2. Review the closing documents\n\n> A quoted remark');
+      // The issue's scenario at once: wording, a defined term, a deleted heading, and an added header and page-number footer.
+      const together = all(MUTATIONS[0]!.surgery, MUTATIONS[1]!.surgery, MUTATIONS[2]!.surgery, MUTATIONS[8]!.surgery);
+      const edited = await edit(base.docx, together);
+      const combined: Mutation = { name: 'the issue scenario', surgery: together, expect: [...MUTATIONS[0]!.expect, ...MUTATIONS[1]!.expect, ...MUTATIONS[2]!.expect, ...MUTATIONS[8]!.expect], diagnostics: [] };
+      const result = await pullCreationEdits({ source: LETTER, base, edited });
+      expect(await account(combined, result, edited)).toEqual([]);
+      expect(result.complete).toBe(true);
+      expect(result.pulledSource).toContain('header: Acme Matter | Engagement Letter\nheader-align: right\npage-numbers: true\npage-number-format: page-of-total\n---');
+      expect(result.pulledSource).not.toContain('## Fees');
+
+      // Negative controls: the account must fail when pull misses an edit, a line, or drops a diagnostic.
+      const reported = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, MUTATIONS[2]!.surgery) });
+      const blind = { ...reported, changes: reported.changes.filter((change) => change.kind !== 'deleted') };
+      expect(await account(MUTATIONS[2]!, blind, await edit(base.docx, MUTATIONS[2]!.surgery))).not.toEqual([]);
+      const misplaced = { ...reported, changes: reported.changes.map((change) => ({ ...change, line: (change as { line: number }).line + 1 })) };
+      expect(await account(MUTATIONS[2]!, misplaced, await edit(base.docx, MUTATIONS[2]!.surgery))).not.toEqual([]);
+      const margins = MUTATIONS.find((mutation) => mutation.name === 'changed page margins')!;
+      const marginsEdited = await edit(base.docx, margins.surgery);
+      const silent = { ...(await pullCreationEdits({ source: LETTER, base, edited: marginsEdited })), diagnostics: [] };
+      expect(await account(margins, silent, marginsEdited)).not.toEqual([]);
+      // A pull that claimed completeness for an edit it did not write is caught by the rebuild comparison.
+      const wording = await edit(base.docx, MUTATIONS[0]!.surgery);
+      const dropped: PullResult = { changes: [], diagnostics: [], complete: true, pulledSource: LETTER };
+      expect(await account({ ...MUTATIONS[0]!, expect: [] }, dropped, wording)).not.toEqual([]);
+    },
+    60_000,
+  );
+
+  test.openspec('[SDX-MDOC-PULL-02] pull --apply writes a new .mdoc that keeps the creation markup and rebuilds to the edited body')(
+    'Scenario: pull --apply writes a new .mdoc that keeps the creation markup and rebuilds to the edited body',
+    async () => {
+      const dir = await scratch('sdx-pull-apply-');
+      try {
+        const source = path.join(dir, 'letter.mdoc');
+        await writeFile(source, LETTER);
+        const out = path.join(dir, 'out');
+        await runCreateCommand([source, out, '--no-pdf'], { renderTools: noPdf });
+        const docx = path.join(out, 'letter.docx');
+        const editedBytes = await edit(await readFile(docx), all(MUTATIONS[0]!.surgery, MUTATIONS[2]!.surgery, MUTATIONS[3]!.surgery));
+        await writeFile(docx, editedBytes);
+
+        const report = await cli(['pull', docx, source]);
+        expect(report.code).toBe(2);
+        expect(report.stderr).toBe('');
+        expect(report.stdout).toContain(`line ${lineOf(LETTER, 'the fees we charge')}: paragraph 4 changed: "fees" -> "charges"`);
+        expect(report.stdout).toContain(`line ${lineOf(LETTER, '## Fees')}: paragraph 5 deleted: "Fees"`);
+        expect(report.stdout).toContain(`after line ${lineOf(LETTER, 'Dear Client:')}: 1 paragraph(s) added after paragraph 2: "Thank you for choosing us."`);
+        expect(await readdir(dir)).toEqual(['letter.mdoc', 'out']);
+
+        const applied = await cli(['pull', docx, source, '--apply', '--json']);
+        expect(applied.code).toBe(2);
+        const json = JSON.parse(applied.stdout);
+        expect(json).toMatchObject({ complete: true, output: path.join(dir, 'letter.pulled.mdoc'), record: path.join(out, 'letter.pull.json') });
+        expect(await readFile(source, 'utf8')).toBe(LETTER);
+        const pulled = await readFile(path.join(dir, 'letter.pulled.mdoc'), 'utf8');
+        for (const kept of KEPT_MARKUP) expect(pulled).toContain(kept);
+        const rebuilt = await createDocumentFromMarkdoc(pulled);
+        expect(rebuilt.readback.paragraphs).toEqual((await readCreatedDocx(editedBytes)).paragraphs);
+        // The output is never overwritten.
+        const again = await cli(['pull', docx, source, '--apply']);
+        expect(again.code).toBe(1);
+        expect(again.stderr).toMatch(/^ERROR EEXIST: /u);
+        // An unchanged DOCX: nothing to report, exit 0.
+        await runCreateCommand([source, path.join(dir, 'fresh'), '--no-pdf'], { renderTools: noPdf });
+        const clean = await cli(['pull', path.join(dir, 'fresh', 'letter.docx'), source]);
+        expect(clean).toMatchObject({ code: 0, stderr: '' });
+        expect(clean.stdout).toContain('no changes');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  test.openspec('[SDX-MDOC-PULL-03] an edit across markup is split or diagnosed, never written into the markup')(
+    'Scenario: an edit across markup is split or diagnosed, never written into the markup',
+    async () => {
+      const source = ['Plain **bold words** tail and {% fill %}Name{% /fill %} here.', ''].join('\n');
+      const base = await build(source);
+      const run = async (surgery: Surgery) => pullCreationEdits({ source, base, edited: await edit(base.docx, surgery) });
+      // Deleting across the bold boundary deletes from each side and keeps the markup.
+      const split = await run({ document: (xml) => once(once(xml, '>Plain <', '>Plai<'), '>bold words<', '>ld words<') });
+      expect(split.complete).toBe(true);
+      expect(split.pulledSource).toBe('Plai**ld words** tail and {% fill %}Name{% /fill %} here.\n');
+      // New text across the boundary goes into the side whose formatting it has.
+      const into = await run({ document: (xml) => once(once(xml, '>Plain <', '>Plain and </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">very <'), '>bold words<', '>bold words<') });
+      expect(into.complete).toBe(true);
+      expect(into.pulledSource).toBe('Plain and **very bold words** tail and {% fill %}Name{% /fill %} here.\n');
+      // Filling in a fill-in entirely (its brackets typed over) replaces the whole tag.
+      const filled = await run({ document: (xml) => once(xml, '<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t xml:space="preserve">[Name]</w:t></w:r>', '<w:r><w:t xml:space="preserve">Acme Corp</w:t></w:r>') });
+      expect(filled.complete).toBe(true);
+      expect(filled.pulledSource).toBe('Plain **bold words** tail and Acme Corp here.\n');
+      // Deleting all of the bold text deletes the bold markup with it.
+      const unbolded = await run({ document: (xml) => once(xml, '>bold words<', '><') });
+      expect(unbolded.complete).toBe(true);
+      expect(unbolded.pulledSource).toBe('Plain  tail and {% fill %}Name{% /fill %} here.\n');
+      // Emptying a fill-in inside its brackets would leave an empty tag: diagnosed, and the paragraph is not written.
+      const emptied = await run({ document: (xml) => once(xml, '[Name]', '[]') });
+      expect(emptied.complete).toBe(false);
+      expect(emptied.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(['PULL_EDIT_CROSSES_MARKUP']);
+      expect(emptied.changes).toMatchObject([{ kind: 'changed', applied: false }]);
+      expect(emptied.pulledSource).toBeUndefined();
+      // Characters Markdown would read as markup are escaped.
+      const escaped = await run({ document: (xml) => once(xml, '> tail and <', '> tail *and* [x] {% y %} and <') });
+      expect(escaped.complete).toBe(true);
+      expect(escaped.pulledSource).toBe('Plain **bold words** tail \\*and\\* \\[x\\] \\{% y %\\} and {% fill %}Name{% /fill %} here.\n');
+    },
+    60_000,
+  );
+
+  test.openspec('[SDX-MDOC-PULL-04] tracked changes and a mismatched certificate or source are refused with exit code 1')(
+    'Scenario: tracked changes and a mismatched certificate or source are refused with exit code 1',
+    async () => {
+      const dir = await scratch('sdx-pull-refuse-');
+      try {
+        const source = path.join(dir, 'letter.mdoc');
+        await writeFile(source, LETTER);
+        const out = path.join(dir, 'out');
+        await runCreateCommand([source, out, '--no-pdf'], { renderTools: noPdf });
+        const docx = path.join(out, 'letter.docx');
+        const built = await readFile(docx);
+        await writeFile(docx, await edit(built, { document: (xml) => once(xml, '<w:r><w:t xml:space="preserve">Dear Client:</w:t></w:r>', '<w:ins w:id="90" w:author="Reviewer"><w:r><w:t xml:space="preserve">Dear Client:</w:t></w:r></w:ins>') }));
+        const tracked = await cli(['pull', docx, source, '--apply']);
+        expect(tracked.code).toBe(1);
+        expect(tracked.stderr).toMatch(/^ERROR PULL_TRACKED_CHANGES: The edited DOCX holds tracked changes \(1 w:ins\)\. Accept or reject them in Word/u);
+        expect(await readdir(dir)).toEqual(['letter.mdoc', 'out']);
+
+        await writeFile(docx, built);
+        const changedSource = path.join(dir, 'other.mdoc');
+        await writeFile(changedSource, `${LETTER}\nA later paragraph.\n`);
+        expect((await cli(['pull', docx, changedSource])).stderr).toMatch(/^ERROR PULL_SOURCE_CHANGED: /u);
+        const moved = path.join(dir, 'moved.docx');
+        await writeFile(moved, built);
+        expect((await cli(['pull', moved, source])).stderr).toMatch(/^ERROR PULL_CERTIFICATE_MISSING: .*--certificate/u);
+        expect((await cli(['pull', moved, source, '--certificate', path.join(out, 'letter.verification.json')])).code).toBe(0);
+        const usage = await cli(['pull', docx, source, '--output', path.join(dir, 'x.mdoc')]);
+        expect(usage.code).toBe(1);
+        expect(usage.stderr.trimEnd()).toMatch(/^ERROR CLI_USAGE: --output names the pulled \.mdoc, so it needs --apply\. Run 'docx-markdoc pull --help' for usage\.$/u);
+
+        // A certificate that is not JSON, or not a passing create certificate, is refused.
+        const certificate = path.join(out, 'letter.verification.json');
+        const badJson = path.join(dir, 'bad.verification.json');
+        await writeFile(badJson, '{');
+        expect((await cli(['pull', docx, source, '--certificate', badJson])).stderr).toMatch(/^ERROR PULL_CERTIFICATE_INVALID: .* is not valid JSON/u);
+        const failing = path.join(dir, 'failing.verification.json');
+        await writeFile(failing, JSON.stringify({ ...JSON.parse(await readFile(certificate, 'utf8')), passed: false }));
+        expect((await cli(['pull', docx, source, '--certificate', failing])).stderr).toMatch(/^ERROR PULL_CERTIFICATE_INVALID: .* is not a passing create certificate/u);
+        // A style profile that is not JSON, or that does not rebuild the certified build, is refused.
+        const badProfile = path.join(dir, 'bad-profile.json');
+        await writeFile(badProfile, '{');
+        expect((await cli(['pull', docx, source, '--style-profile', badProfile])).stderr).toMatch(/^ERROR (INVALID_CREATION_PROFILE_JSON|PULL_PROFILE_CHANGED): /u);
+        // A certificate whose build the source no longer reproduces (neither its DOCX nor its text) is refused.
+        const elsewhere = path.join(dir, 'elsewhere.verification.json');
+        await writeFile(elsewhere, JSON.stringify({ ...JSON.parse(await readFile(certificate, 'utf8')), docxSha256: '0'.repeat(64), textSha256: '1'.repeat(64) }));
+        expect((await cli(['pull', docx, source, '--certificate', elsewhere])).stderr).toMatch(/^ERROR PULL_BASE_MISMATCH: /u);
+        // An edited file that is not a DOCX is refused.
+        const notDocx = path.join(dir, 'not.docx');
+        await writeFile(notDocx, 'plain text, not a zip');
+        expect((await cli(['pull', notDocx, source, '--certificate', certificate])).stderr).toMatch(/^ERROR PULL_UNREADABLE_DOCX: /u);
+        // The source must be a .mdoc (or .md) file.
+        expect((await cli(['pull', docx, path.join(dir, 'notes.txt')])).stderr).toMatch(/^ERROR CLI_USAGE: pull takes <edited\.docx> <document\.mdoc>/u);
+        // A build made with a style profile pulls with that profile, and refuses another.
+        const profiled = path.join(dir, 'profiled');
+        const profile = path.join(dir, 'profile.json');
+        await writeFile(profile, JSON.stringify({ spacingAfterPt: 12 }));
+        await runCreateCommand([source, profiled, '--no-pdf', '--style-profile', profile], { renderTools: noPdf });
+        const profiledDocx = path.join(profiled, 'letter.docx');
+        await writeFile(profiledDocx, await edit(await readFile(profiledDocx), MUTATIONS[0]!.surgery));
+        const withProfile = await cli(['pull', profiledDocx, source, '--style-profile', profile]);
+        expect(withProfile.code).toBe(2);
+        expect(withProfile.stdout).toMatch(/changed: "the fees we charge" -> "the charges we bill"|changed:/u);
+        const another = path.join(dir, 'another.json');
+        await writeFile(another, JSON.stringify({ spacingAfterPt: 14 }));
+        expect((await cli(['pull', profiledDocx, source, '--style-profile', another])).stderr).toMatch(/^ERROR PULL_PROFILE_CHANGED: /u);
+        // The report lists each kind of change and each diagnostic.
+        const tabbed = MUTATIONS.find((mutation) => mutation.name === 'a tab typed into a paragraph')!.surgery;
+        const longGone: Surgery = { document: (xml) => once(xml, paragraphHolding(xml, 'This letter confirms the terms of our engagement and the fees we charge for the work.'), '') };
+        await writeFile(docx, await edit(built, all(MUTATIONS[2]!.surgery, MUTATIONS[8]!.surgery, tabbed, longGone, { document: (xml) => xml.replaceAll('w:left="1440"', 'w:left="1800"') })));
+        const listed = await cli(['pull', docx, source]);
+        expect(listed.code).toBe(2);
+        expect(listed.stdout).toMatch(/paragraph \d+ deleted: /u);
+        expect(listed.stdout).toMatch(/section 1 header: \(none\) -> /u);
+        expect(listed.stdout).toMatch(/DIAGNOSTIC PULL_PAGE_SETUP: /u);
+        expect(listed.stdout).toMatch(/\[not written; see diagnostics\]/u);
+        expect(listed.stdout).toMatch(/deleted: "This letter confirms the terms of our engagement and the fees we char…"/u);
+        // A certificate path that cannot be read as a file is an error, not a missing certificate.
+        const unreadable = await cli(['pull', docx, source, '--certificate', dir]);
+        expect(unreadable.code).toBe(1);
+        expect(unreadable.stderr).not.toMatch(/PULL_CERTIFICATE_MISSING/u);
+        await writeFile(docx, built);
+        // A DOCX without a main document, without a body, or with a footer reference that resolves nowhere is refused.
+        const base = await build();
+        const without = async (change: (zip: JSZip) => void) => {
+          const zip = await JSZip.loadAsync(base.docx);
+          change(zip);
+          return zip.generateAsync({ type: 'nodebuffer' });
+        };
+        for (const [broken, message] of [
+          [await without((zip) => zip.remove('word/document.xml')), /has no word\/document\.xml/u],
+          [await without((zip) => zip.file('word/document.xml', `<w:document ${W_NS}/>`)), /has no w:body/u],
+          [await edit(base.docx, { document: (xml) => xml.replace(/(<w:footerReference [^>]*r:id=")[^"]+"/u, '$1rIdMissing"') }), /footer reference does not resolve/u],
+        ] as const) {
+          await expect(pullCreationEdits({ source: LETTER, base, edited: broken })).rejects.toMatchObject({ code: 'PULL_UNREADABLE_DOCX', message: expect.stringMatching(message) });
+        }
+        // An incomplete pull written with --apply says create --replace will still refuse the edited DOCX.
+        await writeFile(docx, await edit(built, { document: (xml) => once(xml, 'the fees we charge for the work', 'the charges we bill for the work').replaceAll('w:left="1440"', 'w:left="1800"') }));
+        const partial = await cli(['pull', docx, source, '--apply', '--output', path.join(dir, 'partial.mdoc')]);
+        expect(partial.code).toBe(2);
+        expect(partial.stdout).toMatch(/the pull is incomplete, so create --replace will still refuse the edited letter\.docx/u);
+        await writeFile(docx, built);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  test.openspec('[SDX-MDOC-PULL-05] create --replace accepts the edited DOCX only after a complete pull of exactly the source it builds')(
+    'Scenario: create --replace accepts the edited DOCX only after a complete pull of exactly the source it builds',
+    async () => {
+      const dir = await scratch('sdx-pull-replace-');
+      try {
+        const source = path.join(dir, 'letter.mdoc');
+        await writeFile(source, LETTER);
+        const out = path.join(dir, 'out');
+        await runCreateCommand([source, out, '--no-pdf'], { renderTools: noPdf });
+        const docx = path.join(out, 'letter.docx');
+        const editedBytes = await edit(await readFile(docx), all(MUTATIONS[0]!.surgery, MUTATIONS[8]!.surgery));
+        await writeFile(docx, editedBytes);
+        const failure = (promise: Promise<unknown>) => promise.then(() => undefined, (error: Error & { code?: string }) => error);
+
+        // Before pull: refused, as always, and a pull record that is null or not JSON changes nothing.
+        expect(await failure(runCreateCommand([source, out, '--replace', '--no-pdf'], { renderTools: noPdf }))).toMatchObject({ code: 'CREATION_OUTPUT_EDITED' });
+        for (const bogus of ['null', '{']) {
+          await writeFile(path.join(out, 'letter.pull.json'), bogus);
+          expect(await failure(runCreateCommand([source, out, '--replace', '--no-pdf'], { renderTools: noPdf })), bogus).toMatchObject({ code: 'CREATION_OUTPUT_EDITED' });
+        }
+        await rm(path.join(out, 'letter.pull.json'));
+        expect((await cli(['pull', docx, source, '--apply'])).code).toBe(2);
+        const record = JSON.parse(await readFile(path.join(out, 'letter.pull.json'), 'utf8'));
+        expect(record).toMatchObject({ kind: 'markdoc-pull', complete: true, editedDocxSha256: sha256(editedBytes) });
+        const pulled = path.join(dir, 'letter.pulled.mdoc');
+        // The original source is still refused: the record names the pulled source, not this one.
+        expect(await failure(runCreateCommand([source, out, '--replace', '--no-pdf'], { renderTools: noPdf }))).toMatchObject({ code: 'CREATION_OUTPUT_EDITED' });
+        // A pulled source edited after the pull is refused too.
+        const original = await readFile(pulled, 'utf8');
+        await rename(source, path.join(dir, 'letter.before-pull.mdoc'));
+        await writeFile(source, `${original}\nOne more paragraph.\n`);
+        expect(await failure(runCreateCommand([source, out, '--replace', '--no-pdf'], { renderTools: noPdf }))).toMatchObject({ code: 'CREATION_OUTPUT_EDITED' });
+        // Exactly the pulled source: accepted, every check passes, the edited bytes are kept, and the record goes.
+        await writeFile(source, original);
+        const rebuilt = await runCreateCommand([source, out, '--replace', '--no-pdf'], { renderTools: noPdf });
+        expect(rebuilt.created.certificate.passed).toBe(true);
+        expect(rebuilt.overwritten).toMatchObject({ pulled: true, sha256: sha256(editedBytes) });
+        expect(await readFile(rebuilt.overwritten!.docx)).toEqual(editedBytes);
+        expect(rebuilt.summary).toContain('replaced the edited letter.docx that pull reconciled into this source');
+        expect(rebuilt.created.readback.paragraphs).toEqual((await readCreatedDocx(editedBytes)).paragraphs);
+        await expect(readFile(path.join(out, 'letter.pull.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+        // Normal use resumes: the next --replace rebuilds over the certified DOCX.
+        await writeFile(source, original.replace('Dear Client:', 'Dear Valued Client:'));
+        expect((await runCreateCommand([source, out, '--replace', '--no-pdf'], { renderTools: noPdf })).overwritten).toBeUndefined();
+
+        // An incomplete pull writes no record, so --replace still refuses.
+        await writeFile(docx, await edit(await readFile(docx), MUTATIONS.find((mutation) => mutation.name === 'changed page margins')!.surgery));
+        const incomplete = await cli(['pull', docx, source, '--apply', '--output', path.join(dir, 'second.mdoc')]);
+        expect(incomplete.code).toBe(2);
+        expect(incomplete.stdout).toContain('DIAGNOSTIC PULL_PAGE_SETUP');
+        await expect(readFile(path.join(out, 'letter.pull.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    90_000,
+  );
+
+  test.openspec('[SDX-MDOC-PULL-06] numbering, table structure, even-page running text and kept markup are never lost silently')(
+    'Scenario: numbering, table structure, even-page running text and kept markup are never lost silently',
+    async () => {
+      const base = await build();
+      const codes = (result: PullResult) => result.diagnostics.map((diagnostic) => diagnostic.code);
+      // A list restarted at 7 in Word: alone, and beside an edit pull does write.
+      const restart: Surgery = { parts: { 'word/numbering.xml': (xml) => xml.replace(/<w:start w:val="1"\/>/u, '<w:start w:val="7"/>') } };
+      const numberingAlone = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, restart) });
+      expect(codes(numberingAlone)).toEqual(['PULL_NUMBERING_CHANGED']);
+      expect(numberingAlone.complete).toBe(false);
+      const numberingAndWording = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(restart, MUTATIONS[0]!.surgery)) });
+      expect(codes(numberingAndWording)).toEqual(['PULL_NUMBERING_CHANGED']);
+      expect(numberingAndWording.complete).toBe(false);
+
+      // A list label made red and larger: the numbers are the same, their look is not.
+      const redLabel: Surgery = { parts: { 'word/numbering.xml': (xml) => xml.replace(/(<w:lvl w:ilvl="0">(?:(?!<\/w:lvl>).)*?<\/w:pPr>)<\/w:lvl>/u, '$1<w:rPr><w:color w:val="FF0000"/><w:sz w:val="36"/></w:rPr></w:lvl>') } };
+      expect(codes(await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(redLabel, MUTATIONS[0]!.surgery)) }))).toEqual(['PULL_NUMBERING_CHANGED']);
+
+      // Letter-spacing a list label, making Normal (which every creation style inherits) bold: each beside a wording edit.
+      const spacedLabel: Surgery = { parts: { 'word/numbering.xml': (xml) => xml.replace(/(<w:lvl w:ilvl="0">(?:(?!<\/w:lvl>).)*?<\/w:pPr>)<\/w:lvl>/u, '$1<w:rPr><w:spacing w:val="100"/></w:rPr></w:lvl>') } };
+      expect(codes(await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(spacedLabel, MUTATIONS[0]!.surgery)) }))).toEqual(['PULL_NUMBERING_CHANGED']);
+      const boldNormal: Surgery = { parts: { 'word/styles.xml': (xml) => once(xml, '<w:name w:val="Normal"/><w:qFormat/></w:style>', '<w:name w:val="Normal"/><w:qFormat/><w:rPr><w:b/></w:rPr></w:style>') } };
+      expect(codes(await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(boldNormal, MUTATIONS[0]!.surgery)) }))).toEqual(['PULL_STYLE_CHANGED']);
+      // A word letter-spaced in the body is direct formatting create does not write.
+      const spacedWord = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, { document: (xml) => once(xml, '<w:r><w:t xml:space="preserve">Dear Client:</w:t></w:r>', '<w:r><w:t xml:space="preserve">Dear </w:t></w:r><w:r><w:rPr><w:spacing w:val="60"/></w:rPr><w:t xml:space="preserve">Client:</w:t></w:r>') }) });
+      expect(codes(spacedWord)).toEqual(['PULL_DIRECT_FORMATTING']);
+
+      // An even-page header, plain and as a tracked insertion.
+      const even = (text: string): Surgery => ({
+        document: (xml) => xml.replace('<w:sectPr>', '<w:sectPr><w:headerReference w:type="even" r:id="rIdPullEven"/>'),
+        parts: { 'word/settings.xml': (xml) => xml.replace(/(<w:settings[^>]*>)/u, '$1<w:evenAndOddHeaders/>') },
+        add: { 'word/headerEven.xml': `<w:hdr ${W_NS}><w:p><w:pPr><w:pStyle w:val="Header"/></w:pPr>${text}</w:p></w:hdr>` },
+        relationships: [['rIdPullEven', 'header', 'headerEven.xml']],
+      });
+      const evenHeader = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, even('<w:r><w:t>Even page</w:t></w:r>')) });
+      expect(codes(evenHeader)).toEqual(['PULL_HEADER_UNMAPPED']);
+      await expect(pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, even('<w:ins w:id="7" w:author="Reviewer"><w:r><w:t>Even page</w:t></w:r></w:ins>')) }))
+        .rejects.toMatchObject({ code: 'PULL_TRACKED_CHANGES' });
+
+      // Two table cells merged: the text is the same, the structure is not.
+      const tableSource = ['Terms:', '', '{% table %}', '* Term', '* Value', '---', '* Price', '* Ten', '{% /table %}', ''].join('\n');
+      const tableBase = await build(tableSource);
+      const merged = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => xml.replace('<w:tcPr>', '<w:tcPr><w:gridSpan w:val="2"/>') }) });
+      expect(codes(merged)).toEqual(['PULL_TABLE_STRUCTURE']);
+      expect(merged.complete).toBe(false);
+      // A column resized beside a wording edit: the wording is pulled, the width is diagnosed.
+      const widened = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => once(xml, '>Terms:<', '>New terms:<').replace('<w:gridCol w:w="4680"/>', '<w:gridCol w:w="5180"/>') }) });
+      expect(codes(widened)).toEqual(['PULL_TABLE_STRUCTURE']);
+      expect(widened.complete).toBe(false);
+      // A table caption (alt text) added beside a wording edit is diagnosed, not dropped.
+      const captioned = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => once(xml, '>Terms:<', '>New terms:<').replace('<w:tblLayout w:type="fixed"/>', '<w:tblLayout w:type="fixed"/><w:tblCaption w:val="User caption"/>') }) });
+      expect(codes(captioned)).toEqual(['PULL_TABLE_STRUCTURE']);
+      // The cell margins Word for Mac adds when it saves an unedited table are not an edit.
+      const wordSave = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => xml.replace('<w:tblLayout w:type="fixed"/>', '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>') }) });
+      expect(wordSave).toMatchObject({ changes: [], diagnostics: [], complete: true });
+
+      // An underline recoloured, a footnote run letter-spaced and a used style deleted: each beside an applied wording edit.
+      const noteSource = 'Greetings {% u %}world{% /u %}.{% fnref id="n" /%}\n\n{% footnote id="n" %}A note.{% /footnote %}\n';
+      const noteBase = await build(noteSource);
+      const greeting: Surgery = { document: (xml) => once(xml, '>Greetings <', '>Hello <') };
+      const recoloured = await pullCreationEdits({ source: noteSource, base: noteBase, edited: await edit(noteBase.docx, all(greeting, { document: (xml) => once(xml, '<w:u w:val="single"/>', '<w:u w:val="single" w:color="FF0000"/>') })) });
+      expect(codes(recoloured)).toEqual(['PULL_DIRECT_FORMATTING']);
+      const spacedNote = await pullCreationEdits({ source: noteSource, base: noteBase, edited: await edit(noteBase.docx, all(greeting, { parts: { 'word/footnotes.xml': (xml) => once(xml, '<w:r><w:t xml:space="preserve">A note.</w:t></w:r>', '<w:r><w:rPr><w:spacing w:val="60"/></w:rPr><w:t xml:space="preserve">A note.</w:t></w:r>') } })) });
+      expect(codes(spacedNote)).toEqual(['PULL_FOOTNOTES_CHANGED']);
+      const styleGone = await pullCreationEdits({ source: noteSource, base: noteBase, edited: await edit(noteBase.docx, all(greeting, { parts: { 'word/styles.xml': (xml) => xml.replace(/<w:style w:type="paragraph" w:styleId="BodyText">(?:(?!<\/w:style>).)*<\/w:style>/u, '') } })) });
+      expect(codes(styleGone)).toContain('PULL_STYLE_CHANGED');
+      for (const result of [recoloured, spacedNote, styleGone]) expect(result.complete).toBe(false);
+
+      // A footer paragraph indented, and a section set in two columns: running-text and section layout create does not write.
+      const indentedFooter = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(MUTATIONS[0]!.surgery, { parts: { 'word/footer2.xml': (xml) => xml.replace('<w:pStyle w:val="Footer"/>', '<w:pStyle w:val="Footer"/><w:ind w:left="720"/>') } })) });
+      expect(indentedFooter.complete).toBe(false);
+      expect(codes(indentedFooter).some((code) => code === 'PULL_FOOTER_UNMAPPED' || code === 'PULL_REBUILD_DIFFERS')).toBe(true);
+      const columns = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(MUTATIONS[0]!.surgery, { document: (xml) => xml.replace('<w:pgMar ', '<w:cols w:num="2" w:space="720"/><w:pgMar ') })) });
+      expect(codes(columns)).toEqual(['PULL_PAGE_SETUP']);
+      // Word's own one-column w:cols and default w:docGrid are not an edit.
+      const wordSections = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, { document: (xml) => xml.replaceAll('<w:pgMar ', '<w:cols w:space="720"/><w:docGrid w:linePitch="360"/><w:pgMar ').replaceAll('<w:type w:val="nextPage"/>', '') }) });
+      expect(wordSections).toMatchObject({ changes: [], diagnostics: [], complete: true });
+
+      // A page number made bold, alone and beside an applied wording edit: the cached number is not read, its look is.
+      const boldPage: Surgery = { parts: { 'word/footer1.xml': (xml) => xml.replaceAll('<w:r>', '<w:r><w:rPr><w:b/></w:rPr>') } };
+      // Only the run that displays the number, as Word's font controls do when the number alone is selected.
+      const boldResult: Surgery = { parts: { 'word/footer1.xml': (xml) => xml.replace(/(<w:fldChar w:fldCharType="separate"\/><\/w:r>)<w:r>(<w:t)/u, '$1<w:r><w:rPr><w:b/></w:rPr>$2') } };
+      // The page number given a format switch reads the same number token; create writes PAGE bare.
+      const romanPage: Surgery = { parts: { 'word/footer1.xml': (xml) => once(xml, '> PAGE </w:instrText>', '> PAGE \\* roman </w:instrText>') } };
+      for (const surgery of [boldPage, all(boldPage, MUTATIONS[0]!.surgery), boldResult, all(boldResult, MUTATIONS[0]!.surgery), romanPage, all(romanPage, MUTATIONS[0]!.surgery)]) {
+        const result = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_FOOTER_UNMAPPED']);
+      }
+
+      // Italics moved within a cross-reference's cached result, alone and beside a wording edit: the same formats
+      // remain, in other places. Word splitting a result run, or marking where it laid out a page, is not an edit.
+      const refSource = '## *Alpha* Beta {% #target %}\n\nSee {% xref to="target" show="text" /%}.\n';
+      const refBase = await build(refSource);
+      const refResult = '<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">Alpha</w:t></w:r><w:r><w:t xml:space="preserve"> Beta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>';
+      const italicMoved: Surgery = { document: (xml) => once(xml, refResult, '<w:r><w:t xml:space="preserve">Alpha</w:t></w:r><w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve"> Beta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') };
+      const consult: Surgery = { document: (xml) => once(xml, '<w:t xml:space="preserve">See </w:t>', '<w:t xml:space="preserve">Consult </w:t>') };
+      // A tab or a line break typed into the cached result, which read-back does not show as text.
+      const resultTab: Surgery = { document: (xml) => once(xml, refResult, refResult.replace('Alpha</w:t>', 'Alpha</w:t><w:tab/>')) };
+      const resultBreak: Surgery = { document: (xml) => once(xml, refResult, refResult.replace('Alpha</w:t>', 'Alpha</w:t><w:br/>')) };
+      for (const surgery of [italicMoved, all(italicMoved, consult), resultTab, all(resultTab, consult), resultBreak, all(resultBreak, consult)]) {
+        const result = await pullCreationEdits({ source: refSource, base: refBase, edited: await edit(refBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_DIRECT_FORMATTING']);
+      }
+      const refSplit = await pullCreationEdits({ source: refSource, base: refBase, edited: await edit(refBase.docx, { document: (xml) => once(xml, refResult, '<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">Al</w:t></w:r><w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">pha</w:t></w:r><w:r><w:lastRenderedPageBreak/><w:t xml:space="preserve"> Be</w:t></w:r><w:r><w:t xml:space="preserve">ta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') }) });
+      expect(refSplit).toMatchObject({ changes: [], diagnostics: [], complete: true });
+
+      // A cross-reference retargeted to another heading with the same text, or given a switch, alone and beside a
+      // wording edit: the text stays, the field does not. Spacing in the instruction is not an edit.
+      const twinSource = '## Alpha {% #target %}\n\n## Alpha {% #other %}\n\nSee {% xref to="target" show="text" /%}.\n';
+      const twinBase = await build(twinSource);
+      const retarget: Surgery = { document: (xml) => once(xml, ' REF target \\h ', ' REF other \\h ') };
+      const withSwitch: Surgery = { document: (xml) => once(xml, ' REF target \\h ', ' REF target \\h \\p ') };
+      for (const surgery of [retarget, all(retarget, consult), withSwitch, all(withSwitch, consult)]) {
+        const result = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_EDIT_IN_CROSS_REFERENCE']);
+      }
+      // The same in a footnote, whose text reads the same.
+      const noteTwinSource = '## Alpha {% #target %}\n\n## Alpha {% #other %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
+      const noteTwinBase = await build(noteTwinSource);
+      const noteEdit = (to: string): Surgery => ({ parts: { 'word/footnotes.xml': (xml) => once(xml, ' REF target \\h ', to) } });
+      const below: Surgery = { document: (xml) => once(xml, '<w:t xml:space="preserve">See below.</w:t>', '<w:t xml:space="preserve">Read below.</w:t>') };
+      for (const surgery of [noteEdit(' REF other \\h '), all(noteEdit(' REF other \\h '), below), noteEdit(' REF target \\h \\p '), all(noteEdit(' REF target \\h \\p '), below)]) {
+        const result = await pullCreationEdits({ source: noteTwinSource, base: noteTwinBase, edited: await edit(noteTwinBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_FOOTNOTES_CHANGED']);
+      }
+      // A cross-reference moved to a later occurrence of its own text, which reads the same.
+      const movedSource = '## Alpha {% #target %}\n\nSee {% xref to="target" show="text" /%} and Alpha.\n';
+      const movedBase = await build(movedSource);
+      const movedField: Surgery = { document: (xml) => xml.replace(/(<w:t xml:space="preserve">See <\/w:t><\/w:r>)((?:(?!<w:t xml:space="preserve"> and Alpha\.).)*?<w:fldChar w:fldCharType="end"\/><\/w:r>)<w:r><w:t xml:space="preserve"> and Alpha\.<\/w:t><\/w:r>/u, (_match, see: string, field: string) => `${see}<w:r><w:t xml:space="preserve">Alpha and </w:t></w:r>${field}<w:r><w:t xml:space="preserve">.</w:t></w:r>`) };
+      const movedRead = await readPullDocx(await edit(movedBase.docx, movedField));
+      expect(movedRead.paragraphs.at(-1)!.crossReferences.map((reference) => reference.offset)).toEqual([14]);
+      for (const surgery of [movedField, all(movedField, { document: (xml) => once(xml, '<w:t xml:space="preserve">See </w:t>', '<w:t xml:space="preserve">Consult </w:t>') })]) {
+        const result = await pullCreationEdits({ source: movedSource, base: movedBase, edited: await edit(movedBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_EDIT_IN_CROSS_REFERENCE']);
+      }
+      // A footnote mark moved to the end of its paragraph, and a heading's anchor moved to its same-text twin, alone and
+      // beside a wording edit: the texts, the notes and the cross-reference's instruction all read the same.
+      const markSource = 'See here.{% fnref id="n" /%} Later.\n\n{% footnote id="n" %}A note.{% /footnote %}\n';
+      const markBase = await build(markSource);
+      const mark = '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="1"/></w:r>';
+      const movedMark: Surgery = { document: (xml) => once(xml, `${mark}<w:r><w:t xml:space="preserve"> Later.</w:t></w:r>`, `<w:r><w:t xml:space="preserve"> Later.</w:t></w:r>${mark}`) };
+      const read: Surgery = { document: (xml) => once(xml, '<w:t xml:space="preserve">See here.</w:t>', '<w:t xml:space="preserve">Read here.</w:t>') };
+      for (const surgery of [movedMark, all(movedMark, read)]) {
+        const result = await pullCreationEdits({ source: markSource, base: markBase, edited: await edit(markBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_FOOTNOTES_CHANGED']);
+      }
+      // The mark made bold, alone and beside a wording edit; Word dropping its direct superscript, which the
+      // FootnoteReference style carries, is not an edit.
+      const boldMark: Surgery = { document: (xml) => once(xml, '<w:rStyle w:val="FootnoteReference"/><w:vertAlign', '<w:rStyle w:val="FootnoteReference"/><w:b/><w:vertAlign') };
+      // An explicit baseline overrides the style's superscript.
+      const baselineMark: Surgery = { document: (xml) => once(xml, '<w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference', '<w:vertAlign w:val="baseline"/></w:rPr><w:footnoteReference') };
+      for (const surgery of [boldMark, all(boldMark, read), baselineMark, all(baselineMark, read)]) {
+        const result = await pullCreationEdits({ source: markSource, base: markBase, edited: await edit(markBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_FOOTNOTES_CHANGED']);
+      }
+      const wordMark = await pullCreationEdits({ source: markSource, base: markBase, edited: await edit(markBase.docx, { document: (xml) => once(xml, '<w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/>', '<w:rStyle w:val="FootnoteReference"/>') }) });
+      expect(wordMark).toMatchObject({ changes: [], diagnostics: [], complete: true });
+      // A cross-referenced heading's bookmark shortened to its first word, alone and beside a wording edit: the
+      // cross-reference still shows its old result, but an update would show less.
+      const rangeSource = '## Alpha Beta {% #target %}\n\nSee {% xref to="target" show="text" /%}.\n';
+      const rangeBase = await build(rangeSource);
+      const shortened: Surgery = { document: (xml) => xml.replace(/<w:t xml:space="preserve">Alpha Beta<\/w:t><\/w:r>(<w:bookmarkEnd w:id="\d+"\/>)/u, '<w:t xml:space="preserve">Alpha</w:t></w:r>$1<w:r><w:t xml:space="preserve"> Beta</w:t></w:r>') };
+      expect((await readPullDocx(await edit(rangeBase.docx, shortened))).paragraphs[0]!.bookmarkRanges).toEqual(['target@0-5']);
+      for (const surgery of [shortened, all(shortened, consult)]) {
+        const result = await pullCreationEdits({ source: rangeSource, base: rangeBase, edited: await edit(rangeBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_BOOKMARKS_CHANGED']);
+      }
+      // A word explicitly un-bolded or un-underlined (`w:val="0"`, `none`), which overrides a style: not the same as
+      // no property.
+      for (const off of ['<w:b w:val="0"/>', '<w:u w:val="none"/>', '<w:color w:val="auto"/>']) {
+        const unbolded: Surgery = { document: (xml) => once(xml, '<w:r><w:t xml:space="preserve">Alpha Beta</w:t></w:r><w:bookmarkEnd', `<w:r><w:rPr>${off}</w:rPr><w:t xml:space="preserve">Alpha Beta</w:t></w:r><w:bookmarkEnd`) };
+        const result = await pullCreationEdits({ source: rangeSource, base: rangeBase, edited: await edit(rangeBase.docx, all(unbolded, consult)) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_DIRECT_FORMATTING']);
+      }
+      // The heading's paragraph mark set in 72 pt or explicitly not bold, alone and beside a wording edit.
+      for (const markRun of ['<w:sz w:val="144"/>', '<w:b w:val="0"/>']) {
+        const markSized: Surgery = { document: (xml) => xml.replace('</w:pPr>', `<w:rPr>${markRun}</w:rPr></w:pPr>`) };
+        for (const surgery of [markSized, all(markSized, consult)]) {
+          const result = await pullCreationEdits({ source: rangeSource, base: rangeBase, edited: await edit(rangeBase.docx, surgery) });
+          expect(result.complete).toBe(false);
+          expect(codes(result)).toEqual(['PULL_PARAGRAPH_FORMATTING']);
+        }
+      }
+      // An added paragraph whose mark is set in 72 pt, beside a plain one; and paragraphs retyped from scratch, first,
+      // in the middle and last, which pull writes as the new paragraph in the old one's place.
+      const threeSource = 'Alpha beta.\n\nMiddle words.\n\nOmega end.\n';
+      const threeBase = await build(threeSource);
+      const addedAfter = (mark: string): Surgery => ({ document: (xml) => once(xml, '<w:t xml:space="preserve">Middle words.</w:t></w:r></w:p>', `<w:t xml:space="preserve">Middle words.</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="BodyText"/>${mark}</w:pPr><w:r><w:t xml:space="preserve">Inserted paragraph.</w:t></w:r></w:p>`) });
+      const plainAdded = await pullCreationEdits({ source: threeSource, base: threeBase, edited: await edit(threeBase.docx, addedAfter('')) });
+      expect(plainAdded).toMatchObject({ complete: true, diagnostics: [], pulledSource: 'Alpha beta.\n\nMiddle words.\n\nInserted paragraph.\n\nOmega end.\n' });
+      for (const mark of ['<w:rPr><w:sz w:val="144"/></w:rPr>', '<w:rPr><w:b w:val="0"/></w:rPr>']) {
+        const result = await pullCreationEdits({ source: threeSource, base: threeBase, edited: await edit(threeBase.docx, addedAfter(mark)) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_PARAGRAPH_FORMATTING']);
+      }
+      for (const [old, retyped, expected] of [
+        ['Alpha beta.', 'Completely new wording.', 'Completely new wording.\n\nMiddle words.\n\nOmega end.\n'],
+        ['Middle words.', 'Completely new wording.', 'Alpha beta.\n\nCompletely new wording.\n\nOmega end.\n'],
+        ['Omega end.', 'Completely new wording.', 'Alpha beta.\n\nMiddle words.\n\nCompletely new wording.\n'],
+      ] as const) {
+        const result = await pullCreationEdits({ source: threeSource, base: threeBase, edited: await edit(threeBase.docx, { document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, `<w:t xml:space="preserve">${retyped}</w:t>`) }) });
+        expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
+      // List items deleted (a whole first list, which renumbers the rest, and a last item) and retyped from scratch.
+      const dropParagraph = (text: string): Surgery => ({ document: (xml) => {
+        const pattern = new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${text}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        expect(pattern.test(xml)).toBe(true);
+        return xml.replace(pattern, '');
+      } });
+      const addedAfterItem = (text: string, added: string): Surgery => ({ document: (xml) => {
+        const pattern = new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${text}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        expect(pattern.test(xml)).toBe(true);
+        return xml.replace(pattern, (paragraph) => paragraph + paragraph.replace(`>${text}<`, `>${added}<`));
+      } });
+      // A copy of the paragraph holding `model`, reading `added`, after the paragraph holding `text`.
+      const addedLike = (text: string, model: string, added: string): Surgery => ({ document: (xml) => {
+        const holding = (words: string) => new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${words}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        const copy = holding(model).exec(xml)![0].replace(`>${model}<`, `>${added}<`);
+        expect(holding(text).test(xml)).toBe(true);
+        return xml.replace(holding(text), (paragraph) => paragraph + copy);
+      } });
+      const once2 = (old: string, now: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, `<w:t xml:space="preserve">${now}</w:t>`) });
+      const retype = (old: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, '<w:t xml:space="preserve">Entirely fresh sentence.</w:t>') });
+      for (const [listSource, surgery, expected] of [
+        ['1. Apple\n\nBridge.\n\n1. Cherry\n', dropParagraph('Apple'), 'Bridge.\n\n1. Cherry\n'],
+        ['1. Apple\n2. Avocado\n\nBridge.\n\n- Cherry\n- Date\n', dropParagraph('Apple'), '1. Avocado\n\nBridge.\n\n- Cherry\n- Date\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', dropParagraph('Banana'), '1. Apple\n\nBody.\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', retype('Apple'), '1. Entirely fresh sentence.\n1. Banana\n\nBody.\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', retype('Banana'), '1. Apple\n2. Entirely fresh sentence.\n\nBody.\n'],
+        ['- Apple\n- Banana\n\nBody.\n', retype('Apple'), '- Entirely fresh sentence.\n- Banana\n\nBody.\n'],
+        ['1. Apple\n\nBody.\n', retype('Apple'), '1. Entirely fresh sentence.\n\nBody.\n'],
+        ['Before.\n\n1. Apple\n2. Banana\n3. Cherry\n4. Date\n\nBody.\n', all(dropParagraph('Apple'), dropParagraph('Banana')), 'Before.\n\n1. Cherry\n4. Date\n\nBody.\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', all(once2('Apple', 'Fresh zero.'), once2('Banana', 'Fresh one.')), '1. Fresh zero.\n1. Fresh one.\n\nBody.\n'],
+        // The paragraph between two lists deleted: the second keeps its own list with the other delimiter.
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', dropParagraph('Bridge.'), '- Apple\n\n* Banana\n* Cherry\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', dropParagraph('Bridge.'), '1. Apple\n\n1) Banana\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\nMore.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), dropParagraph('More.')), '- Apple\n\n* Banana\n\nBody.\n'],
+        // With an edit inside the second list, beside it, or a list that already follows with the other delimiter.
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Banana', 'Banana changed')), '- Apple\n\n* Banana changed\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), dropParagraph('Banana')), '- Apple\n\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\n* Cherry\n\nBody.\n', dropParagraph('Bridge.'), '- Apple\n\n+ Banana\n\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nB1.\n\n- Banana\n\nB2.\n\n- Cherry\n\nBody.\n', all(dropParagraph('B1.'), dropParagraph('B2.')), '- Apple\n\n* Banana\n\n- Cherry\n\nBody.\n'],
+        ['1. Apple\n\nB1.\n\n1. Banana\n\nB2.\n\n1. Cherry\n\nBody.\n', all(dropParagraph('B1.'), dropParagraph('B2.')), '1. Apple\n\n1) Banana\n\n1. Cherry\n\nBody.\n'],
+        // The second list's first item deleted too (its heir's marker takes the new delimiter), and an item added to
+        // or retyped in the second list, which takes it as well.
+        ['1. Apple\n\nBridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), dropParagraph('Banana'), once2('Cherry', 'Cherry changed')), '1. Apple\n\n1) Cherry changed\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Banana', 'Added')), '- Apple\n\n* Banana\n* Added\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '- Apple\n\n* Entirely fresh sentence.\n* Cherry\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Cherry', 'Appended')), '1. Apple\n\n1) Banana\n2) Cherry\n2) Appended\n\nBody.\n'],
+        // The second list's every item retyped: it is still a list, and keeps apart.
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '- Apple\n\n* Entirely fresh sentence.\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '1. Apple\n\n1) Entirely fresh sentence.\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Banana', 'Fresh one.'), once2('Cherry', 'Fresh two.')), '- Apple\n\n* Fresh one.\n* Fresh two.\n\nBody.\n'],
+        // The first list's (or both lists') every item retyped: the replacement follows the deleted bridge, and still keeps apart.
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Apple')), '- Entirely fresh sentence.\n\n* Banana\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Apple')), '1. Entirely fresh sentence.\n\n1) Banana\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Apple', 'Fresh zero.'), once2('Banana', 'Fresh one.')), '- Fresh zero.\n\n* Fresh one.\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Apple', 'Fresh zero.'), once2('Banana', 'Fresh one.')), '1. Fresh zero.\n\n1) Fresh one.\n\nBody.\n'],
+        // An item added to the first list, and a list item retyped beside the body paragraph after it, as the bridge goes.
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Apple', 'Kiwi')), '- Apple\n- Kiwi\n\n* Banana\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Apple', 'Fresh wording.'), once2('Bridge.', 'Unrelated sentence.')), '- Fresh wording.\n\nUnrelated sentence.\n\n- Banana\n\nBody.\n'],
+        // Added and retyped items and body paragraphs read back in their edited order.
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(addedAfterItem('Apple', 'Kiwi'), addedLike('Kiwi', 'Bridge.', 'New prose.')), '- Apple\n- Kiwi\n\nNew prose.\n\nBridge.\n\n- Banana\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(addedAfterItem('Apple', 'Kiwi'), addedLike('Kiwi', 'Bridge.', 'New prose.')), '1. Apple\n1. Kiwi\n\nNew prose.\n\nBridge.\n\n1. Banana\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.')), '- Apple\n\nNew prose.\n\n- Fresh berries.\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.')), '1. Apple\n\nNew prose.\n\n1. Fresh berries.\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Apple', 'Fresh zero.'), once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.')), '- Fresh zero.\n\nNew prose.\n\n- Fresh berries.\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.'), once2('Body.', 'New ending.')), '- Apple\n\nNew prose.\n\n- Fresh berries.\n\nNew ending.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.'), once2('Body.', 'New ending.')), '1. Apple\n\nNew prose.\n\n1. Fresh berries.\n\nNew ending.\n'],
+        // A paragraph retyped or added before a list whose first item is deleted: it goes before the list.
+        ['Bridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(once2('Bridge.', 'Completely novel wording.'), dropParagraph('Banana')), 'Completely novel wording.\n\n- Cherry\n\nBody.\n'],
+        ['Bridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(once2('Bridge.', 'Completely novel wording.'), dropParagraph('Banana')), 'Completely novel wording.\n\n1. Cherry\n\nBody.\n'],
+        ['Bridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(addedLike('Bridge.', 'Bridge.', 'New prose.'), dropParagraph('Banana')), 'Bridge.\n\nNew prose.\n\n- Cherry\n\nBody.\n'],
+        // The first paragraph after a table deleted: the next takes the spacing create puts after a table.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Banana\n- Cherry\n\nBody.\n', dropParagraph('Banana'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Cherry\n\nBody.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Banana\n2. Cherry\n\nBody.\n', dropParagraph('Banana'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Cherry\n\nBody.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nMore.\n', dropParagraph('After.'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nMore.\n'],
+        // A paragraph or item added after the first one after a table: Word copies its spacing, which create sets itself.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nMore.\n', addedAfterItem('After.', 'New text'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nNew text\n\nMore.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Banana\n- Cherry\n\nBody.\n', addedAfterItem('Banana', 'Kiwi'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Banana\n- Kiwi\n- Cherry\n\nBody.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Banana\n2. Cherry\n\nBody.\n', addedAfterItem('Banana', 'Kiwi'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Banana\n1. Kiwi\n2. Cherry\n\nBody.\n'],
+        // Source constructs a wording edit maps through: entities, escapes, line breaks, centred and legend text, nested items.
+        ['Fees &amp; costs apply.\n\nBody.\n', { document: (xml) => once(xml, 'costs apply', 'costs are due') }, 'Fees &amp; costs are due.\n\nBody.\n'],
+        ['&#169; Acme 2026.\n\nBody.\n', { document: (xml) => once(xml, 'Acme 2026', 'Acme Corp 2026') }, '&#169; Acme Corp 2026.\n\nBody.\n'],
+        ['Price is 5 \\* 2 dollars.\n\nBody.\n', { document: (xml) => once(xml, '2 dollars', '2 euros') }, 'Price is 5 \\* 2 euros.\n\nBody.\n'],
+        ['First line\nsecond line of the paragraph.\n\nBody.\n', { document: (xml) => once(xml, 'of the paragraph', 'of this paragraph') }, 'First line\nsecond line of this paragraph.\n\nBody.\n'],
+        ['First line\\\nsecond line.\n\nBody.\n', { document: (xml) => once(xml, 'second line', 'next line') }, 'First line\\\nnext line.\n\nBody.\n'],
+        ['{% center %}Centred text{% /center %}\n\nBody.\n', { document: (xml) => once(xml, 'Centred text', 'Centred words') }, '{% center %}Centred words{% /center %}\n\nBody.\n'],
+        ['{% legend %}Legend text{% /legend %}\n\nBody.\n', { document: (xml) => once(xml, 'Legend text', 'Legend words') }, '{% legend %}Legend words{% /legend %}\n\nBody.\n'],
+        ['- Apple\n  - Avocado\n- Banana\n\nBody.\n', { document: (xml) => once(xml, '>Avocado<', '>Avocado pear<') }, '- Apple\n  - Avocado pear\n- Banana\n\nBody.\n'],
+        ['{% center %}\nCentred one.\n\nCentred two.\n{% /center %}\n\nBody.\n', { document: (xml) => once(xml, 'Centred two', 'Centred second') }, '{% center %}\nCentred one.\n\nCentred second.\n{% /center %}\n\nBody.\n'],
+        ['{% center %}**EXHIBIT A**{% /center %}\n\nBody.\n', { document: (xml) => once(xml, 'EXHIBIT A', 'EXHIBIT B') }, '{% center %}**EXHIBIT B**{% /center %}\n\nBody.\n'],
+        // A parent item deleted with its nested items.
+        ['- Apple\n  - Avocado\n- Banana\n\nBody.\n', all(dropParagraph('Apple'), dropParagraph('Avocado')), '- Banana\n\nBody.\n'],
+        // Running text: first-page headers and footers, alignments and a later section without them.
+        ['---\nheader: Acme Matter\nheader-first: none\n---\n\nBody.\n', inStories('>Acme Matter<', '>Acme Holdings<'), '---\nheader: Acme Holdings\nheader-first: none\n---\n\nBody.\n'],
+        ['---\nheader: Acme Matter\nheader-first: Cover Page\n---\n\nBody.\n', inStories('>Cover Page<', '>Front Page<'), '---\nheader: Acme Matter\nheader-first: Front Page\n---\n\nBody.\n'],
+        ['---\nfooter: Acme Matter\nfooter-first: none\npage-numbers: true\n---\n\nBody.\n', inStories('>Acme Matter<', '>Acme Holdings<'), '---\nfooter: Acme Holdings\npage-numbers: true\nfooter-first: none\n---\n\nBody.\n'],
+        ['---\nfooter: Acme Matter\nfooter-first: Cover Footer\npage-numbers: true\n---\n\nBody.\n', inStories('>Cover Footer<', '>Front Footer<'), '---\nfooter: Acme Matter\npage-numbers: true\nfooter-first: Front Footer\n---\n\nBody.\n'],
+        ['---\nfooter: Acme Matter\nfooter-align: right\npage-numbers: true\npage-number-align: left\n---\n\nBody.\n', inStories('>Acme Matter<', '>Acme Holdings<'), '---\nfooter: Acme Holdings\nfooter-align: right\npage-numbers: true\npage-number-align: left\n---\n\nBody.\n'],
+        ['---\nheader: Acme Matter\nheader-align: left\n---\n\nBody.\n\n{% section header=false page-numbers=false /%}\n\nLater.\n', inStories('>Acme Matter<', '>Acme Holdings<'), '---\nheader: Acme Holdings\nheader-align: left\n---\n\nBody.\n\n{% section header=false page-numbers=false /%}\n\nLater.\n'],
+        // A loose list, and signer names with an escaped quote and a character outside the BMP.
+        ['- Apple\n\n- Banana\n\nBody.\n', { document: (xml) => once(xml, '>Apple<', '>Apple pie<') }, '- Apple pie\n\n- Banana\n\nBody.\n'],
+        ['{% signer name="Jane \\"JR\\" Roe" date="Date: ____" /%}\n', { document: (xml) => once(xml, ' Roe<', ' Row<') }, '{% signer name=\"Jane \\"JR\\" Row\" date=\"Date: ____\" /%}\n'],
+        ['{% signer name="Jane \u{1F600} Roe" /%}\n', { document: (xml) => once(xml, ' Roe<', ' Row<') }, '{% signer name=\"Jane 😀 Row\" /%}\n'],
+        // A legend or a table removed: the paragraph before or after it loses what create set beside them.
+        ['Lead.\n\n{% legend %}Legend words.{% /legend %}\n\nBody.\n', dropParagraph('Legend words.'), 'Lead.\n\nBody.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n{% /table %}\n\nAfter.\n', { document: (xml) => xml.replace(/<w:tbl>.*<\/w:tbl>/su, '') }, 'Before.\n\nAfter.\n'],
+        // A quote added after a quote that ends the source; a paragraph added before the first; the paragraph after a page break deleted.
+        ['Body.\n\n> Quoted.\n', addedAfterItem('Quoted.', 'Quoted again.'), 'Body.\n\n> Quoted.\n>\n> Quoted again.\n'],
+        ['Body.\n\nMore.\n', { document: (xml) => xml.replace('<w:body>', `<w:body>${bodyParagraph('New first.')}`) }, 'New first.\n\nBody.\n\nMore.\n'],
+        ['A.\n\n{% page-break /%}\n\nB.\n\nC.\n', dropParagraph('B.'), 'A.\n\nC.\n'],
+        // Section footers with their own alignment, italics, number position and one-line layout, each edited.
+        ['---\npage-numbers: true\n---\n\nBody.\n\n{% section footer="Schedule" footer-align="right" footer-italic=false page-numbers=true page-number-align="left" /%}\n\nLater.\n', inStories('>Schedule<', '>Schedules<'), '---\npage-numbers: true\n---\n\nBody.\n\n{% section footer=\"Schedules\" footer-italic=false footer-align=\"right\" page-numbers=true page-number-align=\"left\" /%}\n\nLater.\n'],
+        ['---\npage-numbers: true\n---\n\nBody.\n\n{% section footer="Schedule" page-numbers=true footer-layout="one-line" /%}\n\nLater.\n', inStories('>Schedule<', '>Schedules<'), '---\npage-numbers: true\n---\n\nBody.\n\n{% section footer=\"Schedules\" page-numbers=true footer-layout=\"one-line\" /%}\n\nLater.\n'],
+        // Paragraphs of punctuation alone, one edited.
+        ['Intro.\n\n...\n\n???\n\nBody.\n', { document: (xml) => once(xml, '>???<', '>!!!<') }, 'Intro.\n\n...\n\n!!!\n\nBody.\n'],
+        // The paragraph before a legend deleted: the one above now comes before it, and the rebuild keeps it with the legend.
+        ['Lead.\n\nMiddle.\n\n{% legend %}Legend words.{% /legend %}\n\nBody.\n', dropParagraph('Middle.'), 'Lead.\n\n{% legend %}Legend words.{% /legend %}\n\nBody.\n'],
+        // A header added to a source without frontmatter starts its frontmatter.
+        ['Body.\n', withFirstSectionHeader(['Acme Matter']), '---\nheader: Acme Matter\nheader-align: right\n---\n\nBody.\n'],
+        // The last paragraph, after a table, retyped from scratch: alone, its deletion leaves the table last.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n', once2('After.', 'Completely new wording.'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nCompletely new wording.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', addedLike('Apple', 'Bridge.', 'New prose.'), '- Apple\n\nNew prose.\n\nBridge.\n\n- Banana\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(once2('Apple', 'Fresh wording.'), once2('Bridge.', 'Unrelated sentence.')), '1. Fresh wording.\n\nUnrelated sentence.\n\n1. Banana\n\nBody.\n'],
+        ['- Apple\n- Avocado\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Apple', 'Fresh zero.'), once2('Avocado', 'Fresh two.'), once2('Banana', 'Fresh one.')), '- Fresh zero.\n- Fresh two.\n\n* Fresh one.\n* Cherry\n\nBody.\n'],
+      ] as const) {
+        const listBase = await build(listSource);
+        const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });
+        expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
+      // A paragraph added with spacing of its own after a table's first paragraph is still reported.
+      {
+        const spaced = 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nMore.\n';
+        const spacedBase = await build(spaced);
+        const respaced: Surgery = { document: (xml) => {
+          const added = addedAfterItem('After.', 'New text').document!(xml);
+          const clone = /<w:p>(?:(?!<\/w:p>).)*?New text(?:(?!<\/w:p>).)*?<\/w:p>/u.exec(added)![0];
+          expect(clone).toContain('w:before="160"');
+          return added.replace(clone, clone.replace('w:before="160"', 'w:before="480"'));
+        } };
+        const result = await pullCreationEdits({ source: spaced, base: spacedBase, edited: await edit(spacedBase.docx, respaced) });
+        expect(result.complete).toBe(false);
+        expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('PULL_PARAGRAPH_FORMATTING');
+      }
+      // Edits pull reports rather than writes: each fails safe with its diagnostic.
+      for (const [failSource, surgery, code] of [
+        // A list label's number format changed in word/numbering.xml, each format create does not write.
+        ...['decimalZero', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'none', 'ordinal'].map((format) => ['1. Apple\n2. Banana\n\nBody.\n', { parts: { 'word/numbering.xml': (xml: string) => xml.replaceAll('w:numFmt w:val="decimal"', `w:numFmt w:val="${format}"`) } } as Surgery, undefined] as const),
+        // A paragraph pointed at a numbering instance that does not exist.
+        ['1. Apple\n2. Banana\n\nBody.\n', { document: (xml: string) => xml.replace(/<w:numId w:val="\d+"\/>/u, '<w:numId w:val="99"/>') } as Surgery, undefined],
+        // Running text create cannot express: a two-line first-page header or footer, a justified page number, a bold header.
+        ['---\nheader: Acme Matter\nheader-first: Cover Page\n---\n\nBody.\n', inStories('>Cover Page</w:t></w:r></w:p>', '>Cover Page</w:t></w:r></w:p><w:p><w:r><w:t>Second</w:t></w:r></w:p>'), 'PULL_HEADER_UNMAPPED'],
+        ['---\nfooter: Acme Matter\nfooter-first: Cover Footer\npage-numbers: true\n---\n\nBody.\n', inStories('>Cover Footer</w:t></w:r></w:p>', '>Cover Footer</w:t></w:r></w:p><w:p><w:r><w:t>Second</w:t></w:r></w:p>'), 'PULL_FOOTER_UNMAPPED'],
+        ['---\npage-numbers: true\n---\n\nBody.\n', inStories('<w:pStyle w:val="Footer"/>', '<w:pStyle w:val="Footer"/><w:jc w:val="both"/>'), 'PULL_FOOTER_UNMAPPED'],
+        ['---\nheader: Acme Matter\n---\n\nBody.\n', inStories('<w:r><w:t xml:space="preserve">Acme Matter', '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Acme Matter'), 'PULL_HEADER_UNMAPPED'],
+        // A line break replaced by a space.
+        ['First line\\\nsecond line.\n\nBody.\n', { document: (xml: string) => once(xml, '<w:br/>', '<w:t xml:space="preserve"> </w:t>') } as Surgery, 'PULL_EDIT_CROSSES_MARKUP'],
+        // Table cells merged across columns and rows.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n', { document: (xml: string) => xml.replace('<w:tc>', '<w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/><w:hMerge w:val="restart"/></w:tcPr>').replace(/(<w:tc>(?:(?!<w:tc>).)*){2}<w:tc>/su, (match: string) => `${match}<w:tcPr><w:vMerge/><w:hMerge/></w:tcPr>`) } as Surgery, undefined],
+        // Section properties create does not set: vertical alignment, page numbering, break type, grid and line numbers.
+        ['Body.\n', { document: (xml: string) => once(xml, '</w:sectPr>', '<w:vAlign w:val="center"/><w:pgNumType w:start="3"/><w:type w:val="continuous"/><w:docGrid w:linePitch="300" w:type="lines"/><w:lnNumType w:countBy="1"/></w:sectPr>') } as Surgery, undefined],
+        // Paragraphs aligned with the logical values Word also reads.
+        ['First.\n\nSecond.\n', { document: (xml: string) => once(once(xml, '<w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t xml:space="preserve">First.', '<w:pStyle w:val="BodyText"/><w:jc w:val="start"/></w:pPr><w:r><w:t xml:space="preserve">First.'), '<w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t xml:space="preserve">Second.', '<w:pStyle w:val="BodyText"/><w:jc w:val="justify"/></w:pPr><w:r><w:t xml:space="preserve">Second.') } as Surgery, undefined],
+        ['First.\n\nSecond.\n', { document: (xml: string) => once(once(xml, '<w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t xml:space="preserve">First.', '<w:pStyle w:val="BodyText"/><w:jc w:val="end"/></w:pPr><w:r><w:t xml:space="preserve">First.'), '<w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t xml:space="preserve">Second.', '<w:pStyle w:val="BodyText"/><w:jc w:val="distribute"/></w:pPr><w:r><w:t xml:space="preserve">Second.') } as Surgery, undefined],
+        // Run properties in the forms Word writes: on and off values, underline none, shading.
+        ['First words here.\n', { document: (xml: string) => once(xml, '<w:r><w:t xml:space="preserve">First words here.</w:t></w:r>', '<w:r><w:rPr><w:b w:val="on"/><w:i w:val="0"/><w:caps w:val="1"/><w:strike w:val="false"/><w:smallCaps w:val="off"/></w:rPr><w:t xml:space="preserve">First </w:t></w:r><w:r><w:rPr><w:u w:val="none"/><w:shd w:fill="FFFF00"/></w:rPr><w:t xml:space="preserve">words </w:t></w:r><w:r><w:rPr><w:u/></w:rPr><w:t xml:space="preserve">here.</w:t></w:r>') } as Surgery, undefined],
+        // A list item's numbering removed with numId 0.
+        ['1. Apple\n2. Banana\n\nBody.\n', { document: (xml: string) => xml.replace(/<w:numId w:val="\d+"\/>/u, '<w:numId w:val="0"/>') } as Surgery, undefined],
+        // Keep-with-next turned off on the paragraphs before a legend and a signer: a formatting edit, not create's own.
+        ['Lead.\n\n{% legend %}Legend words.{% /legend %}\n\nBody.\n\n{% signer name="Jane Roe" /%}\n', { document: (xml: string) => xml.replaceAll('<w:keepNext/>', '') } as Surgery, 'PULL_PARAGRAPH_FORMATTING'],
+        // A parent item deleted while its nested item stays.
+        ['- Apple\n  - Avocado\n- Banana\n\nBody.\n', dropParagraph('Apple'), 'PULL_UNMAPPED_DELETION'],
+        // The empty paragraph that follows a final table, deleted.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n{% /table %}\n', { document: (xml: string) => once(xml, '</w:tbl><w:p/>', '</w:tbl>') } as Surgery, 'PULL_UNMAPPED_DELETION'],
+        // A table cell's paragraph deleted.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n{% /table %}\n\nAfter.\n', { document: (xml: string) => once(xml, paragraphHolding(xml, 'Value'), '<w:p/>') } as Surgery, undefined],
+      ] as const) {
+        const failBase = await build(failSource);
+        const result = await pullCreationEdits({ source: failSource, base: failBase, edited: await edit(failBase.docx, surgery) });
+        expect(result.complete, failSource).toBe(false);
+        expect(result.diagnostics.length, failSource).toBeGreaterThan(0);
+        if (code) expect(result.diagnostics.map((diagnostic) => diagnostic.code), failSource).toContain(code);
+      }
+      // An item that continues the list before a paragraph added after it: create starts a new list there, so it is reported.
+      {
+        const continuing = '- Apple\n\nBridge.\n\n- Banana\n\nBody.\n';
+        const continuingBase = await build(continuing);
+        const result = await pullCreationEdits({ source: continuing, base: continuingBase, edited: await edit(continuingBase.docx, all(addedLike('Apple', 'Bridge.', 'New prose.'), addedLike('New prose.', 'Apple', 'Kiwi'))) });
+        expect(result.complete).toBe(false);
+        expect(result.diagnostics.length).toBeGreaterThan(0);
+      }
+      // A list item retyped and moved into the list before it: the same label, another list.
+      const membershipSource = '- Apple\n\nBridge.\n\n- Banana\n\nBody.\n';
+      const membershipBase = await build(membershipSource);
+      const intoFirstList: Surgery = { document: (xml) => {
+        const paragraphOf = (text: string) => new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${text}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        const apple = xml.match(paragraphOf('Apple'))![0].match(/<w:numId w:val="(\d+)"\/>/u)![1]!;
+        return xml.replace(paragraphOf('Banana'), (paragraph) => paragraph.replace(/<w:numId w:val="\d+"\/>/u, `<w:numId w:val="${apple}"/>`).replace('>Banana<', '>Entirely fresh sentence.<'));
+      } };
+      const moved = await pullCreationEdits({ source: membershipSource, base: membershipBase, edited: await edit(membershipBase.docx, intoFirstList) });
+      expect(moved.complete).toBe(false);
+      expect(codes(moved)).toEqual(['PULL_PARAGRAPH_FORMATTING']);
+      // The same when only a footnote cross-references the heading.
+      const noteRangeSource = '## Alpha Beta {% #target %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
+      const noteRangeBase = await build(noteRangeSource);
+      for (const surgery of [shortened, all(shortened, below)]) {
+        const result = await pullCreationEdits({ source: noteRangeSource, base: noteRangeBase, edited: await edit(noteRangeBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_BOOKMARKS_CHANGED']);
+      }
+      const swappedAnchors: Surgery = { document: (xml) => once(once(once(xml, 'w:name="target"', 'w:name="swap"'), 'w:name="other"', 'w:name="target"'), 'w:name="swap"', 'w:name="other"') };
+      for (const surgery of [swappedAnchors, all(swappedAnchors, consult)]) {
+        const result = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_BOOKMARKS_CHANGED']);
+      }
+      // Text typed at a heading's end, outside its bookmark as Word may leave it, is an ordinary edit.
+      const anchorSource = '## Alpha {% #target %}\n\nBody.\n';
+      const anchorBase = await build(anchorSource);
+      const headingEnd = await pullCreationEdits({ source: anchorSource, base: anchorBase, edited: await edit(anchorBase.docx, { document: (xml) => xml.replace(/(<w:bookmarkEnd w:id="\d+"\/>)/u, '$1<w:r><w:t xml:space="preserve"> Gamma</w:t></w:r>') }) });
+      expect(headingEnd).toMatchObject({ complete: true, diagnostics: [] });
+      // A hidden bookmark Word adds (copying text adds `_Hlk…`) is Word's own, not an anchor.
+      const hidden = await pullCreationEdits({ source: anchorSource, base: anchorBase, edited: await edit(anchorBase.docx, { document: (xml) => once(xml, '<w:t xml:space="preserve">Body.</w:t>', '<w:t xml:space="preserve">Bo</w:t></w:r><w:bookmarkStart w:id="90" w:name="_Hlk123456"/><w:r><w:t xml:space="preserve">dy.</w:t></w:r><w:bookmarkEnd w:id="90"/><w:r><w:t xml:space="preserve"></w:t>') }) });
+      expect(hidden).toMatchObject({ changes: [], diagnostics: [], complete: true });
+      expect(headingEnd.pulledSource).toContain('## Alpha Gamma {% #target %}');
+      const respaced = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, { document: (xml) => once(xml, ' REF target \\h ', '  REF  target  \\h  ') }) });
+      expect(respaced).toMatchObject({ changes: [], diagnostics: [], complete: true });
+
+      // An edit beside a span keeps the span's markup.
+      const literalSource = 'Keep foo{% literal %}bar{% /literal %} safe.\n';
+      const literalBase = await build(literalSource);
+      const beside = await pullCreationEdits({ source: literalSource, base: literalBase, edited: await edit(literalBase.docx, { document: (xml) => once(xml, 'Keep foobar safe.', 'Keep quxbar safe.') }) });
+      expect(beside.complete).toBe(true);
+      expect(beside.pulledSource).toBe('Keep qux{% literal %}bar{% /literal %} safe.\n');
+      // Typing plain text over a whole bold span replaces it, even where the new text shares letters with the old.
+      const boldSource = 'Keep **bar** safe.\n';
+      const boldBase = await build(boldSource);
+      const typedOver = await pullCreationEdits({ source: boldSource, base: boldBase, edited: await edit(boldBase.docx, { document: (xml) => once(xml, '<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">bar</w:t></w:r>', '<w:r><w:t xml:space="preserve">baz</w:t></w:r>') }) });
+      expect(typedOver).toMatchObject({ complete: true, diagnostics: [] });
+      expect(typedOver.pulledSource).toBe('Keep baz safe.\n');
+    },
+    60_000,
+  );
+});

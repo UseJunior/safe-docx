@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-08T07:13:21.877Z",
+  "generated_at": "2026-11-10T05:22:35.006Z",
   "policy": {
     "ratchet_tolerance_percentage_points": 0.1,
     "max_positive_drift_percentage_points": {
@@ -33,10 +33,10 @@
       }
     },
     "docx-markdoc": {
-      "lines": 95,
-      "branches": 84.08,
-      "functions": 96.92,
-      "statements": 92.29,
+      "lines": 96.31,
+      "branches": 85.59,
+      "functions": 97.16,
+      "statements": 93.61,
       "deltas": {
         "lines": null,
         "branches": null,
