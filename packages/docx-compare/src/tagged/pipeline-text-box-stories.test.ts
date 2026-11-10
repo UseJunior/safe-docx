@@ -606,9 +606,15 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
     );
-    const revised = await given('a changed shape identity and story', () =>
+    // The same shape (same id) resized: a scaffold change on a paired box.
+    // A changed shape *id* is a different box, tracked as deleted and
+    // inserted (#1031), so it no longer exercises this guard.
+    const revised = await given('a resized shape scaffold and changed story', () =>
       buildDocxFromBodyXml(
-        paragraphWithTextBox('Revised', { shapeId: 'shape2' }),
+        paragraphWithTextBox('Revised', { shapeId: 'shape1' }).replace(
+          '<v:shape id="shape1"',
+          '<v:shape id="shape1" style="width:300pt"',
+        ),
         [],
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
@@ -844,11 +850,14 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     });
   });
 
-  test('fails closed when text-box topology is inserted or deleted', async ({
+  test('tracks an inserted text box instead of refusing its topology', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
+    // Until #1031 this pinned an UnsupportedTextBoxRevisionError. An inserted
+    // box is now a tracked object insertion; pipeline-text-box-lifecycle.test.ts
+    // covers the representation in detail.
     const original = await given('a document without a text box', () =>
       buildDocxFromBodyXml(paragraph('Body')),
     );
@@ -859,26 +868,18 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
     );
-    let failure: unknown;
 
-    await when('comparison classifies the changed topology', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
-    });
+    const result = await when('comparison runs', () =>
+      compareDocumentsAtomizer(original, revised),
+    );
+    const outputXml = await documentXml(result.document);
 
-    await then('the typed diagnostic identifies unsupported topology', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            reason: expect.stringContaining('topology'),
-          }),
-        ],
-      });
+    await then('accept-all keeps the box and reject-all removes it', () => {
+      expect(textBoxText(acceptAllChanges(outputXml))).toBe('Inserted');
+      expect(
+        parseXml(rejectAllChanges(outputXml))
+          .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
+      ).toHaveLength(0);
     });
   });
 
