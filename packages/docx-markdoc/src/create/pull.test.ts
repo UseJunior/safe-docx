@@ -880,6 +880,10 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Banana\n- Cherry\n\nBody.\n', dropParagraph('Banana'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Cherry\n\nBody.\n'],
         ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Banana\n2. Cherry\n\nBody.\n', dropParagraph('Banana'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Cherry\n\nBody.\n'],
         ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nMore.\n', dropParagraph('After.'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nMore.\n'],
+        // A paragraph or item added after the first one after a table: Word copies its spacing, which create sets itself.
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nMore.\n', addedAfterItem('After.', 'New text'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nNew text\n\nMore.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Banana\n- Cherry\n\nBody.\n', addedAfterItem('Banana', 'Kiwi'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n- Banana\n- Kiwi\n- Cherry\n\nBody.\n'],
+        ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Banana\n2. Cherry\n\nBody.\n', addedAfterItem('Banana', 'Kiwi'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\n1. Banana\n1. Kiwi\n2. Cherry\n\nBody.\n'],
         // The last paragraph, after a table, retyped from scratch: alone, its deletion leaves the table last.
         ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n', once2('After.', 'Completely new wording.'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nCompletely new wording.\n'],
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', addedLike('Apple', 'Bridge.', 'New prose.'), '- Apple\n\nNew prose.\n\nBridge.\n\n- Banana\n\nBody.\n'],
@@ -889,6 +893,20 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });
         expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
+      // A paragraph added with spacing of its own after a table's first paragraph is still reported.
+      {
+        const spaced = 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n\nMore.\n';
+        const spacedBase = await build(spaced);
+        const respaced: Surgery = { document: (xml) => {
+          const added = addedAfterItem('After.', 'New text').document!(xml);
+          const clone = /<w:p>(?:(?!<\/w:p>).)*?New text(?:(?!<\/w:p>).)*?<\/w:p>/u.exec(added)![0];
+          expect(clone).toContain('w:before="160"');
+          return added.replace(clone, clone.replace('w:before="160"', 'w:before="480"'));
+        } };
+        const result = await pullCreationEdits({ source: spaced, base: spacedBase, edited: await edit(spacedBase.docx, respaced) });
+        expect(result.complete).toBe(false);
+        expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('PULL_PARAGRAPH_FORMATTING');
       }
       // An item that continues the list before a paragraph added after it: create starts a new list there, so it is reported.
       {

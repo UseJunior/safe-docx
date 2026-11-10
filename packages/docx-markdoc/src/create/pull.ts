@@ -1637,14 +1637,19 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     // now follows a table and drops it where one no longer does, as it would for any source.
     const builtOf = new Map(pairing.filter((pair) => pair.o !== undefined && pair.e !== undefined).map((pair) => [pair.e!, pair.o!]));
     const afterTable = (paragraphs: readonly PullParagraph[], k: number) => k > 0 && paragraphs[k - 1]!.inTableCell && !paragraphs[k]!.inTableCell;
+    const generatedSpacing = new Set(O.flatMap((paragraph, j) => (afterTable(O, j) ? paragraph.properties.split(';').filter((piece) => /^spacing\(before=\d+\)$/u.test(piece)) : [])));
     const tableSpacingOnly = (k: number) => {
       const without = (properties: string, part: string) => properties.split(';').filter((piece) => piece !== part).join(';');
       const partOf = (properties: string) => properties.split(';').find((piece) => /^spacing\(before=\d+\)$/u.test(piece));
       const rebuiltPart = partOf(rebuiltListed[k]!);
       if (rebuiltPart && without(rebuiltListed[k]!, rebuiltPart) === editedListed[k] && afterTable(rebuiltDoc.paragraphs, k)) return true;
       const editedPart = partOf(editedListed[k]!);
+      if (editedPart === undefined || without(editedListed[k]!, editedPart) !== rebuiltListed[k]) return false;
       const built = builtOf.get(k);
-      return editedPart !== undefined && without(editedListed[k]!, editedPart) === rebuiltListed[k] && built !== undefined && afterTable(O, built) && O[built]!.properties.split(';').includes(editedPart);
+      if (built !== undefined) return afterTable(O, built) && O[built]!.properties.split(';').includes(editedPart);
+      // An added paragraph Word split from one that has it (Enter at its end) carries it too.
+      const neighbourHas = [E[k - 1], E[k + 1]].some((neighbour) => neighbour?.properties.split(';').includes(editedPart));
+      return neighbourHas && generatedSpacing.has(editedPart);
     };
     const formatted = E.findIndex((_paragraph, k) => editedListed[k] !== rebuiltListed[k] && !tableSpacingOnly(k));
     if (index !== -1) differs = `paragraph ${index + 1}'s run formatting differs between the rebuild and the edited DOCX`;
