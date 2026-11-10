@@ -1086,6 +1086,8 @@ written. Make these edits in the source by hand:
 
 When the paragraph between two lists of one kind is deleted, pull keeps them
 two lists by giving the second another delimiter (`*` for `-`, `)` for `.`).
+This holds when either list, or both, is wholly retyped in the same edit: the
+retyped items carry their list's Word numbering, which places them.
 
 `pull` compares the body, headers, footers, footnotes, every style the build
 defines, numbering, tables, sections and page setup, the layout settings and

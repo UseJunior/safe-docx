@@ -849,6 +849,12 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '- Apple\n\n* Entirely fresh sentence.\n\nBody.\n'],
         ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Banana')), '1. Apple\n\n1) Entirely fresh sentence.\n\nBody.\n'],
         ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Banana', 'Fresh one.'), once2('Cherry', 'Fresh two.')), '- Apple\n\n* Fresh one.\n* Fresh two.\n\nBody.\n'],
+        // The first list's (or both lists') every item retyped: the replacement follows the deleted bridge, and still keeps apart.
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Apple')), '- Entirely fresh sentence.\n\n* Banana\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(dropParagraph('Bridge.'), retype('Apple')), '1. Entirely fresh sentence.\n\n1) Banana\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Apple', 'Fresh zero.'), once2('Banana', 'Fresh one.')), '- Fresh zero.\n\n* Fresh one.\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Apple', 'Fresh zero.'), once2('Banana', 'Fresh one.')), '1. Fresh zero.\n\n1) Fresh one.\n\nBody.\n'],
+        ['- Apple\n- Avocado\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Apple', 'Fresh zero.'), once2('Avocado', 'Fresh two.'), once2('Banana', 'Fresh one.')), '- Fresh zero.\n- Fresh two.\n\n* Fresh one.\n* Cherry\n\nBody.\n'],
       ] as const) {
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });

@@ -1020,6 +1020,24 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     byEntry.set(entry, [...(byEntry.get(entry) ?? []), index]);
   }
   const entryPlans = new Map<number, Plan>();
+  const replacedLists = new Set<MarkdocNode>();
+  let lastBuilt = -1;
+  /**
+   * An added numbered paragraph that pairing places after a stretch of deleted paragraphs (a list retyped together with
+   * the bridge after it, and perhaps the list after that) belongs to the deleted list item in that stretch that carries
+   * its numbering instance, when the next list does not: that item, or undefined to place it after the paragraph before.
+   */
+  const numberingOf = (properties: string) => /(?:^|;)num=([^/;]*)\//u.exec(properties)?.[1];
+  const listItemBehind = (after: number, added: number): number | undefined => {
+    const wanted = numberingOf(E[added]!.properties);
+    if (wanted === undefined) return undefined;
+    let back = after;
+    while (back >= 0 && deletedSet.has(back) && !(map.paragraphs[back]!.listItem && numberingOf(O[back]!.properties) === wanted)) back -= 1;
+    if (back === after || back < 0 || !deletedSet.has(back)) return undefined;
+    let ahead = after + 1;
+    while (ahead < O.length && deletedSet.has(ahead)) ahead += 1;
+    return ahead < O.length && map.paragraphs[ahead]!.listItem && numberingOf(O[ahead]!.properties) === wanted ? undefined : back;
+  };
   /** The heir-marker edits by offset, and the delimiter each list a deletion re-delimits takes (for added items too). */
   const heirMarkers = new Map<number, Splice>();
   const listDelimiters = new Map<MarkdocNode, string>();
@@ -1123,11 +1141,12 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   // (`-`, `*`, `+`; `.`, `)`), not the next one's where it can. Its marker edits go with the deletion that joined the run.
   {
     // A list whose items were all retyped stays a list: numbered paragraphs added after one of its deleted items.
-    const replacedLists = new Set<MarkdocNode>();
-    let lastBuilt = -1;
     for (const pair of pairing) {
       if (pair.o !== undefined) lastBuilt = pair.o;
-      else if (lastBuilt >= 0 && deletedSet.has(lastBuilt) && map.paragraphs[lastBuilt]!.listItem && E[pair.e!]!.numbered) replacedLists.add(map.paragraphs[lastBuilt]!.listItem!.list);
+      else if (lastBuilt >= 0 && E[pair.e!]!.numbered) {
+        const behind = listItemBehind(lastBuilt, pair.e!) ?? lastBuilt;
+        if (deletedSet.has(behind) && map.paragraphs[behind]!.listItem) replacedLists.add(map.paragraphs[behind]!.listItem!.list);
+      }
     }
     const entryGone = (entry: number) => {
       const node = map.ast.children[entry];
@@ -1188,12 +1207,14 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   for (const pair of pairing) {
     if (pair.o !== undefined) {
       lastO = pair.o;
-      const open = runs.at(-1);
-      if (open && open.next === undefined && open.after !== lastO) open.next = pair.o;
+      for (const open of runs) if (open.next === undefined && open.after !== lastO) open.next = pair.o;
       continue;
     }
     const open = runs.at(-1);
-    if (open && open.after === lastO && open.next === undefined) open.paragraphs.push(pair.e!);
+    // Numbered paragraphs of another numbering instance start a run of their own: they may replace another list.
+    const last = open?.paragraphs.at(-1);
+    const sameList = last === undefined || !E[pair.e!]!.numbered || !E[last]!.numbered || numberingOf(E[last]!.properties) === numberingOf(E[pair.e!]!.properties);
+    if (open && open.after === lastO && open.next === undefined && sameList) open.paragraphs.push(pair.e!);
     else runs.push({ after: lastO, next: undefined, paragraphs: [pair.e!] });
   }
   for (const run of runs) {
@@ -1227,14 +1248,18 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     const kind = blocks[0]!.kind;
     const sameBlock = (x: SourceParagraph | undefined, y: SourceParagraph | undefined) => x !== undefined && y !== undefined && x.entry === y.entry && x.entry !== -1;
     let splice: Splice | undefined;
-    if (kind === 'list' && (prev?.listItem || nextParagraph?.listItem)) {
-      const context = prev?.listItem ? prev : nextParagraph!;
+    // The list item behind a deleted bridge, when the added items carry its numbering.
+    const behindIndex = kind === 'list' ? listItemBehind(run.after, run.paragraphs[0]!) : undefined;
+    const listPrev = behindIndex === undefined ? prev : map.paragraphs[behindIndex];
+    const listAfter = behindIndex ?? run.after;
+    if (kind === 'list' && (listPrev?.listItem || nextParagraph?.listItem)) {
+      const context = listPrev?.listItem ? listPrev : nextParagraph!;
       let item = context.listItem!;
       // In place of an item that was deleted (an item retyped from scratch), where it started; else after it.
-      const replacing = context === prev && deletedSet.has(run.after);
-      let line = context === prev && !replacing ? context.ownLines?.[1] : context.ownLines?.[0];
+      const replacing = context === listPrev && deletedSet.has(listAfter);
+      let line = context === listPrev && !replacing ? context.ownLines?.[1] : context.ownLines?.[0];
       // Directly after the item's own text, not after the blank line that ends the list.
-      if (line !== undefined && context === prev && !replacing) {
+      if (line !== undefined && context === listPrev && !replacing) {
         while (line - 1 > context.ownLines![0] && source.slice(starts[line - 1]!, starts[line] ?? source.length).trim() === '') line -= 1;
       }
       if (line === undefined) {
@@ -1285,7 +1310,8 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     }
     for (const note of notes) diagnostics.push({ ...note, message: `paragraph added after paragraph ${run.after + 1}: ${note.message}`, line: report.afterLine || undefined });
     const texts = run.paragraphs.map((index) => E[index]!.text);
-    const after = run.after;
+    // The slot of the list item it replaces, when a deleted bridge or list lies between them.
+    const after = listAfter;
     plans.push({ changes: [report], splices: [splice], apply: (slots) => { (after < 0 ? slots.before : slots.items[after]!.after).push(...texts); }, keepsSkeleton: false, where: { line: report.afterLine } });
   }
 
