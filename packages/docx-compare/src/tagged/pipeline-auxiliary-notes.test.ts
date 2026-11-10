@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
-import { compareDocumentsAtomizer, footnoteDefinitionRequiresCollisionSafeFallback } from './pipeline.js';
+import { compareDocumentsAtomizer, noteDefinitionRequiresCollisionSafeFallback } from './pipeline.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
@@ -266,10 +266,10 @@ describe('pipeline auxiliary note publication', () => {
       `<w:footnote xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${content}</w:footnote>`,
       'application/xml',
     ).documentElement as unknown as Element;
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p>'))).toBe(true);
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(true);
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:drawing r:embed="rId8"/></w:p>'))).toBe(true);
-    expect(footnoteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:t>plain</w:t></w:r></w:p>'))).toBe(false);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p>'))).toBe(true);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(true);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:drawing r:embed="rId8"/></w:p>'))).toBe(true);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:t>plain</w:t></w:r></w:p>'))).toBe(false);
   });
 
   test('rsid-split two-run definitions do not duplicate retained text', async ({
