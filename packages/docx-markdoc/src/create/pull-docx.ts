@@ -258,10 +258,21 @@ function readBlocks(container: Element, out: PullParagraph[], inTableCell = fals
 }
 
 /** Counts of each named element under `root`, kept when non-zero. */
-/** A table's structure: its grid and, per row, each cell's span and merge, nested tables included. */
+/**
+ * A table's structure and layout: its properties (but the cell margins Word
+ * adds on save), its grid with the column widths, and per row its properties
+ * and each cell's properties (span, merge, width, borders, shading,
+ * alignment), nested tables included.
+ */
 function tableSignature(table: Element): string {
   const grid = child(table, 'tblGrid');
-  const columns = grid ? elementChildren(grid).filter((node) => isW(node, 'gridCol')).length : 0;
+  const columns = grid ? elementChildren(grid).filter((node) => isW(node, 'gridCol')).map((column) => attr(column, 'w') ?? '').join(',') : '';
+  const properties = (element: Element | undefined, skip: readonly string[] = []): string => (element
+    ? elementChildren(element).filter((node) => !skip.includes(node.localName) && !node.localName.endsWith('Change'))
+      .map((node) => `${node.localName}(${[attributeSignature(node), ...elementChildren(node).map((inner) => `${inner.localName}(${attributeSignature(inner)})`)].filter(Boolean).join(' ')})`).join(';')
+    : '');
+  // Word for Mac 16 writes w:tblCellMar on save of an unedited create table, and w:tblLook is display metadata: neither is an edit.
+  const tableProperties = properties(child(table, 'tblPr'), ['tblLook', 'tblCaption', 'tblDescription', 'tblCellMar']);
   const rows: string[] = [];
   const rowsOf = (container: Element): Element[] => elementChildren(container).flatMap((node: Element): Element[] => {
     if (node.namespaceURI !== W) return [];
@@ -275,12 +286,12 @@ function tableSignature(table: Element): string {
       const vMerge = child(tcPr, 'vMerge');
       const hMerge = child(tcPr, 'hMerge');
       const nested = elementChildren(cell).filter((node) => isW(node, 'tbl')).map(tableSignature);
-      return `${span ? attr(span, 'val') : '1'}${vMerge ? `v${attr(vMerge, 'val') ?? 'continue'}` : ''}${hMerge ? `h${attr(hMerge, 'val') ?? 'continue'}` : ''}${nested.length ? `[${nested.join(',')}]` : ''}`;
+      const rest = properties(tcPr, ['gridSpan', 'vMerge', 'hMerge']);
+      return `${span ? attr(span, 'val') : '1'}${vMerge ? `v${attr(vMerge, 'val') ?? 'continue'}` : ''}${hMerge ? `h${attr(hMerge, 'val') ?? 'continue'}` : ''}${rest ? `{${rest}}` : ''}${nested.length ? `[${nested.join(',')}]` : ''}`;
     });
-    const header = child(child(row, 'trPr'), 'tblHeader');
-    rows.push(`${header && on(header) ? 'H' : ''}${cells.join(' ')}`);
+    rows.push(`${properties(child(row, 'trPr'))}<${cells.join(' ')}>`);
   }
-  return `${columns}:${rows.join('/')}`;
+  return `${tableProperties}|${columns}|${rows.join('/')}`;
 }
 
 type NumberingLevel = { start: number; format: string; text: string; restart?: number; legal: boolean; shape: string };
@@ -301,7 +312,8 @@ function readNumbering(xml: string | null): Map<string, { abstract: string; leve
       text: value('lvlText') ?? '',
       ...(restart !== null ? { restart: Number(restart) } : {}),
       legal: on(child(lvl, 'isLgl')),
-      shape: `${value('lvlJc') ?? ''}|${value('suff') ?? 'tab'}|${ind ? attributeSignature(ind) : ''}`,
+      // The label's look: justification, suffix, the level's paragraph properties and its run formatting.
+      shape: `${value('lvlJc') ?? ''}|${value('suff') ?? 'tab'}|${ind ? attributeSignature(ind) : ''}|${paragraphPropertySignature(pPr)}|${child(lvl, 'rPr') ? runFormatSignature(wrapRunProperties(child(lvl, 'rPr')!)) : ''}`,
     };
   };
   const abstracts = new Map<string, Map<number, NumberingLevel>>();
@@ -420,10 +432,25 @@ function pageSetupSignature(sectPr: Element): string {
 }
 
 /** The run and paragraph properties of one style or the document defaults, as compared. */
-function styleSignature(rPr: Element | undefined, pPr: Element | undefined, basedOn?: string | null): string {
+function styleSignature(rPr: Element | undefined, pPr: Element | undefined, basedOn?: string | null, equivalent: readonly string[] = []): string {
   // runFormatSignature reads a run's rPr; wrap the style's rPr the same way.
   const runParts = rPr ? runFormatSignature(wrapRunProperties(rPr)) : '';
-  return [`basedOn=${basedOn ?? ''}`, `run(${runParts})`, `paragraph(${paragraphPropertySignature(pPr)})`].join(';');
+  const paragraph = paragraphPropertySignature(pPr).split(';').filter((part) => part && !equivalent.includes(part)).join(';');
+  return [`basedOn=${basedOn ?? ''}`, `run(${runParts})`, `paragraph(${paragraph})`].join(';');
+}
+
+/**
+ * Paragraph properties a style may gain or lose on a Word save without
+ * changing anything: `w:jc="left"` where nothing it inherits aligns
+ * otherwise, and the outline level a built-in `heading N` style has anyway.
+ */
+function equivalentStyleParts(style: Element, inheritedAlignment: string | undefined): string[] {
+  const parts: string[] = [];
+  if (inheritedAlignment === undefined || inheritedAlignment === 'left') parts.push('jc=left');
+  const name = child(style, 'name');
+  const heading = /^heading ([1-9])$/iu.exec(name ? attr(name, 'val') ?? '' : '');
+  if (heading) parts.push(`outlineLvl(val=${Number(heading[1]) - 1})`);
+  return parts;
 }
 
 /** A detached run holding `rPr`, so a style's run properties read like a run's. */
@@ -471,7 +498,8 @@ function readStyles(xml: string | null): { styles: Record<string, string>; style
     const id = attr(style, 'styleId') ?? '';
     if (!wanted.has(id)) continue;
     const basedOn = child(style, 'basedOn');
-    out[id] = styleSignature(child(style, 'rPr'), child(style, 'pPr'), basedOn ? attr(basedOn, 'val') : null);
+    const parent = basedOn ? attr(basedOn, 'val') : null;
+    out[id] = styleSignature(child(style, 'rPr'), child(style, 'pPr'), parent, equivalentStyleParts(style, parent ? styleAlignments[parent] : undefined));
   }
   return { styles: out, styleAlignments };
 }

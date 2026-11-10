@@ -1045,6 +1045,10 @@ How it works:
   builds and reads back as expected; then the whole pulled source must pass
   every `create` check and reproduce the edited body text, character
   formatting, headers and footers, list numbers and table structure.
+- What Word for Mac changes when it merely saves a create output is not an
+  edit: the outline level it states on the built-in heading styles, a left
+  alignment it drops as redundant, and the cell margins it adds to a table.
+  An unedited DOCX opened and saved in Word pulls as `no changes`.
 - Tracked changes are refused (`PULL_TRACKED_CHANGES`) wherever they are,
   headers, footers and notes included: accept or reject them in Word first,
   so the source records what the reviewer decided.

@@ -156,14 +156,19 @@ function wordDiff(before: string, after: string): { hunks: Hunk[]; equal: Array<
   return { hunks, equal };
 }
 
-/** The hunk without the characters its two sides share at either end, or undefined when nothing is shared. */
-function trimHunk(before: string, after: string, hunk: Hunk): Hunk | undefined {
+/**
+ * The hunk without the characters its two sides share at either end, with the
+ * same formatting, or undefined when nothing is shared. A character retyped
+ * with other formatting ("**bar**" to plain "baz") is changed, not kept.
+ */
+function trimHunk(before: PullParagraph, after: PullParagraph, hunk: Hunk): Hunk | undefined {
   let { oStart, oEnd, eStart, eEnd } = hunk;
-  while (oStart < oEnd && eStart < eEnd && before[oStart] === after[eStart]) {
+  const same = (o: number, e: number) => before.text[o] === after.text[e] && before.formats[o] === after.formats[e];
+  while (oStart < oEnd && eStart < eEnd && same(oStart, eStart)) {
     oStart += 1;
     eStart += 1;
   }
-  while (oStart < oEnd && eStart < eEnd && before[oEnd - 1] === after[eEnd - 1]) {
+  while (oStart < oEnd && eStart < eEnd && same(oEnd - 1, eEnd - 1)) {
     oEnd -= 1;
     eEnd -= 1;
   }
@@ -675,7 +680,7 @@ function planHunk(
   const units: Unit[] = [];
   const seen = new Set<number>();
   // The characters that really changed: markup is removed only around text inside them, never around text the edit keeps.
-  const tight = trimHunk(built.text, edited.text, hunk) ?? hunk;
+  const tight = trimHunk(built, edited, hunk) ?? hunk;
   for (const [index, piece] of touched.entries()) {
     const covered = chain(piece.holder).filter((holder) => holder.kind !== 'root' && holder.kind !== 'attribute' && a <= holder.start && holder.end <= b).at(-1);
     if (covered) {
@@ -947,7 +952,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       // ("Plain **bold**" to "Plai**ld**" deletes from each side): plan that narrower edit when the word one fails.
       const wordNotes: PullDiagnostic[] = [];
       let planned = planHunk(source, sp, before, after, hunk, wordNotes);
-      const narrow = trimHunk(before.text, after.text, hunk);
+      const narrow = trimHunk(before, after, hunk);
       // A word plan that removes markup is also retried narrowly: "foo{% literal %}bar" to "quxbar" edits "foo" only.
       const removes = !(planned instanceof PlanProblem) && planned.removesMarkup === true;
       if ((planned instanceof PlanProblem || wordNotes.length > 0 || removes) && narrow) {
@@ -1318,7 +1323,9 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       out.push({ code: 'PULL_NUMBERING_CHANGED', message: `paragraph ${index + 1} is numbered ${label(E[index]!.label)} in the edited DOCX and ${label(rebuiltDoc.paragraphs[index]?.label)} in the rebuild; pull does not write list numbering (start values, restarts, formats), so it is not carried` });
     }
     if (JSON.stringify(edited.tables) !== JSON.stringify(rebuiltDoc.tables)) {
-      out.push({ code: 'PULL_TABLE_STRUCTURE', message: `the table structure differs (${edited.tables.join('; ') || 'no tables'} in the edited DOCX, ${rebuiltDoc.tables.join('; ') || 'no tables'} in the rebuild); pull does not write table rows, merges or spans, so it is not carried` });
+      const table = Math.max(0, edited.tables.findIndex((signature, k) => signature !== rebuiltDoc.tables[k]));
+      const count = edited.tables.length === rebuiltDoc.tables.length ? '' : ` (${edited.tables.length} table(s) in the edited DOCX, ${rebuiltDoc.tables.length} in the rebuild)`;
+      out.push({ code: 'PULL_TABLE_STRUCTURE', message: `table ${table + 1}'s structure or layout differs between the edited DOCX and the rebuild${count}: merged or split cells, rows, column widths, borders or shading; pull does not write table layout, so it is not carried` });
     }
     return out;
   };

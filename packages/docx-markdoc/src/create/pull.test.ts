@@ -219,7 +219,24 @@ const MUTATIONS: Mutation[] = [
     expect: [{ kind: 'running-text', line: lineOf(LETTER, '{% section') }],
     diagnostics: [],
   },
+  {
+    // What Word for Mac 16 does to an unedited create output on save: it states the built-in heading outline levels and drops a redundant left alignment.
+    name: 'a Word save restating style defaults',
+    surgery: {
+      parts: {
+        'word/styles.xml': (xml) => once(once(xml, '<w:pPr><w:keepNext/><w:spacing w:before="200"/></w:pPr>', '<w:pPr><w:keepNext/><w:spacing w:before="200"/><w:outlineLvl w:val="0"/></w:pPr>'), '<w:spacing w:before="600"/><w:jc w:val="left"/></w:pPr>', '<w:spacing w:before="600"/></w:pPr>'),
+      },
+    },
+    expect: [],
+    diagnostics: [],
+  },
   // Edits the creation grammar cannot express, or pull cannot place: each must be diagnosed.
+  {
+    name: 'a style re-aligned',
+    surgery: { parts: { 'word/styles.xml': (xml) => once(xml, '<w:spacing w:before="600"/><w:jc w:val="left"/></w:pPr>', '<w:spacing w:before="600"/><w:jc w:val="center"/></w:pPr>') } },
+    expect: [],
+    diagnostics: ['PULL_STYLE_CHANGED'],
+  },
   {
     name: 'an edit inside a cross-reference result',
     surgery: { document: (xml) => once(xml, '<w:t xml:space="preserve">Scope</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>', '<w:t xml:space="preserve">Scoping</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') },
@@ -347,7 +364,11 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         const edited = await edit(base.docx, mutation.surgery);
         const result = await pullCreationEdits({ source: LETTER, base, edited });
         expect(await account(mutation, result, edited), mutation.name).toEqual([]);
-        if (mutation.diagnostics.length === 0) {
+        if (mutation.diagnostics.length === 0 && mutation.expect.length === 0) {
+          // Nothing to pull: no change, no diagnostic, nothing to write.
+          expect(result, mutation.name).toMatchObject({ changes: [], diagnostics: [], complete: true });
+          expect(result.pulledSource, mutation.name).toBeUndefined();
+        } else if (mutation.diagnostics.length === 0) {
           expect(result.complete, mutation.name).toBe(true);
           for (const kept of KEPT_MARKUP.filter((markup) => !(mutation.name.includes('list') && markup.startsWith('2.')))) expect(result.pulledSource, `${mutation.name} keeps ${kept}`).toContain(kept);
         } else {
@@ -569,6 +590,10 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       expect(codes(numberingAndWording)).toEqual(['PULL_NUMBERING_CHANGED']);
       expect(numberingAndWording.complete).toBe(false);
 
+      // A list label made red and larger: the numbers are the same, their look is not.
+      const redLabel: Surgery = { parts: { 'word/numbering.xml': (xml) => xml.replace(/(<w:lvl w:ilvl="0">(?:(?!<\/w:lvl>).)*?<\/w:pPr>)<\/w:lvl>/u, '$1<w:rPr><w:color w:val="FF0000"/><w:sz w:val="36"/></w:rPr></w:lvl>') } };
+      expect(codes(await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(redLabel, MUTATIONS[0]!.surgery)) }))).toEqual(['PULL_NUMBERING_CHANGED']);
+
       // An even-page header, plain and as a tracked insertion.
       const even = (text: string): Surgery => ({
         document: (xml) => xml.replace('<w:sectPr>', '<w:sectPr><w:headerReference w:type="even" r:id="rIdPullEven"/>'),
@@ -587,6 +612,13 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const merged = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => xml.replace('<w:tcPr>', '<w:tcPr><w:gridSpan w:val="2"/>') }) });
       expect(codes(merged)).toEqual(['PULL_TABLE_STRUCTURE']);
       expect(merged.complete).toBe(false);
+      // A column resized beside a wording edit: the wording is pulled, the width is diagnosed.
+      const widened = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => once(xml, '>Terms:<', '>New terms:<').replace('<w:gridCol w:w="4680"/>', '<w:gridCol w:w="5180"/>') }) });
+      expect(codes(widened)).toEqual(['PULL_TABLE_STRUCTURE']);
+      expect(widened.complete).toBe(false);
+      // The cell margins Word for Mac adds when it saves an unedited table are not an edit.
+      const wordSave = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => xml.replace('<w:tblLayout w:type="fixed"/>', '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>') }) });
+      expect(wordSave).toMatchObject({ changes: [], diagnostics: [], complete: true });
 
       // An edit beside a span keeps the span's markup.
       const literalSource = 'Keep foo{% literal %}bar{% /literal %} safe.\n';
@@ -594,6 +626,12 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const beside = await pullCreationEdits({ source: literalSource, base: literalBase, edited: await edit(literalBase.docx, { document: (xml) => once(xml, 'Keep foobar safe.', 'Keep quxbar safe.') }) });
       expect(beside.complete).toBe(true);
       expect(beside.pulledSource).toBe('Keep qux{% literal %}bar{% /literal %} safe.\n');
+      // Typing plain text over a whole bold span replaces it, even where the new text shares letters with the old.
+      const boldSource = 'Keep **bar** safe.\n';
+      const boldBase = await build(boldSource);
+      const typedOver = await pullCreationEdits({ source: boldSource, base: boldBase, edited: await edit(boldBase.docx, { document: (xml) => once(xml, '<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">bar</w:t></w:r>', '<w:r><w:t xml:space="preserve">baz</w:t></w:r>') }) });
+      expect(typedOver).toMatchObject({ complete: true, diagnostics: [] });
+      expect(typedOver.pulledSource).toBe('Keep baz safe.\n');
     },
     60_000,
   );
