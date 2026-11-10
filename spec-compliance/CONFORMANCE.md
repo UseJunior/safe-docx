@@ -493,8 +493,11 @@ definition and is not the displayed number. When a comparison edits an
 endnote body beside unchanged endnotes, docx-compare keeps one stable
 anchor per aligned position and tracks the definition change inside the
 endnote, so every surviving reference still names the endnote whose body
-belongs to it after Accept and after Reject. Footnote and endnote
-identifiers are separate spaces and are reconciled independently.
+belongs to it after Accept and after Reject. A paragraph holding several
+anchors pairs them by position within the paragraph, whether the revised
+identifiers were renumbered to avoid a collision or were already distinct.
+Footnote and endnote identifiers are separate spaces and are reconciled
+independently.
 
 This claim covers that comparison reconciliation; it is not a claim about
 endnote numbering formats, placement or `w:customMarkFollows` display.

@@ -116,9 +116,11 @@ export function buildParagraphIndex(paragraph: Element, options: BuildParagraphI
     return fieldStack.at(-1)!.id;
   };
 
-  const visit = (element: Element, containingRun: IndexedParagraphNode | null): void => {
+  const visit = (element: Element, containingRun: IndexedParagraphNode | null, inDeletion = false): void => {
     if (element !== paragraph && element.namespaceURI === OOXML.W_NS && element.localName === W.p) return;
-    if (options.skipTrackedDeletions && element.namespaceURI === OOXML.W_NS && element.localName === W.del) return;
+    const isDeletionWrapper = element.namespaceURI === OOXML.W_NS && (element.localName === W.del || element.localName === W.moveFrom);
+    if (options.skipTrackedDeletions && isDeletionWrapper) return;
+    const nextInDeletion = inDeletion || isDeletionWrapper;
     const isRun = element.namespaceURI === OOXML.W_NS && element.localName === W.r;
     let activeRun = containingRun;
     if (isRun) {
@@ -179,7 +181,11 @@ export function buildParagraphIndex(paragraph: Element, options: BuildParagraphI
         const instructionFrame = [...fieldStack].reverse().find((frame) => frame.phase === 'instruction');
         if (instructionFrame && (element.localName === W.instrText || element.localName === 'delInstrText')) {
           instructionFrame.instruction += element.textContent ?? '';
-        } else if (activeRun && !instructionFrame && (node.kind === 'text' || node.kind === 'tab' || node.kind === 'break')) {
+        } else if (
+          activeRun &&
+          !instructionFrame &&
+          (node.kind === 'text' || (!nextInDeletion && (node.kind === 'tab' || node.kind === 'break')))
+        ) {
           const text = node.kind === 'text' ? (element.textContent ?? '') : node.kind === 'tab' ? '\t' : '\n';
           const resultId = currentResultId();
           node.visibleText = text;
@@ -200,7 +206,7 @@ export function buildParagraphIndex(paragraph: Element, options: BuildParagraphI
 
     if (!isRun || activeRun) {
       for (const child of Array.from(element.childNodes)) {
-        if (child.nodeType === 1) visit(child as Element, activeRun);
+        if (child.nodeType === 1) visit(child as Element, activeRun, nextInDeletion);
       }
     }
   };

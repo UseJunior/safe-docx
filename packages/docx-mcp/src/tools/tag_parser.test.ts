@@ -7,8 +7,15 @@ import {
   hasHeaderTags,
   hasInlineStyleTags,
   stripAllInlineTags,
+  findUnknownMarkupTags,
+  collectUnknownMarkupTagWarnings,
+  UNKNOWN_MARKUP_TAG_WARNING_CODE,
   type ParsedReplacementSegment,
 } from './tag_parser.js';
+import { openSession, assertSuccess, registerCleanup } from '../testing/session-test-utils.js';
+import { replaceText } from './replace_text.js';
+import { insertParagraph } from './insert_paragraph.js';
+import { batchEdit } from './batch_edit.js';
 
 const test = testAllure.epic('Document Editing').withLabels({ feature: 'Tag Parser' });
 
@@ -587,6 +594,114 @@ describe('tag_parser', () => {
 
     test('returns plain text unchanged', () => {
       expect(stripAllInlineTags('no tags here')).toBe('no tags here');
+    });
+  });
+
+  // ─── Unknown inline tag detection (#1221) ──────────────────────
+
+  describe('findUnknownMarkupTags and tool warnings (#1221)', () => {
+    registerCleanup();
+
+    test('detects matched unknown open/close pairs and self-closing tags while ignoring known tags and lone placeholders', () => {
+      expect(findUnknownMarkupTags('<ref to="_bk_123" form="full"/>')).toEqual(['ref']);
+      expect(findUnknownMarkupTags('<bold>important</bold>')).toEqual(['bold']);
+      expect(findUnknownMarkupTags('<strike>gone</strike>')).toEqual(['strike']);
+      expect(findUnknownMarkupTags('<b><strike>gone</strike></b> and <bold>text</bold>')).toEqual(['strike', 'bold']);
+      expect(findUnknownMarkupTags('<Company Name> and <Buyer> where x < 10')).toEqual([]);
+      expect(findUnknownMarkupTags('<b>bold</b> <i>italic</i> <font face="<Fallback>">text</font>')).toEqual([]);
+    });
+
+    test('replace_text, insert_paragraph, and batch_edit return warnings naming each unknown tag written as literal text', async ({
+      given,
+      when,
+      then,
+    }: AllureBddContext) => {
+      let opened: Awaited<ReturnType<typeof openSession>>;
+
+      await given('a document with one paragraph', async () => {
+        opened = await openSession(['The first thing.']);
+      });
+
+      await when('replace_text, insert_paragraph, and batch_edit write unknown inline tags and placeholders', async () => {
+        const id = opened.firstParaId;
+
+        const rSelfClosing = await replaceText(opened.mgr, {
+          file_path: opened.inputPath,
+          target_paragraph_id: id,
+          old_string: 'thing.',
+          new_string: 'thing, <ref to="_bk_123" form="full"/>.',
+          instruction: 'test self-closing unknown tag',
+        });
+        assertSuccess(rSelfClosing, 'replace_text self-closing');
+        expect(rSelfClosing.after_text).toBe('The first thing, <ref to="_bk_123" form="full"/>.');
+        expect(rSelfClosing.warnings).toEqual(collectUnknownMarkupTagWarnings('<ref to="_bk_123" form="full"/>'));
+        expect((rSelfClosing.warnings as string[])[0]).toContain(UNKNOWN_MARKUP_TAG_WARNING_CODE);
+        expect((rSelfClosing.warnings as string[])[0]).toContain('<ref>');
+
+        await replaceText(opened.mgr, {
+          file_path: opened.inputPath,
+          target_paragraph_id: id,
+          old_string: rSelfClosing.after_text as string,
+          new_string: 'The first thing.',
+          instruction: 'reset',
+        });
+
+        const rPlaceholder = await replaceText(opened.mgr, {
+          file_path: opened.inputPath,
+          target_paragraph_id: id,
+          old_string: 'thing.',
+          new_string: 'thing for <Company Name> when x < 10.',
+          instruction: 'test placeholder',
+        });
+        assertSuccess(rPlaceholder, 'replace_text placeholder');
+        expect(rPlaceholder.warnings).toBeUndefined();
+
+        await replaceText(opened.mgr, {
+          file_path: opened.inputPath,
+          target_paragraph_id: id,
+          old_string: rPlaceholder.after_text as string,
+          new_string: 'The first thing.',
+          instruction: 'reset',
+        });
+
+        const ins = await insertParagraph(opened.mgr, {
+          file_path: opened.inputPath,
+          positional_anchor_node_id: id,
+          position: 'AFTER',
+          new_string: 'See <ref to="_bk_123"/> and <bold>important</bold>.',
+          instruction: 'test insert_paragraph unknown tags',
+        });
+        assertSuccess(ins, 'insert_paragraph');
+        expect(ins.warnings).toEqual([
+          ...collectUnknownMarkupTagWarnings('<ref to="_bk_123"/>'),
+          ...collectUnknownMarkupTagWarnings('<bold>important</bold>'),
+        ]);
+
+        const batch = await batchEdit(opened.mgr, {
+          file_path: opened.inputPath,
+          steps: [
+            {
+              step_id: 'step-strike',
+              operation: 'replace_text',
+              target_paragraph_id: id,
+              old_string: 'thing.',
+              new_string: '<strike>gone</strike>.',
+              instruction: 'batch unknown tag',
+            },
+          ],
+        });
+        assertSuccess(batch, 'batch_edit');
+        expect(batch.warnings).toEqual([
+          {
+            step_id: 'step-strike',
+            warning: collectUnknownMarkupTagWarnings('<strike>gone</strike>')[0]!,
+          },
+        ]);
+      });
+
+      await then('all unknown tag warnings were surfaced without blocking literal text edits', () => {
+        expect(opened).toBeDefined();
+      });
     });
   });
 });

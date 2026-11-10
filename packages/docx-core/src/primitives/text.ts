@@ -27,7 +27,7 @@ export type TextRun = {
  * @see #651
  */
 export function getParagraphRuns(p: Element): TextRun[] {
-  return buildParagraphIndex(p).runs
+  return buildParagraphIndex(p, { skipTrackedDeletions: true }).runs
     .filter((run) => run.visibleText.length > 0)
     .map((run) => ({
       r: run.element,

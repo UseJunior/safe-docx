@@ -314,6 +314,7 @@ function getFootnoteMarkersForParagraph(
   let fieldState = 0; // 0=outside, 1=in_code, 2=in_result
 
   for (const r of rElems) {
+    if (isInsideRemovedRevisionWrapper(r, p)) continue;
     let runVisibleLen = 0;
     let hasFootnoteRef = false;
     let footnoteId = -1;

@@ -660,6 +660,16 @@ export async function batchEdit(
     allWarnings.push(...attributeConventionWarnings(steps, revisionPreflight.conventionWarnings));
 
     const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
+    for (const stepResult of result.step_results) {
+      const stepWarnings = stepResult.result?.warnings;
+      if (Array.isArray(stepWarnings)) {
+        for (const w of stepWarnings) {
+          if (typeof w === 'string') {
+            allWarnings.push({ step_id: stepResult.step_id, warning: w });
+          }
+        }
+      }
+    }
     if (result.failed_step_id !== undefined) {
       const failedStepResult = result.step_results.find(
         (stepResult) => stepResult.step_id === result.failed_step_id && !stepResult.success,
