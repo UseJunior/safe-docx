@@ -1,0 +1,46 @@
+## ADDED Requirements
+
+### Requirement: Pull Word edits on a create output back into its creation source
+
+`docx-markdoc pull <edited.docx> <document.mdoc>` SHALL compare an edited
+`create` output with the build its certificate records, regenerated from the
+certified source, and report each body change against source lines and each
+header or footer change per section. With `--apply` it SHALL write the
+changes it can express into a new `.mdoc` that keeps the creation markup of
+unchanged text, and SHALL keep a change only when the source still builds
+and reads back as the edited DOCX. Every edit it cannot express SHALL be
+reported as a typed diagnostic, and the paragraph it touches SHALL stay as
+it was. It SHALL refuse tracked changes and a source or build the
+certificate does not record. It SHALL exit 0 for no changes, 2 for reported
+changes or diagnostics and 1 for an error. `create --replace` SHALL accept
+the edited DOCX in place of the certified one only when a complete pull's
+record binds that DOCX to the source being built.
+
+#### Scenario: [SDX-MDOC-PULL-01] each known edit is reported at its source line and nothing is dropped silently
+- **GIVEN** a created letter edited by XML surgery: a wording change, a defined-term change, a deleted heading, an added paragraph, a filled-in fill, edits inside bold and underlined text, list items edited, deleted and added, a signer name, an added header and `Page X of Y` footer, and a second section's footer
+- **WHEN** each is pulled, and all four of the issue's edits at once
+- **THEN** each change SHALL be reported with its kind and source line, the pull SHALL be complete, and the pulled source SHALL keep the frontmatter, signer, fill, cross-reference, underline, bold and section markup and rebuild to the edited body text, headers and footers
+- **AND** an edit inside a cross-reference, changed margins, a word made bold, a re-aligned paragraph, a comment, a two-line header, a tab and an emptied fill-in SHALL each raise its diagnostic and leave the pull incomplete
+- **AND** the harness SHALL fail when a reported change, its line or a diagnostic is removed, or when a pull claims completeness for a source that does not rebuild to the edited DOCX
+
+#### Scenario: [SDX-MDOC-PULL-02] pull --apply writes a new .mdoc that keeps the creation markup and rebuilds to the edited body
+- **GIVEN** a created letter whose DOCX was edited in place
+- **WHEN** `pull` runs without and then with `--apply`
+- **THEN** it SHALL print each change with its source line and exit 2, write nothing without `--apply`, write `<stem>.pulled.mdoc` and the pull record with it, leave the source unchanged, and refuse to overwrite an existing output
+- **AND** the pulled source SHALL rebuild to the edited body text, and an unedited DOCX SHALL report no changes and exit 0
+
+#### Scenario: [SDX-MDOC-PULL-03] an edit across markup is split or diagnosed, never written into the markup
+- **GIVEN** edits around a bold span and a fill-in: a deletion across the span's boundary, an insertion whose formatting changes there, a fill-in typed over entirely, the span deleted entirely, a fill-in emptied inside its brackets, and new text holding Markdown syntax
+- **WHEN** each is pulled
+- **THEN** the boundary edits SHALL be split between the two sides, a container the edit covers SHALL be replaced, the new text SHALL be escaped, and the emptied fill-in SHALL raise `PULL_EDIT_CROSSES_MARKUP` with the paragraph left unwritten
+
+#### Scenario: [SDX-MDOC-PULL-04] tracked changes and a mismatched certificate or source are refused with exit code 1
+- **GIVEN** an edited DOCX holding a tracked insertion, a source other than the certified one, a DOCX without a certificate beside it, and `--output` without `--apply`
+- **WHEN** `pull` runs
+- **THEN** it SHALL exit 1 with `PULL_TRACKED_CHANGES`, `PULL_SOURCE_CHANGED`, `PULL_CERTIFICATE_MISSING` or a usage error and write nothing, and `--certificate` SHALL locate a certificate kept elsewhere
+
+#### Scenario: [SDX-MDOC-PULL-05] create --replace accepts the edited DOCX only after a complete pull of exactly the source it builds
+- **GIVEN** a created DOCX edited in place and pulled with `--apply`
+- **WHEN** `create --replace` builds the original source, the pulled source with a later edit, and exactly the pulled source
+- **THEN** the first two SHALL be refused with `CREATION_OUTPUT_EDITED`, and the last SHALL pass every check, keep the edited bytes, note the replacement, reproduce the edited body text and remove the record
+- **AND** an incomplete pull SHALL write no record, so `create --replace` still refuses

@@ -35,7 +35,7 @@ const test = testAllure.epic('DOCX Markdoc').withLabels({
 });
 
 const CLI_ENTRY = path.resolve(import.meta.dirname, 'cli.ts');
-const SUBCOMMANDS = ['import', 'validate', 'inspect', 'compile', 'verify', 'compile-greenfield', 'create', 'export-edits', 'comments-to-footnotes'];
+const SUBCOMMANDS = ['import', 'validate', 'inspect', 'compile', 'verify', 'compile-greenfield', 'create', 'pull', 'export-edits', 'comments-to-footnotes'];
 /** A stack frame line, as Node prints it. */
 const STACK_FRAME = /^\s+at /mu;
 

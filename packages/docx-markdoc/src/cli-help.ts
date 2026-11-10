@@ -165,6 +165,27 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     ],
     more: creationGrammarHelp,
   },
+  pull: {
+    synopsis: ['pull <edited.docx> <document.mdoc> [--apply [--output new.mdoc]] [--certificate stem.verification.json] [--style-profile profile.json] [--json]'],
+    summary: 'Bring Word edits on a create output back into its creation .mdoc. Compares the edited DOCX with the build its certificate records and reports each change against source lines; with --apply, writes the changes into a new .mdoc that keeps the creation markup. The inputs are only read.',
+    arguments: [
+      ['<edited.docx>', 'A create output edited in Word (or elsewhere). Tracked changes must be accepted or rejected first.'],
+      ['<document.mdoc>', 'The creation source the last build was made from; its SHA-256 must match the certificate.'],
+    ],
+    options: [
+      ['--apply', 'Write the changes pull can express into a new .mdoc; the original is never overwritten.'],
+      ['--output <new.mdoc>', 'With --apply: where to write it (default <stem>.pulled.mdoc beside the source); must be a new path.'],
+      ['--certificate <path>', 'The build\'s <stem>.verification.json (default: beside the edited DOCX, named after it).'],
+      ['--style-profile <profile.json>', 'The style profile the build used, when the certificate records one; default the certificate\'s own profile.'],
+      ['--json', 'Print the report as JSON instead of text.'],
+      HELP_OPTION,
+    ],
+    outputs: [
+      'stdout: one line per change (changed, deleted or added paragraph with its source line, header or footer per section) and one DIAGNOSTIC <code> line per edit create cannot express or pull could not place.',
+      'With --apply: the pulled .mdoc. When it reproduces the edited DOCX in full (no diagnostic), also <stem>.pull.json beside the certificate, which lets create --replace replace that edited DOCX with the build of exactly this pulled source.',
+      'Exit code 0: no changes; 2: changes or diagnostics reported; 1: an error (an argument problem, a missing or mismatched certificate, tracked changes).',
+    ],
+  },
   'export-edits': {
     synopsis: ['export-edits <document.mdoc> <output.json>'],
     summary: 'Export the before/after pairs of the edits in a brownfield Markdoc file.',

@@ -9,6 +9,11 @@ import { createDocumentFromMarkdoc, type CreatedDocument, type CrossReferenceChe
 import { lowerCreationMarkdoc, NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN, type CreationLowering } from './lower.js';
 import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
 
+/** The pull record path for a certificate: `<stem>.pull.json` beside `<stem>.verification.json`. */
+export function pullRecordPath(certificatePath: string): string {
+  return path.join(path.dirname(certificatePath), `${path.basename(certificatePath).replace(/\.verification\.json$/u, '')}.pull.json`);
+}
+
 export type CreateCliArgs = {
   markdocPath: string;
   outputDir: string;
@@ -26,8 +31,12 @@ export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts' | 'layoutPage
 
 export type CreateCliResult = {
   outputs: { docx: string; text: string; certificate: string; pdf?: string };
-  /** Set when `--dangerously-overwrite-edited-docx` displaced a DOCX that was not the last certified build. */
-  overwritten?: { docx: string; sha256: string; reason: string };
+  /**
+   * Set when the build displaced a DOCX that was not the last certified build:
+   * under `--dangerously-overwrite-edited-docx`, or (`pulled`) the edited DOCX
+   * a complete `pull --apply` reconciled into the source being built.
+   */
+  overwritten?: { docx: string; sha256: string; reason: string; pulled?: true };
   created: CreatedDocument;
   pdf: RecordedPdfVerdict | { status: 'skipped' };
   summary: string;
@@ -181,7 +190,28 @@ async function certifiedDocxFingerprint(certificatePath: string): Promise<DocxFi
  * aside: unless `force`, anything but the certified bytes is refused; with
  * `force`, anything but the certified bytes is kept.
  */
-type DocxGuard = { target: string; certified: string | null; force: boolean; displacedSha256?: string };
+type DocxGuard = { target: string; certified: string | null; force: boolean; displacedSha256?: string; pulled?: string };
+
+/**
+ * The edited DOCX a complete `pull --apply` reconciled, when its record
+ * (`<stem>.pull.json`) binds the DOCX on disk, the build the certificate
+ * records and the source being built: `--replace` may then replace it. The
+ * record proves the source reproduces that DOCX's body and running text, so
+ * nothing in it is lost; its bytes are still kept.
+ */
+async function pulledDocxSha256(recordPath: string, docxSha256: string, certifiedSha256: string, sourceSha256: string): Promise<string | undefined> {
+  if ((await existingKind(recordPath)) !== 'file') return undefined;
+  let record: unknown;
+  try {
+    record = JSON.parse(await readFile(recordPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
+  const { kind, complete, editedDocxSha256, baseDocxSha256, pulledSourceSha256 } = (record ?? {}) as Record<string, unknown>;
+  return kind === 'markdoc-pull' && complete === true && editedDocxSha256 === docxSha256 && baseDocxSha256 === certifiedSha256 && pulledSourceSha256 === sourceSha256
+    ? docxSha256
+    : undefined;
+}
 
 function editedDocxError(target: string, reason: string): DocxMarkdocError {
   return new DocxMarkdocError(
@@ -246,7 +276,7 @@ async function publish(
         // Check the bytes actually moved aside, so an edit made after the
         // preflight check is caught too; a failure here restores everything.
         guard.displacedSha256 = await sha256File(backup);
-        if (!guard.force && guard.displacedSha256 !== guard.certified) {
+        if (!guard.force && guard.displacedSha256 !== guard.certified && guard.displacedSha256 !== guard.pulled) {
           throw editedDocxError(target, 'it changed or appeared during the build and is not the DOCX the last build certified');
         }
       }
@@ -537,16 +567,22 @@ async function createLocked(
   // --replace rebuilds only over the DOCX the last build certified. A DOCX with
   // no usable certificate, or whose bytes differ from it, may hold edits.
   const fingerprint = await certifiedDocxFingerprint(outputs.certificate);
+  const source = await readFile(options.markdocPath, 'utf8');
   let docxReason: string | undefined;
+  let pulled: string | undefined;
   if ((await existingKind(outputs.docx)) === 'file') {
+    const current = await sha256File(outputs.docx);
     if (fingerprint.sha256 === null) docxReason = `${fingerprint.reason}, so it cannot be shown to be unedited`;
-    else if (fingerprint.sha256 !== (await sha256File(outputs.docx))) docxReason = 'its SHA-256 differs from the one recorded by the last build';
-    if (docxReason && !options.overwriteEditedDocx) throw editedDocxError(outputs.docx, docxReason);
+    else if (fingerprint.sha256 !== current) {
+      docxReason = 'its SHA-256 differs from the one recorded by the last build';
+      pulled = await pulledDocxSha256(pullRecordPath(outputs.certificate), current, fingerprint.sha256, createHash('sha256').update(source).digest('hex'));
+      if (pulled) docxReason = 'it is the edited DOCX a complete pull reconciled into this source';
+    }
+    if (docxReason && !pulled && !options.overwriteEditedDocx) throw editedDocxError(outputs.docx, docxReason);
   }
-  const guard: DocxGuard = { target: outputs.docx, certified: fingerprint.sha256, force: options.overwriteEditedDocx };
+  const guard: DocxGuard = { target: outputs.docx, certified: fingerprint.sha256, force: options.overwriteEditedDocx, ...(pulled ? { pulled } : {}) };
 
   const { profile, profileSource } = await readCreationProfile(options.profilePath);
-  const source = await readFile(options.markdocPath, 'utf8');
   const created = await createDocumentFromMarkdoc(source, {
     ...(profile === undefined ? {} : { profile }),
     ...(profileSource === undefined ? {} : { profileSource }),
@@ -614,7 +650,14 @@ async function createLocked(
           { kept: path.join(backupDir, path.basename(outputs.docx)) },
         );
       }
-      overwritten = { docx: kept, sha256: guard.displacedSha256, reason: docxReason ?? 'it changed during the build' };
+      overwritten = {
+        docx: kept,
+        sha256: guard.displacedSha256,
+        reason: guard.displacedSha256 === guard.pulled ? 'it is the edited DOCX a complete pull reconciled into this source' : docxReason ?? 'it changed during the build',
+        ...(guard.displacedSha256 === guard.pulled ? { pulled: true as const } : {}),
+      };
+      // The record has done its job: the new certificate now describes the DOCX.
+      if (overwritten.pulled) await rm(pullRecordPath(outputs.certificate), { force: true }).catch(() => undefined);
     }
     const { checks } = created.certificate;
     const summary = [
@@ -630,7 +673,8 @@ async function createLocked(
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
       pdf.status === 'skipped' ? 'pdf skipped' : `pdf ${pdf.status}${'pageCount' in pdf && pdf.pageCount ? ` (${pdf.pageCount} pages)` : ''}${pdf.status === 'not_run' ? ` (${pdf.reason})` : ''}${'words' in pdf && pdf.words ? `; pdf words ok (${pdf.words.expectedWords} source words)` : ''}`,
-      ...(overwritten ? [`WARNING: overwrote an edited ${path.basename(outputs.docx)} (${overwritten.reason}); its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
+      ...(overwritten?.pulled ? [`replaced the edited ${path.basename(outputs.docx)} that pull reconciled into this source; its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
+      ...(overwritten && !overwritten.pulled ? [`WARNING: overwrote an edited ${path.basename(outputs.docx)} (${overwritten.reason}); its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
     ].join('; ');
     return {
       outputs: { docx: outputs.docx, text: outputs.text, certificate: outputs.certificate, ...(produced.has(outputs.pdf) ? { pdf: outputs.pdf } : {}) },

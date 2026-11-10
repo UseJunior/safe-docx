@@ -54,6 +54,8 @@ function elementChildren(node: Node): Element[] {
  * footer projection does not depend on the page a reader rendered. A REF
  * field (a cross-reference) reads as its cached result: the number generation
  * computed for its target, which the projection predicts independently.
+ * `onRunText` is told the run each piece of text came from (a field's piece
+ * comes with the run that ends it), so a caller can read its formatting.
  */
 export function paragraphReadbackText(
   paragraph: Element,
@@ -61,9 +63,17 @@ export function paragraphReadbackText(
   onCrossReference?: (offset: number, text: string, instruction: string) => void,
   onBookmark?: (name: string, id: string, offset: number) => void,
   onBookmarkEnd?: (id: string, offset: number) => void,
+  onRunText?: (start: number, end: number, run: Element | null) => void,
 ): string {
   let text = '';
   let field: { instruction: string; inResult: boolean; result: string } | null = null;
+  let run: Element | null = null;
+  /** Append read-back text, telling `onRunText` which run (or field) it came from. */
+  const append = (value: string, from: Element | null = run): void => {
+    if (!value) return;
+    onRunText?.(text.length, text.length + value.length, from);
+    text += value;
+  };
   const visit = (node: Element): void => {
     for (const child of elementChildren(node)) {
       if (child.namespaceURI !== W) continue;
@@ -78,23 +88,36 @@ export function paragraphReadbackText(
           else if (type === 'end' && field) {
             const name = field.instruction.trim().split(/\s+/)[0] ?? '';
             if (name === 'REF') onCrossReference?.(text.length, field.result, field.instruction);
-            text += name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? field.result : `<${name}>`;
+            append(name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? field.result : `<${name}>`);
             field = null;
           }
+          break;
+        }
+        case 'fldSimple': {
+          // A simple field (Word writes some this way): its instruction is an
+          // attribute and its cached result the runs inside. It reads like
+          // the complex form; create never writes one.
+          if (field) break;
+          const instruction = child.getAttributeNS(W, 'instr') || child.getAttribute('w:instr') || '';
+          const name = instruction.trim().split(/\s+/)[0] ?? '';
+          const result = Array.from(child.getElementsByTagNameNS(W, 't')).map((t) => t.textContent ?? '').join('');
+          const firstRun = Array.from(child.getElementsByTagNameNS(W, 'r'))[0] ?? null;
+          if (name === 'REF') onCrossReference?.(text.length, result, instruction);
+          append(name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? result : `<${name}>`, firstRun);
           break;
         }
         case 'instrText':
           if (field) field.instruction += child.textContent ?? '';
           break;
         case 't':
-          if (!field) text += child.textContent ?? '';
+          if (!field) append(child.textContent ?? '');
           else if (field.inResult) field.result += child.textContent ?? '';
           break;
         case 'tab':
-          if (!field) text += '\t';
+          if (!field) append('\t');
           break;
         case 'br':
-          if (!field) text += '\n';
+          if (!field) append('\n');
           break;
         case 'bookmarkStart':
           onBookmark?.(child.getAttributeNS(W, 'name') || child.getAttribute('w:name') || '', child.getAttributeNS(W, 'id') || child.getAttribute('w:id') || '', text.length);
@@ -105,6 +128,13 @@ export function paragraphReadbackText(
         case 'footnoteReference':
           onFootnoteReference?.(text.length, child.getAttributeNS(W, 'id') || child.getAttribute('w:id') || '');
           break;
+        case 'r': {
+          const outer = run;
+          run = child;
+          visit(child);
+          run = outer;
+          break;
+        }
         default:
           visit(child);
       }
