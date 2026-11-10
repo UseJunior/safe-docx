@@ -405,6 +405,38 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-11-7",
+      "title": "w:endnoteReference identifier binding",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.7"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference",
+      "claimRationale": "Part 1 §17.11.7 defines `w:endnoteReference` as an automatically numbered\nrun that references one endnote, and its `w:id` attribute names \"the\nfootnote or endnote which is being referenced\"; an ID absent from the\nendnotes part makes the document non-conformant. Like\n`w:footnoteReference` (§17.11.14), the identifier binds an anchor to its\ndefinition and is not the displayed number. When a comparison edits an\nendnote body beside unchanged endnotes, docx-compare keeps one stable\nanchor per aligned position and tracks the definition change inside the\nendnote, so every surviving reference still names the endnote whose body\nbelongs to it after Accept and after Reject. Footnote and endnote\nidentifiers are separate spaces and are reconciled independently.\n\nThis claim covers that comparison reconciliation; it is not a claim about\nendnote numbering formats, placement or `w:customMarkFollows` display.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/ancillaryNoteComparison.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/inlineFootnoteAnchorPair.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-11-9",
       "title": "w:footnote special footnote list in document settings",
       "classification": "targeted",
@@ -4612,6 +4644,20 @@
           "contextPath": "schema/type:CT_Styles/sequence/element:docDefaults",
           "declaredType": "CT_DocDefaults",
           "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "endnoteReference",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:endnoteReference",
+          "declaredType": "CT_FtnEdnRef"
         }
       ]
     },
