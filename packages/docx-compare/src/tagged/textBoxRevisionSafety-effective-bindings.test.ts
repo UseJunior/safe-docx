@@ -83,7 +83,7 @@ function story(kind: 'header' | 'footer', line: string, box?: string): string {
     paragraph(line) + `</${root}>`;
 }
 
-async function packageWith(body: string, finalSection: string, parts: Part[]): Promise<Buffer> {
+async function packageWith(body: string, finalSection: string, parts: Part[], settingsXml?: string): Promise<Buffer> {
   const archive = await DocxArchive.load(
     await buildDocxFromBodyXml(body, [], { namespaces: { r: R_NS, v: 'urn:schemas-microsoft-com:vml' } }),
   );
@@ -92,14 +92,19 @@ async function packageWith(body: string, finalSection: string, parts: Part[]): P
     'word/_rels/document.xml.rels',
     `<Relationships xmlns="${PKG_NS}">` +
       parts.map((part) => `<Relationship Id="${part.id}" Type="${R_NS}/${part.kind}" Target="${part.target}"/>`).join('') +
+      (settingsXml === undefined ? '' : `<Relationship Id="rIdSettings" Type="${R_NS}/settings" Target="settings.xml"/>`) +
       `</Relationships>`,
   );
   for (const part of parts) archive.setFile(`word/${part.target}`, part.xml);
+  if (settingsXml !== undefined) archive.setFile('word/settings.xml', settingsXml);
   // Word opens a header/footer part only under its own content type.
   const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
   archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>', parts.map((part) =>
     `<Override PartName="/word/${part.target}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.${part.kind}+xml"/>`,
-  ).join('') + '</Types>'));
+  ).join('') + (settingsXml === undefined || contentTypes.includes('/word/settings.xml')
+    ? ''
+    : '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>') +
+    '</Types>'));
   return archive.save();
 }
 
@@ -402,6 +407,85 @@ describe('the projection check compares displayed stories, not literal reference
       await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
         /accept\/reject package projection validation/u,
       );
+    });
+  });
+});
+
+describe('content the projection check must not read as blank (review of PR #1409)', () => {
+  test('a removed footer whose bordered table survives Accept All fails closed', async ({ given, when }: AllureBddContext) => {
+    // The removed section's footer holds a text box and a bordered table.
+    // Accept All carries the footer onto the final section; the text is a
+    // tracked deletion, but the table and its borders stay, so the final
+    // section does not show the revision's blank footer.
+    const table =
+      '<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single"/><w:bottom w:val="single"/></w:tblBorders></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>';
+    const removed: Part = {
+      id: 'rIdRemoved', kind: 'footer', target: 'footer1.xml',
+      xml: story('footer', 'Removed footer line', paragraph('Removed box')).replace('</w:ftr>', `${table}<w:p/></w:ftr>`),
+    };
+    const [original, revised] = await given('a removed section whose footer holds a bordered table', () =>
+      Promise.all([
+        packageWith(
+          paragraph('Stable body') + sectionParagraph('End of section', reference('footer', 'rIdRemoved')) + paragraph('Final section'),
+          '<w:sectPr/>',
+          [removed],
+        ),
+        packageWith(
+          paragraph('Stable body') + paragraph('End of section') + paragraph('Final section'),
+          '<w:sectPr/>',
+          [],
+        ),
+      ]));
+
+    await when('the pair is compared, the comparison refuses instead of publishing', async () => {
+      await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
+        /accept\/reject package projection validation/u,
+      );
+    });
+  });
+
+  test('turning on different even pages alongside a text-box edit fails closed', async ({ given, when }: AllureBddContext) => {
+    // The compared package carries the revised settings part, so Reject All
+    // leaves w:evenAndOddHeaders on: the original's even pages showed the
+    // default footer, the rejected output's even pages show none.
+    const footer = (box: string): Part => ({
+      id: 'rIdFooter', kind: 'footer', target: 'footer1.xml', xml: story('footer', 'Footer line', paragraph(box)),
+    });
+    const settingsPart = (contents: string): string =>
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="${W_NS}">${contents}</w:settings>`;
+    const [original, revised] = await given('a default footer whose text box changes while even pages are turned on', () =>
+      Promise.all([
+        packageWith(paragraph('Body'), `<w:sectPr>${reference('footer', 'rIdFooter')}</w:sectPr>`, [footer('Old box')], settingsPart('')),
+        packageWith(
+          paragraph('Body'),
+          `<w:sectPr>${reference('footer', 'rIdFooter')}</w:sectPr>`,
+          [footer('New box')],
+          settingsPart('<w:evenAndOddHeaders/>'),
+        ),
+      ]));
+
+    await when('the pair is compared, the comparison refuses instead of publishing', async () => {
+      await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
+        /accept\/reject package projection validation/u,
+      );
+    });
+  });
+
+  test('control: the same text-box edit with the setting unchanged still redlines', async ({ given, when }: AllureBddContext) => {
+    const footer = (box: string): Part => ({
+      id: 'rIdFooter', kind: 'footer', target: 'footer1.xml', xml: story('footer', 'Footer line', paragraph(box)),
+    });
+    const settingsPart = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="${W_NS}"><w:evenAndOddHeaders/></w:settings>`;
+    const [original, revised] = await given('a default footer whose text box changes, even pages on in both', () =>
+      Promise.all([
+        packageWith(paragraph('Body'), `<w:sectPr>${reference('footer', 'rIdFooter')}</w:sectPr>`, [footer('Old box')], settingsPart),
+        packageWith(paragraph('Body'), `<w:sectPr>${reference('footer', 'rIdFooter')}</w:sectPr>`, [footer('New box')], settingsPart),
+      ]));
+
+    await when('the pair is compared, the redline publishes', async () => {
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      await assertSchema(result.document);
     });
   });
 });

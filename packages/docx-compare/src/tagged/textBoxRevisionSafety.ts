@@ -23,7 +23,7 @@ import {
   textBoxPairingCandidates,
 } from './textBoxIdentityPairing.js';
 import {
-  displayedStorySlots,
+  pageStorySlots,
   effectiveStorySlot,
   isBlankStoryPart,
   resolveEffectiveStoryBindings,
@@ -2413,10 +2413,13 @@ async function markLifecycleAncillaryStoryParagraphs(
 
 /**
  * What a projected document shows in its headers and footers: one entry per
- * displayed section slot, after inheritance, with the bound part projected
- * the same way. Blank parts are left out, so a slot showing a story whose
- * content was entirely a tracked insertion (rejected) or deletion (accepted)
- * reads the same as a slot with no story at all.
+ * section, kind and kind of page (first, odd, even), naming the content of the
+ * story that page uses after inheritance, with the bound part projected the
+ * same way. Keying by page rather than by reference type means a display
+ * switch (`w:titlePg`, `w:evenAndOddHeaders`) that moves a page onto another
+ * story changes the inventory. Blank parts are left out, so a page showing a
+ * story whose content was entirely a tracked insertion (rejected) or deletion
+ * (accepted) reads the same as a page with no story at all.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
@@ -2472,10 +2475,10 @@ async function displayedStoryProjectionInventory(
     return projectedParts.get(targetPath)!;
   };
   const inventory = [`sections|${bindings.sectionCount}`];
-  for (const slot of displayedStorySlots(bindings)) {
+  for (const { page, slot } of pageStorySlots(bindings)) {
     const content = slot.targetPath === undefined ? null : shown(slot.targetPath);
     if (content === null) continue;
-    inventory.push([slot.sectionOrdinal, slot.kind, slot.role, content].join('|'));
+    inventory.push([slot.sectionOrdinal, slot.kind, page, content].join('|'));
   }
   return inventory;
 }
@@ -2488,10 +2491,13 @@ async function displayedStoryProjectionInventory(
  * Reject All carry a removed section boundary's references onto a following
  * section that has none (#1144), and a section without a reference of some
  * type shows the previous section's story of that type. The check therefore
- * projects with the carry, resolves each displayed section slot through
- * inheritance (`w:titlePg` and `w:evenAndOddHeaders` decide which types are
- * displayed), and compares what the slots show; a story that projects to
- * blank counts as no story.
+ * projects with the carry, resolves each section's slots through
+ * inheritance, and compares what the first, odd and even pages of each
+ * section show (`w:titlePg` and `w:evenAndOddHeaders` decide which story a
+ * page uses); a story that projects to blank counts as no story. The
+ * compared package carries the revised settings part, so a revision that
+ * turns `w:evenAndOddHeaders` on or off is refused when Reject All would
+ * leave the original's even pages showing a different story.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2

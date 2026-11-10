@@ -17,6 +17,7 @@ import {
   effectiveStorySlot,
   evenAndOddHeadersEnabled,
   isBlankStoryPart,
+  pageStorySlots,
   resolveEffectiveStoryBindings,
   type EffectiveStoryBindings,
 } from './effectiveStoryBindings.js';
@@ -65,6 +66,7 @@ const PARTS = [
   { kind: 'header' as const, part: 'hEven' },
   { kind: 'footer' as const, part: 'f1' },
   { kind: 'footer' as const, part: 'f2' },
+  { kind: 'footer' as const, part: 'fFirst' },
 ];
 
 function resolve(body: string, settingsXml?: string): EffectiveStoryBindings {
@@ -234,6 +236,58 @@ describe('effective header/footer bindings', () => {
         `<w:p><w:r><w:pict><v:shape><v:textbox><w:txbxContent>${paragraph('Boxed')}</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`,
       ))).toBe(false);
       expect(isBlankStoryPart(footer('<w:p><w:r><w:drawing><wp:inline/></w:drawing></w:r></w:p>'))).toBe(false);
+    });
+    await then('an emptied table that draws nothing is blank', () => {
+      expect(isBlankStoryPart(footer(
+        '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>' +
+          '<w:tr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>',
+      ))).toBe(true);
+    });
+    await then('a twin text box whose branches are both emptied is blank', () => {
+      expect(isBlankStoryPart(footer(
+        '<w:p><w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+          '<mc:Choice Requires="wps"><w:drawing><wp:anchor><wp:extent cx="1" cy="1"/>' +
+          '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData>' +
+          '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:txbx>' +
+          '<w:txbxContent><w:p/></w:txbxContent></wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>' +
+          '<mc:Fallback><w:pict><v:shape><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback>' +
+          '</mc:AlternateContent></w:r></w:p>',
+      ))).toBe(true);
+    });
+    await then('content without text is not blank: bordered, styled or shaded tables, borders, shading, page numbers, fields, pictures', () => {
+      // Review of PR #1409: each of these shows on the page with no text.
+      for (const content of [
+        '<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>',
+        '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12"/></w:pBdr></w:pPr></w:p>',
+        '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>',
+        '<w:tbl><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:fill="FF0000"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>',
+        '<w:p><w:pPr><w:shd w:val="clear" w:fill="FF0000"/></w:pPr></w:p>',
+        '<w:p><w:r><w:pgNum/></w:r></w:p>',
+        '<w:p><w:r><w:noBreakHyphen/></w:r></w:p>',
+        '<w:p><w:fldSimple w:instr=" PAGE "/></w:p>',
+        '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+        `<w:p><w:r><w:pict><v:shape><v:imagedata r:id="rIdImage" xmlns:r="${R_NS}"/></v:shape><v:shape><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`,
+        '<w:p><w:r><w:pict><v:line from="0,0" to="100pt,0"/><v:shape><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>',
+        '<w:p><w:r><w:pict><v:shape><v:textbox><w:txbxContent><w:p><w:r><w:pgNum/></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>',
+      ]) {
+        expect(isBlankStoryPart(footer(content)), content).toBe(false);
+      }
+    });
+  });
+
+  test('each kind of page uses the story its section\'s display switches select', async ({ given, then }: AllureBddContext) => {
+    const body =
+      paragraph('One', sectPr(refs({ kind: 'footer', part: 'f1' }, { kind: 'footer', role: 'first', part: 'fFirst' }) + '<w:titlePg/>')) +
+      paragraph('Two') + sectPr();
+    const pages = (bindings: EffectiveStoryBindings): string[] =>
+      pageStorySlots(bindings)
+        .filter(({ slot }) => slot.kind === 'footer')
+        .map(({ page, slot }) => `${slot.sectionOrdinal}:${page}=${slot.targetPath?.replace(/^word\/|\.xml$/gu, '') ?? '-'}`);
+    const off = await given('different even pages turned off', () => resolve(body, settings('')));
+    const on = await given('different even pages turned on', () => resolve(body, settings('<w:evenAndOddHeaders/>')));
+    await then('without the setting even pages use the default story; with it, the even story, blank when there is none', () => {
+      expect(pages(off)).toEqual(['0:first=fFirst', '0:odd=f1', '0:even=f1', '1:first=f1', '1:odd=f1', '1:even=f1']);
+      expect(pages(on)).toEqual(['0:first=fFirst', '0:odd=f1', '0:even=-', '1:first=f1', '1:odd=f1', '1:even=-']);
     });
   });
 });

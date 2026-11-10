@@ -7,12 +7,16 @@
   `w:footerReference` elements. They project with Word's carry of a removed
   section break's references (#1144) and resolve each section's header and
   footer through inheritance from the previous section, with `w:titlePg` and
-  `w:evenAndOddHeaders` deciding which types show; a story that projects to
-  blank counts as no story. A redline whose final section names a footer it
+  `w:evenAndOddHeaders` deciding which story each first, odd and even page
+  uses; a story that projects to blank (no text, and nothing drawn beyond an
+  emptied text box) counts as no story. A redline whose final section names a footer it
   used to inherit is no longer refused. A redline that Word would accept or
   reject into a blank footer, because the carried story replaced the footer
   the section inherited, is now refused with `UnsupportedTextBoxRevisionError`
-  instead of being published. The resolver behind this
+  instead of being published. So is one where a carried story keeps visible
+  content without text (a bordered table, say), and one that turns
+  `w:evenAndOddHeaders` on or off alongside a header/footer change, because
+  Reject All keeps the revised setting. The resolver behind this
   (`effectiveStoryBindings.ts`) is internal for now. docx-compare's
   `acceptAllChanges`/`rejectAllChanges` lose their undocumented
   `{ carryHeaderFooterReferences }` option; they always carry, as Word does.

@@ -224,24 +224,150 @@ export function storySlotKey(slot: Pick<SectPrBinding, 'sectionOrdinal' | 'kind'
   return `${slot.sectionOrdinal}:${slot.kind}:${slot.role}`;
 }
 
-const GRAPHIC_CARRIERS = ['drawing', 'pict', 'object'] as const;
+/** A kind of page a section's header or footer appears on. */
+export type StoryPage = 'first' | 'odd' | 'even';
+export const STORY_PAGES: readonly StoryPage[] = ['first', 'odd', 'even'];
+
+/** The slot that supplies one kind of page of one section. */
+export interface PageStorySlot {
+  page: StoryPage;
+  slot: EffectiveStorySlot;
+}
 
 /**
- * Whether a header/footer part shows nothing: no text, and no drawing, VML
- * picture or embedded object other than a text-box carrier (whose own story
- * text counts as text). A blank part reads the same as no binding, which is
- * how a lifecycle story whose content is entirely a tracked insertion
- * (rejected) or deletion (accepted) leaves its slot.
+ * Which slot supplies each kind of page, per section and kind: the first page
+ * shows the `first` story under `w:titlePg` and otherwise the `default` one;
+ * odd pages always show the `default` story; even pages show the `even` story
+ * under `w:evenAndOddHeaders` and otherwise the `default` one (§17.10.6,
+ * §17.10.1). Unlike `displayedStorySlots`, a switch that changes which story a
+ * page uses changes this list even when the story it now uses is blank.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
+ */
+export function pageStorySlots(bindings: EffectiveStoryBindings): PageStorySlot[] {
+  const pages: PageStorySlot[] = [];
+  for (let sectionOrdinal = 0; sectionOrdinal < bindings.sectionCount; sectionOrdinal += 1) {
+    for (const kind of STORY_KINDS) {
+      const slot = (role: StoryRole): EffectiveStorySlot =>
+        effectiveStorySlot(bindings, { sectionOrdinal, kind, role })!;
+      pages.push(
+        { page: 'first', slot: slot(bindings.titlePages[sectionOrdinal] ? 'first' : 'default') },
+        { page: 'odd', slot: slot('default') },
+        { page: 'even', slot: slot(bindings.evenAndOddHeaders ? 'even' : 'default') },
+      );
+    }
+  }
+  return pages;
+}
+
+const VML_NS = 'urn:schemas-microsoft-com:vml';
+const WPS_NS = 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape';
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/** Elements that show nothing on their own in an otherwise empty story. */
+const BLANK_STRUCTURE = new Set([
+  'hdr', 'ftr', 'p', 'r', 't', 'tab', 'lastRenderedPageBreak',
+  'sdt', 'sdtContent', 'customXml', 'smartTag', 'hyperlink',
+  'bookmarkStart', 'bookmarkEnd', 'proofErr', 'permStart', 'permEnd',
+  'tbl', 'tblGrid', 'gridCol', 'tr', 'tc', 'trPr',
+]);
+/** Property containers whose descendants are formatting, not content. */
+const BLANK_PROPERTIES = new Set(['rPr', 'sdtPr', 'sdtEndPr', 'customXmlPr', 'smartTagPr']);
+/**
+ * Paragraph, table and cell properties that draw something even when the
+ * paragraph or cell is empty. A table style can carry borders, so any
+ * `w:tblStyle` counts too.
+ */
+const VISIBLE_PROPERTIES: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['pPr', new Set(['pBdr', 'shd'])],
+  ['tblPr', new Set(['tblBorders', 'shd', 'tblStyle'])],
+  ['tblPrEx', new Set(['tblBorders', 'shd'])],
+  ['tcPr', new Set(['tcBorders', 'shd'])],
+]);
+/** VML elements that draw a shape. */
+const VML_SHAPES = new Set([
+  'shape', 'rect', 'roundrect', 'oval', 'line', 'polyline', 'curve', 'arc', 'image', 'group',
+]);
+/** Graphics that are visible whatever else the carrier holds. */
+const VISIBLE_GRAPHICS = new Set(['imagedata', 'blip', 'pic', 'chart', 'oleObject', 'OLEObject', 'binData']);
+
+function childElements(element: Element): Element[] {
+  const children: Element[] = [];
+  for (let node = element.firstChild; node; node = node.nextSibling) {
+    if (node.nodeType === 1) children.push(node as Element);
+  }
+  return children;
+}
+
+/**
+ * The `w:txbxContent` stories of a graphic carrier (`w:pict`, `w:drawing` or
+ * an `mc:AlternateContent` pair of them) that holds nothing but text boxes, or
+ * `undefined` when the carrier holds anything else: a picture, chart or
+ * object, a relationship-bound fill, or a shape without a text box.
+ */
+function pureTextBoxStories(carrier: Element): Element[] | undefined {
+  const stories: Element[] = [];
+  const visit = (element: Element): boolean => {
+    if (element.namespaceURI === OOXML.W_NS && element.localName === 'txbxContent') {
+      stories.push(element);
+      return true;
+    }
+    if (VISIBLE_GRAPHICS.has(element.localName)) return false;
+    for (let index = 0; index < element.attributes.length; index += 1) {
+      if (element.attributes[index]!.namespaceURI === R_NS) return false;
+    }
+    if (element.namespaceURI === VML_NS && VML_SHAPES.has(element.localName) && element.localName !== 'group') {
+      if (!childElements(element).some((child) => child.namespaceURI === VML_NS && child.localName === 'textbox')) {
+        return false;
+      }
+    }
+    if (element.namespaceURI === WPS_NS && element.localName === 'wsp') {
+      if (!childElements(element).some((child) => child.namespaceURI === WPS_NS && child.localName === 'txbx')) {
+        return false;
+      }
+    }
+    return childElements(element).every(visit);
+  };
+  if (!visit(carrier) || stories.length === 0) return undefined;
+  return stories;
+}
+
+/**
+ * Whether a header/footer part shows nothing. It is blank when it has no text
+ * and holds only empty paragraphs, formatting and bookmarks, plus at most the
+ * shape of a text box whose own story is blank in the same sense. That shape
+ * is what Accept All (Reject All) leaves of a lifecycle story whose content
+ * is entirely a tracked deletion (insertion): the carrier run is not tracked,
+ * so a blank part reads the same as no binding. A table counts only when it
+ * draws something (borders, shading or a table style). Anything else counts
+ * as content: a paragraph border or shading, a page number or other run
+ * content, a field, a picture or a shape without a text box.
  *
  * Pass the part after the same Accept All / Reject All as the document.
  */
 export function isBlankStoryPart(partXml: string): boolean {
   if (extractRoundTripComparisonText(partXml).trim() !== '') return false;
-  const root = parseXml(partXml).documentElement;
-  for (const localName of GRAPHIC_CARRIERS) {
-    for (const carrier of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, localName))) {
-      if (carrier.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length === 0) return false;
+  const blank = (element: Element): boolean => {
+    if (element.namespaceURI === OOXML.W_NS) {
+      const visible = VISIBLE_PROPERTIES.get(element.localName);
+      if (visible) {
+        return childElements(element).every(
+          (child) => !(child.namespaceURI === OOXML.W_NS && visible.has(child.localName)),
+        );
+      }
+      if (BLANK_PROPERTIES.has(element.localName)) return true;
+      if (element.localName === 'pict' || element.localName === 'drawing') {
+        return pureTextBoxStories(element)?.every((story) => childElements(story).every(blank)) ?? false;
+      }
+      if (!BLANK_STRUCTURE.has(element.localName)) return false;
+      return childElements(element).every(blank);
     }
-  }
-  return true;
+    if (element.namespaceURI === MC_NS && element.localName === 'AlternateContent') {
+      return pureTextBoxStories(element)?.every((story) => childElements(story).every(blank)) ?? false;
+    }
+    return false;
+  };
+  return blank(parseXml(partXml).documentElement);
 }
