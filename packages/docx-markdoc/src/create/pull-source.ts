@@ -142,15 +142,16 @@ function matchAt(source: string, start: number, content: string, limit: number):
       at += 2;
       continue;
     }
-    if (source.slice(at, at + units) === char) {
-      for (let unit = 0; unit < units; unit += 1) map.push(at + unit);
-      at += units;
-      continue;
-    }
+    // An entity first: `&amp;` stands for `&`, which would otherwise match its first character alone.
     const entity = source[at] === '&' ? entityAt(source, at) : undefined;
     if (entity && entity.char === char && units === 1) {
       map.push(at);
       at += entity.length;
+      continue;
+    }
+    if (source.slice(at, at + units) === char) {
+      for (let unit = 0; unit < units; unit += 1) map.push(at + unit);
+      at += units;
       continue;
     }
     return undefined;
@@ -171,6 +172,8 @@ type ParagraphUnit = {
   ownLines?: [number, number];
   listItem?: { item: MarkdocNode; list: MarkdocNode };
   quote?: MarkdocNode;
+  /** A `center` or `legend` tag written on one line: its text sits between the tags. */
+  inlineTag?: boolean;
 };
 
 /** The paragraphs a block tag renders, in order (`center`, `legend`, `signer`, `table`). */
@@ -181,7 +184,7 @@ function tagUnits(tag: MarkdocNode, outer: MarkdocNode): ParagraphUnit[] | undef
     case 'legend': {
       const kind = tag.tag === 'center' ? 'centered' : 'legend';
       const paragraphs = tag.children.filter((child) => child.type === 'paragraph');
-      if (paragraphs.length === 0) return [{ kind, children: tag.children, lines: outerLines }];
+      if (paragraphs.length === 0) return [{ kind, children: tag.children, lines: outerLines, inlineTag: true }];
       return paragraphs.map((paragraph) => ({ kind, children: paragraph.children, lines: nodeLines(paragraph), ownLines: nodeLines(paragraph) }));
     }
     case 'signer':
@@ -408,6 +411,7 @@ function mapUnit(source: string, unit: ParagraphUnit, built: BuiltParagraph): { 
       attribute('date');
     }
   } else {
+    if (unit.inlineTag) consumeTag();
     walk(unit.children, 0);
   }
   holders[0]!.end = text.length;

@@ -1109,6 +1109,12 @@ that has it, which Word gives the same spacing when you press Enter. That
 spacing given to an added paragraph by hand reads the same as Word's copy,
 so it is not reported either. Any other spacing is.
 
+Keep-with-next works the same way. A rebuild sets it on the paragraph before
+a legend or a signature block, so `pull` does not report it where it moves
+with an edit: on the paragraph that now comes before one, or on one that has
+lost it because what follows it changed. Any other keep-with-next change is
+reported.
+
 Exit codes: `0` when the edited DOCX reads as the build, `2` when changes or
 diagnostics are reported (with `--apply`, after writing), `1` on an error.
 `--json` prints the report as JSON.

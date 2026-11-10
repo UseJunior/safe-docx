@@ -1638,8 +1638,17 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     const builtOf = new Map(pairing.filter((pair) => pair.o !== undefined && pair.e !== undefined).map((pair) => [pair.e!, pair.o!]));
     const afterTable = (paragraphs: readonly PullParagraph[], k: number) => k > 0 && paragraphs[k - 1]!.inTableCell && !paragraphs[k]!.inTableCell;
     const generatedSpacing = new Set(O.flatMap((paragraph, j) => (afterTable(O, j) ? paragraph.properties.split(';').filter((piece) => /^spacing\(before=\d+\)$/u.test(piece)) : [])));
+    const without = (properties: string, part: string) => properties.split(';').filter((piece) => piece !== part).join(';');
+    // So is the keep-with-next create sets on the paragraph before a legend or a first signer.
+    const keepsWithNext = (paragraphs: readonly PullParagraph[], k: number) => paragraphs[k + 1]?.style === CREATION_STYLE.legend || paragraphs[k + 1]?.style === CREATION_STYLE.signature;
+    const keepOnly = (k: number) => {
+      const part = 'keepNext=true';
+      const built = builtOf.get(k);
+      // The rebuild sets it on a paragraph that now comes before one; one that already did and lost it was edited.
+      if (rebuiltListed[k]!.split(';').includes(part) && without(rebuiltListed[k]!, part) === editedListed[k] && keepsWithNext(rebuiltDoc.paragraphs, k) && (built === undefined || !keepsWithNext(O, built))) return true;
+      return editedListed[k]!.split(';').includes(part) && without(editedListed[k]!, part) === rebuiltListed[k] && built !== undefined && keepsWithNext(O, built) && O[built]!.properties.split(';').includes(part);
+    };
     const tableSpacingOnly = (k: number) => {
-      const without = (properties: string, part: string) => properties.split(';').filter((piece) => piece !== part).join(';');
       const partOf = (properties: string) => properties.split(';').find((piece) => /^spacing\(before=\d+\)$/u.test(piece));
       const rebuiltPart = partOf(rebuiltListed[k]!);
       if (rebuiltPart && without(rebuiltListed[k]!, rebuiltPart) === editedListed[k] && afterTable(rebuiltDoc.paragraphs, k)) return true;
@@ -1651,7 +1660,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const neighbourHas = [E[k - 1], E[k + 1]].some((neighbour) => neighbour?.properties.split(';').includes(editedPart));
       return neighbourHas && generatedSpacing.has(editedPart);
     };
-    const formatted = E.findIndex((_paragraph, k) => editedListed[k] !== rebuiltListed[k] && !tableSpacingOnly(k));
+    const formatted = E.findIndex((_paragraph, k) => editedListed[k] !== rebuiltListed[k] && !tableSpacingOnly(k) && !keepOnly(k));
     if (index !== -1) differs = `paragraph ${index + 1}'s run formatting differs between the rebuild and the edited DOCX`;
     else if (formatted !== -1) {
       differs = `paragraph ${formatted + 1}'s paragraph formatting differs between the rebuild and the edited DOCX`;
