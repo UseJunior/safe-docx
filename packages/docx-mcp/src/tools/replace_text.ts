@@ -28,6 +28,7 @@ import {
   segmentAddRunProps,
   hasAnyMarkupTags,
   hasHeaderTags,
+  collectUnknownMarkupTagWarnings,
 } from './tag_parser.js';
 
 /**
@@ -431,10 +432,11 @@ export async function replaceText(
           });
       if (revisionPreflight?.blocked) return revisionPreflight.blocked;
       const preflightWarnings = revisionPreflight?.warnings ?? [];
+      const unknownTagWarnings = collectUnknownMarkupTagWarnings(newStr);
 
       mutate(session.doc, revisionCtx);
       manager.markEdited(session);
-      const warnings = [...preflightWarnings, ...editWarnings];
+      const warnings = [...preflightWarnings, ...editWarnings, ...unknownTagWarnings];
 
       return ok(mergeSessionResolutionMetadata({
         success: true,
