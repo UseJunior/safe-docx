@@ -230,7 +230,25 @@ const MUTATIONS: Mutation[] = [
     expect: [],
     diagnostics: [],
   },
+  {
+    name: 'a Word save stating default settings',
+    surgery: { parts: { 'word/settings.xml': (xml) => xml.replace(/(<w:settings[^>]*>)/u, '$1<w:zoom w:percent="80"/><w:defaultTabStop w:val="720"/><w:characterSpacingControl w:val="doNotCompress"/>') } },
+    expect: [],
+    diagnostics: [],
+  },
   // Edits the creation grammar cannot express, or pull cannot place: each must be diagnosed.
+  {
+    name: 'a default tab stop changed',
+    surgery: { parts: { 'word/settings.xml': (xml) => xml.replace(/(<w:settings[^>]*>)/u, '$1<w:defaultTabStop w:val="360"/>') } },
+    expect: [],
+    diagnostics: ['PULL_DOCUMENT_SETTINGS'],
+  },
+  {
+    name: 'the document title changed',
+    surgery: { parts: { 'docProps/core.xml': (xml) => once(xml, '<dc:title>Engagement Letter</dc:title>', '<dc:title>Engagement Letter (Revised)</dc:title>') } },
+    expect: [],
+    diagnostics: ['PULL_DOCUMENT_PROPERTIES'],
+  },
   {
     name: 'a style re-aligned',
     surgery: { parts: { 'word/styles.xml': (xml) => once(xml, '<w:spacing w:before="600"/><w:jc w:val="left"/></w:pPr>', '<w:spacing w:before="600"/><w:jc w:val="center"/></w:pPr>') } },
@@ -594,6 +612,15 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const redLabel: Surgery = { parts: { 'word/numbering.xml': (xml) => xml.replace(/(<w:lvl w:ilvl="0">(?:(?!<\/w:lvl>).)*?<\/w:pPr>)<\/w:lvl>/u, '$1<w:rPr><w:color w:val="FF0000"/><w:sz w:val="36"/></w:rPr></w:lvl>') } };
       expect(codes(await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(redLabel, MUTATIONS[0]!.surgery)) }))).toEqual(['PULL_NUMBERING_CHANGED']);
 
+      // Letter-spacing a list label, making Normal (which every creation style inherits) bold: each beside a wording edit.
+      const spacedLabel: Surgery = { parts: { 'word/numbering.xml': (xml) => xml.replace(/(<w:lvl w:ilvl="0">(?:(?!<\/w:lvl>).)*?<\/w:pPr>)<\/w:lvl>/u, '$1<w:rPr><w:spacing w:val="100"/></w:rPr></w:lvl>') } };
+      expect(codes(await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(spacedLabel, MUTATIONS[0]!.surgery)) }))).toEqual(['PULL_NUMBERING_CHANGED']);
+      const boldNormal: Surgery = { parts: { 'word/styles.xml': (xml) => once(xml, '<w:name w:val="Normal"/><w:qFormat/></w:style>', '<w:name w:val="Normal"/><w:qFormat/><w:rPr><w:b/></w:rPr></w:style>') } };
+      expect(codes(await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, all(boldNormal, MUTATIONS[0]!.surgery)) }))).toEqual(['PULL_STYLE_CHANGED']);
+      // A word letter-spaced in the body is direct formatting create does not write.
+      const spacedWord = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, { document: (xml) => once(xml, '<w:r><w:t xml:space="preserve">Dear Client:</w:t></w:r>', '<w:r><w:t xml:space="preserve">Dear </w:t></w:r><w:r><w:rPr><w:spacing w:val="60"/></w:rPr><w:t xml:space="preserve">Client:</w:t></w:r>') }) });
+      expect(codes(spacedWord)).toEqual(['PULL_DIRECT_FORMATTING']);
+
       // An even-page header, plain and as a tracked insertion.
       const even = (text: string): Surgery => ({
         document: (xml) => xml.replace('<w:sectPr>', '<w:sectPr><w:headerReference w:type="even" r:id="rIdPullEven"/>'),
@@ -616,6 +643,9 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const widened = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => once(xml, '>Terms:<', '>New terms:<').replace('<w:gridCol w:w="4680"/>', '<w:gridCol w:w="5180"/>') }) });
       expect(codes(widened)).toEqual(['PULL_TABLE_STRUCTURE']);
       expect(widened.complete).toBe(false);
+      // A table caption (alt text) added beside a wording edit is diagnosed, not dropped.
+      const captioned = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => once(xml, '>Terms:<', '>New terms:<').replace('<w:tblLayout w:type="fixed"/>', '<w:tblLayout w:type="fixed"/><w:tblCaption w:val="User caption"/>') }) });
+      expect(codes(captioned)).toEqual(['PULL_TABLE_STRUCTURE']);
       // The cell margins Word for Mac adds when it saves an unedited table are not an edit.
       const wordSave = await pullCreationEdits({ source: tableSource, base: tableBase, edited: await edit(tableBase.docx, { document: (xml) => xml.replace('<w:tblLayout w:type="fixed"/>', '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>') }) });
       expect(wordSave).toMatchObject({ changes: [], diagnostics: [], complete: true });

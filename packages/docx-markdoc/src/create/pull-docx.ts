@@ -1,7 +1,6 @@
 import JSZip from 'jszip';
 import { OOXML, parseXml } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
-import { CREATION_STYLE } from './profile.js';
 import { paragraphReadbackText } from './readback.js';
 
 const W = OOXML.W_NS;
@@ -70,7 +69,43 @@ export type PullDocx = {
   evenPageStories: number;
   /** `w:evenAndOddHeaders` in word/settings.xml. */
   evenAndOddHeaders: boolean;
+  /** The layout settings of word/settings.xml that differ from their defaults, as a signature. */
+  settings: string;
+  /** The document properties a person sets (title, author, subject, description, keywords), as a signature. */
+  properties: string;
 };
+
+/** Settings that change layout, with the value each has when absent. Word writes the defaults on save. */
+const LAYOUT_SETTINGS: ReadonlyArray<[string, string]> = [
+  ['defaultTabStop', '720'], ['autoHyphenation', 'false'], ['consecutiveHyphenLimit', '0'], ['hyphenationZone', '360'],
+  ['doNotHyphenateCaps', 'false'], ['mirrorMargins', 'false'], ['gutterAtTop', 'false'], ['bookFoldPrinting', 'false'],
+  ['bookFoldRevPrinting', 'false'], ['printTwoOnOne', 'false'], ['displayBackgroundShape', 'false'],
+];
+
+function settingsSignature(root: Element | undefined): string {
+  if (!root) return '';
+  const parts: string[] = [];
+  for (const [name, absent] of LAYOUT_SETTINGS) {
+    const element = child(root, name);
+    if (!element) continue;
+    const value = attr(element, 'val') ?? 'true';
+    const normalized = ['0', 'false', 'off'].includes(value) && absent === 'false' ? 'false' : ['1', 'on'].includes(value) ? 'true' : value;
+    if (normalized !== absent) parts.push(`${name}=${normalized}`);
+  }
+  return parts.join(';');
+}
+
+/** dc:title, dc:creator, dc:subject, dc:description and cp:keywords; Word's own save stamps (modified, revision) are left out. */
+function corePropertiesSignature(xml: string | null): string {
+  if (xml === null) return '';
+  const root = parseXml(xml).documentElement!;
+  return ['title', 'creator', 'subject', 'description', 'keywords']
+    .map((name) => {
+      const element = Array.from(root.childNodes).find((node): node is Element => node.nodeType === 1 && (node as Element).localName === name);
+      return `${name}=${(element?.textContent ?? '').trim()}`;
+    })
+    .join(';');
+}
 
 const elementChildren = (node: Node): Element[] => Array.from(node.childNodes).filter((child): child is Element => child.nodeType === 1);
 const isW = (node: Node, localName: string): node is Element =>
@@ -130,7 +165,25 @@ export function runFormatSignature(run: Element | null): string {
   if (fonts && attr(fonts, 'ascii')) parts.push(`font=${attr(fonts, 'ascii')}`);
   const shading = child(rPr, 'shd');
   if (shading && attr(shading, 'fill') && attr(shading, 'fill') !== 'auto') parts.push(`shd=${attr(shading, 'fill')}`);
+  // Everything else a run can carry (character spacing, scaling, position, kerning, borders, effects, …), so that no
+  // property is lost unseen: only the complex-script twins, language and proofing marks are left out.
+  parts.push(...otherProperties(rPr, RUN_PROPERTIES_READ));
   return parts.join(',');
+}
+
+/** The run properties read above or deliberately left out. */
+const RUN_PROPERTIES_READ = [
+  'rStyle', 'b', 'i', 'strike', 'dstrike', 'caps', 'smallCaps', 'vanish', 'emboss', 'imprint', 'outline', 'shadow', 'u',
+  'vertAlign', 'highlight', 'sz', 'color', 'rFonts', 'shd',
+  'bCs', 'iCs', 'szCs', 'cs', 'rtl', 'lang', 'noProof', 'webHidden', 'specVanish', 'rPrChange', 'ins', 'del', 'moveFrom', 'moveTo',
+] as const;
+
+/** Each child of `properties` not in `read`, as `+name(attributes children)`. */
+function otherProperties(properties: Element, read: readonly string[]): string[] {
+  return elementChildren(properties)
+    .filter((node) => !read.includes(node.localName))
+    .map((node) => `+${node.localName}(${[attributeSignature(node), ...elementChildren(node).map((inner) => `${inner.localName}(${attributeSignature(inner)})`)].filter(Boolean).join(' ')})`)
+    .sort();
 }
 
 /** An element's attributes, sorted, without revision ids. */
@@ -180,6 +233,12 @@ function paragraphPropertySignature(pPr: Element | undefined): string {
     const element = child(pPr, name);
     if (element) parts.push(`${name}=${on(element)}`);
   }
+  // Any other paragraph property, so that none is lost unseen. The mark's run properties and the section are not the paragraph's.
+  parts.push(...otherProperties(pPr, [
+    'pStyle', 'jc', 'numPr', 'ind', 'spacing', 'tabs', 'pBdr', 'shd', 'outlineLvl', 'framePr', 'textDirection',
+    'keepNext', 'keepLines', 'pageBreakBefore', 'widowControl', 'contextualSpacing', 'suppressAutoHyphens', 'bidi',
+    'rPr', 'sectPr', 'pPrChange',
+  ]));
   return parts.join(';');
 }
 
@@ -272,7 +331,7 @@ function tableSignature(table: Element): string {
       .map((node) => `${node.localName}(${[attributeSignature(node), ...elementChildren(node).map((inner) => `${inner.localName}(${attributeSignature(inner)})`)].filter(Boolean).join(' ')})`).join(';')
     : '');
   // Word for Mac 16 writes w:tblCellMar on save of an unedited create table, and w:tblLook is display metadata: neither is an edit.
-  const tableProperties = properties(child(table, 'tblPr'), ['tblLook', 'tblCaption', 'tblDescription', 'tblCellMar']);
+  const tableProperties = properties(child(table, 'tblPr'), ['tblLook', 'tblCellMar']);
   const rows: string[] = [];
   const rowsOf = (container: Element): Element[] => elementChildren(container).flatMap((node: Element): Element[] => {
     if (node.namespaceURI !== W) return [];
@@ -493,10 +552,10 @@ function readStyles(xml: string | null): { styles: Record<string, string>; style
       child(child(defaults, 'pPrDefault'), 'pPr'),
     );
   }
-  const wanted = new Set<string>(Object.values(CREATION_STYLE));
+  // Every style, of every type: pull compares those the build defines, so a change to any of them (Normal, which the
+  // creation styles inherit, a character or table style) is seen. Styles Word adds on save are not in the build.
   for (const style of Array.from(document.getElementsByTagNameNS(W, 'style'))) {
     const id = attr(style, 'styleId') ?? '';
-    if (!wanted.has(id)) continue;
     const basedOn = child(style, 'basedOn');
     const parent = basedOn ? attr(basedOn, 'val') : null;
     out[id] = styleSignature(child(style, 'rPr'), child(style, 'pPr'), parent, equivalentStyleParts(style, parent ? styleAlignments[parent] : undefined));
@@ -594,7 +653,8 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
   const trackedChanges: Record<string, number> = {};
   countElements(trackedRoots, TRACKED_CHANGE_ELEMENTS, trackedChanges);
   const settingsXml = await readOptional('word/settings.xml');
-  const evenAndOddHeaders = settingsXml !== null && on(child(parseXml(settingsXml).documentElement!, 'evenAndOddHeaders'));
+  const settingsRoot = settingsXml === null ? undefined : parseXml(settingsXml).documentElement!;
+  const evenAndOddHeaders = on(child(settingsRoot, 'evenAndOddHeaders'));
   const unsupported: Record<string, number> = {};
   // A content control in a header or footer is how Word wraps an inserted page number: its text is read, and the
   // wrapper carries nothing create expresses, so only the body's count.
@@ -619,5 +679,7 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
     tables,
     evenPageStories,
     evenAndOddHeaders,
+    settings: settingsSignature(settingsRoot),
+    properties: corePropertiesSignature(await readOptional('docProps/core.xml')),
   };
 }

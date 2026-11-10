@@ -1182,6 +1182,12 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   if (edited.evenPageStories !== built.evenPageStories || edited.evenAndOddHeaders !== built.evenAndOddHeaders) {
     diagnostics.push({ code: 'PULL_HEADER_UNMAPPED', message: `the edited DOCX has ${edited.evenPageStories} even-page header or footer reference(s)${edited.evenAndOddHeaders ? ' and different odd and even pages' : ''}; create writes no even-page running text, so they are not carried` });
   }
+  if (edited.settings !== built.settings) {
+    diagnostics.push({ code: 'PULL_DOCUMENT_SETTINGS', message: `the document's layout settings changed (${built.settings || 'defaults'} to ${edited.settings || 'defaults'}); create does not write them, so they are not carried` });
+  }
+  if (edited.properties !== built.properties) {
+    diagnostics.push({ code: 'PULL_DOCUMENT_PROPERTIES', message: `the document properties changed (${built.properties} to ${edited.properties}); create writes the title and author from the frontmatter, so edit them there` });
+  }
   if (edited.pageSetup.length !== built.pageSetup.length) {
     diagnostics.push({ code: 'PULL_SECTION_STRUCTURE', message: `the edited DOCX has ${edited.pageSetup.length} section(s), the build ${built.pageSetup.length}; pull does not add or remove {% section %} tags` });
   }

@@ -17,10 +17,10 @@ the edited DOCX in place of the certified one only when a complete pull's
 record binds that DOCX to the source being built.
 
 #### Scenario: [SDX-MDOC-PULL-01] each known edit is reported at its source line and nothing is dropped silently
-- **GIVEN** a created letter edited by XML surgery: a Word save that restates style defaults (heading outline levels, a redundant left alignment), a wording change, a defined-term change, a deleted heading, an added paragraph, a filled-in fill, edits inside bold and underlined text, list items edited, deleted and added, a signer name, an added header and `Page X of Y` footer, and a second section's footer
+- **GIVEN** a created letter edited by XML surgery: a Word save that restates style and settings defaults (heading outline levels, a redundant left alignment, the default tab stop), a wording change, a defined-term change, a deleted heading, an added paragraph, a filled-in fill, edits inside bold and underlined text, list items edited, deleted and added, a signer name, an added header and `Page X of Y` footer, and a second section's footer
 - **WHEN** each is pulled, and all four of the issue's edits at once
 - **THEN** each change SHALL be reported with its kind and source line, the pull SHALL be complete, and the pulled source SHALL keep the frontmatter, signer, fill, cross-reference, underline, bold and section markup and rebuild to the edited body text, headers and footers
-- **AND** an edit inside a cross-reference, a re-aligned style, changed margins, a word made bold, a re-aligned paragraph, a comment, a two-line header, a tab and an emptied fill-in SHALL each raise its diagnostic and leave the pull incomplete
+- **AND** an edit inside a cross-reference, a re-aligned style, a changed default tab stop, a changed title, changed margins, a word made bold, a re-aligned paragraph, a comment, a two-line header, a tab and an emptied fill-in SHALL each raise its diagnostic and leave the pull incomplete
 - **AND** the harness SHALL fail when a reported change, its line or a diagnostic is removed, or when a pull claims completeness for a source that does not rebuild to the edited DOCX
 
 #### Scenario: [SDX-MDOC-PULL-02] pull --apply writes a new .mdoc that keeps the creation markup and rebuilds to the edited body
@@ -46,7 +46,7 @@ record binds that DOCX to the source being built.
 - **AND** an incomplete pull SHALL write no record, so `create --replace` still refuses
 
 #### Scenario: [SDX-MDOC-PULL-06] numbering, table structure, even-page running text and kept markup are never lost silently
-- **GIVEN** a list restarted at 7 in `word/numbering.xml` (alone and beside a wording edit), a list label made red, an even-page header (plain and as a tracked insertion), two table cells merged with `w:gridSpan`, a column resized beside a wording edit, the cell margins Word adds on save, an edit beside a `{% literal %}` span, and plain text typed over a whole bold span
+- **GIVEN** a list restarted at 7 in `word/numbering.xml` (alone and beside a wording edit), a list label made red or letter-spaced, `Normal` made bold, a body word letter-spaced, an even-page header (plain and as a tracked insertion), two table cells merged with `w:gridSpan`, a column resized and a table caption added beside a wording edit, the cell margins Word adds on save, an edit beside a `{% literal %}` span, and plain text typed over a whole bold span
 - **WHEN** each is pulled
-- **THEN** the restart and the red label SHALL raise `PULL_NUMBERING_CHANGED`, the merge and the resized column `PULL_TABLE_STRUCTURE` and the even-page header `PULL_HEADER_UNMAPPED`, each leaving the pull incomplete so no pull record is written, and the tracked insertion SHALL be refused with `PULL_TRACKED_CHANGES`
+- **THEN** the restart and the label formatting SHALL raise `PULL_NUMBERING_CHANGED`, the bold `Normal` `PULL_STYLE_CHANGED`, the letter-spaced word `PULL_DIRECT_FORMATTING`, the merge, the resized column and the caption `PULL_TABLE_STRUCTURE` and the even-page header `PULL_HEADER_UNMAPPED`, each leaving the pull incomplete so no pull record is written, and the tracked insertion SHALL be refused with `PULL_TRACKED_CHANGES`
 - **AND** the Word-added cell margins SHALL report no change, the edit beside the span SHALL be written without removing the span's markup, and the typed-over bold span SHALL be replaced

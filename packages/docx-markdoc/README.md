@@ -1064,12 +1064,20 @@ dropped without a line:
 | `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`, `PULL_STYLE_CHANGED` | formatting create does not express: a word made bold, a paragraph re-aligned or indented, a changed style |
 | `PULL_ADDED_PARAGRAPH_STYLE` | an added paragraph in a style with no creation markup |
 | `PULL_PAGE_SETUP`, `PULL_SECTION_STRUCTURE` | changed page size, margins or sections |
-| `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE` | list numbering changed (a start value, a restart, a format) or table structure (merged cells, spans) |
+| `PULL_DOCUMENT_SETTINGS`, `PULL_DOCUMENT_PROPERTIES` | a layout setting (default tab stop, hyphenation, mirrored margins, book folds) or the title, author, subject, description or keywords |
+| `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE` | list numbering (a start value, a restart, a format, the label's look) or table structure and layout (merged cells, column widths, borders, captions) |
 | `PULL_HEADER_UNMAPPED`, `PULL_FOOTER_UNMAPPED` | running text the keys cannot express: several lines, fields, formatting, even-page headers and footers |
 | `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_FIELD_CHANGED`, `PULL_UNSUPPORTED_CONTENT` | comments, footnote edits, new fields, images, hyperlinks, content controls |
 | `PULL_UNEXPRESSIBLE_TEXT` | text creation Markdoc cannot write, such as a tab |
 | `PULL_PARAGRAPH_NOT_MAPPED`, `PULL_UNMAPPED_DELETION`, `PULL_UNMAPPED_INSERTION` | a paragraph, deletion or insertion pull could not place in the source |
 | `PULL_EDIT_NOT_VERIFIED`, `PULL_REBUILD_DIFFERS` | a planned change that did not read back as the edited DOCX |
+
+`pull` compares the body, headers, footers, footnotes, every style the build
+defines, numbering, tables, sections and page setup, the layout settings and
+the document properties above. It does not compare the theme, the font
+table, web and compatibility settings, custom XML parts, or table cell
+margins (which Word adds when it saves a table); an edit made only there is
+not reported.
 
 Exit codes: `0` when the edited DOCX reads as the build, `2` when changes or
 diagnostics are reported (with `--apply`, after writing), `1` on an error.

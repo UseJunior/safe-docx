@@ -49,7 +49,8 @@ command needs.
     `PULL_UNMAPPED_INSERTION`, `PULL_ADDED_PARAGRAPH_STYLE`,
     `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`,
     `PULL_STYLE_CHANGED`, `PULL_PAGE_SETUP`, `PULL_SECTION_STRUCTURE`,
-    `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE`,
+    `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE`, `PULL_DOCUMENT_SETTINGS`,
+    `PULL_DOCUMENT_PROPERTIES`,
     `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_HEADER_UNMAPPED`,
     `PULL_FOOTER_UNMAPPED`, `PULL_UNSUPPORTED_CONTENT`, `PULL_FIELD_CHANGED`,
     `PULL_UNEXPRESSIBLE_TEXT`, `PULL_EDIT_NOT_VERIFIED` and
@@ -73,6 +74,10 @@ command needs.
   source node it came from (`paragraphEntries`, not in the certificate). The
   read-back reports run offsets and `w:fldSimple` fields. No output bytes or
   certificate change.
+
+Not compared: the theme, the font table, web and compatibility settings,
+custom XML parts and table cell margins (Word writes them on save); the
+README says so.
 
 Not included: tracked changes as edits, comments, footnote and table
 structure edits, direct formatting beyond bold, italic and underline in
