@@ -284,6 +284,13 @@ describe('Traceability: running headers in created documents', () => {
       expect(Object.keys(view.sections[1]!.references).sort()).toEqual(['footer:first', 'header:first']);
       expect(sections.certificate.checks.roundTrip.firstPage!.filter((entry) => entry.section === 3).map((entry) => entry.expected)).toEqual([['Plain Head'], ['Annex Cover']]);
 
+      // The PDF must show only what each section is sure to show: with w:titlePg, its first-page slots; its other
+      // header and footer appear only from its second page, which the page-aware word check holds them to.
+      expect(requiredPdfText(both)).toEqual(['Body.', 'Letterhead']);
+      expect(requiredPdfText(sections)).not.toContain('Running Head');
+      expect(requiredPdfText(sections)).toEqual(expect.arrayContaining(['Plain Head', 'Annex Cover']));
+      expect(requiredPdfText(sections)).not.toContain('Annex');
+
       // By default nothing has a first page of its own.
       const plain = await createDocumentFromMarkdoc(LETTER);
       expect((await packageView(plain.docx)).sections[0]!.titlePg).toBe(false);
@@ -449,10 +456,24 @@ describeWithLibreOffice('Traceability: running headers in a real LibreOffice PDF
         expect(first).not.toContain('Client Group | Engagement Letter');
         expect(first.split('\n')[0]).toBe('1');
         expect(second.split('\n').slice(0, 2)).toEqual(['Client Group | Engagement Letter', '2']);
+
+        // One-page sections never show their other header and footer; each of these builds and passes. The last
+        // section of the last source inherits footer-first: none with its footer, so its one page has no footer.
+        const short: Array<[string, string, string]> = [
+          ['header-none', '---\nheader: RUNNING_ONLY\nheader-first: none\npage-numbers: true\n---\n\nShort body.\n', '1'],
+          ['both-replaced', '---\nheader: RUNNING_ONLY\nheader-first: COVER_ONLY\nfooter: DEFAULT_FOOTER\nfooter-first: COVER_FOOTER\npage-numbers: true\n---\n\nShort body.\n', 'COVER_ONLY COVER_FOOTER 1'],
+          ['footer-none', '---\nheader: Running Head\nfooter: DEFAULT_FOOTER\nfooter-first: none\npage-numbers: true\n---\n\nShort body.\n', 'Running Head'],
+          ['inner-section', '---\nheader: Running Head\npage-numbers: true\n---\n\nFirst section.\n\n{% section header="ANNEX_HEAD" header-first="ANNEX_COVER" footer="ANNEX_FOOT" footer-first="none" /%}\n\nOne-page annex.\n\n{% section header="Last Head" /%}\n\nLast section.\n', 'Running Head 1|ANNEX_COVER|Last Head'],
+        ];
+        for (const [name, source, regions] of short) {
+          await writeFile(path.join(dir, `${name}.mdoc`), source);
+          const built = await runCreateCommand([path.join(dir, `${name}.mdoc`), path.join(dir, 'out'), '--require-pdf']);
+          expect(built.pdf, name).toMatchObject({ status: 'passed', words: { passed: true, knownGenerated: { footerRegions: regions.split('|') } } });
+        }
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
     },
-    120_000,
+    180_000,
   );
 });

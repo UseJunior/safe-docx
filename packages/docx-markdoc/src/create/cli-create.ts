@@ -129,14 +129,24 @@ function literalPieces(line: string): string[] {
   return line.split(new RegExp(`${PAGE_FIELD_TOKEN}|${NUMPAGES_FIELD_TOKEN}|\t`, 'u')).map((piece) => piece.trim()).filter((piece) => /[\p{L}\p{N}]/u.test(piece));
 }
 
-/** Text a rendered PDF must contain: the first and last paragraphs and every header and footer text. */
+/**
+ * Text a rendered PDF must contain: the first and last paragraphs and the
+ * header and footer text each section is sure to show. A section without
+ * `w:titlePg` shows its own header and footer on every page; a section with
+ * it shows its first-page slots on its first page, and its other header and
+ * footer only from its second page, which a one-page section never has. The
+ * page-aware word check holds those to each continuation page.
+ */
 export function requiredPdfText(created: CreatedDocument): string[] {
   const paragraphs = paragraphsAsLibreOfficeRenders(created.readback).filter((paragraph) => paragraph.trim());
   const title = paragraphs[0];
   const last = paragraphs.at(-1) ?? '';
   const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
   const { footers, headers, firstPage } = created.readback;
-  const stories = [...headers, ...footers, ...firstPage.flatMap((entry) => (entry ? [entry.header, entry.footer] : []))];
+  const stories = footers.flatMap((footer, section) => {
+    const first = firstPage[section];
+    return first ? [first.header, first.footer] : [headers[section] ?? null, footer];
+  });
   const running = stories.flatMap((story) => story ?? []).flatMap(literalPieces);
   return [...new Set([title, lastNeedle, ...running].filter((value): value is string => Boolean(value?.trim())))];
 }

@@ -946,7 +946,10 @@ page 2, with a centred `Page 1 of 2`, `Page 2 of 2` on every page.
   `changedFirstPageFooter`). The PDF word check expects each page's header
   and then its footer at the head of the page, as LibreOffice writes them,
   with the first-page variant on the first page of each section and the
-  generated words `Page`, the number, `of` and the total. These certificate
+  generated words `Page`, the number, `of` and the total. The PDF must also
+  contain the header and footer text each section is sure to show: its own
+  without `w:titlePg`, its first-page slots with it (a one-page section never
+  shows its other header and footer). These certificate
   entries appear only when the document has a header or a first-page
   variant. A source without the new keys builds the same bytes and
   certificate as before.

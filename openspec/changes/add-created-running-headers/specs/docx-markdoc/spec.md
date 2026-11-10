@@ -32,6 +32,7 @@ build the same DOCX and certificate as before.
 - **WHEN** each is created
 - **THEN** each section with a variant in effect SHALL have `w:titlePg` and both first-page slots, the slot without a variant holding a copy of the section's header or footer, so a first page keeps its page number
 - **AND** an inheriting section SHALL write its first-page slots itself, a section that declares a header without a variant SHALL drop `w:titlePg` unless its footer has one, and a source without variants SHALL have no `w:titlePg`
+- **AND** a section with `w:titlePg` SHALL require only its first-page header and footer text, so a one-page section whose other header or footer never shows still builds with `--require-pdf`
 
 #### Scenario: [SDX-MDOC-RUNHEAD-04] verification catches a lost header, a lost first-page slot and wrong generated page words
 - **GIVEN** lowerings corrupted in the spec and projection alike (a shortened header, a first-page footer without its page number, the header shown on a first page that drops it) and PDF page texts with a missing, wrong or misplaced header or page word

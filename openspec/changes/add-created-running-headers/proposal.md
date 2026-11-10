@@ -60,7 +60,11 @@ alignment, tab stops and `PAGE`/`NUMPAGES` fields.
     words, at the page head (LibreOffice's order), the first-page variant on
     the first page of each section, and the generated words `Page`, the
     number, `of` and the total;
-  - header text and the literal pieces of footer lines are required PDF text.
+  - the header text and the literal pieces of the footer lines that each
+    section is sure to show are required PDF text: its own header and footer
+    without `w:titlePg`, its first-page slots with it (a one-page section
+    never shows its other header and footer, which the word check holds to
+    each continuation page).
 - Exported constants for later CLI help: `CREATION_FRONTMATTER_KEYS`,
   `RUNNING_TEXT_KEYS` (the `{% section %}` attributes, also
   `CREATION_BLOCK_TAGS.section`), `RUNNING_TEXT_ALIGNMENTS`,
