@@ -1160,16 +1160,17 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     if (open && open.after === lastO && open.next === undefined && sameList) open.paragraphs.push(pair.e!);
     else runs.push({ after: lastO, next: undefined, paragraphs: [pair.e!] });
   }
-  // Unnumbered paragraphs added before the items that replace a list's first items go before that list, not after it.
+  // Unnumbered paragraphs added after a list's deleted first items, or before the items that replace them, go before
+  // that list, not inside or after it.
   runs.forEach((run, k) => {
-    const following = runs[k + 1];
-    if (!following || following.after !== run.after || run.after < 0 || E[run.paragraphs[0]!]!.numbered) return;
-    const added = E[following.paragraphs[0]!]!;
-    if (!added.numbered) return;
+    if (run.after < 0 || E[run.paragraphs[0]!]!.numbered) return;
+    const following = runs[k + 1]?.after === run.after ? runs[k + 1] : undefined;
+    const added = following ? E[following.paragraphs[0]!]! : undefined;
     // The item those items replace: the paragraph before them, or one behind deleted paragraphs after it.
-    const replaced = listItemBehind(run.after, following.paragraphs[0]!) ?? run.after;
+    const replaced = added?.numbered ? (listItemBehind(run.after, following!.paragraphs[0]!) ?? run.after) : run.after;
     const item = map.paragraphs[replaced]!.listItem;
-    if (!item || !deletedSet.has(replaced) || numberingOf(added.properties) !== numberingOf(O[replaced]!.properties)) return;
+    if (!item || !deletedSet.has(replaced)) return;
+    if (added?.numbered && numberingOf(added.properties) !== numberingOf(O[replaced]!.properties)) return;
     let first = replaced;
     while (first > 0 && deletedSet.has(first - 1) && map.paragraphs[first - 1]!.listItem?.list === item.list) first -= 1;
     if (first > 0 && map.paragraphs[first - 1]!.listItem?.list === item.list) return;

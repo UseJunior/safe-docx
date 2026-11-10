@@ -872,6 +872,10 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Apple', 'Fresh zero.'), once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.')), '- Fresh zero.\n\nNew prose.\n\n- Fresh berries.\n\nBody.\n'],
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.'), once2('Body.', 'New ending.')), '- Apple\n\nNew prose.\n\n- Fresh berries.\n\nNew ending.\n'],
         ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.'), once2('Body.', 'New ending.')), '1. Apple\n\nNew prose.\n\n1. Fresh berries.\n\nNew ending.\n'],
+        // A paragraph retyped or added before a list whose first item is deleted: it goes before the list.
+        ['Bridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(once2('Bridge.', 'Completely novel wording.'), dropParagraph('Banana')), 'Completely novel wording.\n\n- Cherry\n\nBody.\n'],
+        ['Bridge.\n\n1. Banana\n2. Cherry\n\nBody.\n', all(once2('Bridge.', 'Completely novel wording.'), dropParagraph('Banana')), 'Completely novel wording.\n\n1. Cherry\n\nBody.\n'],
+        ['Bridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(addedLike('Bridge.', 'Bridge.', 'New prose.'), dropParagraph('Banana')), 'Bridge.\n\nNew prose.\n\n- Cherry\n\nBody.\n'],
         // The last paragraph, after a table, retyped from scratch: alone, its deletion leaves the table last.
         ['Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nAfter.\n', once2('After.', 'Completely new wording.'), 'Before.\n\n{% table %}\n* Term\n* Value\n---\n* Price\n* Ten\n{% /table %}\n\nCompletely new wording.\n'],
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', addedLike('Apple', 'Bridge.', 'New prose.'), '- Apple\n\nNew prose.\n\nBridge.\n\n- Banana\n\nBody.\n'],
