@@ -379,7 +379,8 @@ function storyLines(story: PullStory, doc: Pick<PullDocx, 'styleAlignments'>, de
     // Alignment, the formats of its literal text, its other paragraph properties (indentation, spacing, tabs, …) and the
     // formats of its page-number fields (the field's own runs; the cached number is not read).
     const others = paragraph.properties.split(';').filter((part) => part && !part.startsWith('jc=')).join(';');
-    return { text: paragraph.text, signature: `${alignment}|${[...literal].sort().join('+')}|${others}|${[...field].sort().join('+')}` };
+    // Last, the fields' instructions: a page number given a format switch reads the same.
+    return { text: paragraph.text, signature: `${alignment}|${[...literal].sort().join('+')}|${others}|${[...field].sort().join('+')}|${paragraph.fieldInstructions.join('+')}` };
   });
 }
 
@@ -449,6 +450,9 @@ function inferRunningKeys(doc: PullDocx, section: number): { keys: RunningKeys; 
   for (const [slot, story] of [['header', doc.headers[section]], ['footer', doc.footers[section]]] as const) {
     for (const line of storyLines(story ?? null, doc, slot === 'header' ? CREATION_STYLE.header : CREATION_STYLE.footer) ?? []) {
       if (fieldFormatsOf(line).length > 0) problems.push(`its ${slot}'s page number is formatted (${fieldFormatsOf(line).map(describeFormat).join('; ')}), which create does not express`);
+      // create writes PAGE and NUMPAGES bare; a switch (`\\* roman`) or another field is not a key.
+      const switched = (line.signature.split('|')[4] ?? '').split('+').filter((instruction) => instruction && instruction !== 'PAGE' && instruction !== 'NUMPAGES');
+      if (switched.length > 0) problems.push(`its ${slot} holds the field ${switched.map((instruction) => quote(instruction)).join(', ')}, which create does not write`);
     }
   }
   const header = storyLines(doc.headers[section] ?? null, doc, CREATION_STYLE.header);
@@ -1343,6 +1347,19 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     if (index !== -1) {
       const label = (value: string | undefined) => quote((value ?? '').split('|')[0] || '(none)');
       out.push({ code: 'PULL_NUMBERING_CHANGED', message: `paragraph ${index + 1} is numbered ${label(E[index]!.label)} in the edited DOCX and ${label(rebuiltDoc.paragraphs[index]?.label)} in the rebuild; pull does not write list numbering (start values, restarts, formats), so it is not carried` });
+    }
+    // Another field given a switch reads the same.
+    const switched = E.findIndex((paragraph, k) => JSON.stringify(paragraph.fieldInstructions) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.fieldInstructions ?? []));
+    if (switched !== -1) {
+      const shown = (paragraph: PullParagraph | undefined) => (paragraph?.fieldInstructions ?? []).map((instruction) => quote(instruction)).join(', ') || '(none)';
+      out.push({ code: 'PULL_FIELD_CHANGED', message: `paragraph ${switched + 1}'s fields are ${shown(E[switched])} in the edited DOCX and ${shown(rebuiltDoc.paragraphs[switched])} in the rebuild; pull does not write field instructions, so the change is not carried` });
+    }
+    // A cross-reference retargeted or given other switches keeps its text, so the texts do not show it.
+    const instructions = (paragraph: PullParagraph | undefined) => (paragraph?.crossReferences ?? []).map((reference) => reference.instruction);
+    const retargeted = E.findIndex((paragraph, k) => JSON.stringify(instructions(paragraph)) !== JSON.stringify(instructions(rebuiltDoc.paragraphs[k])));
+    if (retargeted !== -1) {
+      const shown = (paragraph: PullParagraph | undefined) => instructions(paragraph).map(quote).join(', ') || '(none)';
+      out.push({ code: 'PULL_EDIT_IN_CROSS_REFERENCE', message: `paragraph ${retargeted + 1}'s cross-reference fields are ${shown(E[retargeted])} in the edited DOCX and ${shown(rebuiltDoc.paragraphs[retargeted])} in the rebuild; pull does not retarget a cross-reference or change its switches, so it is not carried` });
     }
     if (JSON.stringify(edited.tables) !== JSON.stringify(rebuiltDoc.tables)) {
       const table = Math.max(0, edited.tables.findIndex((signature, k) => signature !== rebuiltDoc.tables[k]));

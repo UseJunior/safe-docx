@@ -676,7 +676,9 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const boldPage: Surgery = { parts: { 'word/footer1.xml': (xml) => xml.replaceAll('<w:r>', '<w:r><w:rPr><w:b/></w:rPr>') } };
       // Only the run that displays the number, as Word's font controls do when the number alone is selected.
       const boldResult: Surgery = { parts: { 'word/footer1.xml': (xml) => xml.replace(/(<w:fldChar w:fldCharType="separate"\/><\/w:r>)<w:r>(<w:t)/u, '$1<w:r><w:rPr><w:b/></w:rPr>$2') } };
-      for (const surgery of [boldPage, all(boldPage, MUTATIONS[0]!.surgery), boldResult, all(boldResult, MUTATIONS[0]!.surgery)]) {
+      // The page number given a format switch reads the same number token; create writes PAGE bare.
+      const romanPage: Surgery = { parts: { 'word/footer1.xml': (xml) => once(xml, '> PAGE </w:instrText>', '> PAGE \\* roman </w:instrText>') } };
+      for (const surgery of [boldPage, all(boldPage, MUTATIONS[0]!.surgery), boldResult, all(boldResult, MUTATIONS[0]!.surgery), romanPage, all(romanPage, MUTATIONS[0]!.surgery)]) {
         const result = await pullCreationEdits({ source: LETTER, base, edited: await edit(base.docx, surgery) });
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_FOOTER_UNMAPPED']);
@@ -699,6 +701,20 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       }
       const refSplit = await pullCreationEdits({ source: refSource, base: refBase, edited: await edit(refBase.docx, { document: (xml) => once(xml, refResult, '<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">Al</w:t></w:r><w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t xml:space="preserve">pha</w:t></w:r><w:r><w:lastRenderedPageBreak/><w:t xml:space="preserve"> Be</w:t></w:r><w:r><w:t xml:space="preserve">ta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/>') }) });
       expect(refSplit).toMatchObject({ changes: [], diagnostics: [], complete: true });
+
+      // A cross-reference retargeted to another heading with the same text, or given a switch, alone and beside a
+      // wording edit: the text stays, the field does not. Spacing in the instruction is not an edit.
+      const twinSource = '## Alpha {% #target %}\n\n## Alpha {% #other %}\n\nSee {% xref to="target" show="text" /%}.\n';
+      const twinBase = await build(twinSource);
+      const retarget: Surgery = { document: (xml) => once(xml, ' REF target \\h ', ' REF other \\h ') };
+      const withSwitch: Surgery = { document: (xml) => once(xml, ' REF target \\h ', ' REF target \\h \\p ') };
+      for (const surgery of [retarget, all(retarget, consult), withSwitch, all(withSwitch, consult)]) {
+        const result = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_EDIT_IN_CROSS_REFERENCE']);
+      }
+      const respaced = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, { document: (xml) => once(xml, ' REF target \\h ', '  REF  target  \\h  ') }) });
+      expect(respaced).toMatchObject({ changes: [], diagnostics: [], complete: true });
 
       // An edit beside a span keeps the span's markup.
       const literalSource = 'Keep foo{% literal %}bar{% /literal %} safe.\n';

@@ -66,6 +66,7 @@ export function paragraphReadbackText(
   onBookmark?: (name: string, id: string, offset: number) => void,
   onBookmarkEnd?: (id: string, offset: number) => void,
   onRunText?: (start: number, end: number, run: Element | null, fieldRuns?: readonly Element[]) => void,
+  onField?: (offset: number, instruction: string) => void,
 ): string {
   let text = '';
   let field: { instruction: string; inResult: boolean; result: string; runs: Element[] } | null = null;
@@ -89,6 +90,7 @@ export function paragraphReadbackText(
           else if (type === 'separate' && field) field.inResult = true;
           else if (type === 'end' && field) {
             const name = field.instruction.trim().split(/\s+/)[0] ?? '';
+            onField?.(text.length, field.instruction);
             if (name === 'REF') onCrossReference?.(text.length, field.result, field.instruction);
             const runs = field.runs;
             append(name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? field.result : `<${name}>`, run, runs);
@@ -105,6 +107,7 @@ export function paragraphReadbackText(
           const name = instruction.trim().split(/\s+/)[0] ?? '';
           const result = Array.from(child.getElementsByTagNameNS(W, 't')).map((t) => t.textContent ?? '').join('');
           const runs = Array.from(child.getElementsByTagNameNS(W, 'r'));
+          onField?.(text.length, instruction);
           if (name === 'REF') onCrossReference?.(text.length, result, instruction);
           append(name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? result : `<${name}>`, runs[0] ?? null, runs);
           break;

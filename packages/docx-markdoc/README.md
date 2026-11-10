@@ -1060,14 +1060,14 @@ dropped without a line:
 | Code | Edit |
 |---|---|
 | `PULL_EDIT_CROSSES_MARKUP` | changes markup it cannot keep: half a fill-in's brackets, an emptied span, a footnote mark or a line break |
-| `PULL_EDIT_IN_CROSS_REFERENCE`, `PULL_EDIT_IN_GENERATED_TEXT` | edits the text of a cross-reference, or text the markup generates (`Section `, a signature line) |
+| `PULL_EDIT_IN_CROSS_REFERENCE`, `PULL_EDIT_IN_GENERATED_TEXT` | edits the text of a cross-reference, retargets it or changes its switches, or edits text the markup generates (`Section `, a signature line) |
 | `PULL_DIRECT_FORMATTING`, `PULL_PARAGRAPH_FORMATTING`, `PULL_STYLE_CHANGED` | formatting create does not express: a word made bold, a paragraph re-aligned or indented, a changed style, a cross-reference's cached result reformatted or given a tab or line break |
 | `PULL_ADDED_PARAGRAPH_STYLE` | an added paragraph in a style with no creation markup |
 | `PULL_PAGE_SETUP`, `PULL_SECTION_STRUCTURE` | changed page size, margins or sections |
 | `PULL_DOCUMENT_SETTINGS`, `PULL_DOCUMENT_PROPERTIES` | a layout setting (default tab stop, hyphenation, mirrored margins, book folds) or the title, author, subject, description or keywords |
 | `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE` | list numbering (a start value, a restart, a format, the label's look) or table structure and layout (merged cells, column widths, borders, captions) |
-| `PULL_HEADER_UNMAPPED`, `PULL_FOOTER_UNMAPPED` | running text the keys cannot express: several lines, fields, formatting, even-page headers and footers |
-| `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_FIELD_CHANGED`, `PULL_UNSUPPORTED_CONTENT` | comments, footnote edits, new fields, images, hyperlinks, content controls |
+| `PULL_HEADER_UNMAPPED`, `PULL_FOOTER_UNMAPPED` | running text the keys cannot express: several lines, fields (or a page number given a switch such as `\* roman`), formatting, even-page headers and footers |
+| `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_FIELD_CHANGED`, `PULL_UNSUPPORTED_CONTENT` | comments, footnote edits, new or changed fields, images, hyperlinks, content controls |
 | `PULL_UNEXPRESSIBLE_TEXT` | text creation Markdoc cannot write, such as a tab |
 | `PULL_PARAGRAPH_NOT_MAPPED`, `PULL_UNMAPPED_DELETION`, `PULL_UNMAPPED_INSERTION` | a paragraph, deletion or insertion pull could not place in the source |
 | `PULL_EDIT_NOT_VERIFIED`, `PULL_REBUILD_DIFFERS` | a planned change that did not read back as the edited DOCX |

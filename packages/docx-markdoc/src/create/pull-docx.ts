@@ -32,11 +32,14 @@ export type PullParagraph = {
    */
   label: string;
   /** REF fields (cross-references), in order: offset and cached result. */
-  crossReferences: Array<{ offset: number; text: string }>;
+  /** Each cross-reference: where it reads, its cached text and its field instruction, with whitespace collapsed. */
+  crossReferences: Array<{ offset: number; text: string; instruction: string }>;
   /** Offsets of the footnote references in `text`. */
   footnoteReferences: number[];
   /** Names of the other fields (PAGE, DATE, …), in order. */
   fields: string[];
+  /** Each field other than a cross-reference, in order: its instruction with whitespace collapsed (`PAGE \\* roman`). */
+  fieldInstructions: string[];
 };
 
 /** A header or footer part's paragraphs, or null for a slot without a reference. */
@@ -303,26 +306,23 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
   const formats: string[] = [];
   const crossReferences: PullParagraph['crossReferences'] = [];
   const footnoteReferences: number[] = [];
+  const fieldInstructions: string[] = [];
   const text = paragraphReadbackText(
     paragraph,
     (offset) => footnoteReferences.push(offset),
-    (offset, result) => crossReferences.push({ offset, text: result }),
+    (offset, result, instruction) => crossReferences.push({ offset, text: result, instruction: instruction.trim().replace(/\s+/gu, ' ') }),
     undefined,
     undefined,
     (start, end, run, fieldRuns) => {
       const signature = fieldRuns ? fieldFormatSignature(fieldRuns) : runFormatSignature(run);
       for (let index = start; index < end; index += 1) formats[index] = signature;
     },
+    (_offset, instruction) => {
+      const normalized = instruction.trim().replace(/\s+/gu, ' ');
+      if (normalized && normalized.split(' ')[0] !== 'REF') fieldInstructions.push(normalized);
+    },
   );
-  const fields: string[] = [];
-  for (const field of Array.from(paragraph.getElementsByTagNameNS(W, 'instrText'))) {
-    const name = (field.textContent ?? '').trim().split(/\s+/u)[0] ?? '';
-    if (name && name !== 'REF') fields.push(name);
-  }
-  for (const field of Array.from(paragraph.getElementsByTagNameNS(W, 'fldSimple'))) {
-    const name = (attr(field, 'instr') ?? '').trim().split(/\s+/u)[0] ?? '';
-    if (name && name !== 'REF') fields.push(name);
-  }
+  const fields = fieldInstructions.map((instruction) => instruction.split(' ')[0]!);
   const pPr = child(paragraph, 'pPr');
   const style = child(pPr, 'pStyle');
   const alignment = alignmentOf(pPr);
@@ -338,6 +338,7 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     crossReferences,
     footnoteReferences,
     fields,
+    fieldInstructions,
   };
 }
 
