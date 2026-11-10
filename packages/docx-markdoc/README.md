@@ -1101,6 +1101,14 @@ table, web and compatibility settings, custom XML parts, or table cell
 margins (which Word adds when it saves a table); an edit made only there is
 not reported.
 
+The spacing above the first paragraph after a table is create's own: a
+rebuild sets it on whatever paragraph follows a table. `pull` therefore does
+not report that spacing where it moves with an edit. Two cases are covered:
+the paragraph that now follows a table, and a paragraph added next to one
+that has it, which Word gives the same spacing when you press Enter. That
+spacing given to an added paragraph by hand reads the same as Word's copy,
+so it is not reported either. Any other spacing is.
+
 Exit codes: `0` when the edited DOCX reads as the build, `2` when changes or
 diagnostics are reported (with `--apply`, after writing), `1` on an error.
 `--json` prints the report as JSON.
