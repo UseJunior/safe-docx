@@ -1019,38 +1019,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     }
     byEntry.set(entry, [...(byEntry.get(entry) ?? []), index]);
   }
-  const entryGone = (entry: number) => {
-    const held = entryParagraphs(entry);
-    return held.length > 0 ? held.every((index) => deletedSet.has(index)) : map.ast.children[entry]?.type === 'tag' && map.ast.children[entry]!.tag === 'page-break';
-  };
-  /**
-   * When the last block between two lists of one kind and delimiter goes, Markdown would join the lists, so the second
-   * takes the other delimiter (`*` for `-`, `)` for `.`), which builds the same list on its own.
-   */
-  const listSeparation = (entry: number): Splice[] => {
-    if (entryGone(entry + 1) && entry + 1 < map.ast.children.length) return [];
-    let before = entry - 1;
-    while (before >= 0 && entryGone(before)) before -= 1;
-    const after = entry + 1;
-    const first = map.ast.children[before];
-    const second = map.ast.children[after];
-    if (first?.type !== 'list' || second?.type !== 'list') return [];
-    const itemsOf = (list: MarkdocNode) => map.paragraphs.filter((paragraph) => paragraph.listItem?.list === list && paragraph.ownLines);
-    const firstItems = itemsOf(first);
-    const secondItems = itemsOf(second);
-    if (firstItems.length === 0 || secondItems.length === 0) return [];
-    const top = (items: SourceParagraph[]) => items.filter((paragraph) => paragraph.listItem!.indent.length === Math.min(...items.map((other) => other.listItem!.indent.length)));
-    const delimiter = (marker: string) => (/^\d/u.test(marker) ? marker.slice(-1) : marker);
-    const was = delimiter(top(firstItems)[0]!.listItem!.marker);
-    const secondTop = top(secondItems);
-    if (delimiter(secondTop[0]!.listItem!.marker) !== was) return [];
-    const swap: Record<string, string> = { '-': '*', '*': '-', '+': '-', '.': ')', ')': '.' };
-    return secondTop.map((paragraph) => {
-      const { indent, marker } = paragraph.listItem!;
-      const at = starts[paragraph.ownLines![0]]! + indent.length;
-      return { start: at, end: at + marker.length, text: /^\d/u.test(marker) ? `${marker.slice(0, -1)}${swap[was]}` : swap[was]! };
-    });
-  };
+  const entryPlans = new Map<number, Plan>();
   for (const [entry, indexes] of byEntry) {
     const reports = indexes.map((index) => {
       const sp = map.paragraphs[index]!;
@@ -1072,9 +1041,10 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const splices = [lineDeletion(source, starts, lines)];
       const previous = map.ast.children[entry - 1];
       if (previous?.type === 'tag' && previous.tag === 'page-break' && map.entryLines[entry - 1]) splices.push(lineDeletion(source, starts, map.entryLines[entry - 1]!));
-      splices.push(...listSeparation(entry));
       const removed = [...indexes];
-      plans.push({ changes: reports, splices, apply: (slots) => { for (const index of removed) slots.items[index]!.text = null; }, keepsSkeleton: false, where: { line: reports[0]!.line, paragraph: indexes[0]! + 1 } });
+      const plan: Plan = { changes: reports, splices, apply: (slots) => { for (const index of removed) slots.items[index]!.text = null; }, keepsSkeleton: false, where: { line: reports[0]!.line, paragraph: indexes[0]! + 1 } };
+      plans.push(plan);
+      entryPlans.set(entry, plan);
       continue;
     }
     const coveredByParent = new Set<number>();
@@ -1141,6 +1111,57 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       }
       const splices = [lineDeletion(source, starts, own), ...(heirMarker ? [heirMarker] : [])];
       plans.push({ changes: covered, splices, apply: (slots) => { for (const r of removed) slots.items[r]!.text = null; }, keepsSkeleton: false, where: { line: report.line, paragraph: index + 1 } });
+    }
+  }
+
+  // Lists a deletion leaves next to each other: Markdown joins two adjacent lists of one kind and delimiter, so along
+  // each run of lists that end up adjacent, a list that would share the delimiter of the one before takes another
+  // (`-`, `*`, `+`; `.`, `)`), not the next one's where it can. Its marker edits go with the deletion that joined the run.
+  {
+    const entryGone = (entry: number) => {
+      const held = entryParagraphs(entry);
+      return held.length > 0 ? held.every((index) => deletedSet.has(index)) : map.ast.children[entry]?.type === 'tag' && map.ast.children[entry]!.tag === 'page-break' && entryPlans.has(entry + 1);
+    };
+    const topItems = (list: MarkdocNode) => {
+      const items = map.paragraphs.filter((paragraph) => paragraph.listItem?.list === list && paragraph.ownLines);
+      const indent = Math.min(...items.map((paragraph) => paragraph.listItem!.indent.length));
+      return items.filter((paragraph) => paragraph.listItem!.indent.length === indent);
+    };
+    const delimiterOf = (marker: string) => (/^\d/u.test(marker) ? marker.slice(-1) : marker);
+    const survivors = map.ast.children.map((node, entry) => ({ node, entry })).filter(({ entry }) => !entryGone(entry));
+    let assigned: string | undefined;
+    let joinedBy: Plan | undefined;
+    for (let k = 0; k < survivors.length; k += 1) {
+      const { node, entry } = survivors[k]!;
+      const items = node.type === 'list' ? topItems(node) : [];
+      if (items.length === 0) {
+        assigned = undefined;
+        joinedBy = undefined;
+        continue;
+      }
+      const ordered = /^\d/u.test(items[0]!.listItem!.marker);
+      const original = delimiterOf(items[0]!.listItem!.marker);
+      const previous = survivors[k - 1];
+      const adjacentSameKind = assigned !== undefined && previous && previous.node.type === 'list' && /^\d/u.test(topItems(previous.node)[0]!.listItem!.marker) === ordered;
+      // The deletion that joins this list to the one before, when one does.
+      for (let gap = (previous?.entry ?? -1) + 1; gap < entry; gap += 1) joinedBy = entryPlans.get(gap) ?? joinedBy;
+      if (!adjacentSameKind || original !== assigned) {
+        assigned = original;
+        continue;
+      }
+      const choices = ordered ? ['.', ')'] : ['-', '*', '+'];
+      const nextNode = survivors[k + 1]?.node;
+      const nextItems = nextNode?.type === 'list' ? topItems(nextNode) : [];
+      const nextDelimiter = nextItems.length > 0 && /^\d/u.test(nextItems[0]!.listItem!.marker) === ordered ? delimiterOf(nextItems[0]!.listItem!.marker) : undefined;
+      const pick = choices.find((choice) => choice !== assigned && choice !== nextDelimiter) ?? choices.find((choice) => choice !== assigned)!;
+      assigned = pick;
+      if (!joinedBy) continue;
+      for (const paragraph of items) {
+        if (deletedSet.has(paragraph.index)) continue;
+        const { indent, marker } = paragraph.listItem!;
+        const at = starts[paragraph.ownLines![0]]! + indent.length;
+        joinedBy.splices.push({ start: at, end: at + marker.length, text: ordered ? `${marker.slice(0, -1)}${pick}` : pick });
+      }
     }
   }
 
@@ -1324,8 +1345,17 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     if (plan?.keepsSkeleton && skeleton(candidate) !== skeleton(current)) return 'the edit would change the markup around it';
     return undefined;
   };
+  // Each plan's splices are in the original source's offsets: they are moved past the splices already applied, and a
+  // plan that would edit inside one is not written.
+  const applied: Splice[] = [];
+  const moved = (offset: number) => offset + applied.reduce((sum, splice) => sum + (splice.start < splice.end && splice.end <= offset ? splice.text.length - (splice.end - splice.start) : splice.start === splice.end && splice.start < offset ? splice.text.length : 0), 0);
   for (const plan of [...plans].sort((x, y) => Math.max(...y.splices.map((s) => s.start)) - Math.max(...x.splices.map((s) => s.start)))) {
-    const candidate = applySplices(current, plan.splices);
+    const overlapping = plan.splices.some((splice) => applied.some((done) => done.start < done.end && ((splice.start > done.start && splice.start < done.end) || (splice.end > done.start && splice.end < done.end) || (splice.start <= done.start && splice.end >= done.end && splice.start < splice.end))));
+    if (overlapping) {
+      diagnostics.push({ code: 'PULL_EDIT_NOT_VERIFIED', message: `${plan.where.paragraph ? `paragraph ${plan.where.paragraph}` : 'an added paragraph'}: it overlaps another edit written to the same source lines; the change is not written`, line: plan.where.line || undefined, ...(plan.where.paragraph ? { paragraph: plan.where.paragraph } : {}) });
+      continue;
+    }
+    const candidate = applySplices(current, plan.splices.map((splice) => ({ ...splice, start: moved(splice.start), end: moved(splice.end) })));
     const expected = cloneSlots(slots);
     plan.apply(expected);
     const problem = verify(candidate, expected, storiesExpected, plan);
@@ -1335,6 +1365,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     }
     current = candidate;
     slots = expected;
+    applied.push(...plan.splices);
     for (const change of plan.changes) change.applied = true;
   }
 

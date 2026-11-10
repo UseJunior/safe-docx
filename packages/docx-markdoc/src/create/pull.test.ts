@@ -828,6 +828,12 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', dropParagraph('Bridge.'), '- Apple\n\n* Banana\n* Cherry\n\nBody.\n'],
         ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', dropParagraph('Bridge.'), '1. Apple\n\n1) Banana\n\nBody.\n'],
         ['- Apple\n\nBridge.\n\nMore.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), dropParagraph('More.')), '- Apple\n\n* Banana\n\nBody.\n'],
+        // With an edit inside the second list, beside it, or a list that already follows with the other delimiter.
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Banana', 'Banana changed')), '- Apple\n\n* Banana changed\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), dropParagraph('Banana')), '- Apple\n\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\n* Cherry\n\nBody.\n', dropParagraph('Bridge.'), '- Apple\n\n+ Banana\n\n* Cherry\n\nBody.\n'],
+        ['- Apple\n\nB1.\n\n- Banana\n\nB2.\n\n- Cherry\n\nBody.\n', all(dropParagraph('B1.'), dropParagraph('B2.')), '- Apple\n\n* Banana\n\n- Cherry\n\nBody.\n'],
+        ['1. Apple\n\nB1.\n\n1. Banana\n\nB2.\n\n1. Cherry\n\nBody.\n', all(dropParagraph('B1.'), dropParagraph('B2.')), '1. Apple\n\n1) Banana\n\n1. Cherry\n\nBody.\n'],
       ] as const) {
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });

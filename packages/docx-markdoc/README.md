@@ -1073,9 +1073,17 @@ dropped without a line:
 | `PULL_EDIT_NOT_VERIFIED`, `PULL_REBUILD_DIFFERS` | a planned change that did not read back as the edited DOCX |
 
 Some edits that creation Markdoc could express are still reported rather than
-written. One example is the text of a parent list item retyped from scratch
-while its nested items stay (`PULL_UNMAPPED_DELETION`). Make those edits in
-the source by hand.
+written. Make these edits in the source by hand:
+
+- the text of a parent list item retyped from scratch while its nested items
+  stay (`PULL_UNMAPPED_DELETION`);
+- a separate list inserted directly before another list
+  (`PULL_UNMAPPED_INSERTION`);
+- the paragraph deleted between a list and an indented paragraph that would
+  then join the list (`PULL_EDIT_NOT_VERIFIED`).
+
+When the paragraph between two lists of one kind is deleted, pull keeps them
+two lists by giving the second another delimiter (`*` for `-`, `)` for `.`).
 
 `pull` compares the body, headers, footers, footnotes, every style the build
 defines, numbering, tables, sections and page setup, the layout settings and
