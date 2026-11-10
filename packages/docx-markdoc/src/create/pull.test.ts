@@ -806,6 +806,26 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         const result = await pullCreationEdits({ source: threeSource, base: threeBase, edited: await edit(threeBase.docx, { document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, `<w:t xml:space="preserve">${retyped}</w:t>`) }) });
         expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
       }
+      // List items deleted (a whole first list, which renumbers the rest, and a last item) and retyped from scratch.
+      const dropParagraph = (text: string): Surgery => ({ document: (xml) => {
+        const pattern = new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${text}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        expect(pattern.test(xml)).toBe(true);
+        return xml.replace(pattern, '');
+      } });
+      const retype = (old: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, '<w:t xml:space="preserve">Entirely fresh sentence.</w:t>') });
+      for (const [listSource, surgery, expected] of [
+        ['1. Apple\n\nBridge.\n\n1. Cherry\n', dropParagraph('Apple'), 'Bridge.\n\n1. Cherry\n'],
+        ['1. Apple\n2. Avocado\n\nBridge.\n\n- Cherry\n- Date\n', dropParagraph('Apple'), '1. Avocado\n\nBridge.\n\n- Cherry\n- Date\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', dropParagraph('Banana'), '1. Apple\n\nBody.\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', retype('Apple'), '1. Entirely fresh sentence.\n1. Banana\n\nBody.\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', retype('Banana'), '1. Apple\n2. Entirely fresh sentence.\n\nBody.\n'],
+        ['- Apple\n- Banana\n\nBody.\n', retype('Apple'), '- Entirely fresh sentence.\n- Banana\n\nBody.\n'],
+        ['1. Apple\n\nBody.\n', retype('Apple'), '1. Entirely fresh sentence.\n\nBody.\n'],
+      ] as const) {
+        const listBase = await build(listSource);
+        const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });
+        expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
       // The same when only a footnote cross-references the heading.
       const noteRangeSource = '## Alpha Beta {% #target %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
       const noteRangeBase = await build(noteRangeSource);

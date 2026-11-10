@@ -1074,6 +1074,12 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
           if (nestedReport) covered.push(nestedReport);
         }
       }
+      // Not the blank lines that end the list: lineDeletion takes the one after only when the list goes with it.
+      if (sp.listItem) {
+        let end = own[1];
+        while (end - 1 > own[0] && source.slice(starts[end - 1]!, starts[end] ?? source.length).trim() === '') end -= 1;
+        own = [own[0], end];
+      }
       const splices = [lineDeletion(source, starts, own)];
       // The first item of an ordered list sets its start: the first item that stays takes its marker.
       const item = sp.listItem;
@@ -1139,17 +1145,22 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     if (kind === 'list' && (prev?.listItem || nextParagraph?.listItem)) {
       const context = prev?.listItem ? prev : nextParagraph!;
       const item = context.listItem!;
-      let line = context === prev ? context.ownLines?.[1] : context.ownLines?.[0];
+      // In place of an item that was deleted (an item retyped from scratch), where it started; else after it.
+      const replacing = context === prev && deletedSet.has(run.after);
+      let line = context === prev && !replacing ? context.ownLines?.[1] : context.ownLines?.[0];
       // Directly after the item's own text, not after the blank line that ends the list.
-      if (line !== undefined && context === prev) {
+      if (line !== undefined && context === prev && !replacing) {
         while (line - 1 > context.ownLines![0] && source.slice(starts[line - 1]!, starts[line] ?? source.length).trim() === '') line -= 1;
       }
       if (line === undefined) {
         fail('PULL_UNMAPPED_INSERTION', 'the list item it follows has no source lines');
         continue;
       }
-      const text = blocks.map((block) => `${item.indent}${item.marker} ${block.markdown.replaceAll('\\\n', `\\\n${item.indent}${' '.repeat(item.marker.length + 1)}`)}\n`).join('');
-      splice = { start: starts[line] ?? source.length, end: starts[line] ?? source.length, text: (starts[line] ?? source.length) === source.length && !source.endsWith('\n') ? `\n${text}` : text };
+      const text = blocks.map((block) => `${item.indent}${item.marker} ${block.markdown.replaceAll('\\\n', `\\\n${item.indent}${' '.repeat(item.marker.length + 1)}`)}\n`).join('');      // A list whose every item was deleted takes the blank line after it along: the new items keep one.
+      const survivors = map.paragraphs.some((other) => other.listItem?.list === item.list && !deletedSet.has(other.index));
+      const ending = replacing && !survivors && (starts[line] ?? source.length) < source.length ? '\n' : '';
+
+      splice = { start: starts[line] ?? source.length, end: starts[line] ?? source.length, text: (starts[line] ?? source.length) === source.length && !source.endsWith('\n') ? `\n${text}` : `${text}${ending}` };
     } else if (kind === 'quote' && prev?.quote && prev.ownLines) {
       const line = prev.ownLines[1];
       const text = blocks.map((block) => `>\n> ${block.markdown.replaceAll('\\\n', '\\\n> ')}\n`).join('');
@@ -1432,7 +1443,9 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   } else {
     const index = E.findIndex((paragraph, k) => JSON.stringify(paragraph.formats) !== JSON.stringify(rebuiltDoc.paragraphs[k]!.formats));
     // Paragraph formatting too: an added paragraph's (its mark set in 72 pt, say) is compared nowhere else.
-    const formatted = E.findIndex((paragraph, k) => paragraph.properties !== rebuiltDoc.paragraphs[k]!.properties);
+    // Numbering instance ids are the build's own (a deleted list renumbers the rest); list labels are compared apart.
+    const unnumbered = (properties: string) => properties.replace(/(^|;)num=[^/;]*\//gu, '$1num=/');
+    const formatted = E.findIndex((paragraph, k) => unnumbered(paragraph.properties) !== unnumbered(rebuiltDoc.paragraphs[k]!.properties));
     if (index !== -1) differs = `paragraph ${index + 1}'s run formatting differs between the rebuild and the edited DOCX`;
     else if (formatted !== -1) {
       differs = `paragraph ${formatted + 1}'s paragraph formatting differs between the rebuild and the edited DOCX`;
