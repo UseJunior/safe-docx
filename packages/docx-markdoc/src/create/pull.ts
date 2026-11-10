@@ -1019,6 +1019,38 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     }
     byEntry.set(entry, [...(byEntry.get(entry) ?? []), index]);
   }
+  const entryGone = (entry: number) => {
+    const held = entryParagraphs(entry);
+    return held.length > 0 ? held.every((index) => deletedSet.has(index)) : map.ast.children[entry]?.type === 'tag' && map.ast.children[entry]!.tag === 'page-break';
+  };
+  /**
+   * When the last block between two lists of one kind and delimiter goes, Markdown would join the lists, so the second
+   * takes the other delimiter (`*` for `-`, `)` for `.`), which builds the same list on its own.
+   */
+  const listSeparation = (entry: number): Splice[] => {
+    if (entryGone(entry + 1) && entry + 1 < map.ast.children.length) return [];
+    let before = entry - 1;
+    while (before >= 0 && entryGone(before)) before -= 1;
+    const after = entry + 1;
+    const first = map.ast.children[before];
+    const second = map.ast.children[after];
+    if (first?.type !== 'list' || second?.type !== 'list') return [];
+    const itemsOf = (list: MarkdocNode) => map.paragraphs.filter((paragraph) => paragraph.listItem?.list === list && paragraph.ownLines);
+    const firstItems = itemsOf(first);
+    const secondItems = itemsOf(second);
+    if (firstItems.length === 0 || secondItems.length === 0) return [];
+    const top = (items: SourceParagraph[]) => items.filter((paragraph) => paragraph.listItem!.indent.length === Math.min(...items.map((other) => other.listItem!.indent.length)));
+    const delimiter = (marker: string) => (/^\d/u.test(marker) ? marker.slice(-1) : marker);
+    const was = delimiter(top(firstItems)[0]!.listItem!.marker);
+    const secondTop = top(secondItems);
+    if (delimiter(secondTop[0]!.listItem!.marker) !== was) return [];
+    const swap: Record<string, string> = { '-': '*', '*': '-', '+': '-', '.': ')', ')': '.' };
+    return secondTop.map((paragraph) => {
+      const { indent, marker } = paragraph.listItem!;
+      const at = starts[paragraph.ownLines![0]]! + indent.length;
+      return { start: at, end: at + marker.length, text: /^\d/u.test(marker) ? `${marker.slice(0, -1)}${swap[was]}` : swap[was]! };
+    });
+  };
   for (const [entry, indexes] of byEntry) {
     const reports = indexes.map((index) => {
       const sp = map.paragraphs[index]!;
@@ -1040,6 +1072,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const splices = [lineDeletion(source, starts, lines)];
       const previous = map.ast.children[entry - 1];
       if (previous?.type === 'tag' && previous.tag === 'page-break' && map.entryLines[entry - 1]) splices.push(lineDeletion(source, starts, map.entryLines[entry - 1]!));
+      splices.push(...listSeparation(entry));
       const removed = [...indexes];
       plans.push({ changes: reports, splices, apply: (slots) => { for (const index of removed) slots.items[index]!.text = null; }, keepsSkeleton: false, where: { line: reports[0]!.line, paragraph: indexes[0]! + 1 } });
       continue;

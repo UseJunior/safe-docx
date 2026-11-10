@@ -824,6 +824,10 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['1. Apple\n\nBody.\n', retype('Apple'), '1. Entirely fresh sentence.\n\nBody.\n'],
         ['Before.\n\n1. Apple\n2. Banana\n3. Cherry\n4. Date\n\nBody.\n', all(dropParagraph('Apple'), dropParagraph('Banana')), 'Before.\n\n1. Cherry\n4. Date\n\nBody.\n'],
         ['1. Apple\n2. Banana\n\nBody.\n', all(once2('Apple', 'Fresh zero.'), once2('Banana', 'Fresh one.')), '1. Fresh zero.\n1. Fresh one.\n\nBody.\n'],
+        // The paragraph between two lists deleted: the second keeps its own list with the other delimiter.
+        ['- Apple\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', dropParagraph('Bridge.'), '- Apple\n\n* Banana\n* Cherry\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', dropParagraph('Bridge.'), '1. Apple\n\n1) Banana\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\nMore.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), dropParagraph('More.')), '- Apple\n\n* Banana\n\nBody.\n'],
       ] as const) {
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });
