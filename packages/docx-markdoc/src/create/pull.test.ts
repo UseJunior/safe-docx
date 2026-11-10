@@ -812,6 +812,7 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         expect(pattern.test(xml)).toBe(true);
         return xml.replace(pattern, '');
       } });
+      const once2 = (old: string, now: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, `<w:t xml:space="preserve">${now}</w:t>`) });
       const retype = (old: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, '<w:t xml:space="preserve">Entirely fresh sentence.</w:t>') });
       for (const [listSource, surgery, expected] of [
         ['1. Apple\n\nBridge.\n\n1. Cherry\n', dropParagraph('Apple'), 'Bridge.\n\n1. Cherry\n'],
@@ -821,11 +822,24 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         ['1. Apple\n2. Banana\n\nBody.\n', retype('Banana'), '1. Apple\n2. Entirely fresh sentence.\n\nBody.\n'],
         ['- Apple\n- Banana\n\nBody.\n', retype('Apple'), '- Entirely fresh sentence.\n- Banana\n\nBody.\n'],
         ['1. Apple\n\nBody.\n', retype('Apple'), '1. Entirely fresh sentence.\n\nBody.\n'],
+        ['Before.\n\n1. Apple\n2. Banana\n3. Cherry\n4. Date\n\nBody.\n', all(dropParagraph('Apple'), dropParagraph('Banana')), 'Before.\n\n1. Cherry\n4. Date\n\nBody.\n'],
+        ['1. Apple\n2. Banana\n\nBody.\n', all(once2('Apple', 'Fresh zero.'), once2('Banana', 'Fresh one.')), '1. Fresh zero.\n1. Fresh one.\n\nBody.\n'],
       ] as const) {
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });
         expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
       }
+      // A list item retyped and moved into the list before it: the same label, another list.
+      const membershipSource = '- Apple\n\nBridge.\n\n- Banana\n\nBody.\n';
+      const membershipBase = await build(membershipSource);
+      const intoFirstList: Surgery = { document: (xml) => {
+        const paragraphOf = (text: string) => new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${text}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        const apple = xml.match(paragraphOf('Apple'))![0].match(/<w:numId w:val="(\d+)"\/>/u)![1]!;
+        return xml.replace(paragraphOf('Banana'), (paragraph) => paragraph.replace(/<w:numId w:val="\d+"\/>/u, `<w:numId w:val="${apple}"/>`).replace('>Banana<', '>Entirely fresh sentence.<'));
+      } };
+      const moved = await pullCreationEdits({ source: membershipSource, base: membershipBase, edited: await edit(membershipBase.docx, intoFirstList) });
+      expect(moved.complete).toBe(false);
+      expect(codes(moved)).toEqual(['PULL_PARAGRAPH_FORMATTING']);
       // The same when only a footnote cross-references the heading.
       const noteRangeSource = '## Alpha Beta {% #target %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
       const noteRangeBase = await build(noteRangeSource);

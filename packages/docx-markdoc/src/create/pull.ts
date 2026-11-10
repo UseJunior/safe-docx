@@ -1074,25 +1074,39 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
           if (nestedReport) covered.push(nestedReport);
         }
       }
+      // The first item of an ordered list sets its start: the first item that stays takes its marker. The items deleted
+      // before it go in the same plan, as one deletion, so that no other plan edits the lines the marker edit shifts.
+      const item = sp.listItem;
+      let heirMarker: Splice | undefined;
+      if (item && /^\d+[.)]$/u.test(item.marker)) {
+        const siblings = map.paragraphs.filter((other) => other.listItem?.list === item.list && other.listItem.indent === item.indent);
+        if (siblings[0] === sp) {
+          const heir = siblings.find((other) => !deletedSet.has(other.index));
+          if (heir?.ownLines && heir.listItem!.marker !== item.marker) {
+            for (const leading of siblings.slice(1, siblings.indexOf(heir))) {
+              const descendants = leading.listItem!.nested;
+              if (!descendants.every((nested) => deletedSet.has(nested)) || !leading.ownLines) break;
+              const last = descendants.length > 0 ? map.paragraphs[descendants.at(-1)!]! : leading;
+              own = [own[0], Math.max(own[1], last.ownLines?.[1] ?? last.endLine)];
+              for (const index of [leading.index, ...descendants]) {
+                coveredByParent.add(index);
+                removed.push(index);
+                const leadingReport = reports.find((candidate) => candidate.paragraph === index + 1);
+                if (leadingReport) covered.push(leadingReport);
+              }
+            }
+            const at = starts[heir.ownLines[0]]! + heir.listItem!.indent.length;
+            heirMarker = { start: at, end: at + heir.listItem!.marker.length, text: item.marker };
+          }
+        }
+      }
       // Not the blank lines that end the list: lineDeletion takes the one after only when the list goes with it.
       if (sp.listItem) {
         let end = own[1];
         while (end - 1 > own[0] && source.slice(starts[end - 1]!, starts[end] ?? source.length).trim() === '') end -= 1;
         own = [own[0], end];
       }
-      const splices = [lineDeletion(source, starts, own)];
-      // The first item of an ordered list sets its start: the first item that stays takes its marker.
-      const item = sp.listItem;
-      if (item && /^\d+[.)]$/u.test(item.marker)) {
-        const siblings = map.paragraphs.filter((other) => other.listItem?.list === item.list && other.listItem.indent === item.indent);
-        if (siblings[0] === sp) {
-          const heir = siblings.find((other) => !deletedSet.has(other.index));
-          if (heir?.ownLines && heir.listItem!.marker !== item.marker) {
-            const at = starts[heir.ownLines[0]]! + heir.listItem!.indent.length;
-            splices.push({ start: at, end: at + heir.listItem!.marker.length, text: item.marker });
-          }
-        }
-      }
+      const splices = [lineDeletion(source, starts, own), ...(heirMarker ? [heirMarker] : [])];
       plans.push({ changes: covered, splices, apply: (slots) => { for (const r of removed) slots.items[r]!.text = null; }, keepsSkeleton: false, where: { line: report.line, paragraph: index + 1 } });
     }
   }
@@ -1144,7 +1158,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     let splice: Splice | undefined;
     if (kind === 'list' && (prev?.listItem || nextParagraph?.listItem)) {
       const context = prev?.listItem ? prev : nextParagraph!;
-      const item = context.listItem!;
+      let item = context.listItem!;
       // In place of an item that was deleted (an item retyped from scratch), where it started; else after it.
       const replacing = context === prev && deletedSet.has(run.after);
       let line = context === prev && !replacing ? context.ownLines?.[1] : context.ownLines?.[0];
@@ -1155,6 +1169,12 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       if (line === undefined) {
         fail('PULL_UNMAPPED_INSERTION', 'the list item it follows has no source lines');
         continue;
+      }
+      // Items replacing a list's first items (the whole list retyped) start it where it started.
+      if (replacing && /^\d+[.)]$/u.test(item.marker)) {
+        const siblings = map.paragraphs.filter((other) => other.listItem?.list === item.list && other.listItem.indent === item.indent);
+        const first = siblings[0]!.listItem!;
+        if (siblings.slice(0, siblings.indexOf(context) + 1).every((other) => deletedSet.has(other.index))) item = { ...item, marker: first.marker };
       }
       const text = blocks.map((block) => `${item.indent}${item.marker} ${block.markdown.replaceAll('\\\n', `\\\n${item.indent}${' '.repeat(item.marker.length + 1)}`)}\n`).join('');      // A list whose every item was deleted takes the blank line after it along: the new items keep one.
       const survivors = map.paragraphs.some((other) => other.listItem?.list === item.list && !deletedSet.has(other.index));
@@ -1443,9 +1463,18 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   } else {
     const index = E.findIndex((paragraph, k) => JSON.stringify(paragraph.formats) !== JSON.stringify(rebuiltDoc.paragraphs[k]!.formats));
     // Paragraph formatting too: an added paragraph's (its mark set in 72 pt, say) is compared nowhere else.
-    // Numbering instance ids are the build's own (a deleted list renumbers the rest); list labels are compared apart.
-    const unnumbered = (properties: string) => properties.replace(/(^|;)num=[^/;]*\//gu, '$1num=/');
-    const formatted = E.findIndex((paragraph, k) => unnumbered(paragraph.properties) !== unnumbered(rebuiltDoc.paragraphs[k]!.properties));
+    // Numbering instance ids are the build's own (a deleted list renumbers the rest), so each is compared as the list
+    // it opens, in the order lists first appear: a paragraph moved into another list still differs.
+    const listed = (paragraphs: readonly PullParagraph[]) => {
+      const order = new Map<string, number>();
+      return paragraphs.map((paragraph) => paragraph.properties.replace(/(^|;)num=([^/;]*)\//gu, (_match, lead: string, id: string) => {
+        if (!order.has(id)) order.set(id, order.size);
+        return `${lead}num=#${order.get(id)}/`;
+      }));
+    };
+    const editedListed = listed(E);
+    const rebuiltListed = listed(rebuiltDoc.paragraphs);
+    const formatted = E.findIndex((_paragraph, k) => editedListed[k] !== rebuiltListed[k]);
     if (index !== -1) differs = `paragraph ${index + 1}'s run formatting differs between the rebuild and the edited DOCX`;
     else if (formatted !== -1) {
       differs = `paragraph ${formatted + 1}'s paragraph formatting differs between the rebuild and the edited DOCX`;

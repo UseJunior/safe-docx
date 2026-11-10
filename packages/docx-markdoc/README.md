@@ -1072,6 +1072,11 @@ dropped without a line:
 | `PULL_PARAGRAPH_NOT_MAPPED`, `PULL_UNMAPPED_DELETION`, `PULL_UNMAPPED_INSERTION` | a paragraph, deletion or insertion pull could not place in the source |
 | `PULL_EDIT_NOT_VERIFIED`, `PULL_REBUILD_DIFFERS` | a planned change that did not read back as the edited DOCX |
 
+Some edits that creation Markdoc could express are still reported rather than
+written. One example is the text of a parent list item retyped from scratch
+while its nested items stay (`PULL_UNMAPPED_DELETION`). Make those edits in
+the source by hand.
+
 `pull` compares the body, headers, footers, footnotes, every style the build
 defines, numbering, tables, sections and page setup, the layout settings and
 the document properties above. It does not compare the theme, the font
