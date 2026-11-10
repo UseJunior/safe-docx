@@ -786,6 +786,26 @@ describe('Traceability: pull brings Word edits on a create output back into its 
           expect(codes(result)).toEqual(['PULL_PARAGRAPH_FORMATTING']);
         }
       }
+      // An added paragraph whose mark is set in 72 pt, beside a plain one; and paragraphs retyped from scratch, first,
+      // in the middle and last, which pull writes as the new paragraph in the old one's place.
+      const threeSource = 'Alpha beta.\n\nMiddle words.\n\nOmega end.\n';
+      const threeBase = await build(threeSource);
+      const addedAfter = (mark: string): Surgery => ({ document: (xml) => once(xml, '<w:t xml:space="preserve">Middle words.</w:t></w:r></w:p>', `<w:t xml:space="preserve">Middle words.</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="BodyText"/>${mark}</w:pPr><w:r><w:t xml:space="preserve">Inserted paragraph.</w:t></w:r></w:p>`) });
+      const plainAdded = await pullCreationEdits({ source: threeSource, base: threeBase, edited: await edit(threeBase.docx, addedAfter('')) });
+      expect(plainAdded).toMatchObject({ complete: true, diagnostics: [], pulledSource: 'Alpha beta.\n\nMiddle words.\n\nInserted paragraph.\n\nOmega end.\n' });
+      for (const mark of ['<w:rPr><w:sz w:val="144"/></w:rPr>', '<w:rPr><w:b w:val="0"/></w:rPr>']) {
+        const result = await pullCreationEdits({ source: threeSource, base: threeBase, edited: await edit(threeBase.docx, addedAfter(mark)) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_PARAGRAPH_FORMATTING']);
+      }
+      for (const [old, retyped, expected] of [
+        ['Alpha beta.', 'Completely new wording.', 'Completely new wording.\n\nMiddle words.\n\nOmega end.\n'],
+        ['Middle words.', 'Completely new wording.', 'Alpha beta.\n\nCompletely new wording.\n\nOmega end.\n'],
+        ['Omega end.', 'Completely new wording.', 'Alpha beta.\n\nMiddle words.\n\nCompletely new wording.\n'],
+      ] as const) {
+        const result = await pullCreationEdits({ source: threeSource, base: threeBase, edited: await edit(threeBase.docx, { document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, `<w:t xml:space="preserve">${retyped}</w:t>`) }) });
+        expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
       // The same when only a footnote cross-references the heading.
       const noteRangeSource = '## Alpha Beta {% #target %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
       const noteRangeBase = await build(noteRangeSource);

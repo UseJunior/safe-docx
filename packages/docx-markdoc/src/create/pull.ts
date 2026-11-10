@@ -56,7 +56,8 @@ export type PullInput = {
   edited: Buffer;
 };
 
-type Splice = { start: number; end: number; text: string };
+/** A source edit; `block` is the Markdown of whole paragraphs it inserts, when it inserts only that. */
+type Splice = { start: number; end: number; text: string; block?: string };
 
 /** The paragraphs a pulled source must read back as: each build paragraph (or null once deleted) with what was added after it. */
 type Slots = { before: string[]; items: Array<{ text: string | null; after: string[] }> };
@@ -1169,7 +1170,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
           fail('PULL_UNMAPPED_INSERTION', 'the block it follows has no source lines');
           continue;
         }
-        splice = blockInsertion(source, starts, end, markdown);
+        splice = { ...blockInsertion(source, starts, end, markdown), block: markdown };
       } else {
         const first = map.paragraphs.find((paragraph) => paragraph.entry !== -1);
         const line = first ? map.entryLines[first.entry]?.[0] : undefined;
@@ -1188,8 +1189,16 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   for (const plan of plans) {
     for (const splice of plan.splices) {
       if (splice.start !== splice.end) continue;
-      const covering = deletions.find((deletion) => deletion.start < splice.start && splice.start < deletion.end);
-      if (covering) splice.start = splice.end = covering.start;
+      // A deletion of the last block ends where an insertion after it starts.
+      const covering = deletions.find((deletion) => deletion.start < splice.start && (splice.start < deletion.end || (splice.block !== undefined && splice.start === deletion.end && deletion.end === source.length)));
+      if (!covering) continue;
+      splice.start = splice.end = covering.start;
+      // Whole paragraphs that went after the deleted block now open the place it took, so they are separated from
+      // what follows it by a blank line, as the deleted block was (a paragraph retyped from scratch is such a pair).
+      if (splice.block !== undefined) {
+        const rest = source.slice(covering.end);
+        splice.text = rest === '' || /^[ \t]*(\n|$)/u.test(rest) ? `${splice.block}\n` : `${splice.block}\n\n`;
+      }
     }
   }
 
@@ -1422,8 +1431,15 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     differs = `paragraph ${index + 1} reads ${quote(rebuiltTexts[index] ?? '(nothing)')} in the rebuild and ${quote(editedTexts[index] ?? '(nothing)')} in the edited DOCX`;
   } else {
     const index = E.findIndex((paragraph, k) => JSON.stringify(paragraph.formats) !== JSON.stringify(rebuiltDoc.paragraphs[k]!.formats));
+    // Paragraph formatting too: an added paragraph's (its mark set in 72 pt, say) is compared nowhere else.
+    const formatted = E.findIndex((paragraph, k) => paragraph.properties !== rebuiltDoc.paragraphs[k]!.properties);
     if (index !== -1) differs = `paragraph ${index + 1}'s run formatting differs between the rebuild and the edited DOCX`;
-    else if (JSON.stringify(docStories(rebuiltDoc)) !== JSON.stringify(editedStories)) differs = 'the visible header or footer differs between the rebuild and the edited DOCX';
+    else if (formatted !== -1) {
+      differs = `paragraph ${formatted + 1}'s paragraph formatting differs between the rebuild and the edited DOCX`;
+      if (!diagnostics.some((diagnostic) => diagnostic.code === 'PULL_PARAGRAPH_FORMATTING')) {
+        diagnostics.push({ code: 'PULL_PARAGRAPH_FORMATTING', message: `paragraph ${formatted + 1} of the edited DOCX has paragraph formatting (${E[formatted]!.properties || 'none'}) the rebuild does not (${rebuiltDoc.paragraphs[formatted]!.properties || 'none'}), which create does not express` });
+      }
+    } else if (JSON.stringify(docStories(rebuiltDoc)) !== JSON.stringify(editedStories)) differs = 'the visible header or footer differs between the rebuild and the edited DOCX';
   }
   if (!differs) diagnostics.push(...structureDiagnostics(rebuiltDoc));
   if (differs && allApplied && diagnostics.length === 0) diagnostics.push({ code: 'PULL_REBUILD_DIFFERS', message: `${differs}; create --replace will not accept the rebuild over the edited DOCX` });
