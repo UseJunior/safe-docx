@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `docx-markdoc create` no longer fails its PDF word check when a word that
+  holds a hyphen, such as `re-evaluate`, wraps right after the hyphen at a
+  line end. `pdftotext -raw` reads that as `re-` and `evaluate`. The check
+  now rejoins such tokens only when the hyphen token ends its raw line and
+  the alignment left exactly the joined word missing at that place, so a
+  stray hyphen, or a joined form that differs from the source, still fails.
+  Rejoined words are listed under `knownGenerated.wrappedHyphens`. A wrap
+  across a page break, or one whose fragment the alignment matched to a
+  neighbouring word spelled the same (`re-` `evaluate` before the source
+  word `evaluate`), is not rejoined and still fails. (#1289)
+  A justified first line that `pdftotext -raw` reads with only some of its
+  spaces missing (`alphabravo charliedelta…`, #1291) already passes since
+  #1246; a regression test now pins that shape.
 - Generated documents can cross-reference their own numbered provisions. In
   docx-core, a body `ParagraphSpec` takes a `bookmark` name, and a
   `{ kind: 'crossReference', bookmark, number?: 'fullContext' | 'paragraph' }`

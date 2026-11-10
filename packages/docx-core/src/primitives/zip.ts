@@ -41,8 +41,6 @@ function normalizePartText(path: string, text: string): string {
 
 export class DocxZip {
   private zip: JSZip;
-  /** Tail of the in-flight `toBuffer` chain; see `toBuffer`. */
-  private serialization: Promise<void> = Promise.resolve();
 
   private constructor(zip: JSZip) {
     this.zip = zip;
@@ -50,6 +48,20 @@ export class DocxZip {
 
   static async load(buffer: Buffer): Promise<DocxZip> {
     const zip = await JSZip.loadAsync(buffer);
+    return new DocxZip(zip);
+  }
+
+  /** Isolate the entry table and metadata; compressed payloads are immutable. */
+  fork(): DocxZip {
+    const zip = new JSZip();
+    for (const file of Object.values(this.zip.files)) {
+      zip.files[file.name] = Object.assign(Object.create(Object.getPrototypeOf(file)), file, {
+        date: new Date(file.date.getTime()),
+        options: { ...file.options },
+      });
+    }
+    (zip as JSZip & { comment?: string | null }).comment =
+      (this.zip as JSZip & { comment?: string | null }).comment;
     return new DocxZip(zip);
   }
 
@@ -86,46 +98,40 @@ export class DocxZip {
   /**
    * Serialize the archive. With `fileDate`, every entry is written with that
    * date instead of the time it was (re)written, so the output depends only on
-   * the entries' content; the in-memory dates are restored afterwards so a
-   * later save without the option behaves as before. Overlapping calls on one
-   * instance run one at a time, so a concurrent save without the option never
-   * observes another call's fixed date.
+   * the entries' content. Entry metadata and the file map are snapshotted
+   * synchronously so concurrent exports never change the live archive.
+   * `textOverrides` replaces or adds parts only in that call's output.
    */
-  toBuffer(opts?: { fileDate?: Date }): Promise<Buffer> {
-    const run = this.serialization.then(() => this.serialize(opts));
-    this.serialization = run.then(() => undefined, () => undefined);
-    return run;
-  }
-
-  private async serialize(opts?: { fileDate?: Date }): Promise<Buffer> {
+  async toBuffer(opts?: { fileDate?: Date; textOverrides?: Readonly<Record<string, string>> }): Promise<Buffer> {
+    const snapshot = new JSZip();
+    const comment = (this.zip as JSZip & { comment?: string | null }).comment;
     // OPC packages never need directory entries (Word does not emit them);
     // drop any that came in via the source archive or earlier writes so the
     // output contract is simply "zero directory entries". NOT zip.remove():
     // that deletes a folder's contents recursively.
     for (const file of Object.values(this.zip.files)) {
-      if (file.dir) delete this.zip.files[file.name];
-    }
-    const savedDates = new Map<string, Date>();
-    if (opts?.fileDate) {
-      for (const file of Object.values(this.zip.files)) {
-        savedDates.set(file.name, file.date);
-        file.date = opts.fileDate;
-      }
-    }
-    try {
-      // jszip defaults to STORE, which inflated saves ~6x.
-      const out = await this.zip.generateAsync({
-        type: 'nodebuffer',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 6 },
+      if (file.dir) continue;
+      // Loaded compressed data and writeText strings are immutable here; share
+      // those payloads while preserving methods and isolating mutable metadata.
+      snapshot.files[file.name] = Object.assign(Object.create(Object.getPrototypeOf(file)), file, {
+        date: new Date((opts?.fileDate ?? file.date).getTime()),
+        options: { ...file.options },
       });
-      return out as Buffer;
-    } finally {
-      for (const [name, date] of savedDates) {
-        const file = this.zip.files[name];
-        if (file) file.date = date;
-      }
     }
+    for (const [name, text] of Object.entries(opts?.textOverrides ?? {})) {
+      snapshot.file(name, text, {
+        createFolders: false,
+        ...(opts?.fileDate ? { date: new Date(opts.fileDate.getTime()) } : {}),
+      });
+    }
+    // jszip defaults to STORE, which inflated saves ~6x.
+    const out = await snapshot.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+      comment: comment ?? undefined,
+    });
+    return out as Buffer;
   }
 }
 

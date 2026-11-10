@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 
 import { OdfDocument } from './document.js';
+import { readAnnotations } from './comments.js';
+import { parseXml } from '@usejunior/docx-core';
+import { collectBlocks } from './shared/odf/blocks.js';
 
 /** Wrap a content fragment in a minimal, namespace-complete content.xml (incl. dc). */
 function contentXml(bodyInner: string): string {
@@ -15,6 +18,28 @@ function contentXml(bodyInner: string): string {
 }
 
 describe('OdfDocument — comments (office:annotation)', () => {
+  it('keeps comment anchors through insertions and forks; actual reopen follows stored order', () => {
+    const doc = OdfDocument.fromContentXml(contentXml('<text:p>First</text:p><text:p>Second</text:p>'));
+    expect(doc.addComment({ paragraphId: 'p1', author: 'Jane Doe', text: 'Original second' }).ok).toBe(true);
+    expect(doc.insertParagraph('p0', 'New first', 'BEFORE')).toEqual({ ok: true, newIds: ['p2'] });
+    expect(doc.getComments()[0]!.anchoredParagraphId).toBe('p1');
+    const standaloneBlocks: Element[] = [];
+    collectBlocks(parseXml(doc.toXml()).documentElement, standaloneBlocks);
+    expect(readAnnotations(standaloneBlocks)[0]!.anchoredParagraphId).toBe('p2');
+    const fork = doc.fork();
+    expect(fork.addComment({ paragraphId: 'p2', author: 'Jane Doe', text: 'Inserted first' }).ok).toBe(true);
+    expect(fork.insertParagraph('p1', 'New last', 'AFTER')).toEqual({ ok: true, newIds: ['p3'] });
+    expect(fork.getComments().map(c => [c.text, c.anchoredParagraphId])).toEqual([
+      ['Inserted first', 'p2'], ['Original second', 'p1'],
+    ]);
+    expect(doc.getComments()).toHaveLength(1);
+    const reopened = OdfDocument.fromContentXml(fork.toXml());
+    expect(reopened.getComments().map(c => [c.text, c.anchoredParagraphId])).toEqual([
+      ['Inserted first', 'p0'], ['Original second', 'p2'],
+    ]);
+    expect(reopened.getParagraphs().map(p => p.text)).toEqual(['New first', 'First', 'Second', 'New last']);
+  });
+
   it('[OANN-01] addComment brackets a substring range with annotation + annotation-end', () => {
     const doc = OdfDocument.fromContentXml(contentXml('<text:p>The quick brown fox</text:p>'));
     const res = doc.addComment({ paragraphId: 'p0', start: 4, end: 9, author: 'A', text: 'on quick' });

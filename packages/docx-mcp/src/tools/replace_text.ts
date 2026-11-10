@@ -245,10 +245,8 @@ function isLikelyFieldPlaceholder(text: string): boolean {
   return (t.startsWith('[') && t.endsWith(']')) || (t.startsWith('«') && t.endsWith('»'));
 }
 
-function invalidateDocumentCaches(doc: unknown): void {
-  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
-  mutableDoc.dirty = true;
-  mutableDoc.documentViewCache = null;
+function invalidateDocumentCaches(doc: DocxDocument): void {
+  doc.markMutated();
 }
 
 export async function replaceText(
@@ -281,174 +279,176 @@ export async function replaceText(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'replace_text' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const revisionCtx = ctx ?? await getRevisionContextForSession(session);
+    return await manager.mutateSession(session, async (session) => {
+      const revisionCtx = await getRevisionContextForSession(session, ctx);
 
-    const { target_paragraph_id: pid } = params;
-    const oldStr = stripSearchTags(params.old_string);
-    let newStr = params.new_string;
-    if (hasHyperlinkTags(newStr)) newStr = stripHyperlinkTags(newStr);
+      const { target_paragraph_id: pid } = params;
+      const oldStr = stripSearchTags(params.old_string);
+      let newStr = params.new_string;
+      if (hasHyperlinkTags(newStr)) newStr = stripHyperlinkTags(newStr);
 
-    const beforeTextRaw = session.doc.getParagraphTextById(pid);
-    if (beforeTextRaw === null) {
-      return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
-    }
-
-    const paraText = beforeTextRaw;
-    const findMode = params.clean_match ? 'clean' : 'default';
-    const textMatch = findUniqueSubstringMatch(paraText, oldStr, { mode: findMode });
-    if (textMatch.status === 'not_found') {
-      return err('TEXT_NOT_FOUND', `Text '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' not found in paragraph ${pid}`);
-    }
-
-    if (textMatch.status === 'multiple') {
-      return err('MULTIPLE_MATCHES', `Found ${textMatch.matchCount} matches for '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' in paragraph. Need unique match.`);
-    }
-
-    const matchedOldStr = textMatch.matchedText;
-    const matchStart = textMatch.start;
-    const matchEnd = textMatch.end;
-    
-    const explicitAddProps: NonNullable<ReplacementPart['addRunProps']> = {};
-    if (params.bold !== undefined) explicitAddProps.bold = params.bold;
-    if (params.italic !== undefined) explicitAddProps.italic = params.italic;
-    if (params.underline !== undefined) explicitAddProps.underline = params.underline;
-    if (params.highlight !== undefined) explicitAddProps.highlight = params.highlight;
-    if (params.font_size !== undefined) explicitAddProps.fontSize = params.font_size * 2;
-    if (params.font_name !== undefined) explicitAddProps.fontName = params.font_name;
-    if (params.color !== undefined) explicitAddProps.color = params.color;
-    
-    const hasMarkup = hasAnyMarkupTags(newStr);
-    
-    if (hasMarkup) {
-      try {
-        splitTaggedText(newStr);
-      } catch (e: unknown) {
-        return err(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
-      }
-    } else {
-      // Fix 2: Transfer document quote style to new_string for non-exact matches.
-      if (textMatch.mode !== 'exact' && textMatch.mode !== 'clean') {
-        newStr = applyDocumentQuoteStyle(matchedOldStr, newStr);
+      const beforeTextRaw = session.doc.getParagraphTextById(pid);
+      if (beforeTextRaw === null) {
+        return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
       }
 
-    }
-
-    // Filled by the last run of `mutate` (the preflight preview runs it on a
-    // copy first; the session run comes last and is the one reported).
-    const editWarnings: string[] = [];
-
-    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
-      editWarnings.length = 0;
-      if (params.normalize_first) {
-        doc.mergeRunsOnly();
+      const paraText = beforeTextRaw;
+      const findMode = params.clean_match ? 'clean' : 'default';
+      const textMatch = findUniqueSubstringMatch(paraText, oldStr, { mode: findMode });
+      if (textMatch.status === 'not_found') {
+        return err('TEXT_NOT_FOUND', `Text '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' not found in paragraph ${pid}`);
       }
 
-      const pEl = doc.getParagraphElementById(pid);
-      if (!pEl) {
-        throw new Error(`Paragraph ID ${pid} not found in document`);
+      if (textMatch.status === 'multiple') {
+        return err('MULTIPLE_MATCHES', `Found ${textMatch.matchCount} matches for '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' in paragraph. Need unique match.`);
       }
-      const liveSymbolsBefore = countLiveSymbolCharacters(pEl);
-      const hiddenBefore = collectLiveHiddenConstructs(pEl);
-      const reportRemovedSymbols = (): void => {
-        const removed = liveSymbolsBefore - countLiveSymbolCharacters(pEl);
-        if (removed > 0) editWarnings.push(symbolRemovalWarning(removed, !!activeCtx));
-        for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
-          editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
-        }
-      };
 
-      const paraRuns = getParagraphRuns(pEl);
-      const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
-      const localShouldClearHighlight = params.clear_highlight || (allOverlappedRunsHighlighted && !hasHighlightTags(newStr) && isLikelyFieldPlaceholder(oldStr));
+      const matchedOldStr = textMatch.matchedText;
+      const matchStart = textMatch.start;
+      const matchEnd = textMatch.end;
+
+      const explicitAddProps: NonNullable<ReplacementPart['addRunProps']> = {};
+      if (params.bold !== undefined) explicitAddProps.bold = params.bold;
+      if (params.italic !== undefined) explicitAddProps.italic = params.italic;
+      if (params.underline !== undefined) explicitAddProps.underline = params.underline;
+      if (params.highlight !== undefined) explicitAddProps.highlight = params.highlight;
+      if (params.font_size !== undefined) explicitAddProps.fontSize = params.font_size * 2;
+      if (params.font_name !== undefined) explicitAddProps.fontName = params.font_name;
+      if (params.color !== undefined) explicitAddProps.color = params.color;
+
+      const hasMarkup = hasAnyMarkupTags(newStr);
 
       if (hasMarkup) {
-        const segs = splitTaggedText(newStr);
-        const headerAddProps = segs.some((s) => s.header) ? findHeaderRoleModelAddRunProps(doc, pid) : null;
-        const parts: ReplacementPart[] = [];
-        for (const s of segs) {
-          if (!s.text) continue;
-          const segAddProps = mergeAddRunProps(mergeAddRunProps(segmentAddRunProps(s), explicitAddProps), s.header ? headerAddProps : null);
-          const clearHighlight = localShouldClearHighlight && !s.highlighting;
-          parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
+        try {
+          splitTaggedText(newStr);
+        } catch (e: unknown) {
+          return err(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
         }
+      } else {
+        // Fix 2: Transfer document quote style to new_string for non-exact matches.
+        if (textMatch.mode !== 'exact' && textMatch.mode !== 'clean') {
+          newStr = applyDocumentQuoteStyle(matchedOldStr, newStr);
+        }
+
+      }
+
+      // Filled by the last run of `mutate` (the preflight preview runs it on a
+      // copy first; the session run comes last and is the one reported).
+      const editWarnings: string[] = [];
+
+      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
+        editWarnings.length = 0;
+        if (params.normalize_first) {
+          doc.mergeRunsOnly();
+        }
+
+        const pEl = doc.getParagraphElementById(pid);
+        if (!pEl) {
+          throw new Error(`Paragraph ID ${pid} not found in document`);
+        }
+        const liveSymbolsBefore = countLiveSymbolCharacters(pEl);
+        const hiddenBefore = collectLiveHiddenConstructs(pEl);
+        const reportRemovedSymbols = (): void => {
+          const removed = liveSymbolsBefore - countLiveSymbolCharacters(pEl);
+          if (removed > 0) editWarnings.push(symbolRemovalWarning(removed, !!activeCtx));
+          for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
+            editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
+          }
+        };
+
+        const paraRuns = getParagraphRuns(pEl);
+        const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
+        const localShouldClearHighlight = params.clear_highlight || (allOverlappedRunsHighlighted && !hasHighlightTags(newStr) && isLikelyFieldPlaceholder(oldStr));
+
+        if (hasMarkup) {
+          const segs = splitTaggedText(newStr);
+          const headerAddProps = segs.some((s) => s.header) ? findHeaderRoleModelAddRunProps(doc, pid) : null;
+          const parts: ReplacementPart[] = [];
+          for (const s of segs) {
+            if (!s.text) continue;
+            const segAddProps = mergeAddRunProps(mergeAddRunProps(segmentAddRunProps(s), explicitAddProps), s.header ? headerAddProps : null);
+            const clearHighlight = localShouldClearHighlight && !s.highlighting;
+            parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
+          }
+          if (activeCtx) {
+            // Formatting-only markup over text that is already a tracked
+            // insertion (e.g. a newly inserted table row) is recorded as a run
+            // property change in place, so it does not nest a delete/re-insert
+            // inside the existing insertion (issue #1225).
+            const formattedInPlace = parts.map((part) => part.text).join('') === matchedOldStr
+              && formatTrackedInsertionTextRange(
+                pEl,
+                matchStart,
+                matchEnd,
+                parts.map((part) => ({ length: part.text.length, addRunProps: part.addRunProps, clearHighlight: part.clearHighlight })),
+                activeCtx,
+              );
+            if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
+            invalidateDocumentCaches(doc);
+          } else {
+            doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
+          }
+          reportRemovedSymbols();
+          return;
+        }
+
+        const prefixLen = commonPrefixLength(matchedOldStr, newStr);
+        const suffixLen = commonSuffixLength(matchedOldStr, newStr, prefixLen);
+        const trimmedNewStr = newStr.slice(prefixLen, newStr.length - suffixLen);
+        const trimmedStart = matchStart + prefixLen;
+        const trimmedEnd = matchEnd - suffixLen;
+
+        if (trimmedStart >= trimmedEnd && trimmedNewStr.length === 0) return;
+
+        let trimmedReplace: string | ReplacementPart[];
+        if (localShouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
+          const { templateRun } = chooseContextTemplateRun(paraRuns, trimmedStart, trimmedEnd);
+          trimmedReplace = [{
+            text: trimmedNewStr,
+            templateRun: templateRun ?? undefined,
+            addRunProps: explicitAddProps,
+            clearHighlight: localShouldClearHighlight,
+          }];
+        } else {
+          trimmedReplace = trimmedNewStr;
+        }
+
         if (activeCtx) {
-          // Formatting-only markup over text that is already a tracked
-          // insertion (e.g. a newly inserted table row) is recorded as a run
-          // property change in place, so it does not nest a delete/re-insert
-          // inside the existing insertion (issue #1225).
-          const formattedInPlace = parts.map((part) => part.text).join('') === matchedOldStr
-            && formatTrackedInsertionTextRange(
-              pEl,
-              matchStart,
-              matchEnd,
-              parts.map((part) => ({ length: part.text.length, addRunProps: part.addRunProps, clearHighlight: part.clearHighlight })),
-              activeCtx,
-            );
-          if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
+          replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx);
           invalidateDocumentCaches(doc);
         } else {
-          doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
+          doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
         }
         reportRemovedSymbols();
-        return;
-      }
+        doc.mergeRunsOnly({ preserveRsidIdentity: true });
+      };
 
-      const prefixLen = commonPrefixLength(matchedOldStr, newStr);
-      const suffixLen = commonSuffixLength(matchedOldStr, newStr, prefixLen);
-      const trimmedNewStr = newStr.slice(prefixLen, newStr.length - suffixLen);
-      const trimmedStart = matchStart + prefixLen;
-      const trimmedEnd = matchEnd - suffixLen;
+      const revisionPreflight = params.skip_ai_revision_preflight
+        ? null
+        : await preflightAiRevisionMutation(session, revisionCtx, mutate, undefined, {
+            // Formatting markup is not part of the construct match, so the gate
+            // reads the plain text this edit inserts (issue #687).
+            insertedText: stripAllInlineTags(newStr),
+          });
+      if (revisionPreflight?.blocked) return revisionPreflight.blocked;
+      const preflightWarnings = revisionPreflight?.warnings ?? [];
+      const unknownTagWarnings = collectUnknownMarkupTagWarnings(newStr);
 
-      if (trimmedStart >= trimmedEnd && trimmedNewStr.length === 0) return;
+      mutate(session.doc, revisionCtx);
+      manager.markEdited(session);
+      const warnings = [...preflightWarnings, ...editWarnings, ...unknownTagWarnings];
 
-      let trimmedReplace: string | ReplacementPart[];
-      if (localShouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
-        const { templateRun } = chooseContextTemplateRun(paraRuns, trimmedStart, trimmedEnd);
-        trimmedReplace = [{
-          text: trimmedNewStr,
-          templateRun: templateRun ?? undefined,
-          addRunProps: explicitAddProps,
-          clearHighlight: localShouldClearHighlight,
-        }];
-      } else {
-        trimmedReplace = trimmedNewStr;
-      }
-
-      if (activeCtx) {
-        replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx);
-        invalidateDocumentCaches(doc);
-      } else {
-        doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
-      }
-      reportRemovedSymbols();
-      doc.mergeRunsOnly({ preserveRsidIdentity: true });
-    };
-
-    const revisionPreflight = params.skip_ai_revision_preflight
-      ? null
-      : await preflightAiRevisionMutation(session, revisionCtx, mutate, undefined, {
-          // Formatting markup is not part of the construct match, so the gate
-          // reads the plain text this edit inserts (issue #687).
-          insertedText: stripAllInlineTags(newStr),
-        });
-    if (revisionPreflight?.blocked) return revisionPreflight.blocked;
-    const preflightWarnings = revisionPreflight?.warnings ?? [];
-    const unknownTagWarnings = collectUnknownMarkupTagWarnings(newStr);
-
-    mutate(session.doc, revisionCtx);
-    manager.markEdited(session);
-    const warnings = [...preflightWarnings, ...editWarnings, ...unknownTagWarnings];
-
-    return ok(mergeSessionResolutionMetadata({
-      success: true,
-      file_path: manager.normalizePath(session.originalPath),
-      edit_count: session.editCount,
-      target_paragraph_id: pid,
-      replacements_made: 1,
-      before_text: previewText(paraText.trim(), RESULT_PREVIEW_CHARS),
-      after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
-      ...(warnings.length > 0 ? { warnings } : {}),
-    }, metadata));
+      return ok(mergeSessionResolutionMetadata({
+        success: true,
+        file_path: manager.normalizePath(session.originalPath),
+        edit_count: session.editCount,
+        target_paragraph_id: pid,
+        replacements_made: 1,
+        before_text: previewText(paraText.trim(), RESULT_PREVIEW_CHARS),
+        after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
+        ...(warnings.length > 0 ? { warnings } : {}),
+      }, metadata));
+    });
   } catch (e: unknown) {
     if (e instanceof SafeDocxError) {
       return err(e.code, e.message, e.hint);

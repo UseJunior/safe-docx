@@ -86,6 +86,30 @@ describe('tag_parser', () => {
   // ─── splitTaggedText: <font> tag ───────────────────────────────
 
   describe('splitTaggedText — <font> tag', () => {
+    test('rejects invalid font sizes before returning replacement segments', () => {
+      for (const size of ['NaN', 'Infinity', '-Infinity', '0', '-0', '-1', '1e309', '1e308', '1e-999', 'abc', ' ']) {
+        expect(() => splitTaggedText(`<font size="${size}">text</font>`)).toThrow('Invalid font size');
+        expect(() => splitTaggedText(`prefix<font size="12"><font size="${size}"></font></font>`)).toThrow('Invalid font size');
+      }
+    });
+
+    test('restores an outer fractional font size after a nested override', () => {
+      expect(splitTaggedText('<font size="10.5">a<font size="12">b</font>c</font>d')).toEqual([
+        seg('a', { fontSize: 21 }), seg('b', { fontSize: 24 }),
+        seg('c', { fontSize: 21 }), seg('d'),
+      ]);
+    });
+
+    test('inherits omitted and empty sizes without rounding fractional sizes or leaking state', () => {
+      expect(splitTaggedText('<font size="10.25">a<font color="FF0000">b</font><font size="">c</font>d</font>e')).toEqual([
+        seg('a', { fontSize: 20.5 }),
+        seg('b', { fontSize: 20.5, color: 'FF0000' }),
+        seg('cd', { fontSize: 20.5 }),
+        seg('e'),
+      ]);
+      expect(splitTaggedText('plain')).toEqual([seg('plain')]);
+    });
+
     test('<font> with all attributes sets color, fontSize (half-points), and fontName', () => {
       const result = splitTaggedText('<font color="FF0000" size="14" face="Arial">text</font>');
       expect(result).toEqual([

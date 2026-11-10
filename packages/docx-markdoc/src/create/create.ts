@@ -4,7 +4,7 @@ import { DocxMarkdocError } from '../errors.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { requireMarkdoc } from '../markdoc.js';
 import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, sourceCrossReferenceForm, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
-import { lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FooterProjection } from './lower.js';
+import { lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FirstPageProjection, type FooterProjection } from './lower.js';
 import { readCreatedDocx, type CreationReadback } from './readback.js';
 
 export type CreationCheck = { passed: boolean; detail?: string };
@@ -22,6 +22,24 @@ export type CreationCertificate = {
     determinism: CreationCheck;
     readback: CreationCheck & { paragraphs: number; negativeControlDetected: boolean };
     footers: CreationCheck & { sections: number; negativeControlDetected: boolean };
+    /**
+     * Present when the lowering or the DOCX has a header: each section's
+     * default header, and for each section with `w:titlePg` its first-page
+     * header and footer, read back against the lowering's projection. The
+     * negative control perturbs one expected header.
+     */
+    headers?: CreationCheck & {
+      sections: number;
+      firstPageSections: number;
+      negativeControlDetected: boolean;
+      /**
+       * Present when a section has first-page slots (`w:titlePg`): one
+       * control per slot of the first such section, each of which must be
+       * detected, that changes the expected first-page header or footer by
+       * one character. The default slots are compared separately.
+       */
+      firstPageNegativeControlDetected?: boolean;
+    };
     /**
      * Footnotes read back from word/footnotes.xml, in reference order, and
      * where each reference sits, against the lowering's projection. The
@@ -68,8 +86,27 @@ export type CreationCertificate = {
     roundTrip: CreationCheck & {
       normalization: string;
       body: SequenceComparison;
-      footers: Array<{ section: number; expected: string[] | null; actual: string[] | null; comparison?: SequenceComparison; passed: boolean }>;
-      negativeControls: Record<'deletedWord' | 'deletedParagraph' | 'deletedTableCell' | 'deletedFooterText', boolean | 'not applicable'>;
+      footers: StoryComparison[];
+      /** Present when the source or the import has a header: each section's default header. */
+      headers?: StoryComparison[];
+      /**
+       * Present when the source or the import has a section with a
+       * first-page header (`header-first: none`): that section's first-page
+       * header and footer.
+       */
+      firstPage?: Array<StoryComparison & { slot: 'header' | 'footer' }>;
+      /**
+       * `deletedHeaderText` is present with `headers`, and 'not applicable' when no header has text.
+       * `changedFirstPageHeader` and `changedFirstPageFooter` are present with `firstPage`: in the first
+       * section with first-page slots, a slot with content is expected empty (its text and page number
+       * deleted), and an empty one is expected to show the section's own header or footer (the header
+       * leaking onto a first page that drops it). 'not applicable' when neither has content.
+       */
+      negativeControls: Record<'deletedWord' | 'deletedParagraph' | 'deletedTableCell' | 'deletedFooterText', boolean | 'not applicable'> & {
+        deletedHeaderText?: boolean | 'not applicable';
+        changedFirstPageHeader?: boolean | 'not applicable';
+        changedFirstPageFooter?: boolean | 'not applicable';
+      };
       /**
        * Present when the source or the import has footnotes: every note's
        * paragraphs, in reference order, against the imported footnote
@@ -96,7 +133,14 @@ export type CreationCertificate = {
   profile: CreationLowering['profile'];
   blocks: CreationLowering['blocks'];
   footers: FooterProjection[];
+  /** Present when the DOCX has a header: each section's default header, as read back. */
+  headers?: FooterProjection[];
+  /** Present when a section has a first-page header: per section, as read back. */
+  firstPage?: FirstPageProjection[];
 };
+
+/** One section's header or footer, from the source against the import. */
+export type StoryComparison = { section: number; expected: string[] | null; actual: string[] | null; comparison?: SequenceComparison; passed: boolean };
 
 export type CrossReferenceCheck = CreationCheck & {
   /** Tags in the source, fields placed in the DOCX, and how many of the tags are text and relative references. */
@@ -299,14 +343,51 @@ export type CreatedDocument = {
 
 const sha256 = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 
-/** Footer paragraphs of each section from re-imported Markdoc: the story bound to `<section>:default`. */
-function importedFooters(ir: ReturnType<typeof requireMarkdoc>, sections: number): Array<string[] | null> {
+/** Footer (or header) paragraphs of each section from re-imported Markdoc: the story bound to `<section>:<slot>`. */
+function importedFooters(ir: ReturnType<typeof requireMarkdoc>, sections: number, kind: 'header' | 'footer' = 'footer', slot: 'default' | 'first' = 'default'): Array<string[] | null> {
   const stories = ir.stories ?? [];
   const storyParagraphs = ir.storyScaffold ?? [];
   return Array.from({ length: sections }, (_, section) => {
-    const story = stories.find((entry) => entry.kind === 'footer' && entry.bindings.includes(`${section}:default`));
+    const story = stories.find((entry) => entry.kind === kind && entry.bindings.includes(`${section}:${slot}`));
     return story ? storyParagraphs.filter((paragraph) => paragraph.story === story.id).map((paragraph) => paragraph.originalText) : null;
   });
+}
+
+/**
+ * Compare each section's expected header or footer with the imported one. A
+ * section without a reference on one side passes only when the other side has
+ * no text either.
+ */
+function compareStories(expected: ReadonlyArray<string[] | null>, actual: ReadonlyArray<string[] | null>, sections: number): StoryComparison[] {
+  return Array.from({ length: Math.max(sections, expected.length) }, (_, section) => {
+    const want = expected[section] ?? null;
+    const got = actual[section] ?? null;
+    if (want === null || got === null) {
+      const passed = (want === null || want.every((line) => !normalizeEmpty(line))) && (got === null || got.every((line) => !normalizeEmpty(line)));
+      return { section, expected: want, actual: got, passed };
+    }
+    const comparison = compareParagraphs(want.map((text) => ({ text })), got);
+    return { section, expected: want, actual: got, comparison, passed: comparison.passed };
+  });
+}
+
+/** True when some section's expected story disagrees with the imported one (both present). */
+function storiesDiffer(expected: ReadonlyArray<string[] | null>, actual: ReadonlyArray<string[] | null>): boolean {
+  return expected.some((want, section) => {
+    const got = actual[section] ?? null;
+    return want !== null && got !== null && !compareParagraphs(want.map((text) => ({ text })), got).passed;
+  });
+}
+
+/** A header or footer line with its own text removed and only its field markers kept ("Page \u0000PAGE" → "\u0000PAGE"). */
+function fieldsOnly(line: string): string {
+  return (line.match(/\u0000[A-Z]+/gu) ?? []).join(' ');
+}
+
+/** The first section whose header or footer has text of its own, and that story with the text deleted. */
+function withoutStoryText(stories: ReadonlyArray<string[] | null>): { index: number; stories: Array<string[] | null> } {
+  const index = stories.findIndex((story) => story?.some((line) => line.trim() && fieldsOnly(line) !== line.trim()));
+  return { index, stories: stories.map((story, i) => (i === index ? story!.map(fieldsOnly).filter(Boolean) : story)) };
 }
 
 /** Note paragraphs in order, each note closed by a separator entry so a paragraph cannot move between notes unseen. */
@@ -402,37 +483,57 @@ function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sec
     && footnotes.references.passed && footnotes.references.negativeControlDetected !== false);
   const actualBody = ir.scaffold.map((paragraph) => paragraph.originalText);
   const actualFooters = importedFooters(ir, sections);
+  const actualHeaders = importedFooters(ir, sections, 'header');
+  const actualFirst = { header: importedFooters(ir, sections, 'header', 'first'), footer: importedFooters(ir, sections, 'footer', 'first') };
   const body = compareParagraphs(expected.body, actualBody);
-  const footers = Array.from({ length: Math.max(sections, expected.footers.length) }, (_, section) => {
-    const want = expected.footers[section] ?? null;
-    const got = actualFooters[section] ?? null;
-    if (want === null || got === null) {
-      const passed = (want === null || want.every((line) => !normalizeEmpty(line))) && (got === null || got.every((line) => !normalizeEmpty(line)));
-      return { section, expected: want, actual: got, passed };
-    }
-    const comparison = compareParagraphs(want.map((text) => ({ text })), got);
-    return { section, expected: want, actual: got, comparison, passed: comparison.passed };
-  });
+  const footers = compareStories(expected.footers, actualFooters, sections);
+  const expectedHeaders = expected.headers ?? [];
+  const headersRecorded = [...expectedHeaders, ...actualHeaders].some((story) => story !== null);
+  const headers = compareStories(expectedHeaders, actualHeaders, sections);
+  // A first-page slot is compared for every section that has one on either side.
+  const expectedFirst = (slot: 'header' | 'footer') => Array.from({ length: Math.max(sections, expected.firstPage?.length ?? 0) }, (_, section) => expected.firstPage?.[section]?.[slot] ?? null);
+  const firstSections = Array.from({ length: Math.max(sections, expected.firstPage?.length ?? 0) }, (_, section) => section)
+    .filter((section) => expected.firstPage?.[section] || actualFirst.header[section] !== null || actualFirst.footer[section] !== null);
+  const firstPage = (['header', 'footer'] as const).flatMap((slot) => {
+    const compared = compareStories(expectedFirst(slot), actualFirst[slot], sections);
+    return firstSections.map((section) => ({ ...compared[section]!, slot }));
+  }).sort((a, b) => a.section - b.section);
   const detects = (mutated: SourceProjection) => {
     const mutatedBody = compareParagraphs(mutated.body, actualBody);
-    const mutatedFooters = mutated.footers.some((want, section) => {
-      const got = actualFooters[section] ?? null;
-      return want !== null && got !== null && !compareParagraphs(want.map((text) => ({ text })), got).passed;
-    });
-    return !mutatedBody.passed || mutatedFooters;
+    const firstDiffers = (['header', 'footer'] as const).some((slot) => storiesDiffer(
+      Array.from({ length: Math.max(sections, mutated.firstPage?.length ?? 0) }, (_, section) => mutated.firstPage?.[section]?.[slot] ?? null),
+      actualFirst[slot],
+    ));
+    return !mutatedBody.passed || storiesDiffer(mutated.footers, actualFooters) || storiesDiffer(mutated.headers ?? [], actualHeaders) || firstDiffers;
+  };
+  // The first section with first-page slots. A slot with content is expected empty; an empty slot is expected
+  // to show what the section's other pages show (its own header or footer, declared or inherited).
+  const firstIndex = (expected.firstPage ?? []).findIndex((entry) => entry !== null);
+  const hasContent = (lines: readonly string[] | null | undefined) => (lines ?? []).some((line) => normalizeEmpty(line) !== '');
+  const runningOf = (stories: ReadonlyArray<string[] | null>) => stories.slice(0, firstIndex + 1).reverse().find((story) => story !== null) ?? null;
+  const firstPageControl = (slot: 'header' | 'footer'): boolean | 'not applicable' => {
+    const entry = expected.firstPage![firstIndex]!;
+    const running = runningOf(slot === 'header' ? expectedHeaders : expected.footers);
+    const changed = hasContent(entry[slot]) ? [] : hasContent(running) ? running : undefined;
+    if (changed === undefined) return 'not applicable';
+    return detects({ ...expected, firstPage: expected.firstPage!.map((other, i) => (i === firstIndex ? { ...entry, [slot]: changed } : other)) });
   };
   const wordIndex = expected.body.findIndex((entry) => entry.text.trim().split(/\s+/u).length >= 2);
   const cellIndex = expected.body.findIndex((entry) => entry.cell && entry.text.trim());
-  const footerIndex = expected.footers.findIndex((footer) => footer?.some((line) => line.trim() && !line.startsWith('\u0000')));
+  const withoutFooterText = withoutStoryText(expected.footers);
+  const withoutHeaderText = withoutStoryText(expectedHeaders);
   const negativeControls: CreationCertificate['checks']['roundTrip']['negativeControls'] = {
     deletedWord: wordIndex === -1 ? 'not applicable' : detects({ ...expected, body: expected.body.map((entry, i) => (i === wordIndex ? { ...entry, text: entry.text.trim().split(/\s+/u).slice(1).join(' ') } : entry)) }),
     deletedParagraph: expected.body.length === 0 ? 'not applicable' : detects({ ...expected, body: expected.body.filter((entry) => entry.text.trim()).slice(1) }),
     deletedTableCell: cellIndex === -1 ? 'not applicable' : detects({ ...expected, body: expected.body.filter((_, i) => i !== cellIndex) }),
-    deletedFooterText: footerIndex === -1 ? 'not applicable' : detects({ ...expected, footers: expected.footers.map((footer, i) => (i === footerIndex ? footer!.filter((line) => line.startsWith('\u0000')) : footer)) }),
+    deletedFooterText: withoutFooterText.index === -1 ? 'not applicable' : detects({ ...expected, footers: withoutFooterText.stories }),
+    ...(headersRecorded ? { deletedHeaderText: withoutHeaderText.index === -1 ? 'not applicable' as const : detects({ ...expected, headers: withoutHeaderText.stories }) } : {}),
+    ...(firstPage.length > 0 && firstIndex !== -1 ? { changedFirstPageHeader: firstPageControl('header'), changedFirstPageFooter: firstPageControl('footer') } : {}),
   };
   const controlsOk = Object.values(negativeControls).every((value) => value !== false);
-  const footersOk = footers.every((footer) => footer.passed);
-  const mismatchCount = body.mismatches.length + footers.reduce((sum, footer) => sum + (footer.comparison?.mismatches.length ?? (footer.passed ? 0 : 1)), 0)
+  const stories = [...footers, ...headers, ...firstPage];
+  const footersOk = stories.every((story) => story.passed);
+  const mismatchCount = body.mismatches.length + stories.reduce((sum, story) => sum + (story.comparison?.mismatches.length ?? (story.passed ? 0 : 1)), 0)
     + (footnotes?.comparison.mismatches.length ?? 0) + (footnotes?.references.mismatches.length ?? 0);
   const passed = body.passed && footersOk && controlsOk && footnotesOk;
   return {
@@ -440,6 +541,8 @@ function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sec
     normalization: ORACLE_NORMALIZATION,
     body,
     footers,
+    ...(headersRecorded ? { headers } : {}),
+    ...(firstPage.length > 0 ? { firstPage } : {}),
     negativeControls,
     ...(footnotes ? { footnotes } : {}),
     ...(passed ? {} : { detail: `${mismatchCount} round-trip mismatch(es)${controlsOk && footnotes?.negativeControlDetected !== false && footnotes?.references.negativeControlDetected !== false ? '' : '; a negative control was not detected'}${footnotes && footnotes.notes.expected !== footnotes.notes.actual ? `; expected ${footnotes.notes.expected} footnote(s), imported ${footnotes.notes.actual}` : ''}` }),
@@ -469,6 +572,20 @@ function perturbFootnotes(projection: CreationProjection): CreationProjection {
   const last = footnotes.at(-1);
   if (last) last[last.length - 1] = `${last.at(-1) ?? ''}x`;
   return { ...projection, footnotes };
+}
+
+/**
+ * The first-page controls of the read-back check, or undefined when no section has first-page slots: the
+ * first such section's first-page header and footer, each changed by one character (a slot without a
+ * reference is expected to have one). Each changed projection must differ from the read-back.
+ */
+function firstPageControls(projection: CreationProjection, readback: CreationReadback): boolean | undefined {
+  const index = projection.firstPage.findIndex((entry) => entry !== null);
+  if (index === -1) return undefined;
+  const entry = projection.firstPage[index]!;
+  const changed = (lines: FooterProjection) => (lines ? [`${lines[0] ?? ''}x`, ...lines.slice(1)] : ['x']);
+  const variants: FirstPageProjection[] = [{ ...entry, header: changed(entry.header) }, { ...entry, footer: changed(entry.footer) }];
+  return variants.every((variant) => JSON.stringify(projection.firstPage.map((other, i) => (i === index ? variant : other))) !== JSON.stringify(readback.firstPage));
 }
 
 function footersEqual(expected: readonly FooterProjection[], actual: readonly FooterProjection[]): boolean {
@@ -521,6 +638,12 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
   const readbackControl = firstParagraphMismatch(perturbParagraphs(lowering.projection.paragraphs), readback.paragraphs) !== -1;
   const footersPassed = footersEqual(lowering.projection.footers, readback.footers);
   const footerControl = !footersEqual(perturbFooters(lowering.projection.footers), readback.footers);
+  // Headers and first-page slots are always compared; the check is recorded when either side has one.
+  const firstPagePassed = JSON.stringify(lowering.projection.firstPage) === JSON.stringify(readback.firstPage);
+  const headersPassed = footersEqual(lowering.projection.headers, readback.headers) && firstPagePassed;
+  const headerControl = !footersEqual(perturbFooters(lowering.projection.headers), readback.headers);
+  const firstPageControl = firstPageControls(lowering.projection, readback);
+  const headersRecorded = [...lowering.projection.headers, ...readback.headers, ...lowering.projection.firstPage, ...readback.firstPage].some((entry) => entry !== null);
   const footnotesPassed = footnotesEqual(lowering.projection, readback);
   const footnoteControl = lowering.projection.footnotes.length === 0 ? 'not applicable' as const : !footnotesEqual(perturbFootnotes(lowering.projection), readback);
   // Brownfield import anchors every paragraph with text and every table-cell
@@ -565,6 +688,16 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
       negativeControlDetected: footerControl,
       ...(footersPassed ? {} : { detail: `expected ${JSON.stringify(lowering.projection.footers)}, read ${JSON.stringify(readback.footers)}` }),
     },
+    ...(headersRecorded ? {
+      headers: {
+        passed: headersPassed && headerControl && firstPageControl !== false,
+        sections: readback.headers.length,
+        firstPageSections: readback.firstPage.filter((entry) => entry !== null).length,
+        negativeControlDetected: headerControl,
+        ...(firstPageControl === undefined ? {} : { firstPageNegativeControlDetected: firstPageControl }),
+        ...(headersPassed ? {} : { detail: `expected ${JSON.stringify({ headers: lowering.projection.headers, firstPage: lowering.projection.firstPage })}, read ${JSON.stringify({ headers: readback.headers, firstPage: readback.firstPage })}` }),
+      },
+    } : {}),
     footnotes: {
       passed: footnoteDetail.length === 0,
       notes: readback.footnotes.length,
@@ -598,6 +731,8 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
     profile: lowering.profile,
     blocks: lowering.blocks,
     footers: readback.footers,
+    ...(readback.headers.some((entry) => entry !== null) ? { headers: readback.headers } : {}),
+    ...(readback.firstPage.some((entry) => entry !== null) ? { firstPage: readback.firstPage } : {}),
   };
   if (!certificate.passed) {
     const failed = Object.entries(checks).filter(([, check]) => !check.passed).map(([name, check]) => `${name}${check.detail ? ` (${check.detail})` : ''}`);

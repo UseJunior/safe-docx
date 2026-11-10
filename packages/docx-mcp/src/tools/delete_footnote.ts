@@ -20,37 +20,39 @@ export async function deleteFootnote(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'delete_footnote' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
-  const ctx = await getRevisionContextForSession(session);
+  return await manager.mutateSession(session, async (session) => {
+    const ctx = await getRevisionContextForSession(session);
 
-  if (params.note_id == null) {
-    return err('MISSING_PARAMETER', 'note_id is required.', 'Provide the footnote ID to delete.');
-  }
-
-  try {
-    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
-      doc.deleteFootnote({ noteId: params.note_id! }, activeCtx);
-
-    const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, FOOTNOTE_TOUCHED_CONTEXT);
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
-
-    await mutate(session.doc, ctx);
-
-    manager.markEdited(session);
-    return ok(mergeSessionResolutionMetadata({
-      note_id: params.note_id,
-      file_path: manager.normalizePath(session.originalPath),
-    }, metadata));
-  } catch (e: unknown) {
-    const msg = errorMessage(e);
-    if (msg.includes('reserved')) {
-      return err('RESERVED_TYPE', msg, 'Reserved footnotes (separator, continuationSeparator) cannot be deleted.');
+    if (params.note_id == null) {
+      return err('MISSING_PARAMETER', 'note_id is required.', 'Provide the footnote ID to delete.');
     }
-    if (msg.includes('Missing file in .docx: word/footnotes.xml')) {
-      return err('NOTE_NOT_FOUND', `Footnote ID ${params.note_id} not found`, 'Use get_footnotes to list available footnotes.');
+
+    try {
+      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
+        doc.deleteFootnote({ noteId: params.note_id! }, activeCtx);
+
+      const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, FOOTNOTE_TOUCHED_CONTEXT);
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
+
+      await mutate(session.doc, ctx);
+
+      manager.markEdited(session);
+      return ok(mergeSessionResolutionMetadata({
+        note_id: params.note_id,
+        file_path: manager.normalizePath(session.originalPath),
+      }, metadata));
+    } catch (e: unknown) {
+      const msg = errorMessage(e);
+      if (msg.includes('reserved')) {
+        return err('RESERVED_TYPE', msg, 'Reserved footnotes (separator, continuationSeparator) cannot be deleted.');
+      }
+      if (msg.includes('Missing file in .docx: word/footnotes.xml')) {
+        return err('NOTE_NOT_FOUND', `Footnote ID ${params.note_id} not found`, 'Use get_footnotes to list available footnotes.');
+      }
+      if (msg.includes('not found')) {
+        return err('NOTE_NOT_FOUND', msg, 'Use get_footnotes to list available footnotes.');
+      }
+      return err('FOOTNOTE_ERROR', msg);
     }
-    if (msg.includes('not found')) {
-      return err('NOTE_NOT_FOUND', msg, 'Use get_footnotes to list available footnotes.');
-    }
-    return err('FOOTNOTE_ERROR', msg);
-  }
+  });
 }

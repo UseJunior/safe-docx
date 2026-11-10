@@ -28,6 +28,7 @@ Common refusal cases:
 - `old_string` is ambiguous or not uniquely resolvable in the target paragraph.
 - Requested replacement crosses unsafe container boundaries (for example hyperlinks or structured document tags/SDTs).
 - Edit would require unsafe field rewrites (`w:fldChar`/`w:instrText` structure risk).
+- A nonempty `<font size="...">` value is not a finite positive number in points, or overflows when converted to half-points. Both `replace_text` and `insert_paragraph` reject it before changing document content or edit counters. Use a positive size such as `10.5`; fractional values are preserved. Nested font tags inherit an omitted or empty size and restore the enclosing size when closed.
 
 How to remediate:
 

@@ -97,7 +97,17 @@ function isRowPropertyRevisionMarker(el: Element): boolean {
   return parent !== null && isW(parent, 'trPr');
 }
 
-function acceptSelectedRowRevisions(root: Element, filter: RevisionFilter): { insertions: number; deletions: number } {
+/**
+ * Pass 1: Row topology (cell-topology records remain deferred).
+ * Resolve row topology before collecting paragraph-mark revisions: a selected
+ * deleted row disappears as one revision, while an inserted row is retained
+ * and only its row marker is stripped. Must precede paragraph discovery.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ */
+function resolveTableRowRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+): { insertions: number; deletions: number } {
   let insertions = 0;
   let deletions = 0;
   for (const marker of collectByLocalName(root, 'del').filter(filter).filter(isRowPropertyRevisionMarker)) {
@@ -406,57 +416,17 @@ function rescueBookmarksFromUnmergedEmptyParagraph(
   for (const marker of rescued) target.insertBefore(marker, ref);
 }
 
-// ── Public API ──────────────────────────────────────────────────────
-
+// ── Ordered private passes ────────────────────────────────────────────
 /**
- * Accept all tracked changes in the document body or story root, producing a
- * document with supported revision records resolved.
- *
- * Mutates the Document in place (same convention as simplifyRedlines
- * and mergeRuns).
- *
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
- * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.moves
- * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.run-properties-paragraph-mark
- * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.section-properties
- * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-properties
- * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-cell-properties
+ * Pass 2: Paragraph marks identification
+ * Identify deleted or moved-from paragraph marks, capturing selected direct
+ * mark/property histories before other phases remove them.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  */
-export function acceptChanges(
-  doc: Document,
-  opts?: { filter?: RevisionFilter },
-): AcceptChangesResult {
-  const filter = opts?.filter ?? ACCEPT_ALL;
-  const selective = filter !== ACCEPT_ALL;
-  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
-  if (!root) {
-    return {
-      insertionsAccepted: 0,
-      deletionsAccepted: 0,
-      movesResolved: 0,
-      propertyChangesResolved: 0,
-      unresolvedRowRevisions: 0,
-    };
-  }
-
-  // Resolve row topology before collecting paragraph-mark revisions: a selected
-  // deleted row disappears as one revision, while an inserted row is retained
-  // and only its row marker is stripped.
-  const rowRevisions = acceptSelectedRowRevisions(root, filter);
-
-  // Phase A — Identify deleted or moved-from paragraph marks.
+function identifyParagraphMarkRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+): { markDeletedParagraphs: Element[]; resolvedMarkProperties: Element[] } {
   const markDeletedParagraphs: Element[] = [];
   const allParagraphs = collectByLocalName(root, 'p');
   // Capture selected direct mark/property histories before other phases remove
@@ -479,11 +449,23 @@ export function acceptChanges(
       markDeletedParagraphs.push(p);
     }
   }
+  return { markDeletedParagraphs, resolvedMarkProperties };
+}
 
-  // A bookmark endpoint inside a selected deletion can have its paired endpoint
-  // live outside that wrapper so the combined redline visibly brackets deleted
-  // text. Accepting the deletion must remove that live original-side endpoint
-  // as well; otherwise a cross-paragraph range becomes orphaned.
+/**
+ * Pass 3: Deleted bookmark boundaries
+ * A bookmark endpoint inside a selected deletion can have its paired endpoint
+ * live outside that wrapper so the combined redline visibly brackets deleted
+ * text. Accepting the deletion must remove that live original-side endpoint
+ * as well; otherwise a cross-paragraph range becomes orphaned.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ */
+function resolveDeletedBookmarkBoundariesPass(
+  root: Element,
+  filter: RevisionFilter,
+  markDeletedParagraphs: readonly Element[],
+): void {
   const deletedBookmarkIds = new Set<string>();
   for (const deletion of [...collectByLocalName(root, 'del'), ...collectByLocalName(root, 'moveFrom')].filter(filter)) {
     for (const localName of ['bookmarkStart', 'bookmarkEnd']) {
@@ -533,22 +515,61 @@ export function acceptChanges(
       }
     }
   }
+}
 
-  // Phase B — Remove deletions and move sources.
-  const deletionsAccepted = rowRevisions.deletions + removeAllByLocalName(root, 'del', filter, isRowPropertyRevisionMarker);
+/**
+ * Pass 4: Deletions and move sources (moves)
+ * Remove deletions, move sources, and move range markers.
+ *
+ * Link #1020: Selective author accept removes authored move starts but leaves
+ * authorless range ends behind. Pair-aware resolution is tracked separately in #1020
+ * without changing selector semantics here.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @see https://github.com/UseJunior/safe-docx/issues/1020
+ */
+function removeDeletionsAndMoveSourcesPass(
+  root: Element,
+  filter: RevisionFilter,
+  rowDeletions: number,
+): { deletionsAccepted: number; moveFromRemoved: number } {
+  const deletionsAccepted = rowDeletions + removeAllByLocalName(root, 'del', filter, isRowPropertyRevisionMarker);
   const moveFromRemoved = removeAllByLocalName(root, 'moveFrom', filter);
   removeAllByLocalName(root, 'moveFromRangeStart', filter);
   removeAllByLocalName(root, 'moveFromRangeEnd', filter);
   removeAllByLocalName(root, 'moveToRangeStart', filter);
   removeAllByLocalName(root, 'moveToRangeEnd', filter);
+  return { deletionsAccepted, moveFromRemoved };
+}
 
-  // Phase C — Unwrap insertions and move destinations (depth-sorted)
-  const insertionsAccepted = rowRevisions.insertions + unwrapAllByLocalName(root, 'ins', filter);
+/**
+ * Pass 5: Nested wrappers and move destinations (nested wrappers, moves)
+ * Unwrap insertions and move destinations in depth-first order to handle
+ * nested wrappers correctly.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ */
+function unwrapInsertionsAndMoveDestinationsPass(
+  root: Element,
+  filter: RevisionFilter,
+  rowInsertions: number,
+): { insertionsAccepted: number; moveToUnwrapped: number } {
+  const insertionsAccepted = rowInsertions + unwrapAllByLocalName(root, 'ins', filter);
   const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo', filter);
+  return { insertionsAccepted, moveToUnwrapped };
+}
 
-  // Phase D — Remove property change records. A selected section-break
-  // removal takes its now-empty paragraph-level w:sectPr with it (#1143);
-  // identify those containers before their change records are removed.
+/**
+ * Pass 6: Property change records (properties)
+ * Remove property change records and empty paragraph-level w:sectPr containers
+ * from accepted section-break removals.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ */
+function resolvePropertyChangesPass(
+  root: Element,
+  filter: RevisionFilter,
+): number {
   const acceptedSectionBreakRemovals = collectByLocalName(root, 'sectPrChange')
     .filter(filter)
     .map(acceptedSectionBreakRemovalContainer)
@@ -560,8 +581,23 @@ export function acceptChanges(
   for (const section of acceptedSectionBreakRemovals) {
     section.parentNode?.removeChild(section);
   }
+  return propertyChangesResolved;
+}
 
-  // Phase E — Cleanup
+/**
+ * Pass 7: Paragraph marks and cleanup (paragraph marks)
+ * Strip paragraph-level revision markers, resolve paragraph-mark merges into
+ * following paragraphs (rescuing bookmarks), remove empty paragraph mark
+ * properties, and strip rsidDel attributes.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ */
+function cleanupParagraphMarksAndRevisionsPass(
+  root: Element,
+  filter: RevisionFilter,
+  selective: boolean,
+  markDeletedParagraphs: readonly Element[],
+  resolvedMarkProperties: readonly Element[],
+): void {
   // Strip paragraph-level revision markers from w:pPr/w:rPr (only those the
   // filter selects, so a selective accept leaves foreign paragraph-mark
   // revisions byte-untouched).
@@ -624,6 +660,63 @@ export function acceptChanges(
       }
     }
   }
+}
+
+// ── Public API ──────────────────────────────────────────────────────
+
+/**
+ * Accept all tracked changes in the document body or story root, producing a
+ * document with supported revision records resolved.
+ *
+ * Mutates the Document in place (same convention as simplifyRedlines
+ * and mergeRuns). Exceptions propagate; this low-level API does not roll back.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.moves
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.run-properties-paragraph-mark
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.section-properties
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-properties
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-cell-properties
+ */
+export function acceptChanges(
+  doc: Document,
+  opts?: { filter?: RevisionFilter },
+): AcceptChangesResult {
+  const filter = opts?.filter ?? ACCEPT_ALL;
+  const selective = filter !== ACCEPT_ALL;
+  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
+  if (!root) {
+    return {
+      insertionsAccepted: 0,
+      deletionsAccepted: 0,
+      movesResolved: 0,
+      propertyChangesResolved: 0,
+      unresolvedRowRevisions: 0,
+    };
+  }
+
+  // Keep calls explicit and ordered. Capture marks/bookmarks before wrappers
+  // disappear; settle properties before merging paragraphs. Do not precompute
+  // filter results: selectors observe the established traversal of the live DOM.
+  const rowRevisions = resolveTableRowRevisionsPass(root, filter);
+  const { markDeletedParagraphs, resolvedMarkProperties } = identifyParagraphMarkRevisionsPass(root, filter);
+  resolveDeletedBookmarkBoundariesPass(root, filter, markDeletedParagraphs);
+  const { deletionsAccepted, moveFromRemoved } = removeDeletionsAndMoveSourcesPass(root, filter, rowRevisions.deletions);
+  const { insertionsAccepted, moveToUnwrapped } = unwrapInsertionsAndMoveDestinationsPass(root, filter, rowRevisions.insertions);
+  const propertyChangesResolved = resolvePropertyChangesPass(root, filter);
+  cleanupParagraphMarksAndRevisionsPass(root, filter, selective, markDeletedParagraphs, resolvedMarkProperties);
 
   return {
     insertionsAccepted,

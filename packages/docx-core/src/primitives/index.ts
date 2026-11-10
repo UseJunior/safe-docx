@@ -14,6 +14,7 @@ export * from './semantic_tags.js';
 export * from './serialize_markdown.js';
 export * from './serialize_html.js';
 export * from './serialize_plaintext.js';
+export * from './serialize_blocks.js';
 export * from './styles.js';
 export * from './symbol_run_content.js';
 export * from './text.js';

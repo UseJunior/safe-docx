@@ -110,6 +110,24 @@ function cacheInsensitiveText(documentXml: string): string {
 }
 
 describe('sole tagged-spine characterization', () => {
+  test('generation accepts nesting while differential source and schema diagnostics stay pinned', async () => {
+    const document = await buildDocxFromBodyXml(tocBody('1'));
+    expect((await checkGeneratedPackage(document)).issues).toEqual([]);
+    const pinnedIssues = [
+      { check: 'field_pairing', part: 'word/document.xml', message: 'fldChar begin while a field is already open' },
+      { check: 'field_pairing', part: 'word/document.xml', message: 'fldChar end without a matching begin' },
+    ];
+    expect((await checkGeneratedPackage(document, { fieldPairing: 'legacy-differential' })).issues).toEqual(pinnedIssues);
+    const row = await characterizeStrategyDifferential({
+      id: 'nested-field-policy-contract', original: document, revised: document, capabilityTags: ['fields'],
+    });
+    expect(row.fixture.sourceStructuralIssues).toEqual(pinnedIssues);
+    expect(row.taggedTree.schema).toEqual({
+      packageStructural: 'inherited', issues: pinnedIssues, introducedIssues: [], warnings: [],
+    });
+    expect(row.taggedTree.integrity.fieldIssues).toEqual([]);
+  });
+
   test.openspec('Revision and bookmark identifiers may overlap numerically')(
     'keeps tagged bookmark hoisting equivalent with overlapping ID spaces',
     async () => {

@@ -403,11 +403,20 @@ function walkNode(
         const colorAttr = decodeFormattingAttribute(el.getAttribute('color') || null);
         const sizeAttr = decodeFormattingAttribute(el.getAttribute('size') || null);
         const faceAttr = decodeFormattingAttribute(el.getAttribute('face') || null);
+        let fontSize = state.fontSize;
+        if (sizeAttr !== null) {
+          // Validate after conversion so finite point values cannot overflow
+          // into an infinite half-point value passed to the mutation layer.
+          fontSize = Number(sizeAttr) * 2;
+          if (!Number.isFinite(fontSize) || fontSize <= 0) {
+            throw new Error(`Invalid font size: ${sizeAttr}. Use a finite positive size in points.`);
+          }
+        }
 
         const newState: ParsedSegmentState = {
           ...state,
           color: colorAttr ?? state.color,
-          fontSize: sizeAttr ? Number(sizeAttr) * 2 : state.fontSize, // pt → half-points
+          fontSize, // pt → half-points
           fontName: faceAttr ?? state.fontName,
         };
         walkNode(el, newState, out);

@@ -9,7 +9,55 @@ import { HEADING_NUMBER_SCHEMES, type HeadingNumberScheme } from './list-numberi
  * being flattened by the lenient engine.
  */
 
-const FRONTMATTER_KEYS = new Set(['title', 'author', 'date', 'footer', 'page-numbers', 'fill-ins', 'heading-numbers']);
+/**
+ * Running header and footer keys, the same in the frontmatter (which sets the
+ * first section's) and on `{% section %}` (which sets the next section's).
+ * See {@link checkRunningTextKeys} for what each needs.
+ */
+export const RUNNING_TEXT_KEYS = [
+  'header',
+  'header-align',
+  'header-first',
+  'footer',
+  'footer-align',
+  'footer-italic',
+  'footer-layout',
+  'footer-first',
+  'page-numbers',
+  'page-number-align',
+  'page-number-format',
+] as const;
+
+/** Every frontmatter key the creation grammar admits, in the order diagnostics list them. */
+export const CREATION_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(['title', 'author', 'date', ...RUNNING_TEXT_KEYS, 'fill-ins', 'heading-numbers']);
+
+/** `header-align`, `footer-align` and `page-number-align` values. */
+export const RUNNING_TEXT_ALIGNMENTS = ['left', 'center', 'right'] as const;
+export type RunningTextAlignment = (typeof RUNNING_TEXT_ALIGNMENTS)[number];
+/**
+ * `page-number-format` values: `plain` shows "1", `dashed` "- 1 -", and
+ * `page-of-total` "Page 1 of 3" (a PAGE and a NUMPAGES field).
+ */
+export const PAGE_NUMBER_FORMATS = ['plain', 'dashed', 'page-of-total'] as const;
+export type PageNumberFormat = (typeof PAGE_NUMBER_FORMATS)[number];
+/**
+ * `footer-layout` values: `stacked` puts the footer text and the page number
+ * in paragraphs of their own; `one-line` puts them on one line, the text at
+ * the left margin and the number at the right, after a right tab stop.
+ */
+export const FOOTER_LAYOUTS = ['stacked', 'one-line'] as const;
+export type FooterLayout = (typeof FOOTER_LAYOUTS)[number];
+/**
+ * `header-first` and `footer-first` take the first page's own text, or this
+ * word for an empty header or footer on the first page.
+ */
+export const FIRST_PAGE_NONE = 'none';
+/**
+ * `fill-ins` values: `markup` (the default) makes only `{% fill %}…{% /fill %}`
+ * a fill-in; `brackets` makes every `[…]` one (the v0.24 behaviour).
+ */
+export const FILL_IN_MODES = ['markup', 'brackets'] as const;
+export type FillInMode = (typeof FILL_IN_MODES)[number];
 
 /** Block tags and the attributes each admits. */
 export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
@@ -17,7 +65,7 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   legend: new Set(),
   signer: new Set(['name', 'date']),
   'page-break': new Set(),
-  section: new Set(['footer', 'page-numbers']),
+  section: new Set(RUNNING_TEXT_KEYS),
   table: new Set(['widths']),
   footnote: new Set(['id']),
 };
@@ -36,7 +84,7 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
  * (an engine branch or a creation theme plugin) and, when it changes the text,
  * a case in the round-trip oracle.
  */
-const INLINE_TAGS: Record<string, ReadonlySet<string>> = {
+export const CREATION_INLINE_TAGS: Record<string, ReadonlySet<string>> = {
   literal: new Set(),
   fill: new Set(),
   u: new Set(),
@@ -77,8 +125,21 @@ export type CreationFrontmatter = {
   title?: string;
   author?: string;
   date?: string;
+  /** The first section's running header text. */
+  header?: string;
+  headerAlign?: RunningTextAlignment;
+  /** The first page's header text, or `none` for no header on the first page. */
+  headerFirst?: string;
   footer?: string;
+  /** The first page's footer text in place of `footer`, or `none` for an empty footer on the first page. */
+  footerFirst?: string;
+  footerAlign?: RunningTextAlignment;
+  /** Whether footer text is italic (the default) or upright. */
+  footerItalic?: boolean;
+  footerLayout?: FooterLayout;
   pageNumbers?: boolean;
+  pageNumberAlign?: RunningTextAlignment;
+  pageNumberFormat?: PageNumberFormat;
   /**
    * How fill-ins are written. 'markup' (default): only {% fill %}…{% /fill %}
    * is a fill-in and bare brackets are literal text. 'brackets': the v0.24
@@ -110,27 +171,38 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
   for (const [index, line] of raw.split('\n').entries()) {
     if (!line.trim()) continue;
     const match = /^([a-z-]+):\s*(.*)$/.exec(line.trim());
-    if (!match || !FRONTMATTER_KEYS.has(match[1]!)) {
-      throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `Unsupported frontmatter line ${index + 2}: '${line.trim()}'. Allowed keys: ${[...FRONTMATTER_KEYS].join(', ')}.`);
+    if (!match || !CREATION_FRONTMATTER_KEYS.has(match[1]!)) {
+      throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `Unsupported frontmatter line ${index + 2}: '${line.trim()}'. Allowed keys: ${[...CREATION_FRONTMATTER_KEYS].join(', ')}.`);
     }
     const key = match[1]!;
     let value = match[2]!.trim();
     if (/^(["']).*\1$/.test(value)) value = value.slice(1, -1);
     if (key === 'fill-ins') {
-      if (value !== 'markup' && value !== 'brackets') {
-        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be markup or brackets, got '${value}'.`);
+      if (!(FILL_IN_MODES as readonly string[]).includes(value)) {
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be ${orList(FILL_IN_MODES)}, got '${value}'.`);
       }
-      result.fillIns = value;
+      result.fillIns = value as FillInMode;
     } else if (key === 'heading-numbers') {
       if (!(HEADING_NUMBER_SCHEMES as readonly string[]).includes(value)) {
         throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `heading-numbers must be ${HEADING_NUMBER_SCHEMES.join(' or ')}, got '${value}'.`);
       }
       result.headingNumbers = value as HeadingNumberScheme;
-    } else if (key === 'page-numbers') {
+    } else if (key === 'page-numbers' || key === 'footer-italic') {
       if (value !== 'true' && value !== 'false') {
-        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `page-numbers must be true or false, got '${value}'.`);
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be true or false, got '${value}'.`);
       }
-      result.pageNumbers = value === 'true';
+      result[key === 'page-numbers' ? 'pageNumbers' : 'footerItalic'] = value === 'true';
+    } else if (key in RUNNING_TEXT_VALUES) {
+      const allowed = RUNNING_TEXT_VALUES[key]!;
+      if (!allowed.includes(value)) {
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be ${orList(allowed)}, got '${value}'.`);
+      }
+      (result as Record<string, string>)[camelKey(key)] = value;
+    } else if (key === 'header' && (value === 'true' || value === 'false')) {
+      throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `header is the header text, not ${value}; leave the key out for no header.`);
+    } else if (key === 'header-first' || key === 'footer-first') {
+      if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be the first page's text, or none.`);
+      result[key === 'header-first' ? 'headerFirst' : 'footerFirst'] = value;
     } else if (key === 'date') {
       if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?Z)?$/.test(value) || Number.isNaN(Date.parse(value))) {
         throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `date must be YYYY-MM-DD or a UTC ISO timestamp, got '${value}'.`);
@@ -141,7 +213,83 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
       (result as Record<string, string>)[key] = value;
     }
   }
+  const problem = checkRunningTextKeys({
+    header: result.header,
+    'header-align': result.headerAlign,
+    'header-first': result.headerFirst,
+    footer: result.footer,
+    'footer-align': result.footerAlign,
+    'footer-italic': result.footerItalic,
+    'footer-layout': result.footerLayout,
+    'footer-first': result.footerFirst,
+    'page-numbers': result.pageNumbers,
+    'page-number-align': result.pageNumberAlign,
+    'page-number-format': result.pageNumberFormat,
+  }, { pageNumbers: 'page-numbers: true', footer: 'footer: …', header: 'header: …' }, 'frontmatter');
+  if (problem) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${problem}.`);
   return result;
+}
+
+/** The closed value set of each running-text key that takes a word. */
+const RUNNING_TEXT_VALUES: Record<string, readonly string[]> = {
+  'header-align': RUNNING_TEXT_ALIGNMENTS,
+  'footer-align': RUNNING_TEXT_ALIGNMENTS,
+  'page-number-align': RUNNING_TEXT_ALIGNMENTS,
+  'page-number-format': PAGE_NUMBER_FORMATS,
+  'footer-layout': FOOTER_LAYOUTS,
+};
+
+function orList(values: readonly string[]): string {
+  return values.length === 1 ? values[0]! : `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`;
+}
+
+function camelKey(key: string): string {
+  return key.replace(/-([a-z])/gu, (_, letter: string) => letter.toUpperCase());
+}
+
+/**
+ * What the running-text keys of one declaration (the frontmatter, or one
+ * `{% section %}`) need from each other: a key that shapes text needs that
+ * text in the same declaration, so it never silently formats nothing.
+ * `header-align` needs header text (the header's or its first page's);
+ * `footer-align` and `footer-italic` need footer text (likewise); `page-number-align` and
+ * `page-number-format` need page numbers; `footer-layout: one-line` needs
+ * both footer text and page numbers, and fixes where each sits, so it takes
+ * neither `footer-align` nor `page-number-align`. `header-first: none` needs
+ * a header and `footer-first: none` a footer in the same place (on
+ * `{% section %}`, `header=false` and `page-numbers=false` declare an empty
+ * one); first-page text alone declares an empty header or footer for the
+ * other pages. Returns the
+ * problem, or undefined. `spell` names the base keys as the declaration
+ * writes them.
+ */
+export function checkRunningTextKeys(
+  keys: Partial<Record<(typeof RUNNING_TEXT_KEYS)[number], unknown>>,
+  spell: { pageNumbers: string; footer: string; header: string },
+  where: 'frontmatter' | 'section' = 'section',
+): string | undefined {
+  const hasHeader = typeof keys.header === 'string' && keys.header.trim() !== '';
+  const hasFooter = typeof keys.footer === 'string' && keys.footer.trim() !== '';
+  const hasPageNumbers = keys['page-numbers'] === true;
+  const declaresHeader = hasHeader || (where === 'section' && keys.header === false);
+  const declaresFooter = hasFooter || hasPageNumbers || (where === 'section' && keys['page-numbers'] === false);
+  const firstText = (key: 'header-first' | 'footer-first') => typeof keys[key] === 'string' && keys[key] !== FIRST_PAGE_NONE;
+  if (keys['header-align'] !== undefined && !hasHeader && !firstText('header-first')) return `header-align needs header text (${spell.header} or header-first) in the same place`;
+  if (keys['header-first'] === FIRST_PAGE_NONE && !declaresHeader) return `header-first: none needs a header (${spell.header}) in the same place`;
+  if (keys['footer-first'] === FIRST_PAGE_NONE && !declaresFooter) return `footer-first: none needs a footer (${spell.footer} or ${spell.pageNumbers}) in the same place`;
+  for (const key of ['footer-align', 'footer-italic'] as const) {
+    if (keys[key] !== undefined && !hasFooter && !firstText('footer-first')) return `${key} needs footer text (${spell.footer} or footer-first) in the same place`;
+  }
+  for (const key of ['page-number-align', 'page-number-format'] as const) {
+    if (keys[key] !== undefined && !hasPageNumbers) return `${key} needs ${spell.pageNumbers} in the same place`;
+  }
+  if (keys['footer-layout'] === 'one-line') {
+    if (!hasFooter || !hasPageNumbers) return `footer-layout one-line puts footer text and the page number on one line, so it needs both ${spell.footer} and ${spell.pageNumbers}`;
+    for (const key of ['footer-align', 'page-number-align'] as const) {
+      if (keys[key] !== undefined) return `footer-layout one-line sets the text at the left margin and the number at the right, so it takes no ${key}`;
+    }
+  }
+  return undefined;
 }
 
 /** The block tag a paragraph stands for when its only content is one tag (`{% center %}x{% /center %}` on one line). */
@@ -239,7 +387,7 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         if (inFootnoteBody && (node.tag === 'fnref' || node.tag === 'footnote')) {
           creationError('NESTED_FOOTNOTE', 'A footnote cannot contain another footnote or a footnote reference.', node, line);
         }
-        const allowed = INLINE_TAGS[node.tag ?? ''];
+        const allowed = CREATION_INLINE_TAGS[node.tag ?? ''];
         if (!allowed) creationError('UNSUPPORTED_CREATION_SYNTAX', `Tag '{% ${node.tag} %}' cannot appear inside text.`, node, line);
         checkAttributes(node, allowed);
         if (node.tag === 'fnref') {
@@ -408,10 +556,27 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
       return;
     case 'section': {
       if (node.children.length > 0) creationError('UNSUPPORTED_CREATION_SYNTAX', '{% section /%} is self-closing.', node, line);
-      const { footer } = node.attributes;
-      const pageNumbers = node.attributes['page-numbers'];
+      const { footer, header } = node.attributes;
       if (footer !== undefined && (typeof footer !== 'string' || !footer.trim())) creationError('INVALID_SECTION', 'section footer="…" must be a non-empty string.', node, line);
-      if (pageNumbers !== undefined && typeof pageNumbers !== 'boolean') creationError('INVALID_SECTION', 'section page-numbers must be true or false.', node, line);
+      if (header !== undefined && header !== false && (typeof header !== 'string' || !header.trim())) {
+        creationError('INVALID_SECTION', 'section header="…" must be a non-empty string, or header=false for an empty header.', node, line);
+      }
+      for (const key of ['header-first', 'footer-first']) {
+        const value = node.attributes[key];
+        if (value !== undefined && (typeof value !== 'string' || !value.trim())) creationError('INVALID_SECTION', `section ${key}="…" must be the first page's text, or "none".`, node, line);
+      }
+      for (const key of ['page-numbers', 'footer-italic']) {
+        const value = node.attributes[key];
+        if (value !== undefined && typeof value !== 'boolean') creationError('INVALID_SECTION', `section ${key} must be true or false.`, node, line);
+      }
+      for (const [key, allowed] of Object.entries(RUNNING_TEXT_VALUES)) {
+        const value = node.attributes[key];
+        if (value !== undefined && (typeof value !== 'string' || !allowed.includes(value))) {
+          creationError('INVALID_SECTION', `section ${key} must be ${orList(allowed.map((word) => `"${word}"`))}, got ${JSON.stringify(value)}.`, node, line);
+        }
+      }
+      const problem = checkRunningTextKeys(node.attributes, { pageNumbers: 'page-numbers=true', footer: 'footer="…"', header: 'header="…"' });
+      if (problem) creationError('INVALID_SECTION', `${problem}.`, node, line);
       return;
     }
     case 'table':

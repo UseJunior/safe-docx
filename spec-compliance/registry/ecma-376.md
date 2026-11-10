@@ -130,10 +130,21 @@ a `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host
 anywhere above it. Such a box has no drawing scaffold this implementation can
 fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,
 which aborts the whole comparison rather than emitting a partial redline. The
-claim likewise does not cover inserted or deleted text-box topology, nor a
-change to the relationship closure of any text-box story — that check runs
-ahead of the twin carve-out and applies to twinned and untwinned boxes alike —
-nor a change to the containing scaffold of an untwinned box.
+claim likewise does not cover a change to the relationship closure of any
+text-box story — that check runs ahead of the twin carve-out and applies to
+twinned and untwinned boxes alike — nor a change to the containing scaffold of
+an untwinned box.
+
+**Inserted and deleted main-document text boxes are inside the subset.** Boxes
+pair across the two documents by anchor identity — the VML shape `id` and the
+DrawingML `wp:docPr/@id`, combined for the two stored copies of one twinned box
+— and only boxes without a usable identity fall back to their position between
+identified boxes. A box with no counterpart stays whole in the body comparison,
+which tracks its anchor run as inserted or deleted, and every paragraph and text
+run of its story is marked with the same revision kind, in every stored copy.
+An inserted or deleted box whose story holds a nested box or a prohibited
+reference is refused, as a changed one is. Anonymous boxes whose storage
+shapes disagree are still refused.
 
 ## [ECMA-PART4-19-1-2-22] VML text-box host (v:textbox)
 
@@ -367,6 +378,35 @@ separates the main story from a footnote continued from the previous page.
 The footnotes part that `add_footnote` bootstraps and that generation emits
 holds a `w:type="continuationSeparator"` note (id 0) whose run is this
 mark, as Word writes it.
+
+## [ECMA-PART1-17-11-7] w:endnoteReference identifier binding
+
+```yaml
+edition: 5
+part: 1
+section: "17.11.7"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference
+verifiedBy: packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/ancillaryNoteComparison.ts; packages/docx-compare/src/tagged/inlineFootnoteAnchorPair.ts; packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts
+```
+
+Part 1 §17.11.7 defines `w:endnoteReference` as an automatically numbered
+run that references one endnote, and its `w:id` attribute names "the
+footnote or endnote which is being referenced"; an ID absent from the
+endnotes part makes the document non-conformant. Like
+`w:footnoteReference` (§17.11.14), the identifier binds an anchor to its
+definition and is not the displayed number. When a comparison edits an
+endnote body beside unchanged endnotes, docx-compare keeps one stable
+anchor per aligned position and tracks the definition change inside the
+endnote, so every surviving reference still names the endnote whose body
+belongs to it after Accept and after Reject. A paragraph holding several
+anchors pairs them by position within the paragraph, whether the revised
+identifiers were renumbered to avoid a collision or were already distinct.
+Footnote and endnote identifiers are separate spaces and are reconciled
+independently.
+
+This claim covers that comparison reconciliation; it is not a claim about
+endnote numbering formats, placement or `w:customMarkFollows` display.
 
 ## [ECMA-PART1-17-11-9] w:footnote special footnote list in document settings
 

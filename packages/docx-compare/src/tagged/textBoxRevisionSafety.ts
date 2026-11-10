@@ -19,6 +19,10 @@ import {
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { parseDocumentXml } from './xmlToWmlElement.js';
 import {
+  pairTextBoxCandidates,
+  textBoxPairingCandidates,
+} from './textBoxIdentityPairing.js';
+import {
   addParagraphMarkRevisionMarker,
   createRevisionIdState,
   formatDate,
@@ -118,6 +122,12 @@ export interface TextBoxStoryComparisonPlan {
   stories: TextBoxStoryInput[];
   validateAncillaryProjection: boolean;
   hasAncillaryTextBoxStories: boolean;
+  /**
+   * True when a body text box has no counterpart in the other document. The
+   * outer comparison tracks its anchor run, and the caller marks its story
+   * with `markTrackedTextBoxLifecycles` (#1031).
+   */
+  hasUnpairedTextBoxes: boolean;
   representedAncillaryChanges: Array<{
     scope: 'header' | 'footer';
     kind: 'added' | 'changed' | 'removed';
@@ -195,6 +205,10 @@ function replaceChildren(target: Element, source: Element): void {
   }
 }
 
+function placeholderToken(index: number): string {
+  return `__safe_docx_text_box_story_${index}__`;
+}
+
 function createPlaceholder(textBox: Element, index: number): void {
   while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
   const document = textBox.ownerDocument!;
@@ -202,7 +216,7 @@ function createPlaceholder(textBox: Element, index: number): void {
   const run = document.createElementNS(OOXML.W_NS, 'w:r');
   const text = document.createElementNS(OOXML.W_NS, 'w:t');
   text.appendChild(
-    document.createTextNode(`__safe_docx_text_box_story_${index}__`),
+    document.createTextNode(placeholderToken(index)),
   );
   run.appendChild(text);
   paragraph.appendChild(run);
@@ -294,6 +308,16 @@ function scaffoldFingerprint(textBox: Element): string | undefined {
  * @see https://github.com/UseJunior/safe-docx/issues/794
  * @see https://github.com/UseJunior/safe-docx/issues/795
  */
+function hasTextBoxAncestor(textBox: Element): boolean {
+  for (let node = textBox.parentNode; node?.nodeType === 1; node = node.parentNode) {
+    const element = node as Element;
+    if (element.namespaceURI === OOXML.W_NS && element.localName === 'txbxContent') {
+      return true;
+    }
+  }
+  return false;
+}
+
 function hasAlternateContentAncestor(textBox: Element): boolean {
   let node: Node | null = textBox.parentNode;
   while (node?.nodeType === 1) {
@@ -1651,40 +1675,95 @@ export async function prepareTextBoxStoryComparison(
   const revisedTextBoxes = Array.from(
     revisedDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
   );
-  const originalVisualOrdinals = visualTextBoxOrdinals(originalDocument);
   const visualOrdinals = visualTextBoxOrdinals(revisedDocument);
 
-  if (originalTextBoxes.length !== revisedTextBoxes.length) {
-    const rawIndex = Math.min(
-      originalTextBoxes.length,
-      revisedTextBoxes.length,
-    );
-    throw new UnsupportedTextBoxRevisionError([{
-      index: visualOrdinals[rawIndex] ?? rawIndex,
-      partPath: 'word/document.xml',
-      reason: 'inserted or deleted text-box topology is not supported',
-    }]);
-  }
-
-  const divergentPosition = divergentStorageShapePosition(
-    originalVisualOrdinals,
-    visualOrdinals,
+  // Pair boxes by anchor identity, not by position (#1031). A box with no
+  // counterpart stays whole in the outer comparison, which tracks its anchor
+  // run; `markTrackedTextBoxLifecycles` then marks its story.
+  const rawIndexOf = (copies: Element[]): Map<Element, number> =>
+    new Map(copies.map((copy, rawIndex) => [copy, rawIndex]));
+  const originalRawIndex = rawIndexOf(originalTextBoxes);
+  const revisedRawIndex = rawIndexOf(revisedTextBoxes);
+  const originalCandidates = textBoxPairingCandidates(
+    textBoxGroups(originalDocument),
+    originalRawIndex,
   );
-  if (divergentPosition !== undefined) {
+  const revisedCandidates = textBoxPairingCandidates(
+    textBoxGroups(revisedDocument),
+    revisedRawIndex,
+  );
+  const pairing = pairTextBoxCandidates(originalCandidates, revisedCandidates);
+  if (pairing.ambiguousStorage) {
     throw new UnsupportedTextBoxRevisionError([{
       index: Math.min(
-        originalVisualOrdinals[divergentPosition] ?? divergentPosition,
-        visualOrdinals[divergentPosition] ?? divergentPosition,
+        pairing.ambiguousStorage.original,
+        pairing.ambiguousStorage.revised,
       ),
       partPath: 'word/document.xml',
       reason: DIVERGENT_STORAGE_SHAPE_REASON,
     }]);
   }
+  const pairedCopies: Array<[original: Element, revised: Element]> = [];
+  for (const [originalIndex, revisedIndex] of pairing.pairs) {
+    const originalCandidate = originalCandidates[originalIndex]!;
+    const revisedCandidate = revisedCandidates[revisedIndex]!;
+    if (originalCandidate.storage !== revisedCandidate.storage) {
+      throw new UnsupportedTextBoxRevisionError([{
+        index: Math.min(originalIndex, revisedIndex),
+        partPath: 'word/document.xml',
+        reason: DIVERGENT_STORAGE_SHAPE_REASON,
+      }]);
+    }
+    for (const [offset, originalCopy] of originalCandidate.copies.entries()) {
+      pairedCopies.push([originalCopy, revisedCandidate.copies[offset]!]);
+    }
+  }
+  const unpairedTextBoxes =
+    pairedCopies.length !== originalTextBoxes.length ||
+    pairedCopies.length !== revisedTextBoxes.length;
+  // A box with no counterpart is tracked whole, but its story must still be
+  // inside the supported subset: a nested box or a note/comment reference in
+  // it would be carried into the redline without its own lifecycle (#1380,
+  // #1385).
+  const sides = [
+    {
+      side: 'original' as const,
+      candidates: originalCandidates,
+      paired: new Set(pairing.pairs.map(([original]) => original)),
+      rawIndex: originalRawIndex,
+      ordinals: visualTextBoxOrdinals(originalDocument),
+    },
+    {
+      side: 'revised' as const,
+      candidates: revisedCandidates,
+      paired: new Set(pairing.pairs.map(([, revised]) => revised)),
+      rawIndex: revisedRawIndex,
+      ordinals: visualOrdinals,
+    },
+  ];
+  for (const { side, candidates, paired, rawIndex, ordinals } of sides) {
+    for (const [candidateIndex, candidate] of candidates.entries()) {
+      if (paired.has(candidateIndex)) continue;
+      for (const copy of candidate.copies) {
+        const reason = unsupportedStoryReason(copy);
+        if (!reason) continue;
+        const index = rawIndex.get(copy)!;
+        const paragraphId = textBoxParagraphId(copy);
+        throw new UnsupportedTextBoxRevisionError([{
+          index: ordinals[index] ?? index,
+          partPath: 'word/document.xml',
+          reason: `${side === 'original' ? 'deleted' : 'inserted'} text box: ${reason}`,
+          ...(side === 'original'
+            ? { originalParagraphId: paragraphId }
+            : { revisedParagraphId: paragraphId }),
+        }]);
+      }
+    }
+  }
 
-  const changedIndices: number[] = [];
-  for (let index = 0; index < originalTextBoxes.length; index += 1) {
-    const originalTextBox = originalTextBoxes[index]!;
-    const revisedTextBox = revisedTextBoxes[index]!;
+  const changedCopies: Array<{ originalIndex: number; revisedIndex: number }> = [];
+  for (const [originalTextBox, revisedTextBox] of pairedCopies) {
+    const index = revisedRawIndex.get(revisedTextBox)!;
     if (canonicalNode(originalTextBox) === canonicalNode(revisedTextBox)) {
       continue;
     }
@@ -1699,6 +1778,9 @@ export async function prepareTextBoxStoryComparison(
     const reason =
       unsupportedStoryReason(originalTextBox) ??
       unsupportedStoryReason(revisedTextBox) ??
+      (hasTextBoxAncestor(originalTextBox) || hasTextBoxAncestor(revisedTextBox)
+        ? 'nested text boxes are not supported'
+        : undefined) ??
       (originalRelationshipClosure === undefined ||
       revisedRelationshipClosure === undefined ||
       originalRelationshipClosure !== revisedRelationshipClosure
@@ -1718,15 +1800,18 @@ export async function prepareTextBoxStoryComparison(
         revisedParagraphId: textBoxParagraphId(revisedTextBox),
       }]);
     }
-    changedIndices.push(index);
+    changedCopies.push({
+      originalIndex: originalRawIndex.get(originalTextBox)!,
+      revisedIndex: index,
+    });
   }
 
   const stories: TextBoxStoryInput[] = [...ancillary.stories];
-  for (const index of changedIndices) {
+  for (const { originalIndex, revisedIndex: index } of changedCopies) {
     const storyOriginalArchive = await originalArchive.clone();
     const storyRevisedArchive = await revisedArchive.clone();
     storyOriginalArchive.setDocumentXml(
-      storyDocumentXml(originalDocumentXml, index),
+      storyDocumentXml(originalDocumentXml, originalIndex),
     );
     storyRevisedArchive.setDocumentXml(
       storyDocumentXml(revisedDocumentXml, index),
@@ -1739,11 +1824,19 @@ export async function prepareTextBoxStoryComparison(
       original: await storyOriginalArchive.save(),
       revised: await storyRevisedArchive.save(),
     });
-    createPlaceholder(originalTextBoxes[index]!, index);
+    // Both sides carry the revised raw index, so the outer comparison sees
+    // one unchanged placeholder and the splice finds it by that token.
+    createPlaceholder(originalTextBoxes[originalIndex]!, index);
     createPlaceholder(revisedTextBoxes[index]!, index);
   }
 
-  if (stories.length === 0 && !ancillary.validateProjection) return undefined;
+  if (
+    stories.length === 0 &&
+    !ancillary.validateProjection &&
+    !unpairedTextBoxes
+  ) {
+    return undefined;
+  }
 
   const outerOriginalArchive = await originalArchive.clone();
   const outerRevisedArchive = await revisedArchive.clone();
@@ -1758,6 +1851,7 @@ export async function prepareTextBoxStoryComparison(
     stories,
     validateAncillaryProjection: ancillary.validateProjection,
     hasAncillaryTextBoxStories: ancillary.hasTextBoxStories,
+    hasUnpairedTextBoxes: unpairedTextBoxes,
     representedAncillaryChanges: ancillary.representedChanges,
   };
 }
@@ -1774,6 +1868,9 @@ export async function assembleTextBoxStoryComparison(
     partPath: string;
     container: 'textBox' | 'ancillaryPart';
     document: Buffer;
+    /** The story's original and revised sides, for a tracked placeholder. */
+    original?: Buffer;
+    revised?: Buffer;
   }>,
 ): Promise<Buffer> {
   const outerArchive = await DocxArchive.load(outerCompared);
@@ -1825,6 +1922,10 @@ export async function assembleTextBoxStoryComparison(
       );
       continue;
     }
+    if (storyResult.partPath === 'word/document.xml') {
+      await spliceBodyTextBoxStory(targetDocument, outerArchive, storyResult, storyBody);
+      continue;
+    }
     const target = targetDocument
       .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')
       .item(storyResult.index);
@@ -1857,6 +1958,195 @@ export async function assembleTextBoxStoryComparison(
   return outerArchive.save();
 }
 
+/**
+ * The run-level revision wrapper around a text box's anchor in the compared
+ * body, or `undefined` when the anchor is unchanged.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ */
+function anchorRevisionWrapper(
+  textBox: Element,
+): 'ins' | 'del' | 'moveFrom' | 'moveTo' | undefined {
+  for (let node = textBox.parentNode; node?.nodeType === 1; node = node.parentNode) {
+    const element = node as Element;
+    if (element.namespaceURI !== OOXML.W_NS) continue;
+    if (
+      element.localName === 'ins' ||
+      element.localName === 'del' ||
+      element.localName === 'moveFrom' ||
+      element.localName === 'moveTo'
+    ) {
+      return element.localName;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * One side's story body, with its relationship ids rebound to the compared
+ * package. The side story carries its own document's ids, which the compared
+ * package (built on the revised relationships) may number differently.
+ */
+async function reboundSideStoryBody(
+  side: Buffer,
+  outerArchive: DocxArchive,
+  visualIndex: number,
+): Promise<Element> {
+  const archive = await DocxArchive.load(side);
+  const body = parseXml(await archive.getDocumentXml())
+    .getElementsByTagNameNS(OOXML.W_NS, 'body')
+    .item(0);
+  if (!body) throw new Error('A text-box story document has no w:body');
+  await remapComparedStoryRelationshipIds(
+    archive,
+    outerArchive,
+    'word/document.xml',
+    body,
+    visualIndex,
+  );
+  return body;
+}
+
+function replaceStoryContent(target: Element, storyBody: Element): void {
+  while (target.firstChild) target.removeChild(target.firstChild);
+  for (const child of directChildElements(storyBody)) {
+    if (child.namespaceURI === OOXML.W_NS && child.localName === 'sectPr') continue;
+    target.appendChild(target.ownerDocument!.importNode(child, true));
+  }
+}
+
+/**
+ * Splice one compared body text-box story back into the outer comparison.
+ *
+ * The story is found by its placeholder token, not by raw position: once
+ * unpaired boxes stay in the outer comparison, the compared body holds the
+ * deleted and the inserted boxes together and raw positions no longer match
+ * either input (#1031). The outer comparison normally keeps the placeholder
+ * once, unchanged, and the compared story goes there. When it instead
+ * tracked the anchor as deleted and reinserted (a rewritten anchor
+ * paragraph), each tracked copy receives that side's whole story, which
+ * `markTrackedTextBoxLifecycles` then marks as deleted or inserted; a moved
+ * anchor's two copies receive their sides unmarked.
+ */
+async function spliceBodyTextBoxStory(
+  targetDocument: Document,
+  outerArchive: DocxArchive,
+  storyResult: {
+    index: number;
+    visualIndex: number;
+    partPath: string;
+    original?: Buffer;
+    revised?: Buffer;
+  },
+  comparedStoryBody: Element,
+): Promise<void> {
+  const token = placeholderToken(storyResult.index);
+  const occurrences = Array.from(
+    targetDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
+  ).filter((textBox) => (textBox.textContent ?? '') === token);
+  const kept = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) === undefined);
+  const tracked = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) !== undefined);
+  const sideBody = async (side: Buffer | undefined): Promise<Element | undefined> =>
+    side ? reboundSideStoryBody(side, outerArchive, storyResult.visualIndex) : undefined;
+  const trackedBodies = new Map<Element, Element | undefined>();
+  for (const textBox of tracked) {
+    trackedBodies.set(
+      textBox,
+      await sideBody(
+        ['ins', 'moveTo'].includes(anchorRevisionWrapper(textBox)!)
+          ? storyResult.revised
+          : storyResult.original,
+      ),
+    );
+  }
+  if (
+    kept.length > 1 ||
+    occurrences.length === 0 ||
+    [...trackedBodies.values()].some((body) => body === undefined)
+  ) {
+    throw new UnsupportedTextBoxRevisionError([{
+      index: storyResult.visualIndex,
+      partPath: storyResult.partPath,
+      reason: 'the outer comparison changed text-box story topology',
+    }]);
+  }
+  for (const textBox of kept) replaceStoryContent(textBox, comparedStoryBody);
+  for (const [textBox, body] of trackedBodies) replaceStoryContent(textBox, body!);
+}
+
+/**
+ * Mark the story of every body text box whose anchor the outer comparison
+ * tracked as inserted or deleted.
+ *
+ * A box with no counterpart in the other document stays whole in the outer
+ * comparison, which wraps its anchor run in `w:ins` or `w:del`. Its story is a
+ * separate story, so the anchor revision does not reach its paragraphs: each
+ * story paragraph receives a paragraph-mark revision and each text run a
+ * run-level revision of the same kind, the way Word tracks a text box typed
+ * or deleted with change tracking on. Accepting or rejecting the anchor then
+ * agrees with accepting or rejecting the story. Every stored copy of an
+ * `mc:AlternateContent` twin is marked; the count reports visual boxes'
+ * paragraphs once.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/1031
+ */
+export async function markTrackedTextBoxLifecycles(
+  compared: Buffer,
+  author: string,
+  date: Date,
+  minimumRevisionId = 0,
+): Promise<{ document: Buffer; insertedParagraphs: number; deletedParagraphs: number }> {
+  const archive = await DocxArchive.load(compared);
+  const document = parseXml(await archive.getDocumentXml());
+  const trackedBoxes = Array.from(
+    document.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
+  ).filter((textBox) => {
+    if (hasTextBoxAncestor(textBox)) return false;
+    // A moved anchor carries the same story on both sides of the move, so
+    // its story is not an insertion or a deletion and stays unmarked.
+    const wrapper = anchorRevisionWrapper(textBox);
+    return wrapper === 'ins' || wrapper === 'del';
+  });
+  if (trackedBoxes.length === 0) {
+    return { document: compared, insertedParagraphs: 0, deletedParagraphs: 0 };
+  }
+  const preservedRoots: Element[] = [];
+  for (const path of archive.listFiles()) {
+    if (!/^word\/.*\.xml$/u.test(path) || path === 'word/document.xml') continue;
+    const xml = await archive.getFile(path);
+    if (!xml) continue;
+    try {
+      preservedRoots.push(parseXml(xml).documentElement);
+    } catch {
+      // Non-WordprocessingML extension parts are irrelevant to revision IDs.
+    }
+  }
+  const state = createRevisionIdState([document.documentElement, ...preservedRoots]);
+  state.nextId = Math.max(state.nextId, minimumRevisionId);
+  const dateString = formatDate(date);
+  const rendered = new Set(textBoxGroups(document).map((group) => group.selected));
+  let insertedParagraphs = 0;
+  let deletedParagraphs = 0;
+  for (const textBox of trackedBoxes) {
+    const markerTag = anchorRevisionWrapper(textBox) === 'ins' ? 'w:ins' : 'w:del';
+    const paragraphs = Array.from(textBox.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+    for (const paragraph of paragraphs) {
+      markLifecycleParagraph(paragraph, markerTag, author, dateString, state);
+    }
+    if (!rendered.has(textBox)) continue;
+    if (markerTag === 'w:ins') insertedParagraphs += paragraphs.length;
+    else deletedParagraphs += paragraphs.length;
+  }
+  archive.setDocumentXml(serializer.serializeToString(document));
+  return { document: await archive.save(), insertedParagraphs, deletedParagraphs };
+}
+
 const REVISION_WRAPPER_NAMES = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
 
 function hasAncestorBelow(element: Element, stopAt: Element, localName: string): boolean {
@@ -1873,6 +2163,53 @@ function hasRevisionWrapperAncestor(element: Element, stopAt: Element): boolean 
     }
   }
   return false;
+}
+
+/**
+ * Mark one paragraph of a story whose whole lifecycle is an insertion or a
+ * deletion: a paragraph-mark revision, plus a run-level wrapper on every run
+ * that is not a drawing/VML carrier, does not belong to a nested text box, and
+ * is not already inside a revision wrapper.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ */
+function markLifecycleParagraph(
+  paragraph: Element,
+  markerTag: 'w:ins' | 'w:del',
+  author: string,
+  dateString: string,
+  state: ReturnType<typeof createRevisionIdState>,
+): void {
+  addParagraphMarkRevisionMarker(
+    paragraph,
+    markerTag,
+    author,
+    dateString,
+    state,
+  );
+  for (const run of Array.from(
+    paragraph.getElementsByTagNameNS(OOXML.W_NS, 'r'),
+  ).filter(
+    (element) =>
+      // Runs of nested text-box paragraphs belong to those paragraphs.
+      !hasAncestorBelow(element, paragraph, 'txbxContent') &&
+      !hasRevisionWrapperAncestor(element, paragraph) &&
+      element.getElementsByTagNameNS(OOXML.W_NS, 'drawing').length === 0 &&
+      element.getElementsByTagNameNS(OOXML.W_NS, 'pict').length === 0 &&
+      element.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length === 0,
+  )) {
+    wrapRunWithTrackChange({
+      run,
+      tagName: markerTag,
+      author,
+      dateStr: dateString,
+      state,
+      convertTextToDelText: markerTag === 'w:del',
+    });
+  }
 }
 
 /**
@@ -1967,35 +2304,8 @@ async function markLifecycleAncillaryStoryParagraphs(
   const state = createRevisionIdState(preservedRoots);
   state.nextId = Math.max(state.nextId, minimumRevisionId);
   const dateString = formatDate(date);
-  const markParagraph = (paragraph: Element): void => {
-    addParagraphMarkRevisionMarker(
-      paragraph,
-      markerTag,
-      author,
-      dateString,
-      state,
-    );
-    for (const run of Array.from(
-      paragraph.getElementsByTagNameNS(OOXML.W_NS, 'r'),
-    ).filter(
-      (element) =>
-        // Runs of nested text-box paragraphs belong to those paragraphs.
-        !hasAncestorBelow(element, paragraph, 'txbxContent') &&
-        !hasRevisionWrapperAncestor(element, paragraph) &&
-        element.getElementsByTagNameNS(OOXML.W_NS, 'drawing').length === 0 &&
-        element.getElementsByTagNameNS(OOXML.W_NS, 'pict').length === 0 &&
-        element.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length === 0,
-    )) {
-      wrapRunWithTrackChange({
-        run,
-        tagName: markerTag,
-        author,
-        dateStr: dateString,
-        state,
-        convertTextToDelText: markerTag === 'w:del',
-      });
-    }
-  };
+  const markParagraph = (paragraph: Element): void =>
+    markLifecycleParagraph(paragraph, markerTag, author, dateString, state);
   // Nested text-box paragraphs are marked on their own; every other paragraph
   // in the story (direct, table cell, block-level sdt) is marked here and
   // counted as one represented range.
