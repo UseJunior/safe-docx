@@ -42,7 +42,7 @@ export type PullParagraph = {
   fieldInstructions: string[];
   /** Where each field other than a cross-reference reads, with its instruction (`12:PAGE`). */
   fieldPositions: string[];
-  /** Where each bookmark starts (`target@0`), in order; Word's `_GoBack` aside. */
+  /** Where each bookmark starts (`target@0`), in order; Word's hidden `_…` bookmarks aside. */
   bookmarks: string[];
 };
 
@@ -323,8 +323,10 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     (offset) => footnoteReferences.push(offset),
     (offset, result, instruction) => crossReferences.push({ offset, text: result, instruction: instruction.trim().replace(/\s+/gu, ' ') }),
     // Where it ends is not compared: Word may leave text typed at a heading's end outside its bookmark.
+    // Hidden bookmarks (`_GoBack`, `_Hlk…`, `_Toc…`, `_Ref…`) are Word's own: create's anchors start with a letter, and a
+    // cross-reference pointed at a hidden one changes its instruction, which is compared.
     (name, _id, offset) => {
-      if (name !== '_GoBack') bookmarks.push(`${name}@${offset}`);
+      if (name && !name.startsWith('_')) bookmarks.push(`${name}@${offset}`);
     },
     undefined,
     (start, end, run, fieldRuns) => {

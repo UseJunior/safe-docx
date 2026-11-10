@@ -757,6 +757,9 @@ describe('Traceability: pull brings Word edits on a create output back into its 
       const anchorBase = await build(anchorSource);
       const headingEnd = await pullCreationEdits({ source: anchorSource, base: anchorBase, edited: await edit(anchorBase.docx, { document: (xml) => xml.replace(/(<w:bookmarkEnd w:id="\d+"\/>)/u, '$1<w:r><w:t xml:space="preserve"> Gamma</w:t></w:r>') }) });
       expect(headingEnd).toMatchObject({ complete: true, diagnostics: [] });
+      // A hidden bookmark Word adds (copying text adds `_Hlk…`) is Word's own, not an anchor.
+      const hidden = await pullCreationEdits({ source: anchorSource, base: anchorBase, edited: await edit(anchorBase.docx, { document: (xml) => once(xml, '<w:t xml:space="preserve">Body.</w:t>', '<w:t xml:space="preserve">Bo</w:t></w:r><w:bookmarkStart w:id="90" w:name="_Hlk123456"/><w:r><w:t xml:space="preserve">dy.</w:t></w:r><w:bookmarkEnd w:id="90"/><w:r><w:t xml:space="preserve"></w:t>') }) });
+      expect(hidden).toMatchObject({ changes: [], diagnostics: [], complete: true });
       expect(headingEnd.pulledSource).toContain('## Alpha Gamma {% #target %}');
       const respaced = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, { document: (xml) => once(xml, ' REF target \\h ', '  REF  target  \\h  ') }) });
       expect(respaced).toMatchObject({ changes: [], diagnostics: [], complete: true });
