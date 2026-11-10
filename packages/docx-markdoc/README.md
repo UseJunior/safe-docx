@@ -1081,6 +1081,9 @@ written. Make these edits in the source by hand:
   (`PULL_UNMAPPED_INSERTION`);
 - the first nested item added under a list item that had none
   (`PULL_PARAGRAPH_FORMATTING`, as it is written at the outer level);
+- a list item added after a paragraph that was itself added after the list,
+  continuing that list in Word (`PULL_EDIT_NOT_VERIFIED`, as create starts a
+  new list there);
 - the paragraph deleted between a list and an indented paragraph that would
   then join the list (`PULL_EDIT_NOT_VERIFIED`).
 

@@ -60,7 +60,9 @@ export type PullInput = {
 type Splice = { start: number; end: number; text: string; block?: string };
 
 /** The paragraphs a pulled source must read back as: each build paragraph (or null once deleted) with what was added after it. */
-type Slots = { before: string[]; items: Array<{ text: string | null; after: string[] }> };
+/** Paragraphs added after a slot, each with its index in the edited document: they read back in that order. */
+type AddedSlot = { text: string; order: number };
+type Slots = { before: AddedSlot[]; items: Array<{ text: string | null; after: AddedSlot[] }> };
 
 type Plan = {
   changes: PullChange[];
@@ -70,6 +72,8 @@ type Plan = {
   keepsSkeleton: boolean;
   /** What to report when the planned change fails verification. */
   where: { line: number; paragraph?: number };
+  /** An insertion's first edited paragraph: of two insertions at one source offset, the later is applied first. */
+  order?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -839,7 +843,9 @@ function blockInsertion(source: string, starts: readonly number[], line: number,
     return { start: source.length, end: source.length, text: `${prefix}\n${markdown}\n` };
   }
   const next = source.slice(starts[line]!, starts[line + 1]!);
-  return { start: starts[line]!, end: starts[line]!, text: `\n${markdown}\n${next.trim() ? '\n' : ''}` };
+  // A blank line already before it (the one ending a list) separates it.
+  const separated = line > 0 && source.slice(starts[line - 1]!, starts[line]!).trim() === '';
+  return { start: starts[line]!, end: starts[line]!, text: `${separated ? '' : '\n'}${markdown}\n${next.trim() ? '\n' : ''}` };
 }
 
 /** Lines [start, end) as a deletion splice; the blank line after them goes too when one precedes them. */
@@ -873,7 +879,7 @@ function applySplices(source: string, splices: readonly Splice[]): string {
 }
 
 function expectedParagraphs(slots: Slots): string[] {
-  return [...slots.before, ...slots.items.flatMap((item) => [...(item.text === null ? [] : [item.text]), ...item.after])];
+  return [...slots.before.map((added) => added.text), ...slots.items.flatMap((item) => [...(item.text === null ? [] : [item.text]), ...item.after.map((added) => added.text)])];
 }
 
 function cloneSlots(slots: Slots): Slots {
@@ -1137,16 +1143,45 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     }
   }
 
+  // Added paragraphs, in runs: each run goes after the build paragraph before it.
+  const runs: Array<{ after: number; next: number | undefined; paragraphs: number[] }> = [];
+  let lastO = -1;
+  for (const pair of pairing) {
+    if (pair.o !== undefined) {
+      lastO = pair.o;
+      for (const open of runs) if (open.next === undefined && open.after !== lastO) open.next = pair.o;
+      continue;
+    }
+    const open = runs.at(-1);
+    // Numbered paragraphs of another numbering instance, and a numbered paragraph next to an unnumbered one, start a
+    // run of their own: each goes to its own list, or after the block before it.
+    const last = open?.paragraphs.at(-1);
+    const sameList = last === undefined || (E[pair.e!]!.numbered === E[last]!.numbered && (!E[last]!.numbered || numberingOf(E[last]!.properties) === numberingOf(E[pair.e!]!.properties)));
+    if (open && open.after === lastO && open.next === undefined && sameList) open.paragraphs.push(pair.e!);
+    else runs.push({ after: lastO, next: undefined, paragraphs: [pair.e!] });
+  }
+  // Unnumbered paragraphs added before the items that replace a list's first items go before that list, not after it.
+  runs.forEach((run, k) => {
+    const following = runs[k + 1];
+    if (!following || following.after !== run.after || run.after < 0 || E[run.paragraphs[0]!]!.numbered) return;
+    const item = map.paragraphs[run.after]!.listItem;
+    const added = E[following.paragraphs[0]!]!;
+    if (!item || !deletedSet.has(run.after) || !added.numbered || numberingOf(added.properties) !== numberingOf(O[run.after]!.properties)) return;
+    let first = run.after;
+    while (first > 0 && deletedSet.has(first - 1) && map.paragraphs[first - 1]!.listItem?.list === item.list) first -= 1;
+    if (first > 0 && map.paragraphs[first - 1]!.listItem?.list === item.list) return;
+    run.after = first - 1;
+  });
+
   // Lists a deletion leaves next to each other: Markdown joins two adjacent lists of one kind and delimiter, so along
   // each run of lists that end up adjacent, a list that would share the delimiter of the one before takes another
   // (`-`, `*`, `+`; `.`, `)`), not the next one's where it can. Its marker edits go with the deletion that joined the run.
   {
     // A list whose items were all retyped stays a list: numbered paragraphs added after one of its deleted items.
     // Entries an added unnumbered paragraph follows: it is written after the entry, so lists either side stay apart.
-    const separated = new Set<number>();
+    const separated = new Set(runs.filter((run) => run.after >= 0 && !E[run.paragraphs[0]!]!.numbered).map((run) => map.paragraphs[run.after]!.entry));
     for (const pair of pairing) {
       if (pair.o !== undefined) lastBuilt = pair.o;
-      else if (lastBuilt >= 0 && !E[pair.e!]!.numbered) separated.add(map.paragraphs[lastBuilt]!.entry);
       else if (lastBuilt >= 0 && E[pair.e!]!.numbered) {
         const behind = listItemBehind(lastBuilt, pair.e!) ?? lastBuilt;
         if (deletedSet.has(behind) && map.paragraphs[behind]!.listItem) replacedLists.add(map.paragraphs[behind]!.listItem!.list);
@@ -1207,23 +1242,6 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     }
   }
 
-  // Added paragraphs, in runs: each run goes after the build paragraph before it.
-  const runs: Array<{ after: number; next: number | undefined; paragraphs: number[] }> = [];
-  let lastO = -1;
-  for (const pair of pairing) {
-    if (pair.o !== undefined) {
-      lastO = pair.o;
-      for (const open of runs) if (open.next === undefined && open.after !== lastO) open.next = pair.o;
-      continue;
-    }
-    const open = runs.at(-1);
-    // Numbered paragraphs of another numbering instance, and a numbered paragraph next to an unnumbered one, start a
-    // run of their own: each goes to its own list, or after the block before it.
-    const last = open?.paragraphs.at(-1);
-    const sameList = last === undefined || (E[pair.e!]!.numbered === E[last]!.numbered && (!E[last]!.numbered || numberingOf(E[last]!.properties) === numberingOf(E[pair.e!]!.properties)));
-    if (open && open.after === lastO && open.next === undefined && sameList) open.paragraphs.push(pair.e!);
-    else runs.push({ after: lastO, next: undefined, paragraphs: [pair.e!] });
-  }
   for (const run of runs) {
     // The next build paragraph that stays: the run is inserted before it.
     let next = run.next;
@@ -1319,7 +1337,13 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     const texts = run.paragraphs.map((index) => E[index]!.text);
     // The slot of the list item it replaces, when a deleted bridge or list lies between them.
     const after = listAfter;
-    plans.push({ changes: [report], splices: [splice], apply: (slots) => { (after < 0 ? slots.before : slots.items[after]!.after).push(...texts); }, keepsSkeleton: false, where: { line: report.afterLine } });
+    const order = run.paragraphs[0]!;
+    const apply = (slots: Slots) => {
+      const into = after < 0 ? slots.before : slots.items[after]!.after;
+      const at = into.findIndex((added) => added.order > order);
+      into.splice(at === -1 ? into.length : at, 0, ...texts.map((text, k) => ({ text, order: order + k })));
+    };
+    plans.push({ changes: [report], splices: [splice], apply, keepsSkeleton: false, where: { line: report.afterLine }, order });
   }
 
   // An insertion where a deleted block was goes where the block started, so the deletion cannot swallow it.
@@ -1402,7 +1426,8 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   // plan that would edit inside one is not written.
   const applied: Splice[] = [];
   const moved = (offset: number) => offset + applied.reduce((sum, splice) => sum + (splice.start < splice.end && splice.end <= offset ? splice.text.length - (splice.end - splice.start) : splice.start === splice.end && splice.start < offset ? splice.text.length : 0), 0);
-  for (const plan of [...plans].sort((x, y) => Math.max(...y.splices.map((s) => s.start)) - Math.max(...x.splices.map((s) => s.start)))) {
+  const lastStart = (plan: Plan) => Math.max(...plan.splices.map((s) => s.start));
+  for (const plan of [...plans].sort((x, y) => lastStart(y) - lastStart(x) || (x.order !== undefined && y.order !== undefined ? y.order - x.order : 0))) {
     const overlapping = plan.splices.some((splice) => applied.some((done) => done.start < done.end && ((splice.start > done.start && splice.start < done.end) || (splice.end > done.start && splice.end < done.end) || (splice.start <= done.start && splice.end >= done.end && splice.start < splice.end))));
     if (overlapping) {
       diagnostics.push({ code: 'PULL_EDIT_NOT_VERIFIED', message: `${plan.where.paragraph ? `paragraph ${plan.where.paragraph}` : 'an added paragraph'}: it overlaps another edit written to the same source lines; the change is not written`, line: plan.where.line || undefined, ...(plan.where.paragraph ? { paragraph: plan.where.paragraph } : {}) });

@@ -817,6 +817,13 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         expect(pattern.test(xml)).toBe(true);
         return xml.replace(pattern, (paragraph) => paragraph + paragraph.replace(`>${text}<`, `>${added}<`));
       } });
+      // A copy of the paragraph holding `model`, reading `added`, after the paragraph holding `text`.
+      const addedLike = (text: string, model: string, added: string): Surgery => ({ document: (xml) => {
+        const holding = (words: string) => new RegExp(`<w:p>(?:(?!</w:p>).)*?<w:t xml:space="preserve">${words}</w:t>(?:(?!</w:p>).)*?</w:p>`, 'u');
+        const copy = holding(model).exec(xml)![0].replace(`>${model}<`, `>${added}<`);
+        expect(holding(text).test(xml)).toBe(true);
+        return xml.replace(holding(text), (paragraph) => paragraph + copy);
+      } });
       const once2 = (old: string, now: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, `<w:t xml:space="preserve">${now}</w:t>`) });
       const retype = (old: string): Surgery => ({ document: (xml) => once(xml, `<w:t xml:space="preserve">${old}</w:t>`, '<w:t xml:space="preserve">Entirely fresh sentence.</w:t>') });
       for (const [listSource, surgery, expected] of [
@@ -857,12 +864,27 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         // An item added to the first list, and a list item retyped beside the body paragraph after it, as the bridge goes.
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(dropParagraph('Bridge.'), addedAfterItem('Apple', 'Kiwi')), '- Apple\n- Kiwi\n\n* Banana\n\nBody.\n'],
         ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Apple', 'Fresh wording.'), once2('Bridge.', 'Unrelated sentence.')), '- Fresh wording.\n\nUnrelated sentence.\n\n- Banana\n\nBody.\n'],
+        // Added and retyped items and body paragraphs read back in their edited order.
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(addedAfterItem('Apple', 'Kiwi'), addedLike('Kiwi', 'Bridge.', 'New prose.')), '- Apple\n- Kiwi\n\nNew prose.\n\nBridge.\n\n- Banana\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(addedAfterItem('Apple', 'Kiwi'), addedLike('Kiwi', 'Bridge.', 'New prose.')), '1. Apple\n1. Kiwi\n\nNew prose.\n\nBridge.\n\n1. Banana\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.')), '- Apple\n\nNew prose.\n\n- Fresh berries.\n\nBody.\n'],
+        ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.')), '1. Apple\n\nNew prose.\n\n1. Fresh berries.\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', all(once2('Apple', 'Fresh zero.'), once2('Bridge.', 'New prose.'), once2('Banana', 'Fresh berries.')), '- Fresh zero.\n\nNew prose.\n\n- Fresh berries.\n\nBody.\n'],
+        ['- Apple\n\nBridge.\n\n- Banana\n\nBody.\n', addedLike('Apple', 'Bridge.', 'New prose.'), '- Apple\n\nNew prose.\n\nBridge.\n\n- Banana\n\nBody.\n'],
         ['1. Apple\n\nBridge.\n\n1. Banana\n\nBody.\n', all(once2('Apple', 'Fresh wording.'), once2('Bridge.', 'Unrelated sentence.')), '1. Fresh wording.\n\nUnrelated sentence.\n\n1. Banana\n\nBody.\n'],
         ['- Apple\n- Avocado\n\nBridge.\n\n- Banana\n- Cherry\n\nBody.\n', all(dropParagraph('Bridge.'), once2('Apple', 'Fresh zero.'), once2('Avocado', 'Fresh two.'), once2('Banana', 'Fresh one.')), '- Fresh zero.\n- Fresh two.\n\n* Fresh one.\n* Cherry\n\nBody.\n'],
       ] as const) {
         const listBase = await build(listSource);
         const result = await pullCreationEdits({ source: listSource, base: listBase, edited: await edit(listBase.docx, surgery) });
         expect(result).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
+      // An item that continues the list before a paragraph added after it: create starts a new list there, so it is reported.
+      {
+        const continuing = '- Apple\n\nBridge.\n\n- Banana\n\nBody.\n';
+        const continuingBase = await build(continuing);
+        const result = await pullCreationEdits({ source: continuing, base: continuingBase, edited: await edit(continuingBase.docx, all(addedLike('Apple', 'Bridge.', 'New prose.'), addedLike('New prose.', 'Apple', 'Kiwi'))) });
+        expect(result.complete).toBe(false);
+        expect(result.diagnostics.length).toBeGreaterThan(0);
       }
       // A list item retyped and moved into the list before it: the same label, another list.
       const membershipSource = '- Apple\n\nBridge.\n\n- Banana\n\nBody.\n';
