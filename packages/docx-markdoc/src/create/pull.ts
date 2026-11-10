@@ -1348,18 +1348,23 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const label = (value: string | undefined) => quote((value ?? '').split('|')[0] || '(none)');
       out.push({ code: 'PULL_NUMBERING_CHANGED', message: `paragraph ${index + 1} is numbered ${label(E[index]!.label)} in the edited DOCX and ${label(rebuiltDoc.paragraphs[index]?.label)} in the rebuild; pull does not write list numbering (start values, restarts, formats), so it is not carried` });
     }
-    // Another field given a switch reads the same.
-    const switched = E.findIndex((paragraph, k) => JSON.stringify(paragraph.fieldInstructions) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.fieldInstructions ?? []));
+    // Another field given a switch, or moved within text that reads the same, reads the same.
+    const switched = E.findIndex((paragraph, k) => JSON.stringify(paragraph.fieldPositions) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.fieldPositions ?? []));
     if (switched !== -1) {
       const shown = (paragraph: PullParagraph | undefined) => (paragraph?.fieldInstructions ?? []).map((instruction) => quote(instruction)).join(', ') || '(none)';
       out.push({ code: 'PULL_FIELD_CHANGED', message: `paragraph ${switched + 1}'s fields are ${shown(E[switched])} in the edited DOCX and ${shown(rebuiltDoc.paragraphs[switched])} in the rebuild; pull does not write field instructions, so the change is not carried` });
     }
     // A cross-reference retargeted or given other switches keeps its text, so the texts do not show it.
+    // So does one moved between two places with the same text: each is compared with where it reads.
     const instructions = (paragraph: PullParagraph | undefined) => (paragraph?.crossReferences ?? []).map((reference) => reference.instruction);
-    const retargeted = E.findIndex((paragraph, k) => JSON.stringify(instructions(paragraph)) !== JSON.stringify(instructions(rebuiltDoc.paragraphs[k])));
+    const placed = (paragraph: PullParagraph | undefined) => (paragraph?.crossReferences ?? []).map((reference) => `${reference.offset}:${reference.instruction}`);
+    const retargeted = E.findIndex((paragraph, k) => JSON.stringify(placed(paragraph)) !== JSON.stringify(placed(rebuiltDoc.paragraphs[k])));
     if (retargeted !== -1) {
       const shown = (paragraph: PullParagraph | undefined) => instructions(paragraph).map(quote).join(', ') || '(none)';
-      out.push({ code: 'PULL_EDIT_IN_CROSS_REFERENCE', message: `paragraph ${retargeted + 1}'s cross-reference fields are ${shown(E[retargeted])} in the edited DOCX and ${shown(rebuiltDoc.paragraphs[retargeted])} in the rebuild; pull does not retarget a cross-reference or change its switches, so it is not carried` });
+      const moved = JSON.stringify(instructions(E[retargeted])) === JSON.stringify(instructions(rebuiltDoc.paragraphs[retargeted]));
+      out.push({ code: 'PULL_EDIT_IN_CROSS_REFERENCE', message: moved
+        ? `paragraph ${retargeted + 1}'s cross-reference reads at another place in the edited DOCX than in the rebuild, within text that reads the same; pull does not move a cross-reference, so it is not carried`
+        : `paragraph ${retargeted + 1}'s cross-reference fields are ${shown(E[retargeted])} in the edited DOCX and ${shown(rebuiltDoc.paragraphs[retargeted])} in the rebuild; pull does not retarget a cross-reference or change its switches, so it is not carried` });
     }
     if (JSON.stringify(edited.tables) !== JSON.stringify(rebuiltDoc.tables)) {
       const table = Math.max(0, edited.tables.findIndex((signature, k) => signature !== rebuiltDoc.tables[k]));

@@ -713,6 +713,27 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_EDIT_IN_CROSS_REFERENCE']);
       }
+      // The same in a footnote, whose text reads the same.
+      const noteTwinSource = '## Alpha {% #target %}\n\n## Alpha {% #other %}\n\nSee below.{% fnref id="n" /%}\n\n{% footnote id="n" %}See {% xref to="target" show="text" /%}.{% /footnote %}\n';
+      const noteTwinBase = await build(noteTwinSource);
+      const noteEdit = (to: string): Surgery => ({ parts: { 'word/footnotes.xml': (xml) => once(xml, ' REF target \\h ', to) } });
+      const below: Surgery = { document: (xml) => once(xml, '<w:t xml:space="preserve">See below.</w:t>', '<w:t xml:space="preserve">Read below.</w:t>') };
+      for (const surgery of [noteEdit(' REF other \\h '), all(noteEdit(' REF other \\h '), below), noteEdit(' REF target \\h \\p '), all(noteEdit(' REF target \\h \\p '), below)]) {
+        const result = await pullCreationEdits({ source: noteTwinSource, base: noteTwinBase, edited: await edit(noteTwinBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_FOOTNOTES_CHANGED']);
+      }
+      // A cross-reference moved to a later occurrence of its own text, which reads the same.
+      const movedSource = '## Alpha {% #target %}\n\nSee {% xref to="target" show="text" /%} and Alpha.\n';
+      const movedBase = await build(movedSource);
+      const movedField: Surgery = { document: (xml) => xml.replace(/(<w:t xml:space="preserve">See <\/w:t><\/w:r>)((?:(?!<w:t xml:space="preserve"> and Alpha\.).)*?<w:fldChar w:fldCharType="end"\/><\/w:r>)<w:r><w:t xml:space="preserve"> and Alpha\.<\/w:t><\/w:r>/u, (_match, see: string, field: string) => `${see}<w:r><w:t xml:space="preserve">Alpha and </w:t></w:r>${field}<w:r><w:t xml:space="preserve">.</w:t></w:r>`) };
+      const movedRead = await readPullDocx(await edit(movedBase.docx, movedField));
+      expect(movedRead.paragraphs.at(-1)!.crossReferences.map((reference) => reference.offset)).toEqual([14]);
+      for (const surgery of [movedField, all(movedField, { document: (xml) => once(xml, '<w:t xml:space="preserve">See </w:t>', '<w:t xml:space="preserve">Consult </w:t>') })]) {
+        const result = await pullCreationEdits({ source: movedSource, base: movedBase, edited: await edit(movedBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_EDIT_IN_CROSS_REFERENCE']);
+      }
       const respaced = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, { document: (xml) => once(xml, ' REF target \\h ', '  REF  target  \\h  ') }) });
       expect(respaced).toMatchObject({ changes: [], diagnostics: [], complete: true });
 

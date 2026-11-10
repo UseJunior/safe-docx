@@ -40,6 +40,8 @@ export type PullParagraph = {
   fields: string[];
   /** Each field other than a cross-reference, in order: its instruction with whitespace collapsed (`PAGE \\* roman`). */
   fieldInstructions: string[];
+  /** Where each field other than a cross-reference reads, with its instruction (`12:PAGE`). */
+  fieldPositions: string[];
 };
 
 /** A header or footer part's paragraphs, or null for a slot without a reference. */
@@ -301,12 +303,18 @@ function fieldFormatSignature(fieldRuns: readonly Element[]): string {
   return segments.map(({ format, parts }) => `${format}#${parts.join('/')}`).join('&');
 }
 
+/** A paragraph's fields with where each reads: cross-references (`4:REF target \\h`), then the others. */
+export function fieldPlacement(paragraph: Pick<PullParagraph, 'crossReferences' | 'fieldPositions'>): string {
+  return [...paragraph.crossReferences.map((reference) => `${reference.offset}:${reference.instruction}`), ...paragraph.fieldPositions].join('+');
+}
+
 /** Read one paragraph: its read-back text, the formatting of each character and its properties. */
 function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph {
   const formats: string[] = [];
   const crossReferences: PullParagraph['crossReferences'] = [];
   const footnoteReferences: number[] = [];
   const fieldInstructions: string[] = [];
+  const fieldPositions: string[] = [];
   const text = paragraphReadbackText(
     paragraph,
     (offset) => footnoteReferences.push(offset),
@@ -317,9 +325,11 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
       const signature = fieldRuns ? fieldFormatSignature(fieldRuns) : runFormatSignature(run);
       for (let index = start; index < end; index += 1) formats[index] = signature;
     },
-    (_offset, instruction) => {
+    (offset, instruction) => {
       const normalized = instruction.trim().replace(/\s+/gu, ' ');
-      if (normalized && normalized.split(' ')[0] !== 'REF') fieldInstructions.push(normalized);
+      if (!normalized || normalized.split(' ')[0] === 'REF') return;
+      fieldInstructions.push(normalized);
+      fieldPositions.push(`${offset}:${normalized}`);
     },
   );
   const fields = fieldInstructions.map((instruction) => instruction.split(' ')[0]!);
@@ -339,6 +349,7 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     footnoteReferences,
     fields,
     fieldInstructions,
+    fieldPositions,
   };
 }
 
@@ -711,7 +722,8 @@ export async function readPullDocx(buffer: Buffer): Promise<PullDocx> {
   const footnotes = Array.from(body.getElementsByTagNameNS(W, 'footnoteReference')).map((reference) => {
     const note = notes.get(attr(reference, 'id') ?? '');
     // A note's paragraphs with their run formatting and properties, so a formatting edit in a note is seen too.
-    return note ? readBlocks(note, []).map((paragraph) => `${paragraph.text}|${paragraph.properties}|${runLengths(paragraph.formats)}`) : [];
+    // Its fields too, each with where it reads: a cross-reference retargeted or moved keeps the note's text.
+    return note ? readBlocks(note, []).map((paragraph) => `${paragraph.text}|${paragraph.properties}|${runLengths(paragraph.formats)}|${fieldPlacement(paragraph)}`) : [];
   });
 
   // Tracked changes are refused wherever they are: every header, footer and note part the document relates,
