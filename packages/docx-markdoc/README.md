@@ -1084,6 +1084,8 @@ written. Make these edits in the source by hand:
 - a list item added after a paragraph that was itself added after the list,
   continuing that list in Word (`PULL_EDIT_NOT_VERIFIED`, as create starts a
   new list there);
+- the last paragraph deleted after a table, which leaves the empty paragraph
+  Word keeps after a final table (`PULL_UNMAPPED_INSERTION`);
 - the paragraph deleted between a list and an indented paragraph that would
   then join the list (`PULL_EDIT_NOT_VERIFIED`).
 

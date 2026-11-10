@@ -1164,10 +1164,13 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
   runs.forEach((run, k) => {
     const following = runs[k + 1];
     if (!following || following.after !== run.after || run.after < 0 || E[run.paragraphs[0]!]!.numbered) return;
-    const item = map.paragraphs[run.after]!.listItem;
     const added = E[following.paragraphs[0]!]!;
-    if (!item || !deletedSet.has(run.after) || !added.numbered || numberingOf(added.properties) !== numberingOf(O[run.after]!.properties)) return;
-    let first = run.after;
+    if (!added.numbered) return;
+    // The item those items replace: the paragraph before them, or one behind deleted paragraphs after it.
+    const replaced = listItemBehind(run.after, following.paragraphs[0]!) ?? run.after;
+    const item = map.paragraphs[replaced]!.listItem;
+    if (!item || !deletedSet.has(replaced) || numberingOf(added.properties) !== numberingOf(O[replaced]!.properties)) return;
+    let first = replaced;
     while (first > 0 && deletedSet.has(first - 1) && map.paragraphs[first - 1]!.listItem?.list === item.list) first -= 1;
     if (first > 0 && map.paragraphs[first - 1]!.listItem?.list === item.list) return;
     run.after = first - 1;
@@ -1348,12 +1351,17 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
 
   // An insertion where a deleted block was goes where the block started, so the deletion cannot swallow it.
   const deletions = plans.flatMap((plan) => plan.splices).filter((splice) => splice.start < splice.end && splice.text === '');
+  const deletionPlan = new Map(plans.flatMap((plan) => plan.splices.map((splice) => [splice, plan] as const)));
+  // An insertion moved into a deleted block's place is verified with that deletion, as one replacement: alone, the
+  // deletion can read back differently (a table left last gains the empty paragraph that follows a final table).
+  const joined = new Map<Plan, Plan>();
   for (const plan of plans) {
     for (const splice of plan.splices) {
       if (splice.start !== splice.end) continue;
       // A deletion of the last block ends where an insertion after it starts.
       const covering = deletions.find((deletion) => deletion.start < splice.start && (splice.start < deletion.end || (splice.block !== undefined && splice.start === deletion.end && deletion.end === source.length)));
       if (!covering) continue;
+      if (plan.splices.length === 1 && plan.order !== undefined && deletionPlan.get(covering) !== plan) joined.set(plan, deletionPlan.get(covering)!);
       splice.start = splice.end = covering.start;
       // Whole paragraphs that went after the deleted block now open the place it took, so they are separated from
       // what follows it by a blank line, as the deleted block was (a paragraph retyped from scratch is such a pair).
@@ -1362,6 +1370,14 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
         splice.text = rest === '' || /^[ \t]*(\n|$)/u.test(rest) ? `${splice.block}\n` : `${splice.block}\n\n`;
       }
     }
+  }
+  // Later edited insertions first: of two at one offset, the one applied later is written before the other.
+  for (const [insertion, deletion] of [...joined].sort(([x], [y]) => y.order! - x.order!)) {
+    const { apply } = deletion;
+    deletion.splices.push(...insertion.splices);
+    deletion.changes.push(...insertion.changes);
+    deletion.apply = (slots) => { apply(slots); insertion.apply(slots); };
+    plans.splice(plans.indexOf(insertion), 1);
   }
 
   // Document-level content create cannot express.
