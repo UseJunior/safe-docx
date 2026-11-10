@@ -734,6 +734,30 @@ describe('Traceability: pull brings Word edits on a create output back into its 
         expect(result.complete).toBe(false);
         expect(codes(result)).toEqual(['PULL_EDIT_IN_CROSS_REFERENCE']);
       }
+      // A footnote mark moved to the end of its paragraph, and a heading's anchor moved to its same-text twin, alone and
+      // beside a wording edit: the texts, the notes and the cross-reference's instruction all read the same.
+      const markSource = 'See here.{% fnref id="n" /%} Later.\n\n{% footnote id="n" %}A note.{% /footnote %}\n';
+      const markBase = await build(markSource);
+      const mark = '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:id="1"/></w:r>';
+      const movedMark: Surgery = { document: (xml) => once(xml, `${mark}<w:r><w:t xml:space="preserve"> Later.</w:t></w:r>`, `<w:r><w:t xml:space="preserve"> Later.</w:t></w:r>${mark}`) };
+      const read: Surgery = { document: (xml) => once(xml, '<w:t xml:space="preserve">See here.</w:t>', '<w:t xml:space="preserve">Read here.</w:t>') };
+      for (const surgery of [movedMark, all(movedMark, read)]) {
+        const result = await pullCreationEdits({ source: markSource, base: markBase, edited: await edit(markBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_FOOTNOTES_CHANGED']);
+      }
+      const swappedAnchors: Surgery = { document: (xml) => once(once(once(xml, 'w:name="target"', 'w:name="swap"'), 'w:name="other"', 'w:name="target"'), 'w:name="swap"', 'w:name="other"') };
+      for (const surgery of [swappedAnchors, all(swappedAnchors, consult)]) {
+        const result = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, surgery) });
+        expect(result.complete).toBe(false);
+        expect(codes(result)).toEqual(['PULL_BOOKMARKS_CHANGED']);
+      }
+      // Text typed at a heading's end, outside its bookmark as Word may leave it, is an ordinary edit.
+      const anchorSource = '## Alpha {% #target %}\n\nBody.\n';
+      const anchorBase = await build(anchorSource);
+      const headingEnd = await pullCreationEdits({ source: anchorSource, base: anchorBase, edited: await edit(anchorBase.docx, { document: (xml) => xml.replace(/(<w:bookmarkEnd w:id="\d+"\/>)/u, '$1<w:r><w:t xml:space="preserve"> Gamma</w:t></w:r>') }) });
+      expect(headingEnd).toMatchObject({ complete: true, diagnostics: [] });
+      expect(headingEnd.pulledSource).toContain('## Alpha Gamma {% #target %}');
       const respaced = await pullCreationEdits({ source: twinSource, base: twinBase, edited: await edit(twinBase.docx, { document: (xml) => once(xml, ' REF target \\h ', '  REF  target  \\h  ') }) });
       expect(respaced).toMatchObject({ changes: [], diagnostics: [], complete: true });
 

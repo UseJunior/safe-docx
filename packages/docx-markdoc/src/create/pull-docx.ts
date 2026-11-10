@@ -42,6 +42,8 @@ export type PullParagraph = {
   fieldInstructions: string[];
   /** Where each field other than a cross-reference reads, with its instruction (`12:PAGE`). */
   fieldPositions: string[];
+  /** Where each bookmark starts (`target@0`), in order; Word's `_GoBack` aside. */
+  bookmarks: string[];
 };
 
 /** A header or footer part's paragraphs, or null for a slot without a reference. */
@@ -315,11 +317,15 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
   const footnoteReferences: number[] = [];
   const fieldInstructions: string[] = [];
   const fieldPositions: string[] = [];
+  const bookmarks: string[] = [];
   const text = paragraphReadbackText(
     paragraph,
     (offset) => footnoteReferences.push(offset),
     (offset, result, instruction) => crossReferences.push({ offset, text: result, instruction: instruction.trim().replace(/\s+/gu, ' ') }),
-    undefined,
+    // Where it ends is not compared: Word may leave text typed at a heading's end outside its bookmark.
+    (name, _id, offset) => {
+      if (name !== '_GoBack') bookmarks.push(`${name}@${offset}`);
+    },
     undefined,
     (start, end, run, fieldRuns) => {
       const signature = fieldRuns ? fieldFormatSignature(fieldRuns) : runFormatSignature(run);
@@ -350,6 +356,7 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     fields,
     fieldInstructions,
     fieldPositions,
+    bookmarks,
   };
 }
 

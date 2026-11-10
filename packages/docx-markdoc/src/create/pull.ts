@@ -1348,6 +1348,16 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
       const label = (value: string | undefined) => quote((value ?? '').split('|')[0] || '(none)');
       out.push({ code: 'PULL_NUMBERING_CHANGED', message: `paragraph ${index + 1} is numbered ${label(E[index]!.label)} in the edited DOCX and ${label(rebuiltDoc.paragraphs[index]?.label)} in the rebuild; pull does not write list numbering (start values, restarts, formats), so it is not carried` });
     }
+    // A footnote mark or a bookmark moved within text that reads the same: the texts and the notes do not show it.
+    const marked = E.findIndex((paragraph, k) => JSON.stringify(paragraph.footnoteReferences) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.footnoteReferences ?? []));
+    if (marked !== -1) {
+      out.push({ code: 'PULL_FOOTNOTES_CHANGED', message: `paragraph ${marked + 1}'s footnote marks read at offsets ${JSON.stringify(E[marked]!.footnoteReferences)} in the edited DOCX and ${JSON.stringify(rebuiltDoc.paragraphs[marked]?.footnoteReferences ?? [])} in the rebuild; pull does not move a footnote mark, so it is not carried` });
+    }
+    const anchored = E.findIndex((paragraph, k) => JSON.stringify(paragraph.bookmarks) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.bookmarks ?? []));
+    if (anchored !== -1) {
+      const shown = (paragraph: PullParagraph | undefined) => (paragraph?.bookmarks ?? []).map((bookmark) => quote(bookmark)).join(', ') || '(none)';
+      out.push({ code: 'PULL_BOOKMARKS_CHANGED', message: `paragraph ${anchored + 1}'s bookmarks are ${shown(E[anchored])} in the edited DOCX and ${shown(rebuiltDoc.paragraphs[anchored])} in the rebuild; pull does not add, remove or move a bookmark (an anchor such as \`{% #target %}\`), so the change is not carried` });
+    }
     // Another field given a switch, or moved within text that reads the same, reads the same.
     const switched = E.findIndex((paragraph, k) => JSON.stringify(paragraph.fieldPositions) !== JSON.stringify(rebuiltDoc.paragraphs[k]?.fieldPositions ?? []));
     if (switched !== -1) {

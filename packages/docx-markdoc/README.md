@@ -1067,7 +1067,7 @@ dropped without a line:
 | `PULL_DOCUMENT_SETTINGS`, `PULL_DOCUMENT_PROPERTIES` | a layout setting (default tab stop, hyphenation, mirrored margins, book folds) or the title, author, subject, description or keywords |
 | `PULL_NUMBERING_CHANGED`, `PULL_TABLE_STRUCTURE` | list numbering (a start value, a restart, a format, the label's look) or table structure and layout (merged cells, column widths, borders, captions) |
 | `PULL_HEADER_UNMAPPED`, `PULL_FOOTER_UNMAPPED` | running text the keys cannot express: several lines, fields (or a page number given a switch such as `\* roman`), formatting, even-page headers and footers |
-| `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_FIELD_CHANGED`, `PULL_UNSUPPORTED_CONTENT` | comments, footnote edits, new or changed fields, images, hyperlinks, content controls |
+| `PULL_COMMENTS`, `PULL_FOOTNOTES_CHANGED`, `PULL_FIELD_CHANGED`, `PULL_BOOKMARKS_CHANGED`, `PULL_UNSUPPORTED_CONTENT` | comments, footnote edits or moved footnote marks, new or changed fields, bookmarks (anchors) added, removed or moved, images, hyperlinks, content controls |
 | `PULL_UNEXPRESSIBLE_TEXT` | text creation Markdoc cannot write, such as a tab |
 | `PULL_PARAGRAPH_NOT_MAPPED`, `PULL_UNMAPPED_DELETION`, `PULL_UNMAPPED_INSERTION` | a paragraph, deletion or insertion pull could not place in the source |
 | `PULL_EDIT_NOT_VERIFIED`, `PULL_REBUILD_DIFFERS` | a planned change that did not read back as the edited DOCX |
