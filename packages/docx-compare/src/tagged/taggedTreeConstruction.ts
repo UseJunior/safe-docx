@@ -812,19 +812,31 @@ function paragraphSimilarity(
   return wordJaccard(similarityWords(left.textContent ?? ''), similarityWords(right.textContent ?? ''));
 }
 
+/**
+ * Order-preserving pairing of a gap's side-only siblings that maximizes the
+ * summed pair weight, among pairs at least `GAP_PAIRING_SIMILARITY` alike.
+ * A paragraph pair weighs its similarity; a table-row pair weighs its
+ * similarity squared, so one confident row edit outweighs two mediocre pairs
+ * of rows that share only boilerplate text (#1419).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1419
+ */
 function similarParagraphPairs(
   original: readonly WmlElement[],
   revised: readonly WmlElement[],
   originalNumberingIdentities: ReadonlyMap<WmlElement, string>,
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): Array<[number, number]> {
+  const weights = original.map((left) => revised.map((right) => {
+    const similarity = paragraphSimilarity(left, right, originalNumberingIdentities, revisedNumberingIdentities);
+    if (similarity < GAP_PAIRING_SIMILARITY) return -1;
+    return isTableRow(left) && isTableRow(right) ? similarity * similarity : similarity;
+  }));
   const dp = Array.from({ length: original.length + 1 }, () => Array<number>(revised.length + 1).fill(0));
   for (let i = original.length - 1; i >= 0; i--) {
     for (let j = revised.length - 1; j >= 0; j--) {
-      const similarity = paragraphSimilarity(
-        original[i]!, revised[j]!, originalNumberingIdentities, revisedNumberingIdentities,
-      );
-      const paired = similarity >= GAP_PAIRING_SIMILARITY ? similarity + dp[i + 1]![j + 1]! : -1;
+      const weight = weights[i]![j]!;
+      const paired = weight >= 0 ? weight + dp[i + 1]![j + 1]! : -1;
       dp[i]![j] = Math.max(paired, dp[i + 1]![j]!, dp[i]![j + 1]!);
     }
   }
@@ -832,10 +844,8 @@ function similarParagraphPairs(
   let i = 0;
   let j = 0;
   while (i < original.length && j < revised.length) {
-    const similarity = paragraphSimilarity(
-      original[i]!, revised[j]!, originalNumberingIdentities, revisedNumberingIdentities,
-    );
-    if (similarity >= GAP_PAIRING_SIMILARITY && Math.abs(dp[i]![j]! - (similarity + dp[i + 1]![j + 1]!)) < 1e-9) {
+    const weight = weights[i]![j]!;
+    if (weight >= 0 && Math.abs(dp[i]![j]! - (weight + dp[i + 1]![j + 1]!)) < 1e-9) {
       pairs.push([i++, j++]);
     } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
@@ -955,6 +965,25 @@ function constructBoth(
       ...originalChildren.slice(oi, originalEnd),
       ...revisedChildren.slice(ri, revisedEnd),
     ].some((element) => isTableRow(element) && isLegacyRow(element));
+    // Rows with the same skeleton pair by position only where the gap's
+    // similarity pairing pairs them too, so one confident edit beside an
+    // inserted row is not split into two mediocre position pairs (#1419).
+    // Rows whose skeletons differ still pair by position, for the
+    // table-topology guard.
+    const positionStart = oi;
+    const positionRevisedStart = ri;
+    let diagonalRowPairs: Set<number> | undefined;
+    const rowPairsByPosition = (left: WmlElement, right: WmlElement): boolean => {
+      if (legacyRowGap) return true;
+      if (rowProfile(left).shape !== rowProfile(right).shape) return similarRows(left, right, true);
+      diagonalRowPairs ??= new Set(similarParagraphPairs(
+        originalChildren.slice(positionStart, originalEnd),
+        revisedChildren.slice(positionRevisedStart, revisedEnd),
+        originalNumberingIdentities,
+        revisedNumberingIdentities,
+      ).filter(([original, revised]) => original === revised).map(([original]) => original));
+      return diagonalRowPairs.has(oi - positionStart);
+    };
     while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;
@@ -963,7 +992,7 @@ function constructBoth(
         semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
         (childElements(left).length > 0 || childElements(right).length > 0) &&
         canRecursivelyAlignContent(left, right) &&
-        (!isTableRow(left) || legacyRowGap || similarRows(left, right, true)) &&
+        (!isTableRow(left) || rowPairsByPosition(left, right)) &&
         (left.localName !== 'r' || (
           left.textContent === right.textContent &&
           left.getElementsByTagNameNS(
