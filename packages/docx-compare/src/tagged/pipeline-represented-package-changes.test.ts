@@ -32,6 +32,7 @@ import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
+import { subtractRepresentedPackageChanges } from './unrepresentedChanges.js';
 import {
   isBlankStoryPart,
   pageStorySlots,
@@ -396,6 +397,56 @@ describe('changes the redline still does not carry stay listed', () => {
       expect(result.unrepresentedChanges).toEqual([
         { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' },
       ]);
+    });
+  }
+
+  const TALL_EMPTY_HEADERS = [
+    ['an exact-height empty line', '<w:p><w:pPr><w:spacing w:line="6000" w:lineRule="exact"/></w:pPr></w:p>'],
+    ['paragraph spacing', '<w:p><w:pPr><w:spacing w:before="2000" w:after="2000"/></w:pPr></w:p>'],
+    ['many empty paragraphs', '<w:p/>'.repeat(25)],
+  ] as const;
+  for (const [label, contentXml] of TALL_EMPTY_HEADERS) {
+    for (const kind of ['added', 'removed'] as const) {
+      test(`a header with no text but ${label} stays listed when ${kind}`, async () => {
+        // The header shows no text, but its empty paragraphs take up room and
+        // push the body down; a part that shows nothing never stands in for
+        // no part (Codex round 2).
+        const header: Part = { id: 'rIdH', kind: 'header', target: 'header1.xml', contentXml };
+        const withHeader = await packageWith(paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header]);
+        const withoutHeader = await packageWith(paragraph('Stable body.'), LAYOUT, []);
+        const [original, revised] = kind === 'added' ? [withoutHeader, withHeader] : [withHeader, withoutHeader];
+
+        const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+        expect(result.unrepresentedChanges).toEqual([
+          { scope: 'header', kind, sectionIndex: 0, role: 'default' },
+        ]);
+      });
+    }
+  }
+
+  for (const [label, space] of [['no-break space', '\u00a0'], ['em space', '\u2003']] as const) {
+    test(`a header ${label} the compared package does not track stays listed`, async () => {
+      // Word drops only XML white space from an unpreserved w:t, so a leading
+      // ${label} is shown text; an untracked compared package (the revised
+      // document itself) must not read as reproducing the original.
+      const header = (text: string): Part =>
+        ({ id: 'rIdH', kind: 'header', target: 'header1.xml', contentXml: `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>` });
+      const original = await DocxArchive.load(
+        await packageWith(paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header(`${space}Draft`)]));
+      const revised = await DocxArchive.load(
+        await packageWith(paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header('Draft')]));
+      const entry = { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' } as const;
+
+      const reported = await subtractRepresentedPackageChanges({
+        original: { archive: original },
+        revised: { archive: revised },
+        compared: { archive: revised },
+        changes: [entry],
+        scopes: new Set(['header']),
+      });
+
+      expect(reported).toEqual([entry]);
     });
   }
 

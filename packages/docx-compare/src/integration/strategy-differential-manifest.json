@@ -762,6 +762,24 @@
             "role": "first"
           },
           {
+            "scope": "header",
+            "kind": "added",
+            "sectionIndex": 0,
+            "role": "default"
+          },
+          {
+            "scope": "header",
+            "kind": "added",
+            "sectionIndex": 0,
+            "role": "even"
+          },
+          {
+            "scope": "header",
+            "kind": "added",
+            "sectionIndex": 0,
+            "role": "first"
+          },
+          {
             "scope": "footer",
             "kind": "changed",
             "sectionIndex": 1,

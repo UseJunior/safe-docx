@@ -15,12 +15,10 @@ import { XMLSerializer } from '@xmldom/xmldom';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import {
   effectiveStorySlot,
-  isBlankStoryPart,
   pageStorySlots,
   resolveEffectiveStoryBindings,
   type EffectiveStoryBindings,
 } from './effectiveStoryBindings.js';
-import { BLANK_STORY_IDENTITY } from './sectionAlignedStoryPairing.js';
 import { createResolvedStoryReader, type ResolvedStoryReader } from './storyRelationshipIdentity.js';
 
 const REVISION_TAGS = new Set(['sectPrChange']);
@@ -318,6 +316,17 @@ function everySnapshotIsWordSafe(document: Document): boolean {
   });
 }
 
+const XML_WHITESPACE = new Set([' ', '\t', '\r', '\n']);
+
+/** Strips leading and trailing XML white space (S production), not every Unicode space. */
+function trimXmlWhitespace(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && XML_WHITESPACE.has(text[start]!)) start += 1;
+  while (end > start && XML_WHITESPACE.has(text[end - 1]!)) end -= 1;
+  return text.slice(start, end);
+}
+
 /**
  * Story XML in a form that does not depend on how the comparison split runs:
  * revision-session ids (`w:rsid*`, `w14:paraId`, `w14:textId`), `xml:space`,
@@ -331,13 +340,14 @@ function normalizedStoryXml(xml: string): string {
   const root = document.documentElement;
   const visit = (element: Element): void => {
     // Without xml:space="preserve", Word drops a text element's leading and
-    // trailing white space, so only the text it shows is compared.
+    // trailing XML white space (space, tab, CR, LF), so only the text it shows
+    // is compared. A no-break or other Unicode space is text and stays.
     if (
       element.namespaceURI === W_NS &&
       TEXT_BEARING.has(localName(element)) &&
       element.getAttributeNS(XML_NS, 'space') !== 'preserve'
     ) {
-      element.textContent = (element.textContent ?? '').trim();
+      element.textContent = trimXmlWhitespace(element.textContent ?? '');
     }
     for (const attribute of Array.from(element.attributes)) {
       const name = attribute.localName ?? attribute.name;
@@ -359,7 +369,7 @@ function normalizedStoryXml(xml: string): string {
         visit(childElement);
       } else if (
         child.nodeType === 3 &&
-        !(child.nodeValue ?? '').trim() &&
+        trimXmlWhitespace(child.nodeValue ?? '') === '' &&
         !(element.namespaceURI === W_NS && TEXT_BEARING.has(localName(element)))
       ) {
         element.removeChild(child);
@@ -426,34 +436,23 @@ function normalizedStoryXml(xml: string): string {
   return new XMLSerializer().serializeToString(document);
 }
 
-const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
-const DRAWING_CARRIERS = new Set(['pict', 'drawing', 'object']);
-
-/** Whether a story part holds a picture, shape or object carrier, which draws even when its text is empty. */
-function holdsDrawingCarrier(xml: string): boolean {
-  return Array.from(parseXml(xml).getElementsByTagName('*')).some((element) =>
-    (element.namespaceURI === W_NS && DRAWING_CARRIERS.has(localName(element))) ||
-    (element.namespaceURI === MC_NS && localName(element) === 'AlternateContent'));
-}
-
-/** What a slot shows: nothing (no part), or a projected part, which may itself show nothing. */
+/** What a slot shows: no part at all, or a projected part. */
 interface StoryIdentity {
   absent: boolean;
-  /** The part shows nothing and holds no drawing carrier. */
-  blank: boolean;
   identity: string;
 }
 
-const ABSENT_STORY: StoryIdentity = { absent: true, blank: true, identity: BLANK_STORY_IDENTITY };
+const ABSENT_STORY: StoryIdentity = { absent: true, identity: 'absent' };
 
 /**
- * Whether two slots show the same story. A part that shows nothing reads as
- * no part (Word draws an empty header or footer either way); two parts are
- * otherwise the same only when their normalized, relationship-resolved
- * projections are, so two differently formatted empty parts still differ.
+ * Whether two slots show the same story. A missing part matches only a
+ * missing part: a part that shows no text can still take up room (empty
+ * paragraphs with height or spacing, an empty text box) and push the body
+ * down, so it never stands in for no part. Two parts are the same only when
+ * their normalized, relationship-resolved projections are.
  */
 function sameStory(left: StoryIdentity, right: StoryIdentity): boolean {
-  if (left.absent || right.absent) return left.blank && right.blank;
+  if (left.absent || right.absent) return left.absent && right.absent;
   return left.identity === right.identity;
 }
 
@@ -495,13 +494,10 @@ async function packageProjectionView(
           const xml = await source.archive.getFile(path);
           if (xml === null) return ABSENT_STORY;
           const projected = project(xml);
-          // An empty text box still draws its shape, fill and size, so a
-          // part holding a drawing carrier never reads as blank.
-          const blank = isBlankStoryPart(projected) && !holdsDrawingCarrier(projected);
           // An unresolvable reference gets an identity nothing else has.
           const resolved = (await readStory(source.archive, path, normalizedStoryXml(projected)))?.semantic
             ?? `unresolved:${label}:${path}`;
-          return { absent: false, blank, identity: resolved };
+          return { absent: false, identity: resolved };
         })();
         identities.set(path, identity);
       }

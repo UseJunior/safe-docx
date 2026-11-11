@@ -17,8 +17,9 @@
   snapshot that omits a live property Word's Reject All would keep (a new
   `w:titlePg`, or `w:orient` on a page turned landscape), a break change on a
   paragraph mark that already carries a revision, a header/footer slot
-  dropped from a surviving section, `w:evenAndOddHeaders` turned off, and a
-  changed header/footer field. The publication gate reads the same list, so a
+  dropped from a surviving section, a header/footer part with no text added
+  or removed (its empty paragraphs or text box still take up room),
+  `w:evenAndOddHeaders` turned off, and a changed header/footer field. The publication gate reads the same list, so a
   section divergence is no longer admitted on the strength of an
   index-shifted entry. (#1427, #1181, #1030)
 
