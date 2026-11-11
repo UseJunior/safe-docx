@@ -157,7 +157,9 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-30` | Paragraph-mark run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-31` | Run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts |
 | `ECMA-PART1-17-13-5-32` | Section-property revisions (w:sectPrChange) | 5 | 1 | 17.13.5.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
-| `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-33` | Table-grid revisions (w:tblGridChange) | 5 | 1 | 17.13.5.33 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange` | packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts |
+| `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts |
+| `ECMA-PART1-17-13-5-35` | Table-property-exception revisions (w:tblPrExChange) | 5 | 1 | 17.13.5.35 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange` | packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts |
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-3-3-30` | Symbol character run content (w:sym) | 5 | 1 | 17.3.3.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym` | packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/symbol_run_content.test.ts; packages/docx-compare/src/symbolCharacterProjection.test.ts |
@@ -2256,15 +2258,61 @@ safe-docx emits bounded run-formatting snapshots and consumes existing
 
 This claim is bounded to the runtime and test evidence listed above.
 
+### ECMA-PART1-17-13-5-33 — Table-grid revisions (w:tblGridChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.33
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange`
+- **Verified by:** packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts
+
+The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
+`@usejunior/docx-compare`) resolves `w:tblGridChange`: accept keeps the live
+grid, reject restores the snapshot's `w:gridCol` list. docx-core's native
+accept/reject do not yet resolve it, and comparison does not emit it.
+
 ### ECMA-PART1-17-13-5-34 — Table-property revisions (w:tblPrChange)
 
 - **Edition:** ECMA-376 5
 - **Part / Section:** Part 1 § 17.13.5.34
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange`
-- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
 
 This claim is bounded to the runtime and test evidence listed above.
+
+### ECMA-PART1-17-13-5-35 — Table-property-exception revisions (w:tblPrExChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.35
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange`
+- **Verified by:** packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
+
+The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
+`@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live
+exceptions, reject restores the snapshot's `w:tblPrEx` content. docx-core's
+native accept/reject do not yet resolve it, and comparison does not emit it.
+
+Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
+safe-docx validates its documented API-supported enum and safe-integer subset,
+duplicate declarations, table-grid arithmetic, and style/numbering references
+before emission, then preserves the authored parts through package load/save.
+The XML Schema integer domains can exceed JavaScript's exact-number range;
+numeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and
+`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated
+by this surface, the full lexical domain is pinned to the vendored transitional
+XSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,
+`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run
+color, and table/numbering style types, are reported as unsupported API
+features rather than schema-invalid XML. Values absent from the applicable XSD
+domain are reported as invalid. These
+claims do not cover Word's
+table layout algorithm or pagination, numbering rendering or complete
+override/counter behavior, style cascade or latent-style semantics,
+theme/font resolution, rendering, or tracked table-topology and
+property-revision records. Preservation does not imply semantic
+interpretation of unknown third-party markup.
 
 ### ECMA-PART1-17-13-5-36 — Table-cell-property revisions (w:tcPrChange)
 
@@ -2394,45 +2442,5 @@ does not apply table-topology insertion semantics.
 
 safe-docx validates placement and preserves sampled `w:cellMerge` records,
 but does not interpret vertical merge/split topology.
-
-### ECMA-PART1-17-13-5-33 — Table-grid revisions (w:tblGridChange)
-
-- **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.33
-- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
-- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange`
-
-safe-docx recognizes `w:tblGridChange` metadata and placement but does not emit,
-accept, or reject its grid semantics.
-
-### ECMA-PART1-17-13-5-35 — Table-property-exception revisions (w:tblPrExChange)
-
-- **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.35
-- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
-- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange`
-
-safe-docx recognizes `w:tblPrExChange` metadata but does not emit, accept, or
-reject table-level property-exception semantics.
-
-Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
-safe-docx validates its documented API-supported enum and safe-integer subset,
-duplicate declarations, table-grid arithmetic, and style/numbering references
-before emission, then preserves the authored parts through package load/save.
-The XML Schema integer domains can exceed JavaScript's exact-number range;
-numeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and
-`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated
-by this surface, the full lexical domain is pinned to the vendored transitional
-XSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,
-`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run
-color, and table/numbering style types, are reported as unsupported API
-features rather than schema-invalid XML. Values absent from the applicable XSD
-domain are reported as invalid. These
-claims do not cover Word's
-table layout algorithm or pagination, numbering rendering or complete
-override/counter behavior, style cascade or latent-style semantics,
-theme/font resolution, rendering, or tracked table-topology and
-property-revision records. Preservation does not imply semantic
-interpretation of unknown third-party markup.
 
 _Sources: `spec-compliance/registry/ecma-376.md`._

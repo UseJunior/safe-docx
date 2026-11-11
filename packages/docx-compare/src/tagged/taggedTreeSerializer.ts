@@ -11,6 +11,7 @@ import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignme
 import type { RevisionAttribution, RevisionGroupingPolicy } from '../compare-types.js';
 import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
+import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
 import {
   nextRevisionId,
   paragraphJoinParts,
@@ -2497,7 +2498,12 @@ export interface TaggedTreeSerializerOptions {
   moves?: readonly TaggedMoveRelation[];
   /** @internal Retain private markers until publication statistics are read. */
   retainComparisonRevisionMarkers?: boolean;
-  /** Deliberately clone eligible inter-word spaces into both revision sides. */
+  /**
+   * Presentation policy for generated run revisions: `readable-whitespace`
+   * clones eligible inter-word spaces into both revision sides;
+   * `readable-semantic` regroups each paragraph's change clusters
+   * (see `readableSemanticGrouping.ts`).
+   */
   revisionGrouping?: RevisionGroupingPolicy;
 }
 
@@ -2580,6 +2586,13 @@ export function serializeTaggedTree(
   normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);
   hoistFieldCharactersFromDeletions(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
+  if (options.revisionGrouping === 'readable-semantic') {
+    groupReadableSemanticRevisions(emitted, {
+      allocateRevision,
+      comparisonRevisionAttribute: COMPARISON_REVISION_ATTRIBUTE,
+      operationProvenanceAttribute: OPERATION_PROVENANCE_ATTRIBUTE,
+    });
+  }
   if (!options.retainComparisonRevisionMarkers) {
     if (emitted.hasAttribute(COMPARISON_REVISION_ATTRIBUTE)) {
       emitted.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);

@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 67
+- Stable compatibility surface: 68
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
@@ -50,6 +50,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `CompareOptions` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `compareProjectedFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareResult` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `CompareRevisionGrouping` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `compareSourceProjectedFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareStats` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `compareTexts` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
@@ -172,6 +173,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `maxWordRefinementChangeRanges` | breaking removal |
 | `premergeRuns` | breaking removal |
 | `reconstructionMode` | breaking removal |
+| `revisionGrouping` | stable compatibility |
 
 ## Public result fields
 

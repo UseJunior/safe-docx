@@ -366,6 +366,7 @@ Compare two documents and produce a tracked-changes output document. Provide ori
 | `author` | `string` | no | Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF). |
 | `ignore_formatting` | `boolean` | no | Ignore formatting differences (DOCX only). Default: false. |
 | `compare_moves` | `boolean` | no | Detect moved content (DOCX only). Default: true. |
+| `revision_grouping` | `enum("readable-semantic", "token-minimal")` | no | How DOCX revisions are grouped. 'readable-semantic' (default) shows each rewritten passage as one deletion followed by one insertion, absorbing short unchanged words, spaces and punctuation between changes; runs keep their own formatting, and moves, fields, bookmarks, comment ranges and note references are never absorbed. 'token-minimal' emits the smallest word-level deletion/insertion set, which alternates word by word in heavily rewritten paragraphs. Accept All and Reject All results are the same either way. DOCX only. |
 
 ## `get_footnotes`
 
