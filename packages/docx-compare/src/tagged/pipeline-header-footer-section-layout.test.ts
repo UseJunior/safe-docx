@@ -214,6 +214,36 @@ async function expectRepresentedRedline(
   await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document));
 }
 
+
+/** Replaces `word/<name>.xml` with a footer whose one hyperlink points at `url`. */
+async function withLinkedFooter(buffer: Buffer, name: string, text: string, url: string): Promise<Buffer> {
+  const archive = await DocxArchive.load(buffer);
+  archive.setFile(`word/${name}.xml`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}" xmlns:r="${R_NS}">` +
+    `<w:p><w:hyperlink r:id="rIdLink"><w:r><w:t>${text}</w:t></w:r></w:hyperlink></w:p></w:ftr>`);
+  archive.setFile(`word/_rels/${name}.xml.rels`,
+    `<Relationships xmlns="${PKG_NS}"><Relationship Id="rIdLink" Type="${R_NS}/hyperlink" Target="${url}" TargetMode="External"/></Relationships>`);
+  return archive.save();
+}
+
+/** The hyperlink target each odd page's footer resolves to, per section. */
+async function oddFooterLinks(buffer: Buffer, project: Projection): Promise<string[]> {
+  const archive = await DocxArchive.load(buffer);
+  const bindings = resolveEffectiveStoryBindings({
+    documentXml: project(await archive.getDocumentXml()),
+    relationshipsXml: await archive.getFile('word/_rels/document.xml.rels'),
+    settingsXml: await archive.getFile('word/settings.xml'),
+  });
+  const links: string[] = [];
+  for (const entry of pageStorySlots(bindings).filter((x) => x.slot.kind === 'footer' && x.page === 'odd')) {
+    const path = entry.slot.targetPath!;
+    const rels = parseXml((await archive.getFile(path.replace('word/', 'word/_rels/') + '.rels'))!);
+    const link = Array.from(rels.getElementsByTagName('Relationship')).find((r) => r.getAttribute('Id') === 'rIdLink');
+    links.push(link?.getAttribute('Target') ?? '-');
+  }
+  return links;
+}
+
 describe('header/footer edits across section-layout changes (#1390)', () => {
   test.openspec('[SDX-CMP-SLOTPAIR-01] Header/footer edit across a page-layout change is tracked')(
     'tracks a shared footer edit when the revision turns section 2 landscape (issue reproduction)',
@@ -463,6 +493,57 @@ describe('header/footer edits across section-layout changes (#1390)', () => {
         ]));
       const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
       await expectRepresentedRedline({ then }, original, revised, result, ['word/header7.xml']);
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'keeps two original footers with the same markup but different hyperlink targets apart',
+    async ({ given, when, then }: AllureBddContext) => {
+      // The two original footers are byte-identical XML, but rIdLink in each
+      // resolves to a different URL. The revision shares one edited footer.
+      // Reject All of a redline in that shared part could only restore one
+      // URL, so neither section may count as represented.
+      const [original, revised] = await given('identical footer markup linking to different URLs; the revision shares one edited footer', async () => {
+        let original = await packageWith(sectionEnd('One', ref('footer', 'rIdA')) + paragraph('Two'), ref('footer', 'rIdC'),
+          [part('rIdA', 'footer', 'footer1.xml', 'x'), part('rIdC', 'footer', 'footer2.xml', 'x')]);
+        original = await withLinkedFooter(original, 'footer1', 'Old', 'https://alpha.example');
+        original = await withLinkedFooter(original, 'footer2', 'Old', 'https://beta.example');
+        let revised = await packageWith(sectionEnd('One', ref('footer', 'rIdB')) + paragraph('Two'), ref('footer', 'rIdB') + LANDSCAPE,
+          [part('rIdB', 'footer', 'footer1.xml', 'x')]);
+        revised = await withLinkedFooter(revised, 'footer1', 'New', 'https://alpha.example');
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the shared footer is not redlined and both footer changes stay reported', async () => {
+        expect(await oddFooterLinks(original, (xml) => xml)).toEqual(['https://alpha.example', 'https://beta.example']);
+        expect(await revisionCounts(result.document, 'word/footer1.xml')).toEqual({ ins: 0, del: 0 });
+        expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+          expect.objectContaining({ scope: 'footer', sectionIndex: 0 }),
+          expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
+        ]));
+        await assertSchema(result.document);
+      });
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'redlines a shared linked footer whose hyperlink resolves to the same URL on both sides',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('one linked footer shared by two sections; the revision edits it and turns section 2 landscape', async () => {
+        const original = await withLinkedFooter(
+          await packageWith(sectionEnd('One', ref('footer', 'rIdF')) + paragraph('Two'), '', [part('rIdF', 'footer', 'footer1.xml', 'x')]),
+          'footer1', 'Old', 'https://alpha.example');
+        const revised = await withLinkedFooter(
+          await packageWith(sectionEnd('One', ref('footer', 'rIdF')) + paragraph('Two'), LANDSCAPE, [part('rIdF', 'footer', 'footer1.xml', 'x')]),
+          'footer1', 'New', 'https://alpha.example');
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await expectRepresentedRedline({ then }, original, revised, result, ['word/footer1.xml']);
+      await then('every page of both projections links to the same URL', async () => {
+        expect(await oddFooterLinks(result.document, rejectAllChanges)).toEqual(['https://alpha.example', 'https://alpha.example']);
+        expect(await oddFooterLinks(result.document, acceptAllChanges)).toEqual(['https://alpha.example', 'https://alpha.example']);
+      });
     },
   );
 });

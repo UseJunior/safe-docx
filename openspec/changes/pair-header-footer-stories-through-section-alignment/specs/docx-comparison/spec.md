@@ -12,7 +12,10 @@ and after Accept All for the revised document's section `i`. A compared part
 SHALL receive the redline of the one original story that every slot and page
 showing it after Reject All shows in the original. Physical part names,
 explicit versus inherited references, section count and section properties
-SHALL NOT establish or prevent story identity.
+SHALL NOT establish or prevent story identity. Story content SHALL be
+compared together with what each of its relationship ids resolves to
+(ECMA-376 Part 2 §6.5.2.3, §6.5.3.4): the target and mode of an external relationship, and
+the content of an internal target part.
 
 A pair SHALL be kept only when every page it touches shows the original story
 after Reject All and the revised story after Accept All. A story that cannot
@@ -70,3 +73,10 @@ reports for slots this requirement represents.
 - **GIVEN** a revision that moves a header slot to a differently named part, or from an explicit to an inherited reference, alongside a section-layout change
 - **WHEN** the pair is compared
 - **THEN** the revised part SHALL receive the redline of the original story and SHALL NOT be shown as a one-sided deletion or insertion
+
+#### Scenario: [SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to
+
+- **GIVEN** two original header or footer stories with the same markup whose relationship ids resolve to different targets (different hyperlink URLs, or internal parts with different content)
+- **WHEN** a revision shares one edited story across their slots alongside a section-layout change
+- **THEN** the stories SHALL be treated as different stories and the shared story SHALL NOT be redlined against either
+- **AND** both changes SHALL remain in `unrepresentedChanges`

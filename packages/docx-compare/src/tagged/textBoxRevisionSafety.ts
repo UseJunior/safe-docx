@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
 import { XMLSerializer } from '@xmldom/xmldom';
 import {
   auditSectPr,
@@ -1652,35 +1653,69 @@ export async function sectionAlignedOrdinaryStoryInputs(
     return none;
   }
 
-  const partXml = async (archive: DocxArchive, bindings: ReturnType<typeof resolveEffectiveStoryBindings>[]): Promise<Map<string, string>> => {
-    const parts = new Map<string, string>();
+  // A story's identity is its canonical XML plus what each relationship id in
+  // it resolves to (ECMA-376 Part 2 §6.5.2.3, §6.5.3.4): two footers with the same markup
+  // whose r:id points at different hyperlinks or images are different stories.
+  // An internal target also carries its bytes, so a same-named media part
+  // whose content differs between packages does not read as the same story.
+  const storyIdentities = async (
+    label: string,
+    archive: DocxArchive,
+    bindings: ReturnType<typeof resolveEffectiveStoryBindings>[],
+  ): Promise<Map<string, string>> => {
+    const identities = new Map<string, string>();
     for (const path of new Set(bindings.flatMap((entry) => entry.slots.map((slot) => slot.targetPath)))) {
       if (path === undefined) continue;
       const xml = await archive.getFile(path);
-      if (xml !== null) parts.set(path, xml);
+      if (xml === null || isBlankStoryPart(xml)) {
+        identities.set(path, BLANK_STORY_IDENTITY);
+        continue;
+      }
+      const root = parseXml(xml).documentElement;
+      const relationshipsXml = await archive.getFile(owningRelationshipsPath(path));
+      const relationships = relationshipsXml ? parseXml(relationshipsXml) : undefined;
+      const resolved = new Map<string, string>();
+      for (const relationship of relationships ? Array.from(relationships.getElementsByTagName('Relationship')) : []) {
+        const id = relationship.getAttribute('Id');
+        if (!id) continue;
+        const target = relationship.getAttribute('Target') ?? '';
+        const external = relationship.getAttribute('TargetMode') === 'External';
+        let content = '';
+        if (!external) {
+          const targetPath = posix.normalize(posix.join(posix.dirname(path), target)).replace(/^\/+/u, '');
+          const bytes = await archive.getFileBuffer(targetPath);
+          content = bytes ? createHash('sha256').update(bytes).digest('hex') : 'missing';
+        }
+        resolved.set(id, [relationship.getAttribute('Type') ?? '', external ? target : '', content].join('|'));
+      }
+      const references: string[] = [];
+      let unresolved = false;
+      for (const element of [root, ...Array.from(root.getElementsByTagName('*'))]) {
+        for (const attribute of Array.from(element.attributes)) {
+          if (attribute.namespaceURI !== RELATIONSHIPS_NS) continue;
+          const target = resolved.get(attribute.value);
+          if (target === undefined) unresolved = true;
+          references.push(`${attribute.value}=${target ?? ''}`);
+        }
+      }
+      // An unresolvable reference never matches anything, so the slot is not
+      // treated as represented.
+      identities.set(
+        path,
+        unresolved
+          ? `unresolved:${label}:${path}`
+          : `${canonicalNode(root)}\n${references.join('\n')}`,
+      );
     }
-    return parts;
+    return identities;
   };
   const [originalParts, revisedParts, comparedParts] = await Promise.all([
-    partXml(originalArchive, [originalBindings]),
-    partXml(revisedArchive, [revisedBindings]),
-    partXml(comparedArchive, [rejectedBindings, acceptedBindings]),
+    storyIdentities('original', originalArchive, [originalBindings]),
+    storyIdentities('revised', revisedArchive, [revisedBindings]),
+    storyIdentities('compared', comparedArchive, [rejectedBindings, acceptedBindings]),
   ]);
-  const identityOf = (parts: ReadonlyMap<string, string>): ((path: string | undefined) => string) => {
-    const cache = new Map<string, string>();
-    return (path) => {
-      if (path === undefined) return BLANK_STORY_IDENTITY;
-      let identity = cache.get(path);
-      if (identity === undefined) {
-        const xml = parts.get(path);
-        identity = xml === undefined || isBlankStoryPart(xml)
-          ? BLANK_STORY_IDENTITY
-          : canonicalNode(parseXml(xml).documentElement);
-        cache.set(path, identity);
-      }
-      return identity;
-    };
-  };
+  const identityOf = (identities: ReadonlyMap<string, string>): ((path: string | undefined) => string) =>
+    (path) => (path === undefined ? BLANK_STORY_IDENTITY : identities.get(path) ?? BLANK_STORY_IDENTITY);
   const originalStories = new Map(originalState.stories.map((story) => [story.targetPath, story]));
   const revisedStories = new Map(revisedState.stories.map((story) => [story.targetPath, story]));
   const comparedIdentity = identityOf(comparedParts);
