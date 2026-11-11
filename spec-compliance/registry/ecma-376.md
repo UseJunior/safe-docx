@@ -2617,13 +2617,16 @@ part: 1
 section: "17.13.5.33"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange
-verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts
+verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 ```
 
 The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
 `@usejunior/docx-compare`) resolves `w:tblGridChange`: accept keeps the live
-grid, reject restores the snapshot's `w:gridCol` list. docx-core's native
-accept/reject do not yet resolve it, and comparison does not emit it.
+grid, reject restores the snapshot's `w:gridCol` list. Comparison never
+diffs `w:tblGrid` child by child: it keeps a pending `w:tblGridChange` that
+only the original carries and drops one only the revised document carries.
+It does not emit a new `w:tblGridChange` (grid changes are still refused),
+and docx-core's native accept/reject do not yet resolve it.
 
 ## [ECMA-PART1-17-13-5-34] Table-property revisions (w:tblPrChange)
 
@@ -2633,9 +2636,12 @@ part: 1
 section: "17.13.5.34"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange
-verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 ```
 
+Comparison emits `w:tblPrChange` for a changed `w:tblPr` (for example
+`w:tblStyle` or `w:tblBorders`), with the original properties as its
+snapshot, and never places `w:ins`/`w:del` among the children of `w:tblPr`.
 This claim is bounded to the runtime and test evidence listed above.
 
 ## [ECMA-PART1-17-13-5-35] Table-property-exception revisions (w:tblPrExChange)
@@ -2646,13 +2652,16 @@ part: 1
 section: "17.13.5.35"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange
-verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
+verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 ```
 
 The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
 `@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live
-exceptions, reject restores the snapshot's `w:tblPrEx` content. docx-core's
-native accept/reject do not yet resolve it, and comparison does not emit it.
+exceptions, reject restores the snapshot's `w:tblPrEx` content. Comparison
+emits `w:tblPrExChange` for a changed row `w:tblPrEx`, and on every row of a
+table whose `w:tblPr` gets a comparison `w:tblPrChange` (Word shows a
+table-property revision only through a row-level `w:tblPrExChange`).
+docx-core's native accept/reject do not yet resolve it.
 
 Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
 safe-docx validates its documented API-supported enum and safe-integer subset,

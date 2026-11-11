@@ -42,7 +42,9 @@ export type PropertyScope =
   | 'paragraph'
   | 'tableRow'
   | 'tableCell'
-  | 'section';
+  | 'section'
+  | 'table'
+  | 'tableRowExceptions';
 
 /** The direct property element each scope is carried by. */
 export const PROPERTY_SCOPE_ELEMENT: Readonly<Record<PropertyScope, string>> = {
@@ -52,6 +54,8 @@ export const PROPERTY_SCOPE_ELEMENT: Readonly<Record<PropertyScope, string>> = {
   tableRow: 'w:trPr',
   tableCell: 'w:tcPr',
   section: 'w:sectPr',
+  table: 'w:tblPr',
+  tableRowExceptions: 'w:tblPrEx',
 };
 
 /**
@@ -183,6 +187,11 @@ export interface BothNode extends TaggedNodeBase {
   original: WmlElement;
   revised: WmlElement;
   propertyDelta?: PropertyDelta;
+  /**
+   * A table row's `w:tblPrEx` difference. A row's primary property scope is
+   * `w:trPr`, so its table-property exceptions carry their own delta (#1399).
+   */
+  rowExceptionsDelta?: PropertyDelta;
 }
 
 /** A node present only in the original document — a deletion. */

@@ -1079,8 +1079,13 @@ function restoreTableLevelPropertiesFromChanges(root: Element): void {
   }
 }
 
+/**
+ * Drop row, cell and row-exception property containers left without children.
+ * An empty `w:tblPrEx` records no exception: rejecting a `w:tblPrExChange`
+ * whose snapshot is empty (a row that had no exceptions) leaves one (#1399).
+ */
 function removeEmptyTablePropertyContainers(root: Element): void {
-  for (const propertyTag of ['w:trPr', 'w:tcPr']) {
+  for (const propertyTag of ['w:trPr', 'w:tcPr', 'w:tblPrEx']) {
     for (const properties of findAllByTagName(root, propertyTag)) {
       if (childElements(properties).length === 0) properties.parentNode?.removeChild(properties);
     }

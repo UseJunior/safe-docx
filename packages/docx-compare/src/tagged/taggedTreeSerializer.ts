@@ -13,6 +13,14 @@ import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
 import {
+  addRowExceptionRevisionCompanions,
+  isTableLevelPropertyElement,
+  resolveTableLevelProperty,
+  tableLevelPropertyOf,
+  type TableLevelProperty,
+  type TableLevelRecordFactory,
+} from './tableLevelProperties.js';
+import {
   nextRevisionId,
   paragraphJoinParts,
   PROPERTY_SCOPE_ELEMENT,
@@ -1199,6 +1207,8 @@ const CHANGE_ELEMENT_BY_SCOPE = {
   tableRow: 'w:trPrChange',
   tableCell: 'w:tcPrChange',
   section: 'w:sectPrChange',
+  table: 'w:tblPrChange',
+  tableRowExceptions: 'w:tblPrExChange',
 } as const;
 
 /**
@@ -1217,6 +1227,9 @@ function applyPropertyDelta(
 ): void {
   if (tagged.tag !== 'both' || !tagged.propertyDelta) return;
   const delta = tagged.propertyDelta;
+  // Table properties publish inline with the table's children, through
+  // resolveTableLevelProperty (#1399).
+  if (delta.scope === 'table' || delta.scope === 'tableRowExceptions') return;
   if (delta.scope === 'paragraph') {
     applyParagraphPropertyDelta(node, delta.original, delta.revised, revision, allocateRevision);
     return;
@@ -2317,9 +2330,41 @@ function emitNode(
     const propertyTag = node.tag === 'both' && node.propertyDelta
       ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
       : directPropertyTag;
+    const tableLevelRecords: TableLevelRecordFactory = {
+      comparison: (localName, document) => {
+        const change = document.createElementNS(W_NS, `w:${localName}`) as WmlElement;
+        appendChangeMetadata(change, allocateRevision());
+        return change;
+      },
+      freshId: () => allocateRevision().id,
+    };
+    const publishedTableLevel = new Set<string>();
+    let tablePropertiesRecord: 'none' | 'preserved' | 'comparison' = 'none';
     for (let index = 0; index < node.children.length; index++) {
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
+      if (node.tag === 'both' && isTableLevelPropertyElement(childElement)) {
+        // w:tblPr, w:tblGrid and w:tblPrEx take no w:ins/w:del among their
+        // children. Publish each once, at its first position, from the two
+        // sides' elements, with its own revision record when needed (#1399).
+        const localName = childElement!.localName as TableLevelProperty;
+        if (publishedTableLevel.has(localName)) continue;
+        publishedTableLevel.add(localName);
+        const allowComparisonRecord = localName === 'tblPr'
+          ? node.propertyDelta?.scope === 'table'
+          : localName === 'tblPrEx' && !!node.rowExceptionsDelta;
+        const resolution = resolveTableLevelProperty(
+          tableLevelPropertyOf(node.original, localName),
+          tableLevelPropertyOf(node.revised, localName),
+          localName,
+          base.ownerDocument!,
+          tableLevelRecords,
+          allowComparisonRecord,
+        );
+        if (localName === 'tblPr') tablePropertiesRecord = resolution.record;
+        if (resolution.element) emitted.push(resolution.element);
+        continue;
+      }
       if (propertyTag && childElement?.tagName === propertyTag) {
         continue;
       }
@@ -2474,6 +2519,9 @@ function emitNode(
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
     replaceElementChildren(base, rowChildrenInSchemaOrder(base, emitted));
+    if (tablePropertiesRecord === 'comparison') {
+      addRowExceptionRevisionCompanions(base, tableLevelRecords);
+    }
   }
   if (node.tag === 'both') {
     splitSharedBookmarkBoundaries(
