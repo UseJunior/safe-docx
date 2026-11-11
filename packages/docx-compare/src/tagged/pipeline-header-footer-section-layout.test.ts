@@ -63,8 +63,23 @@ interface Part { id: string; kind: Kind; target: string; lines: string[]; extraX
 const paragraph = (text: string): string => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
 const ref = (kind: Kind, id: string, role: Role = 'default'): string =>
   `<w:${kind}Reference w:type="${role}" r:id="${id}"/>`;
+const MARGINS = '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>';
+/**
+ * Gives every section an explicit page size and margins, as Word writes them,
+ * so a `w:sectPrChange` snapshot of a changed section is never empty: Word
+ * reads an empty snapshot as "keep the live properties", unlike the appliers
+ * (see `preserve-section-on-snapshotless-sectprchange`).
+ */
+function withPageSetup(sectPr: string): string {
+  const titlePg = sectPr.indexOf('<w:titlePg');
+  const [head, tail] = titlePg < 0 ? [sectPr, ''] : [sectPr.slice(0, titlePg), sectPr.slice(titlePg)];
+  const size = head.includes('<w:pgSz') ? '' : '<w:pgSz w:w="12240" w:h="15840"/>';
+  const margins = head.includes('<w:pgMar') ? '' : MARGINS;
+  const withSize = size && head.includes('<w:pgMar') ? head.replace('<w:pgMar', `${size}<w:pgMar`) : head + size;
+  return withSize + margins + tail;
+}
 const sectionEnd = (text: string, sectPr: string): string =>
-  `<w:p><w:pPr><w:sectPr>${sectPr}</w:sectPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  `<w:p><w:pPr><w:sectPr>${withPageSetup(sectPr)}</w:sectPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
 const part = (id: string, kind: Kind, target: string, ...lines: string[]): Part => ({ id, kind, target, lines });
 
 function storyXml(entry: Part): string {
@@ -83,7 +98,7 @@ async function packageWith(
   settingsContents = '',
 ): Promise<Buffer> {
   const archive = await DocxArchive.load(await buildDocxFromBodyXml(body, [], { namespaces: { r: R_NS } }));
-  archive.setDocumentXml((await archive.getDocumentXml()).replace('<w:sectPr/>', `<w:sectPr>${finalSectPr}</w:sectPr>`));
+  archive.setDocumentXml((await archive.getDocumentXml()).replace('<w:sectPr/>', `<w:sectPr>${withPageSetup(finalSectPr)}</w:sectPr>`));
   archive.setFile(
     'word/_rels/document.xml.rels',
     `<Relationships xmlns="${PKG_NS}">` +
