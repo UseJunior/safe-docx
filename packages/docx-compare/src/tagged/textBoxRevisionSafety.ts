@@ -1613,6 +1613,25 @@ export async function sectionAlignedOrdinaryStoryInputs(
     selectedAncillaryState(revisedArchive),
   ]);
   if (!originalState.bindingAuditValid || !revisedState.bindingAuditValid) return none;
+  // Nothing to pair when every revised story has an identical original one
+  // and both documents show the same stories on the same pages.
+  const canonicalByPath = (state: SelectedAncillaryState): Map<string, string> =>
+    new Map(state.stories.map((story) => [story.targetPath, story.canonical]));
+  const pageInventory = async (archive: DocxArchive, state: SelectedAncillaryState): Promise<string> => {
+    const canonical = canonicalByPath(state);
+    const bindings = resolveEffectiveStoryBindings({
+      documentXml: state.documentXml,
+      relationshipsXml: await archive.getFile('word/_rels/document.xml.rels'),
+      settingsXml: await archive.getFile('word/settings.xml'),
+    });
+    return JSON.stringify([
+      ...bindings.slots.map((slot) => [slot.displayed, slot.targetPath && canonical.get(slot.targetPath)]),
+      ...pageStorySlots(bindings).map(({ slot }) => slot.targetPath && canonical.get(slot.targetPath)),
+    ]);
+  };
+  if (await pageInventory(originalArchive, originalState) === await pageInventory(revisedArchive, revisedState)) {
+    return none;
+  }
 
   const bindingsOf = async (
     archive: DocxArchive,
