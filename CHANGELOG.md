@@ -26,8 +26,10 @@
   tracked insertion. A nested box in a main-document text box is compared as
   its own story, and one inserted or deleted with its enclosing story has its
   paragraphs marked. VML `o:relid` picture references now count toward the
-  text-box relationship closure, so a picture that names a different image
-  part is still refused rather than carried silently. A nested box in a
+  text-box relationship closure, and the closure now includes the content of
+  each internal target part, so a picture or object that names a different
+  part, or whose part bytes were replaced at the same path, is still refused
+  rather than carried silently. A nested box in a
   header or footer text box is still refused. (#1380)
 
 ## 0.25.1

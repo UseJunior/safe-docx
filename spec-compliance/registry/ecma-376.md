@@ -121,8 +121,10 @@ VML picture (`w:pict`), a DrawingML picture (`w:drawing`) or an embedded object
 unchanged one passes through without revision markup, and one whose markup
 changed is a tracked deletion of the old run plus a tracked insertion of the new
 one. A change to the relationship closure the story reaches through `r:*` or
-`o:relid` attributes is still refused, so a picture that now names another image
-part is never carried silently. A main-document story holding a nested box —
+`o:relid` attributes is still refused, and the closure includes the content of
+every internal target part, so a picture or object that now names another part,
+or whose part was replaced under the same relationship, is never carried
+silently. A main-document story holding a nested box —
 non-conformant under this clause, but present in documents a comparison
 receives — is compared too: the nested box is compared as a story of its own,
 cut before its enclosing story and spliced back after it, and a nested box whose

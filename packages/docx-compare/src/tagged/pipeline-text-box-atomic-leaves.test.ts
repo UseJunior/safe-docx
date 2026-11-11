@@ -131,7 +131,11 @@ const bodyWithTwinBox = (choiceStoryXml: string, fallbackStoryXml: string): stri
   `</v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`;
 
 /** A package holding `bodyXml` plus an image part (and an OLE part) it may reference. */
-async function packageWith(bodyXml: string, imageTarget = 'media/image1.png'): Promise<Buffer> {
+async function packageWith(
+  bodyXml: string,
+  imageTarget = 'media/image1.png',
+  { image = Buffer.from(PNG, 'base64'), embedding = Buffer.from('ole') } = {},
+): Promise<Buffer> {
   const archive = await DocxArchive.load(
     await buildDocxFromBodyXml(bodyXml, [], { namespaces: NAMESPACES, ignorablePrefixes: [] }),
   );
@@ -142,8 +146,8 @@ async function packageWith(bodyXml: string, imageTarget = 'media/image1.png'): P
       `<Relationship Id="rIdObject" Type="${R_NS}/oleObject" Target="embeddings/oleObject1.bin"/>` +
       `</Relationships>`,
   );
-  archive.setFile(`word/${imageTarget}`, Buffer.from(PNG, 'base64'));
-  archive.setFile('word/embeddings/oleObject1.bin', Buffer.from('ole'));
+  archive.setFile(`word/${imageTarget}`, image);
+  archive.setFile('word/embeddings/oleObject1.bin', embedding);
   const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
   archive.setFile('[Content_Types].xml', contentTypes.replace(
     '<Default Extension="xml"',
@@ -431,6 +435,34 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
       expect((failure as Error).message).toContain('relationship closure changed');
     });
   });
+
+  for (const [label, storyXml, payload] of [
+    ['an embedded object whose binary part was replaced', EMBEDDED_OBJECT, { embedding: Buffer.from('other ole') }],
+    ['an r:id picture whose image part was replaced', vmlPicture(), { image: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([0])]) }],
+    ['an o:relid picture whose image part was replaced', vmlPicture({ relid: true }), { image: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([0])]) }],
+  ] as const) {
+    test(`refuses, rather than loses, ${label} under the same relationship`, async ({
+      given, when, then,
+    }: AllureBddContext) => {
+      const original = await given('a box holding the leaf, with its original part', () =>
+        packageWith(bodyWithBox(run('Box old') + storyXml)));
+      const revised = await given('the box text edited and the part bytes replaced at the same path', () =>
+        packageWith(bodyWithBox(run('Box new') + storyXml), undefined, payload));
+      let failure: unknown;
+      await when('the documents are compared', async () => {
+        try {
+          await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+        } catch (error) {
+          failure = error;
+        }
+      });
+
+      await then('the changed part is named instead of being carried untracked', () => {
+        expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+        expect((failure as Error).message).toContain('relationship closure changed');
+      });
+    });
+  }
 
   test('keeps an o:relid picture bound to its image across a text edit', async ({
     given, when, then, and,

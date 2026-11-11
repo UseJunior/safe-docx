@@ -426,6 +426,39 @@ function relationshipTargets(
 }
 
 /**
+ * `relationshipTargets`, with every internal target's part content folded in.
+ *
+ * A text-box story carries its pictures and embedded objects as atomic
+ * leaves since #1380, and a leaf compares by its markup only. A picture or
+ * object whose part was replaced under the same relationship id and target
+ * path has identical markup on both sides, so without the content the
+ * closure check would admit the story and the swap would be carried with no
+ * revision and no report. With it, the closure differs and the story is
+ * refused instead.
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1380
+ */
+async function relationshipTargetsWithContent(
+  archive: DocxArchive,
+  relationshipsXml: string | null,
+  ownerPartPath: string,
+): Promise<ReadonlyMap<string, string>> {
+  const targets = new Map(relationshipTargets(relationshipsXml));
+  for (const [id, semantics] of targets) {
+    const [, target = '', targetMode = ''] = semantics.split('|');
+    if (targetMode === 'External') continue;
+    const partPath = target.startsWith('/')
+      ? posix.normalize(target).replace(/^\/+/u, '')
+      : posix.normalize(posix.join(posix.dirname(ownerPartPath), target));
+    const bytes = await archive.getFileBuffer(partPath);
+    const digest = bytes ? createHash('sha256').update(bytes).digest('hex') : 'missing';
+    targets.set(id, `${semantics}|${digest}`);
+  }
+  return targets;
+}
+
+/**
  * Does this attribute hold a relationship id of its part? Every `r:*`
  * attribute does, and so does `o:relid`, the relationship id a VML picture's
  * `v:imagedata` may name its image by (vml-officeDrawing.xsd types it
@@ -1427,8 +1460,16 @@ async function ancillaryStoryInputs(
         reason: DIVERGENT_STORAGE_SHAPE_REASON,
       }]);
     }
-    const originalTargets = relationshipTargets(pair.original.relationshipsXml);
-    const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
+    const originalTargets = await relationshipTargetsWithContent(
+      originalArchive,
+      pair.original.relationshipsXml,
+      pair.original.targetPath,
+    );
+    const revisedTargets = await relationshipTargetsWithContent(
+      revisedArchive,
+      pair.revised.relationshipsXml,
+      pair.revised.targetPath,
+    );
     for (let index = 0; index < pair.original.textBoxes.length; index += 1) {
       const originalTextBox = pair.original.textBoxes[index]!;
       const revisedTextBox = pair.revised.textBoxes[index]!;
@@ -2080,11 +2121,15 @@ export async function prepareTextBoxStoryComparison(
     originalDocumentXml,
     revisedDocumentXml,
   );
-  const originalRelationshipTargets = relationshipTargets(
+  const originalRelationshipTargets = await relationshipTargetsWithContent(
+    originalArchive,
     await originalArchive.getFile('word/_rels/document.xml.rels'),
+    'word/document.xml',
   );
-  const revisedRelationshipTargets = relationshipTargets(
+  const revisedRelationshipTargets = await relationshipTargetsWithContent(
+    revisedArchive,
     await revisedArchive.getFile('word/_rels/document.xml.rels'),
+    'word/document.xml',
   );
   const originalDocument = parseXml(originalDocumentXml);
   const revisedDocument = parseXml(revisedDocumentXml);
