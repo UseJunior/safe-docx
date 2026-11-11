@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
 import { XMLSerializer } from '@xmldom/xmldom';
 import {
   auditSectPr,
@@ -30,6 +31,10 @@ import {
   storySlotKey,
 } from './effectiveStoryBindings.js';
 import {
+  BLANK_STORY_IDENTITY,
+  pairStoriesThroughSectionAlignment,
+} from './sectionAlignedStoryPairing.js';
+import {
   addParagraphMarkRevisionMarker,
   createRevisionIdState,
   formatDate,
@@ -43,6 +48,8 @@ const RELATIONSHIPS_NS =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PACKAGE_RELATIONSHIPS_NS =
   'http://schemas.openxmlformats.org/package/2006/relationships';
+const OFFICE_VML_NS = 'urn:schemas-microsoft-com:office:office';
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 const serializer = new XMLSerializer();
 
 export interface TextBoxRevisionChange {
@@ -1562,6 +1569,311 @@ async function ancillaryStoryInputs(
       ),
     ],
   };
+}
+
+/**
+ * Ordinary header/footer stories paired through the section alignment the
+ * outer comparison emitted (`sectionAlignedStoryPairing.ts`), for every part
+ * the topology-matched pass in `ancillaryStoryInputs` left alone.
+ *
+ * A story's identity is its effective slot (section × kind × role after
+ * inheritance), not its part name or whether a section names it or inherits
+ * it. Reject All of `compared` has the original's sections and Accept All the
+ * revised document's, so a section added or removed, a page-size or
+ * orientation change, or a `w:titlePg` / `w:evenAndOddHeaders` switch no
+ * longer stops a header/footer text edit from being tracked.
+ *
+ * Only plain stories qualify: neither side may hold a text box (those keep the
+ * #1204 checks), the compared part must still be the revised part as the outer
+ * comparison left it, and the two stories must share the admitted scaffold and
+ * relationship closure, as for topology-matched stories. `handledOutputPaths`
+ * names compared parts another story (text box, lifecycle, topology-matched)
+ * already writes.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
+ * @see https://github.com/UseJunior/safe-docx/issues/1390
+ */
+export async function sectionAlignedOrdinaryStoryInputs(
+  original: Buffer,
+  revised: Buffer,
+  compared: Buffer,
+  handledOutputPaths: ReadonlySet<string>,
+): Promise<{
+  stories: TextBoxStoryInput[];
+  representedSectionKinds: Array<{ sectionIndex: number; kind: 'header' | 'footer' }>;
+}> {
+  const none = { stories: [], representedSectionKinds: [] };
+  const [originalArchive, revisedArchive, comparedArchive] = await Promise.all([
+    DocxArchive.load(original),
+    DocxArchive.load(revised),
+    DocxArchive.load(compared),
+  ]);
+  const [originalState, revisedState] = await Promise.all([
+    selectedAncillaryState(originalArchive),
+    selectedAncillaryState(revisedArchive),
+  ]);
+  if (!originalState.bindingAuditValid || !revisedState.bindingAuditValid) return none;
+  // Nothing to pair when every revised story has an identical original one
+  // and both documents show the same stories on the same pages.
+  const canonicalByPath = (state: SelectedAncillaryState): Map<string, string> =>
+    new Map(state.stories.map((story) => [story.targetPath, story.canonical]));
+  const pageInventory = async (archive: DocxArchive, state: SelectedAncillaryState): Promise<string> => {
+    const canonical = canonicalByPath(state);
+    const bindings = resolveEffectiveStoryBindings({
+      documentXml: state.documentXml,
+      relationshipsXml: await archive.getFile('word/_rels/document.xml.rels'),
+      settingsXml: await archive.getFile('word/settings.xml'),
+    });
+    return JSON.stringify([
+      ...bindings.slots.map((slot) => [slot.displayed, slot.targetPath && canonical.get(slot.targetPath)]),
+      ...pageStorySlots(bindings).map(({ slot }) => slot.targetPath && canonical.get(slot.targetPath)),
+    ]);
+  };
+  if (await pageInventory(originalArchive, originalState) === await pageInventory(revisedArchive, revisedState)) {
+    return none;
+  }
+
+  const bindingsOf = async (
+    archive: DocxArchive,
+    project: (xml: string) => string,
+  ): Promise<ReturnType<typeof resolveEffectiveStoryBindings>> =>
+    resolveEffectiveStoryBindings({
+      documentXml: project(await archive.getDocumentXml()),
+      relationshipsXml: await archive.getFile('word/_rels/document.xml.rels'),
+      settingsXml: await archive.getFile('word/settings.xml'),
+    });
+  const [originalBindings, revisedBindings, rejectedBindings, acceptedBindings] = await Promise.all([
+    bindingsOf(originalArchive, rejectAllChanges),
+    bindingsOf(revisedArchive, acceptAllChanges),
+    bindingsOf(comparedArchive, rejectAllChanges),
+    bindingsOf(comparedArchive, acceptAllChanges),
+  ]);
+  if (![originalBindings, revisedBindings, rejectedBindings, acceptedBindings].every((bindings) => bindings.ok)) {
+    return none;
+  }
+
+  // A story's identity is its canonical XML plus what each relationship id in
+  // it resolves to (ECMA-376 Part 2 §6.5.2.3, §6.5.3.4): two footers with the same markup
+  // whose r:id points at different hyperlinks or images are different stories.
+  // An internal target also carries its bytes, so a same-named media part
+  // whose content differs between packages does not read as the same story.
+  // What each relationship id owned by `owner` resolves to; undefined means
+  // nothing usable (an internal target missing from the package, or a part
+  // reached again through a cycle). An internal target is its bytes plus,
+  // recursively, what its own relationships resolve to, so a chart whose
+  // drawing differs is a different target even when the chart XML is equal.
+  // A target's fingerprint does not depend on the path that reached it (any
+  // part that can reach a cycle is unresolved from every entry), so it is
+  // computed once per package and part.
+  const targetFingerprints = new Map<DocxArchive, Map<string, Promise<string | undefined>>>();
+  const resolveRelationships = async (
+    archive: DocxArchive,
+    owner: string,
+    visiting: ReadonlySet<string>,
+  ): Promise<Map<string, string | undefined>> => {
+    const relationshipsXml = await archive.getFile(owningRelationshipsPath(owner));
+    const resolved = new Map<string, string | undefined>();
+    if (!relationshipsXml) return resolved;
+    for (const relationship of Array.from(
+      parseXml(relationshipsXml).getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship'),
+    )) {
+      const id = relationship.getAttribute('Id');
+      if (!id) continue;
+      const type = relationship.getAttribute('Type') ?? '';
+      const target = relationship.getAttribute('Target') ?? '';
+      if (relationship.getAttribute('TargetMode') === 'External') {
+        resolved.set(id, `${type}|external|${target}`);
+        continue;
+      }
+      // A relative target resolves against the source part's directory; a
+      // target starting with "/" is package-absolute.
+      const targetPath = target.startsWith('/')
+        ? posix.normalize(target).replace(/^\/+/u, '')
+        : posix.normalize(posix.join(posix.dirname(owner), target));
+      const fingerprint = await fingerprintTarget(archive, targetPath, visiting);
+      resolved.set(id, fingerprint === undefined ? undefined : `${type}|internal|${fingerprint}`);
+    }
+    return resolved;
+  };
+  const fingerprintTarget = (
+    archive: DocxArchive,
+    targetPath: string,
+    visiting: ReadonlySet<string>,
+  ): Promise<string | undefined> => {
+    if (visiting.has(targetPath)) return Promise.resolve(undefined);
+    let cache = targetFingerprints.get(archive);
+    if (!cache) targetFingerprints.set(archive, (cache = new Map()));
+    let pending = cache.get(targetPath);
+    if (!pending) {
+      pending = (async () => {
+        const bytes = await archive.getFileBuffer(targetPath);
+        if (!bytes) return undefined;
+        const nested = await resolveRelationships(archive, targetPath, new Set([...visiting, targetPath]));
+        if ([...nested.values()].some((value) => value === undefined)) return undefined;
+        const digest = createHash('sha256').update(bytes);
+        for (const [nestedId, value] of [...nested].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))) {
+          digest.update(`\n${nestedId}=${value}`);
+        }
+        return digest.digest('hex');
+      })();
+      cache.set(targetPath, pending);
+    }
+    return pending;
+  };
+
+  // A story part read through its relationships: `references` lists, in
+  // document order, each reference attribute with what its id resolves to;
+  // `semantic` is the part root with every reference replaced by that
+  // resolution, so a local id never tells two stories apart. References are
+  // r:* attributes and VML's o:relid (vml-main.xsd); any other attribute whose
+  // value is one of the part's relationship ids may be a reference this code
+  // does not know, so the story is unresolved (undefined) and never matches.
+  const resolvedStory = async (
+    archive: DocxArchive,
+    path: string,
+    xml: string,
+  ): Promise<{ semantic: string; references: string } | undefined> => {
+    const root = parseXml(xml).documentElement;
+    const resolved = await resolveRelationships(archive, path, new Set([path]));
+    const semantic = root.cloneNode(true) as Element;
+    const references: string[] = [];
+    for (const element of [semantic, ...Array.from(semantic.getElementsByTagName('*'))]) {
+      for (const attribute of Array.from(element.attributes)) {
+        const reference = attribute.namespaceURI === RELATIONSHIPS_NS
+          || (attribute.namespaceURI === OFFICE_VML_NS && attribute.localName === 'relid');
+        if (!reference) {
+          if (resolved.has(attribute.value) && attribute.namespaceURI !== XMLNS_NS) return undefined;
+          continue;
+        }
+        const target = resolved.get(attribute.value);
+        if (target === undefined) return undefined;
+        element.setAttributeNS(attribute.namespaceURI, attribute.name, target);
+        references.push(`{${element.namespaceURI ?? ''}}${element.localName}|{${attribute.namespaceURI}}${attribute.localName}|${target}`);
+      }
+    }
+    return { semantic: canonicalNode(semantic), references: references.join('\n') };
+  };
+
+  const storyIdentities = async (
+    label: string,
+    archive: DocxArchive,
+    bindings: ReturnType<typeof resolveEffectiveStoryBindings>[],
+  ): Promise<Map<string, string>> => {
+    const identities = new Map<string, string>();
+    for (const path of new Set(bindings.flatMap((entry) => entry.slots.map((slot) => slot.targetPath)))) {
+      if (path === undefined) continue;
+      const xml = await archive.getFile(path);
+      if (xml === null || isBlankStoryPart(xml)) {
+        identities.set(path, BLANK_STORY_IDENTITY);
+        continue;
+      }
+      // An unresolvable reference never matches anything, so no slot showing
+      // it is treated as represented.
+      identities.set(path, (await resolvedStory(archive, path, xml))?.semantic ?? `unresolved:${label}:${path}`);
+    }
+    return identities;
+  };
+  const [originalParts, revisedParts, comparedParts] = await Promise.all([
+    storyIdentities('original', originalArchive, [originalBindings]),
+    storyIdentities('revised', revisedArchive, [revisedBindings]),
+    storyIdentities('compared', comparedArchive, [rejectedBindings, acceptedBindings]),
+  ]);
+  const identityOf = (identities: ReadonlyMap<string, string>): ((path: string | undefined) => string) =>
+    (path) => (path === undefined ? BLANK_STORY_IDENTITY : identities.get(path) ?? BLANK_STORY_IDENTITY);
+  const originalStories = new Map(originalState.stories.map((story) => [story.targetPath, story]));
+  const revisedStories = new Map(revisedState.stories.map((story) => [story.targetPath, story]));
+  const comparedIdentity = identityOf(comparedParts);
+  const revisedIdentity = identityOf(revisedParts);
+
+  // What each story's references resolve to, in document order. The story
+  // comparison carries the original's references into the Reject All view
+  // only when the two stories reference the same things in the same order.
+  const referencesOf = async (
+    archive: DocxArchive,
+    stories: ReadonlyMap<string, { xml: string }>,
+  ): Promise<Map<string, string | undefined>> => {
+    const references = new Map<string, string | undefined>();
+    for (const [path, story] of stories) references.set(path, (await resolvedStory(archive, path, story.xml))?.references);
+    return references;
+  };
+  const [originalReferences, revisedReferences] = await Promise.all([
+    referencesOf(originalArchive, originalStories),
+    referencesOf(revisedArchive, revisedStories),
+  ]);
+
+  const eligible = (comparedPath: string, originalPath: string): boolean => {
+    const originalStory = originalStories.get(originalPath);
+    const revisedStory = revisedStories.get(comparedPath);
+    if (!originalStory || !revisedStory || handledOutputPaths.has(comparedPath)) return false;
+    if (originalStory.kind !== revisedStory.kind) return false;
+    if (originalStory.textBoxes.length > 0 || revisedStory.textBoxes.length > 0) return false;
+    // The compared part must still be the revised part: the redline goes there.
+    if (comparedIdentity(comparedPath) !== revisedIdentity(comparedPath)) return false;
+    if (originalStory.ordinaryContent === revisedStory.ordinaryContent) return false;
+    if (ordinaryStoryScaffoldFingerprint(originalStory.xml) !== ordinaryStoryScaffoldFingerprint(revisedStory.xml)) {
+      return false;
+    }
+    // Both stories must reference the same resolved targets (internal
+    // targets by content, VML o:relid included) ...
+    const originalResolved = originalReferences.get(originalPath);
+    if (originalResolved === undefined || originalResolved !== revisedReferences.get(comparedPath)) return false;
+    // ... and the relationship closure the story splice remaps (#713) must
+    // read them too; it reads unprefixed relationship parts only.
+    const originalClosure = relationshipClosureFingerprint(
+      parseXml(originalStory.xml).documentElement,
+      relationshipTargets(originalStory.relationshipsXml),
+    );
+    const revisedClosure = relationshipClosureFingerprint(
+      parseXml(revisedStory.xml).documentElement,
+      relationshipTargets(revisedStory.relationshipsXml),
+    );
+    return originalClosure !== undefined && originalClosure === revisedClosure;
+  };
+
+  const pairing = pairStoriesThroughSectionAlignment({
+    rejected: rejectedBindings,
+    original: originalBindings,
+    accepted: acceptedBindings,
+    revised: revisedBindings,
+    originalIdentity: identityOf(originalParts),
+    revisedIdentity,
+    comparedIdentity,
+    eligible,
+  });
+  if (pairing.pairs.size === 0) return none;
+
+  const originalDocumentXml = await originalArchive.getDocumentXml();
+  const revisedDocumentXml = await revisedArchive.getDocumentXml();
+  const stories: TextBoxStoryInput[] = [];
+  for (const [comparedPath, originalPath] of pairing.pairs) {
+    const originalStory = originalStories.get(originalPath)!;
+    const revisedStory = revisedStories.get(comparedPath)!;
+    const storyOriginalArchive = await originalArchive.clone();
+    const storyRevisedArchive = await revisedArchive.clone();
+    storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(originalDocumentXml, originalStory.xml));
+    storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(revisedDocumentXml, revisedStory.xml));
+    storyOriginalArchive.setFile(
+      'word/_rels/document.xml.rels',
+      originalStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    storyRevisedArchive.setFile(
+      'word/_rels/document.xml.rels',
+      revisedStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    stories.push({
+      index: 0,
+      visualIndex: 0,
+      partPath: comparedPath,
+      container: 'ancillaryPart',
+      ancillaryMode: 'ordinary',
+      original: await storyOriginalArchive.save(),
+      revised: await storyRevisedArchive.save(),
+    });
+  }
+  return { stories, representedSectionKinds: pairing.representedSectionKinds };
 }
 
 const BINDING_ORIGIN_NS = 'urn:usejunior:safe-docx:story-binding-origin';

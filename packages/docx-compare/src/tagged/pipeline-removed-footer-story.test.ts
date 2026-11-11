@@ -388,13 +388,15 @@ describe('relationship-selected story removed with its section (#754)', () => {
   );
 
   test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
-    'does not track-delete a footer whose slot the revision rebinds to a different part',
+    'redlines a footer whose slot the revision rebinds to a different part as one story, not a one-sided deletion',
     async () => {
-      // The section survives and still selects a default footer, but through a
-      // different, unpaired part. The slot was rebound, not removed, so showing
-      // the old footer as deleted with no matching insertion would misstate
-      // the revision; the pair stays in unrepresentedChanges instead. The
-      // checked-in ILPA pair exercises the same shape across many sections.
+      // The section survives and still shows a default footer, but through a
+      // different part. The slot was rebound, not removed, so the old footer
+      // is not a tracked deletion with no matching insertion. Since #1390 the
+      // effective slot, not the part name, is the story's identity: the new
+      // part receives the redline of the old footer's text, so Accept All
+      // shows the new footer and Reject All the old one. (Before #1390 the
+      // page-width change kept the pair in unrepresentedChanges.)
       const withFooter = async (
         pageWidth: number,
         target: string,
@@ -416,12 +418,15 @@ describe('relationship-selected story removed with its section (#754)', () => {
 
       const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
       const archive = await DocxArchive.load(result.document);
-      for (const path of archive.listFiles().filter((name) => /^word\/footer/u.test(name))) {
-        expect(await archive.getFile(path), path).not.toContain('<w:del');
-      }
-      expect(result.stats.deletions).toBe(0);
-      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-        { scope: 'footer', kind: 'changed', sectionIndex: 0, role: 'default' },
+      expect(archive.listFiles().filter((name) => /^word\/footer/u.test(name))).toEqual(['word/footer2.xml']);
+      const footer = (await archive.getFile('word/footer2.xml'))!;
+      const footerDocument = parseXml(footer);
+      expect(footerDocument.getElementsByTagNameNS(OOXML.W_NS, 'del').length).toBeGreaterThan(0);
+      expect(footerDocument.getElementsByTagNameNS(OOXML.W_NS, 'ins').length).toBeGreaterThan(0);
+      expect(extractRoundTripComparisonText(acceptAllChanges(footer))).toBe('New line one\nNew line two');
+      expect(extractRoundTripComparisonText(rejectAllChanges(footer))).toBe('Old footer');
+      expect(result.unrepresentedChanges ?? []).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'footer' }),
       ]));
     },
   );
