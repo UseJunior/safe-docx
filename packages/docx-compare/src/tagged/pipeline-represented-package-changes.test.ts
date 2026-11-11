@@ -479,6 +479,41 @@ describe('changes the redline still does not carry stay listed', () => {
     });
   }
 
+  test('preserved spaces removed from an Office Math run in a header stay listed', async () => {
+    // Only indentation between WordprocessingML elements is dropped from the
+    // story identity; preserved white space in m:t is shown text (Codex round 4).
+    const mathRun = (text: string): string =>
+      `<m:r><m:rPr><m:nor/></m:rPr><m:t xml:space="preserve">${text}</m:t></m:r>`;
+    const header = (runs: string): Part => ({
+      id: 'rIdH',
+      kind: 'header',
+      target: 'header1.xml',
+      contentXml: `<w:p><m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${runs}</m:oMath></w:p>`,
+    });
+    const originalBuffer = await packageWith(
+      paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header(mathRun('A') + mathRun('          ') + mathRun('B'))]);
+    const revisedBuffer = await packageWith(
+      paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header(mathRun('A') + mathRun('') + mathRun('B'))]);
+    const entry = { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' } as const;
+
+    // The package check alone, against an untracked compared package.
+    const reported = await subtractRepresentedPackageChanges({
+      original: { archive: await DocxArchive.load(originalBuffer) },
+      revised: { archive: await DocxArchive.load(revisedBuffer) },
+      compared: { archive: await DocxArchive.load(revisedBuffer) },
+      changes: [entry],
+      scopes: new Set(['header']),
+    });
+    expect(reported).toEqual([entry]);
+
+    // The full comparison: the header story comparison does not redline the
+    // spaces, so having compared the story is no reason to drop the entry.
+    const result = await compareDocumentsAtomizer(originalBuffer, revisedBuffer, COMPARE_OPTIONS);
+    const headerXml = (await (await DocxArchive.load(result.document)).getFile('word/header1.xml'))!;
+    expect(rejectAllChanges(headerXml)).not.toContain('          ');
+    expect(result.unrepresentedChanges).toEqual([entry]);
+  });
+
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
     // snapshot without w:titlePg leaves the revised title page in place on

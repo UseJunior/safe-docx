@@ -329,8 +329,10 @@ function trimXmlWhitespace(text: string): string {
 
 /**
  * Story XML in a form that does not depend on how the comparison split runs:
- * revision-session ids (`w:rsid*`, `w14:paraId`, `w14:textId`), `xml:space`,
- * proofing marks and indentation are dropped, adjacent runs with the same
+ * revision-session ids (`w:rsid*`, `w14:paraId`, `w14:textId`), `xml:space`
+ * on WordprocessingML text (once the white space Word drops is trimmed),
+ * proofing marks and indentation between WordprocessingML elements are
+ * dropped, adjacent runs with the same
  * properties are joined and adjacent text in a run is merged. Every property,
  * field, drawing and bookmark stays, so a formatting or structural difference
  * still tells two stories apart.
@@ -342,11 +344,8 @@ function normalizedStoryXml(xml: string): string {
     // Without xml:space="preserve", Word drops a text element's leading and
     // trailing XML white space (space, tab, CR, LF), so only the text it shows
     // is compared. A no-break or other Unicode space is text and stays.
-    if (
-      element.namespaceURI === W_NS &&
-      TEXT_BEARING.has(localName(element)) &&
-      element.getAttributeNS(XML_NS, 'space') !== 'preserve'
-    ) {
+    const wordText = element.namespaceURI === W_NS && TEXT_BEARING.has(localName(element));
+    if (wordText && element.getAttributeNS(XML_NS, 'space') !== 'preserve') {
       element.textContent = trimXmlWhitespace(element.textContent ?? '');
     }
     for (const attribute of Array.from(element.attributes)) {
@@ -354,7 +353,7 @@ function normalizedStoryXml(xml: string): string {
       if (
         (attribute.namespaceURI === W_NS && name.startsWith('rsid')) ||
         (attribute.namespaceURI === WORD_2010_NS && (name === 'paraId' || name === 'textId')) ||
-        (attribute.namespaceURI === XML_NS && name === 'space')
+        (wordText && attribute.namespaceURI === XML_NS && name === 'space')
       ) {
         element.removeAttributeNode(attribute);
       }
@@ -370,7 +369,10 @@ function normalizedStoryXml(xml: string): string {
       } else if (
         child.nodeType === 3 &&
         trimXmlWhitespace(child.nodeValue ?? '') === '' &&
-        !(element.namespaceURI === W_NS && TEXT_BEARING.has(localName(element)))
+        // Only indentation between WordprocessingML structure is dropped;
+        // white space inside any other vocabulary (Office Math m:t, DrawingML
+        // a:t, VML) may be shown text and stays.
+        element.namespaceURI === W_NS && !wordText
       ) {
         element.removeChild(child);
       }

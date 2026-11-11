@@ -1649,13 +1649,18 @@ async function compareDocumentsTagged(
       moveToRanges: 0,
     },
   );
-  // Section-aligned header/footer entries are not dropped here by section
-  // index and kind: that pairing reads a part with no text as no part, so it
-  // would hide a removed empty-but-tall header. `withRepresentedPackageChangesRemoved`
-  // judges each entry on the spliced package instead (#1427).
+  // Only a whole story tracked as inserted or deleted with its section
+  // (#648, #754) is dropped here. A `changed` story is not dropped because it
+  // was compared: a story comparison can leave part of a change out of its
+  // redline (preserved math spaces, run properties it does not track). Nor is
+  // a section-aligned slot dropped by index and kind (`representedSectionKinds`):
+  // that pairing reads a part with no text as no part.
+  // `withRepresentedPackageChangesRemoved` judges those entries on the spliced
+  // package instead (#1427).
   const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(
     (change) => !textBoxPlan.representedAncillaryChanges.some(
       (represented) =>
+        represented.kind !== 'changed' &&
         representedPartPaths.has(represented.partPath) &&
         change.scope === represented.scope &&
         change.kind === represented.kind &&
