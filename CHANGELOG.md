@@ -27,7 +27,7 @@
   its own story, and one inserted or deleted with its enclosing story has its
   paragraphs marked. VML `o:relid` picture references now count toward the
   text-box relationship closure, and the closure now includes the content of
-  each internal target part, so a picture or object that names a different
+  each internal target part (and, recursively, of the parts it reaches), so a picture or object that names a different
   part, or whose part bytes were replaced at the same path, is still refused
   rather than carried silently. A nested box in a
   header or footer text box is still refused. (#1380)

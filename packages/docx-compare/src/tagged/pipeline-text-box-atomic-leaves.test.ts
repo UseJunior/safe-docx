@@ -464,6 +464,56 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
     });
   }
 
+  test('refuses, rather than loses, a chart whose embedded workbook was replaced', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const chart =
+      `<w:r><w:drawing><wp:inline><wp:extent cx="100000" cy="100000"/><wp:docPr id="8" name="Chart 8"/>` +
+      `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">` +
+      `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart"/>` +
+      `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+    // The chart part and its relationships are identical on both sides; only
+    // the workbook the chart reaches through its own relationship differs.
+    const withChart = async (text: string, workbook: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await packageWith(bodyWithBox(run(text) + chart)));
+      archive.setFile(
+        'word/_rels/document.xml.rels',
+        `<Relationships xmlns="${PKG_NS}">` +
+          `<Relationship Id="rIdChart" Type="${R_NS}/chart" Target="charts/chart1.xml"/></Relationships>`,
+      );
+      archive.setFile(
+        'word/charts/chart1.xml',
+        `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="${R_NS}">` +
+          `<c:chart><c:plotArea><c:layout/></c:plotArea></c:chart>` +
+          `<c:externalData r:id="rIdWorkbook"/></c:chartSpace>`,
+      );
+      archive.setFile(
+        'word/charts/_rels/chart1.xml.rels',
+        `<Relationships xmlns="${PKG_NS}">` +
+          `<Relationship Id="rIdWorkbook" Type="${R_NS}/package" Target="../embeddings/workbook.xlsx"/></Relationships>`,
+      );
+      archive.setFile('word/embeddings/workbook.xlsx', Buffer.from(workbook));
+      return archive.save();
+    };
+    const original = await given('a box holding a chart and its embedded workbook', () =>
+      withChart('Box old', 'workbook one'));
+    const revised = await given('the box text edited and the workbook bytes replaced', () =>
+      withChart('Box new', 'workbook two'));
+    let failure: unknown;
+    await when('the documents are compared', async () => {
+      try {
+        await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    await then('the replaced workbook below the chart is seen', () => {
+      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+      expect((failure as Error).message).toContain('relationship closure changed');
+    });
+  });
+
   test('keeps an o:relid picture bound to its image across a text edit', async ({
     given, when, then, and,
   }: AllureBddContext) => {

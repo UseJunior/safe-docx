@@ -434,7 +434,9 @@ function relationshipTargets(
  * path has identical markup on both sides, so without the content the
  * closure check would admit the story and the swap would be carried with no
  * revision and no report. With it, the closure differs and the story is
- * refused instead.
+ * refused instead. A target's content includes, recursively, the content of
+ * the parts its own relationships reach (a chart's embedded workbook), so a
+ * replacement anywhere below the story is seen.
  *
  * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
  * @see https://github.com/UseJunior/safe-docx/issues/1380
@@ -444,16 +446,49 @@ async function relationshipTargetsWithContent(
   relationshipsXml: string | null,
   ownerPartPath: string,
 ): Promise<ReadonlyMap<string, string>> {
-  const targets = new Map(relationshipTargets(relationshipsXml));
-  for (const [id, semantics] of targets) {
-    const [, target = '', targetMode = ''] = semantics.split('|');
-    if (targetMode === 'External') continue;
-    const partPath = target.startsWith('/')
-      ? posix.normalize(target).replace(/^\/+/u, '')
-      : posix.normalize(posix.join(posix.dirname(ownerPartPath), target));
-    const bytes = await archive.getFileBuffer(partPath);
-    const digest = bytes ? createHash('sha256').update(bytes).digest('hex') : 'missing';
-    targets.set(id, `${semantics}|${digest}`);
+  const fingerprints = new Map<string, Promise<string>>();
+  const internalTargets = (
+    xml: string | null,
+    owner: string,
+  ): Array<[id: string, semantics: string, partPath: string | undefined]> =>
+    [...relationshipTargets(xml)].map(([id, semantics]) => {
+      const [, target = '', targetMode = ''] = semantics.split('|');
+      if (targetMode === 'External') return [id, semantics, undefined];
+      const partPath = target.startsWith('/')
+        ? posix.normalize(target).replace(/^\/+/u, '')
+        : posix.normalize(posix.join(posix.dirname(owner), target));
+      return [id, semantics, partPath];
+    });
+  const fingerprint = (partPath: string, visiting: ReadonlySet<string>): Promise<string> => {
+    if (visiting.has(partPath)) return Promise.resolve('cycle');
+    let pending = fingerprints.get(partPath);
+    if (!pending) {
+      pending = (async () => {
+        const bytes = await archive.getFileBuffer(partPath);
+        if (!bytes) return 'missing';
+        const digest = createHash('sha256').update(bytes);
+        const nested = internalTargets(
+          await archive.getFile(owningRelationshipsPath(partPath)),
+          partPath,
+        ).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+        for (const [id, semantics, nestedPath] of nested) {
+          const content = nestedPath === undefined
+            ? ''
+            : await fingerprint(nestedPath, new Set([...visiting, partPath]));
+          digest.update(`\n${id}=${semantics}|${content}`);
+        }
+        return digest.digest('hex');
+      })();
+      fingerprints.set(partPath, pending);
+    }
+    return pending;
+  };
+  const targets = new Map<string, string>();
+  for (const [id, semantics, partPath] of internalTargets(relationshipsXml, ownerPartPath)) {
+    targets.set(
+      id,
+      partPath === undefined ? semantics : `${semantics}|${await fingerprint(partPath, new Set())}`,
+    );
   }
   return targets;
 }
