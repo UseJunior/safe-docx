@@ -59,7 +59,12 @@ added a resolver for these effective bindings (`effectiveStoryBindings.ts`).
 - **`formattingFidelity` on removed section breaks** (#1203).
 - **Different scaffolds.** The pair must share the admitted scaffold and
   relationship closure of topology-matched ordinary stories; a structural
-  change (table rows, drawings, fields) stays unrepresented.
+  change (table rows, drawings, fields) stays unrepresented. Both stories must
+  also reference the same resolved targets in the same order (internal
+  targets by content, VML `o:relid` included), so a swapped picture keeps the
+  story reported. A story whose own relationship part uses prefixed elements
+  stays unrepresented, because the story splice's relationship remap (#713)
+  reads unprefixed elements only.
 - **Turning different even pages off.** With the setting off in the compared
   package, every page of Reject All shows the default story, so no redline can
   show the original's even story on even pages and its default story on odd

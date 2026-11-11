@@ -765,4 +765,45 @@ describe('header/footer edits across section-layout changes (#1390)', () => {
       });
     },
   );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'does not redline a footer whose VML picture the revision swaps for another image',
+    async ({ given, when, then }: AllureBddContext) => {
+      // The text redline would restore "Old" on Reject All, but the picture
+      // relationship stays on the revised image, so the footer stays reported.
+      const [original, revised] = await given('one footer, red picture to blue picture plus a text edit, section 2 turned landscape', async () => {
+        const original = await withVmlPictureFooter(
+          await packageWith(sectionEnd('One', ref('footer', 'rIdF')) + paragraph('Two'), '', [part('rIdF', 'footer', 'footer1.xml', 'x')]),
+          'footer1', 'Old', 'a.png', PNG_RED);
+        const revised = await withVmlPictureFooter(
+          await packageWith(sectionEnd('One', ref('footer', 'rIdF')) + paragraph('Two'), LANDSCAPE, [part('rIdF', 'footer', 'footer1.xml', 'x')]),
+          'footer1', 'New', 'b.png', PNG_BLUE);
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the footer carries no revision and stays reported', async () => {
+        expect(await revisionCounts(result.document, 'word/footer1.xml')).toEqual({ ins: 0, del: 0 });
+        expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+          expect.objectContaining({ scope: 'footer', sectionIndex: 0 }),
+        ]));
+      });
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'redlines a shared footer whose VML picture is the same image on both sides',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('one footer with the same VML picture, a text edit, section 2 turned landscape', async () => {
+        const original = await withVmlPictureFooter(
+          await packageWith(sectionEnd('One', ref('footer', 'rIdF')) + paragraph('Two'), '', [part('rIdF', 'footer', 'footer1.xml', 'x')]),
+          'footer1', 'Old', 'a.png', PNG_RED);
+        const revised = await withVmlPictureFooter(
+          await packageWith(sectionEnd('One', ref('footer', 'rIdF')) + paragraph('Two'), LANDSCAPE, [part('rIdF', 'footer', 'footer1.xml', 'x')]),
+          'footer1', 'New', 'a.png', PNG_RED);
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await expectRepresentedRedline({ then }, original, revised, result, ['word/footer1.xml']);
+    },
+  );
 });

@@ -1724,6 +1724,39 @@ export async function sectionAlignedOrdinaryStoryInputs(
     return pending;
   };
 
+  // A story part read through its relationships: `references` lists, in
+  // document order, each reference attribute with what its id resolves to;
+  // `semantic` is the part root with every reference replaced by that
+  // resolution, so a local id never tells two stories apart. References are
+  // r:* attributes and VML's o:relid (vml-main.xsd); any other attribute whose
+  // value is one of the part's relationship ids may be a reference this code
+  // does not know, so the story is unresolved (undefined) and never matches.
+  const resolvedStory = async (
+    archive: DocxArchive,
+    path: string,
+    xml: string,
+  ): Promise<{ semantic: string; references: string } | undefined> => {
+    const root = parseXml(xml).documentElement;
+    const resolved = await resolveRelationships(archive, path, new Set([path]));
+    const semantic = root.cloneNode(true) as Element;
+    const references: string[] = [];
+    for (const element of [semantic, ...Array.from(semantic.getElementsByTagName('*'))]) {
+      for (const attribute of Array.from(element.attributes)) {
+        const reference = attribute.namespaceURI === RELATIONSHIPS_NS
+          || (attribute.namespaceURI === OFFICE_VML_NS && attribute.localName === 'relid');
+        if (!reference) {
+          if (resolved.has(attribute.value) && attribute.namespaceURI !== XMLNS_NS) return undefined;
+          continue;
+        }
+        const target = resolved.get(attribute.value);
+        if (target === undefined) return undefined;
+        element.setAttributeNS(attribute.namespaceURI, attribute.name, target);
+        references.push(`{${element.namespaceURI ?? ''}}${element.localName}|{${attribute.namespaceURI}}${attribute.localName}|${target}`);
+      }
+    }
+    return { semantic: canonicalNode(semantic), references: references.join('\n') };
+  };
+
   const storyIdentities = async (
     label: string,
     archive: DocxArchive,
@@ -1737,31 +1770,9 @@ export async function sectionAlignedOrdinaryStoryInputs(
         identities.set(path, BLANK_STORY_IDENTITY);
         continue;
       }
-      const root = parseXml(xml).documentElement;
-      const resolved = await resolveRelationships(archive, path, new Set([path]));
-      // Relationship ids are local names: compare what each one resolves to,
-      // so the same link under a different id is the same story. References
-      // are r:* attributes and VML's o:relid (vml-main.xsd); any other
-      // attribute whose value is one of this part's relationship ids may be a
-      // reference this code does not know, so the story stays unresolved.
-      const semantic = root.cloneNode(true) as Element;
-      let unresolved = false;
-      for (const element of [semantic, ...Array.from(semantic.getElementsByTagName('*'))]) {
-        for (const attribute of Array.from(element.attributes)) {
-          const reference = attribute.namespaceURI === RELATIONSHIPS_NS
-            || (attribute.namespaceURI === OFFICE_VML_NS && attribute.localName === 'relid');
-          if (!reference) {
-            if (resolved.has(attribute.value) && attribute.namespaceURI !== XMLNS_NS) unresolved = true;
-            continue;
-          }
-          const target = resolved.get(attribute.value);
-          if (target === undefined) unresolved = true;
-          else element.setAttributeNS(attribute.namespaceURI, attribute.name, target);
-        }
-      }
       // An unresolvable reference never matches anything, so no slot showing
       // it is treated as represented.
-      identities.set(path, unresolved ? `unresolved:${label}:${path}` : canonicalNode(semantic));
+      identities.set(path, (await resolvedStory(archive, path, xml))?.semantic ?? `unresolved:${label}:${path}`);
     }
     return identities;
   };
@@ -1777,6 +1788,22 @@ export async function sectionAlignedOrdinaryStoryInputs(
   const comparedIdentity = identityOf(comparedParts);
   const revisedIdentity = identityOf(revisedParts);
 
+  // What each story's references resolve to, in document order. The story
+  // comparison carries the original's references into the Reject All view
+  // only when the two stories reference the same things in the same order.
+  const referencesOf = async (
+    archive: DocxArchive,
+    stories: ReadonlyMap<string, { xml: string }>,
+  ): Promise<Map<string, string | undefined>> => {
+    const references = new Map<string, string | undefined>();
+    for (const [path, story] of stories) references.set(path, (await resolvedStory(archive, path, story.xml))?.references);
+    return references;
+  };
+  const [originalReferences, revisedReferences] = await Promise.all([
+    referencesOf(originalArchive, originalStories),
+    referencesOf(revisedArchive, revisedStories),
+  ]);
+
   const eligible = (comparedPath: string, originalPath: string): boolean => {
     const originalStory = originalStories.get(originalPath);
     const revisedStory = revisedStories.get(comparedPath);
@@ -1789,6 +1816,12 @@ export async function sectionAlignedOrdinaryStoryInputs(
     if (ordinaryStoryScaffoldFingerprint(originalStory.xml) !== ordinaryStoryScaffoldFingerprint(revisedStory.xml)) {
       return false;
     }
+    // Both stories must reference the same resolved targets (internal
+    // targets by content, VML o:relid included) ...
+    const originalResolved = originalReferences.get(originalPath);
+    if (originalResolved === undefined || originalResolved !== revisedReferences.get(comparedPath)) return false;
+    // ... and the relationship closure the story splice remaps (#713) must
+    // read them too; it reads unprefixed relationship parts only.
     const originalClosure = relationshipClosureFingerprint(
       parseXml(originalStory.xml).documentElement,
       relationshipTargets(originalStory.relationshipsXml),
