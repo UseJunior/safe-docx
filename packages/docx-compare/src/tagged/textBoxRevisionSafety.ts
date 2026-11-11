@@ -430,104 +430,6 @@ function relationshipTargets(
 }
 
 /**
- * `relationshipTargets`, with every internal target's part content folded in.
- *
- * A text-box story carries its pictures and embedded objects as atomic
- * leaves since #1380, and a leaf compares by its markup only. A picture or
- * object whose part was replaced under the same relationship id and target
- * path has identical markup on both sides, so without the content the
- * closure check would admit the story and the swap would be carried with no
- * revision and no report. With it, the closure differs and the story is
- * refused instead. A target's content includes, recursively, the content of
- * the parts its own relationships reach (a chart's embedded workbook), so a
- * replacement anywhere below the story is seen.
- *
- * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
- * @see https://github.com/UseJunior/safe-docx/issues/1380
- */
-async function relationshipTargetsWithContent(
-  archive: DocxArchive,
-  relationshipsXml: string | null,
-  ownerPartPath: string,
-): Promise<ReadonlyMap<string, string>> {
-  const internalTargets = (
-    xml: string | null,
-    owner: string,
-  ): Array<[id: string, semantics: string, partPath: string | undefined]> =>
-    [...relationshipTargets(xml)].map(([id, semantics]) => {
-      const [, target = '', targetMode = ''] = semantics.split('|');
-      if (targetMode === 'External') return [id, semantics, undefined];
-      const partPath = target.startsWith('/')
-        ? posix.normalize(target).replace(/^\/+/u, '')
-        : posix.normalize(posix.join(posix.dirname(owner), target));
-      return [id, semantics, partPath];
-    });
-  // A part's own digest (its bytes and its relationships) depends on nothing
-  // else, so it can be memoized. A closure fingerprint is then the sorted set
-  // of every part reachable from the target, which is the same however the
-  // walk reaches it. A recursive fingerprint memoized per part is not: inside
-  // a relationship cycle, a part first reached through another member of the
-  // cycle would be cached with that member cut off, and a target reaching
-  // the cycle later would reuse the truncated digest and miss a replacement
-  // (round-3 review of #1380).
-  const partDigests = new Map<string, Promise<{ digest: string; next: string[] }>>();
-  const partDigest = (partPath: string): Promise<{ digest: string; next: string[] }> => {
-    let pending = partDigests.get(partPath);
-    if (!pending) {
-      pending = (async () => {
-        const bytes = await archive.getFileBuffer(partPath);
-        if (!bytes) return { digest: 'missing', next: [] };
-        const digest = createHash('sha256').update(bytes);
-        const nested = internalTargets(
-          await archive.getFile(owningRelationshipsPath(partPath)),
-          partPath,
-        ).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-        const next: string[] = [];
-        for (const [id, semantics, nestedPath] of nested) {
-          digest.update(`\n${id}=${semantics}`);
-          if (nestedPath !== undefined) next.push(nestedPath);
-        }
-        return { digest: digest.digest('hex'), next };
-      })();
-      partDigests.set(partPath, pending);
-    }
-    return pending;
-  };
-  const fingerprints = new Map<string, Promise<string>>();
-  const fingerprint = (root: string): Promise<string> => {
-    let pending = fingerprints.get(root);
-    if (!pending) {
-      pending = (async () => {
-        const reached = new Map<string, string>();
-        const queue = [root];
-        while (queue.length > 0) {
-          const partPath = queue.pop()!;
-          if (reached.has(partPath)) continue;
-          const { digest, next } = await partDigest(partPath);
-          reached.set(partPath, digest);
-          queue.push(...next);
-        }
-        const closure = createHash('sha256');
-        for (const partPath of [...reached.keys()].sort()) {
-          closure.update(`${partPath}=${reached.get(partPath)}\n`);
-        }
-        return closure.digest('hex');
-      })();
-      fingerprints.set(root, pending);
-    }
-    return pending;
-  };
-  const targets = new Map<string, string>();
-  for (const [id, semantics, partPath] of internalTargets(relationshipsXml, ownerPartPath)) {
-    targets.set(
-      id,
-      partPath === undefined ? semantics : `${semantics}|${await fingerprint(partPath)}`,
-    );
-  }
-  return targets;
-}
-
-/**
  * Does this attribute hold a relationship id of its part? Every `r:*`
  * attribute does, and so does `o:relid`, the relationship id a VML picture's
  * `v:imagedata` may name its image by (vml-officeDrawing.xsd types it
@@ -1529,16 +1431,14 @@ async function ancillaryStoryInputs(
         reason: DIVERGENT_STORAGE_SHAPE_REASON,
       }]);
     }
-    const originalTargets = await relationshipTargetsWithContent(
-      originalArchive,
-      pair.original.relationshipsXml,
-      pair.original.targetPath,
-    );
-    const revisedTargets = await relationshipTargetsWithContent(
-      revisedArchive,
-      pair.revised.relationshipsXml,
-      pair.revised.targetPath,
-    );
+    // The closure compares relationship semantics (type, target, mode), which
+    // is what rebinding the compared story to its owner needs. A picture or
+    // object whose payload changed under the same semantics is admitted: the
+    // story comparison carries it, and `auditPicturePayloads` lists it in
+    // `unrepresentedChanges` after the comparison, instead of the whole
+    // comparison being refused (#1430).
+    const originalTargets = relationshipTargets(pair.original.relationshipsXml);
+    const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
     for (let index = 0; index < pair.original.textBoxes.length; index += 1) {
       const originalTextBox = pair.original.textBoxes[index]!;
       const revisedTextBox = pair.revised.textBoxes[index]!;
@@ -2190,15 +2090,14 @@ export async function prepareTextBoxStoryComparison(
     originalDocumentXml,
     revisedDocumentXml,
   );
-  const originalRelationshipTargets = await relationshipTargetsWithContent(
-    originalArchive,
+  // Relationship semantics only: a payload changed under the same semantics
+  // is carried by the story comparison and listed by `auditPicturePayloads`
+  // rather than refusing the comparison (#1430).
+  const originalRelationshipTargets = relationshipTargets(
     await originalArchive.getFile('word/_rels/document.xml.rels'),
-    'word/document.xml',
   );
-  const revisedRelationshipTargets = await relationshipTargetsWithContent(
-    revisedArchive,
+  const revisedRelationshipTargets = relationshipTargets(
     await revisedArchive.getFile('word/_rels/document.xml.rels'),
-    'word/document.xml',
   );
   const originalDocument = parseXml(originalDocumentXml);
   const revisedDocument = parseXml(revisedDocumentXml);

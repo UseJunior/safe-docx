@@ -4217,15 +4217,23 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata",
-      "claimRationale": "Part 4 §19.1.2.11 defines `v:imagedata`, the image of a VML picture, which names\nits image part by relationship id through either `r:id` or the\n`urn:schemas-microsoft-com:office:office` attribute `o:relid`; both are typed\n`ST_RelationshipId`. safe-docx reads both spellings as relationship references\nwhen it fingerprints the relationship closure of a text-box story and when it\nrebinds a compared story's relationship ids to the owning part, so a picture in\na text box stays bound to its image and a swapped image is refused rather than\nlost.",
+      "claimRationale": "Part 4 §19.1.2.11 defines `v:imagedata`, the image of a VML picture, which names\nits image part by relationship id through either `r:id` or the\n`urn:schemas-microsoft-com:office:office` attribute `o:relid`; both are typed\n`ST_RelationshipId`. safe-docx reads both spellings as relationship references\nwhen it fingerprints the relationship closure of a text-box story, when it\nrebinds a compared story's relationship ids to the owning part, and when it\nrenumbers, imports and audits picture payloads, so a picture stays bound to its\nimage and a swapped image is redlined in the main story or listed in\n`unrepresentedChanges` elsewhere, never lost.",
       "evidence": [
         {
           "kind": "source",
           "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
         },
         {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/picturePayload.ts"
+        },
+        {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts"
         }
       ]
     },
