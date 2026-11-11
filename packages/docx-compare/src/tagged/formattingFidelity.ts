@@ -30,6 +30,12 @@ import { childElements, findChildByTagName } from '@usejunior/docx-core';
 import { RUN_PROPERTY_FRIENDLY_NAMES } from '@usejunior/docx-core';
 import { PARAGRAPH_PROPERTY_FRIENDLY_NAMES } from '../propertyNaming.js';
 import { normalizeVolatilePagerefCachesForComparison } from '../fieldComparisonSemantics.js';
+import {
+  inheritStoryReferences,
+  STORY_ROLES,
+  type StoryKind,
+  type StoryRole,
+} from './effectiveStoryBindings.js';
 
 // =============================================================================
 // Report types
@@ -82,7 +88,11 @@ export interface FormattingFidelityReport {
   paragraphFormatting: FormattingDimensionTally;
   /** Per-paragraph w:tblPr/w:trPr/w:tcPr chain comparison for paragraphs inside tables. */
   tableFormatting: FormattingDimensionTally;
-  /** Per-section-break w:sectPr comparison, aligned by document-order index. */
+  /**
+   * Per-section-break w:sectPr comparison, aligned by document-order index.
+   * Header/footer references compare by the part each section shows after
+   * inheritance, not by the literal reference elements.
+   */
   sectionFormatting: FormattingDimensionTally;
   /** Paragraphs whose text could not be content-aligned (content divergence, not formatting). */
   unalignedExpectedParagraphs: number;
@@ -581,6 +591,77 @@ function compareTableFormatting(
   return makeTally(compared, divergent);
 }
 
+const STORY_KIND_BY_REFERENCE_TAG: Readonly<Record<string, StoryKind>> = {
+  'w:headerReference': 'header',
+  'w:footerReference': 'footer',
+};
+
+const STORY_ROLE_SET: ReadonlySet<string> = new Set(STORY_ROLES);
+
+/**
+ * The header/footer reference each section shows per kind and type, with
+ * inheritance resolved, keyed by the canonical reference element. Kinds with
+ * a reference Word cannot place (a missing or unknown `w:type`, or two
+ * references of one type in one section) are listed in `unresolved`, and
+ * their divergences are never treated as redundant.
+ */
+interface SectionStoryReferences {
+  shown: ReadonlyMap<string, string | undefined>;
+  unresolved: ReadonlySet<StoryKind>;
+}
+
+function sectionStoryReferences(sections: readonly Element[]): SectionStoryReferences {
+  const explicit = new Map<string, string>();
+  const unresolved = new Set<StoryKind>();
+  sections.forEach((sectPr, sectionOrdinal) => {
+    for (const reference of childElements(sectPr)) {
+      const kind = STORY_KIND_BY_REFERENCE_TAG[reference.tagName];
+      if (!kind) continue;
+      const role = reference.getAttribute('w:type') ?? '';
+      const key = `${sectionOrdinal}:${kind}:${role}`;
+      if (!STORY_ROLE_SET.has(role) || explicit.has(key)) {
+        unresolved.add(kind);
+        continue;
+      }
+      explicit.set(key, canonicalizeElement(reference));
+    }
+  });
+  const shown = new Map<string, string | undefined>();
+  for (const slot of inheritStoryReferences(sections.length, ({ sectionOrdinal, kind, role }) =>
+    explicit.get(`${sectionOrdinal}:${kind}:${role}`))) {
+    shown.set(`${slot.sectionOrdinal}:${slot.kind}:${slot.role}`, slot.value);
+  }
+  return { shown, unresolved };
+}
+
+/**
+ * Whether two sections at the same index show the same header (footer)
+ * story of every type once inheritance is resolved. Within one relationship
+ * id space, an explicit reference to the part the section would inherit
+ * anyway shows the same pages as no reference, so a literal difference
+ * between the two is not a formatting divergence. Word writes that shape
+ * when it deletes a section break before a section with no references of its
+ * own: the removed section's references move onto the following one. Every
+ * type is compared, displayed or not, because a later section that turns
+ * `w:titlePg` on inherits through a slot this section does not display.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1203
+ */
+function showsSameStories(
+  expected: SectionStoryReferences,
+  actual: SectionStoryReferences,
+  sectionOrdinal: number,
+  kind: StoryKind,
+): boolean {
+  if (expected.unresolved.has(kind) || actual.unresolved.has(kind)) return false;
+  return STORY_ROLES.every((role: StoryRole) => {
+    const key = `${sectionOrdinal}:${kind}:${role}`;
+    return expected.shown.get(key) === actual.shown.get(key);
+  });
+}
+
 function compareSectionFormatting(
   expectedRoot: Element,
   actualRoot: Element,
@@ -588,14 +669,22 @@ function compareSectionFormatting(
 ): FormattingDimensionTally {
   const expectedSections = collectSectionProperties(expectedRoot);
   const actualSections = collectSectionProperties(actualRoot);
+  const expectedStories = sectionStoryReferences(expectedSections);
+  const actualStories = sectionStoryReferences(actualSections);
   const compared = Math.max(expectedSections.length, actualSections.length);
   let divergent = 0;
   for (let i = 0; i < compared; i++) {
     const expectedProps = propertyMap(expectedSections[i] ?? null, REVISION_PROPERTY_TAGS);
     const actualProps = propertyMap(actualSections[i] ?? null, REVISION_PROPERTY_TAGS);
     if (containerKey(expectedProps) === containerKey(actualProps)) continue;
+    const bothPresent = i < expectedSections.length && i < actualSections.length;
+    const diffs = diffPropertyMaps(expectedProps, actualProps, {}).filter((diff) => {
+      const kind = STORY_KIND_BY_REFERENCE_TAG[diff.property];
+      return !(bothPresent && kind && showsSameStories(expectedStories, actualStories, i, kind));
+    });
+    if (diffs.length === 0) continue;
     divergent++;
-    for (const diff of diffPropertyMaps(expectedProps, actualProps, {})) {
+    for (const diff of diffs) {
       divergences.push({
         scope: 'section',
         paragraphIndex: -1,

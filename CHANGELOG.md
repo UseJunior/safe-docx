@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Deleting a section break the way Word does it no longer fails the
+  comparison with `TaggedPublicationSafetyError ... formattingFidelity` when
+  the following section had no header/footer references of its own. Word
+  copies the removed section's references onto that section, so Reject All
+  names explicitly the parts the original section inherited. The
+  formatting-fidelity section check now compares header/footer references by
+  the part each section shows once inheritance from earlier sections is
+  resolved (ECMA-376 Part 1 §17.10.5, §17.10.2): a reference that names the
+  part the section would inherit anyway is not a divergence. A reference that
+  changes what a section shows still fails the check. (#1203)
+
 - Header and footer text edits are now tracked when the section layout also
   changes: a section added or removed, a page-size, orientation or margin
   change, `w:titlePg` switched, or a slot moved to a differently named part
