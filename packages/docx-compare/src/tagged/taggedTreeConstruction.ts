@@ -17,6 +17,7 @@ import {
 } from '../textSimilarity.js';
 import { computeNumberingIdentities, numberingListMembership } from './numberingIntegration.js';
 import { detectParagraphJoins } from './paragraphJoinDetection.js';
+import { rowShape } from './tableTopologyGuard.js';
 import {
   nextRevisionId,
   usedRevisionIds,
@@ -462,6 +463,7 @@ function lcsPairs(
   revised: readonly WmlElement[],
   originalNumberingIdentities: ReadonlyMap<WmlElement, string>,
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
+  cellKeys?: { original: ReadonlyMap<WmlElement, string>; revised: ReadonlyMap<WmlElement, string> },
 ): Array<[number, number]> {
   const fieldContexts = (elements: readonly WmlElement[]): Map<number, string> => {
     const contexts = new Map<number, string>();
@@ -500,9 +502,9 @@ function lcsPairs(
     field: string | undefined,
     numberingIdentities: ReadonlyMap<WmlElement, string>,
   ): string => JSON.stringify([field ?? null, alignmentKey(element, numberingIdentities)]);
-  const originalKeys = original.map((element, index) =>
+  const originalKeys = original.map((element, index) => cellKeys?.original.get(element) ??
     key(element, originalFields.get(index), originalNumberingIdentities));
-  const revisedKeys = revised.map((element, index) =>
+  const revisedKeys = revised.map((element, index) => cellKeys?.revised.get(element) ??
     key(element, revisedFields.get(index), revisedNumberingIdentities));
   const keyed = (i: number, j: number): boolean => originalKeys[i] === revisedKeys[j];
   // Keys hold only a paragraph's list and level. Among equally long
@@ -590,6 +592,208 @@ function sameBlockContentControl(left: WmlElement, right: WmlElement): boolean {
     properties(left) === properties(right);
 }
 
+/** Minimum similarity for pairing two side-only siblings in a gap. */
+const GAP_PAIRING_SIMILARITY = 0.25;
+
+function similarityWords(value: string): Set<string> {
+  return new Set(value.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
+}
+
+function wordJaccard(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  if (a.size === 0 || b.size === 0) return a.size === b.size ? 1 : 0;
+  let intersection = 0;
+  for (const word of a) if (b.has(word)) intersection++;
+  return intersection / (a.size + b.size - intersection);
+}
+
+const CELL_WRAPPERS = new Set(['sdt', 'sdtContent', 'customXml']);
+
+/** A row's cells in grid order, looking through cell-level content wrappers. */
+function rowCells(row: WmlElement): WmlElement[] {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const cells: WmlElement[] = [];
+  const visit = (parent: WmlElement): void => {
+    for (const child of childElements(parent)) {
+      if (child.namespaceURI !== W) continue;
+      if (child.localName === 'tc') cells.push(child);
+      else if (CELL_WRAPPERS.has(child.localName)) visit(child);
+    }
+  };
+  visit(row);
+  return cells;
+}
+
+/**
+ * Word set of block content, read paragraph by paragraph: adjacent cells and
+ * paragraphs have no separator in `textContent`, so reading it whole would
+ * fuse their last and first words.
+ */
+function blockWords(element: WmlElement): Set<string> {
+  const words = new Set<string>();
+  for (const paragraph of Array.from(element.getElementsByTagNameNS(
+    'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'p',
+  ))) {
+    for (const word of similarityWords(paragraph.textContent ?? '')) words.add(word);
+  }
+  return words;
+}
+
+/** Character bigrams of block content, read paragraph by paragraph. */
+function blockBigrams(element: WmlElement): Set<string> {
+  const bigrams = new Set<string>();
+  for (const paragraph of Array.from(element.getElementsByTagNameNS(
+    'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'p',
+  ))) {
+    const text = (paragraph.textContent ?? '').toLowerCase().replace(/\s+/gu, ' ').trim();
+    for (let index = 0; index + 1 < text.length; index++) bigrams.add(text.slice(index, index + 2));
+  }
+  return bigrams;
+}
+
+function bigramDice(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const bigram of a) if (b.has(bigram)) intersection++;
+  return (2 * intersection) / (a.size + b.size);
+}
+
+interface CellProfile { words: Set<string>; bigrams: Set<string> }
+interface RowProfile {
+  shape: string;
+  words: Set<string>;
+  cells: CellProfile[];
+  /** Cells sit inside a cell-level `w:sdt`/`w:customXml`, out of reach of grid-interval keys. */
+  wrappedCells: boolean;
+  /** `w:trPr` already carries a row insertion or deletion. */
+  rowRevision: boolean;
+}
+/** Reset per construction, so a DOM reused after mutation is profiled afresh. */
+let rowProfiles = new WeakMap<WmlElement, RowProfile>();
+function rowProfile(row: WmlElement): RowProfile {
+  let profile = rowProfiles.get(row);
+  if (!profile) {
+    profile = {
+      shape: rowShape(row),
+      words: blockWords(row),
+      cells: rowCells(row).map((cell) => ({ words: blockWords(cell), bigrams: blockBigrams(cell) })),
+      wrappedCells: childElements(row).some((child) =>
+        child.namespaceURI === row.namespaceURI && ['sdt', 'customXml'].includes(child.localName)),
+      rowRevision: childElements(row)
+        .filter((child) => child.namespaceURI === row.namespaceURI && child.localName === 'trPr')
+        .some((trPr) => childElements(trPr).some((child) =>
+          child.namespaceURI === row.namespaceURI && ['ins', 'del'].includes(child.localName))),
+    };
+    rowProfiles.set(row, profile);
+  }
+  return profile;
+}
+
+/**
+ * Cell-text similarity of two table rows. Rows with different skeletons
+ * (grid offsets, cell spans or merge states) cannot be compared cell by
+ * cell, so their similarity is the word-set similarity of the whole row.
+ * Rows with the same skeleton score the mean similarity of the cells that
+ * share a grid interval, each the better of word-set similarity and
+ * character-bigram similarity (so a short label edited within one word,
+ * such as `Top` to `Topped`, still agrees). Two empty cells agree, but a
+ * row pair agrees only when at least one pair of non-empty cells shares
+ * text, so rows that merely share blank cells are not taken for an edit of
+ * one another.
+ */
+function rowSimilarity(left: WmlElement, right: WmlElement): number {
+  const a = rowProfile(left);
+  const b = rowProfile(right);
+  if (a.words.size === 0 || b.words.size === 0) return a.words.size === b.words.size ? 1 : 0;
+  if (a.shape !== b.shape) return wordJaccard(a.words, b.words);
+  if (a.cells.length === 0 || a.cells.length !== b.cells.length) return 0;
+  let total = 0;
+  let sharedText = false;
+  for (let index = 0; index < a.cells.length; index++) {
+    const leftCell = a.cells[index]!;
+    const rightCell = b.cells[index]!;
+    const score = Math.max(
+      wordJaccard(leftCell.words, rightCell.words),
+      bigramDice(leftCell.bigrams, rightCell.bigrams),
+    );
+    if (leftCell.words.size > 0 && rightCell.words.size > 0 && score > 0) sharedText = true;
+    total += score;
+  }
+  return sharedText ? total / a.cells.length : 0;
+}
+
+/**
+ * Whether two rows in a gap are one edited row. Rows pair by cell-text
+ * similarity, never by position alone: a deleted row beside an unrelated
+ * inserted row is a whole-row deletion plus a whole-row insertion, not
+ * in-row edits that carry no row marker. Only rows with the same skeleton
+ * pair across positions; a skeleton change at the same position still
+ * reaches the table-topology guard.
+ *
+ * Two kinds of row keep the earlier same-position pairing and never pair
+ * across positions: a row whose cells sit in a cell-level content wrapper,
+ * whose cells grid-interval keys cannot reach, and a row whose `w:trPr`
+ * already carries a row revision, which a whole-row revision would
+ * duplicate.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1227
+ */
+function isLegacyRow(row: WmlElement): boolean {
+  const profile = rowProfile(row);
+  return profile.wrappedCells || profile.rowRevision;
+}
+
+function similarRows(left: WmlElement, right: WmlElement, samePosition: boolean): boolean {
+  if (isLegacyRow(left) || isLegacyRow(right)) return samePosition;
+  const a = rowProfile(left);
+  const b = rowProfile(right);
+  if (!samePosition && a.shape !== b.shape) return false;
+  return rowSimilarity(left, right) >= GAP_PAIRING_SIMILARITY;
+}
+
+function isTableRow(element: WmlElement): boolean {
+  return element.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
+    element.localName === 'tr';
+}
+
+/**
+ * Alignment keys that pair a row's direct cells by grid interval, for two
+ * rows with the same skeleton and no cell-level content wrappers. Text keys would anchor a cell to an equal-text
+ * cell in another column and leave the cells between them side-only, which
+ * no `w:tc` revision can express; by interval every cell pairs with the cell
+ * in its own columns and is diffed in place.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1227
+ */
+function cellGridIntervalKeys(row: WmlElement): Map<WmlElement, string> {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const gridNumber = (element: WmlElement | undefined, fallback: number, minimum: number): number => {
+    const parsed = Number(element?.getAttributeNS(W, 'val') ?? NaN);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : fallback;
+  };
+  const direct = (parent: WmlElement | undefined, name: string): WmlElement | undefined => parent
+    ? childElements(parent).find((child) => child.namespaceURI === W && child.localName === name)
+    : undefined;
+  let column = gridNumber(direct(direct(row, 'trPr'), 'gridBefore'), 0, 0);
+  const keys = new Map<WmlElement, string>();
+  const visit = (parent: WmlElement, isRow: boolean): void => {
+    for (const child of childElements(parent)) {
+      if (child.namespaceURI !== W) continue;
+      if (child.localName === 'tc') {
+        const start = column;
+        column += gridNumber(direct(direct(child, 'tcPr'), 'gridSpan'), 1, 1);
+        if (isRow) keys.set(child, JSON.stringify(['tc-grid-interval', start, column]));
+      } else if (CELL_WRAPPERS.has(child.localName)) {
+        visit(child, false);
+      }
+    }
+  };
+  visit(row, true);
+  return keys;
+}
+
 function paragraphSimilarity(
   left: WmlElement,
   right: WmlElement,
@@ -597,18 +801,15 @@ function paragraphSimilarity(
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): number {
   if (sameBlockContentControl(left, right)) return 1;
+  if (isTableRow(left) && isTableRow(right)) {
+    return similarRows(left, right, false) ? rowSimilarity(left, right) : 0;
+  }
   if (left.localName !== right.localName || !['p', 'r'].includes(left.localName)) return 0;
   if (semanticAttributeSignature(left) !== semanticAttributeSignature(right)) return 0;
   // List and level, not the rendered label, as in `alignmentKey` (#1253).
   if (numberingListMembership(originalNumberingIdentities.get(left)) !==
       numberingListMembership(revisedNumberingIdentities.get(right))) return 0;
-  const words = (value: string): Set<string> => new Set(value.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
-  const a = words(left.textContent ?? '');
-  const b = words(right.textContent ?? '');
-  if (a.size === 0 || b.size === 0) return a.size === b.size ? 1 : 0;
-  let intersection = 0;
-  for (const word of a) if (b.has(word)) intersection++;
-  return intersection / (a.size + b.size - intersection);
+  return wordJaccard(similarityWords(left.textContent ?? ''), similarityWords(right.textContent ?? ''));
 }
 
 function similarParagraphPairs(
@@ -623,7 +824,7 @@ function similarParagraphPairs(
       const similarity = paragraphSimilarity(
         original[i]!, revised[j]!, originalNumberingIdentities, revisedNumberingIdentities,
       );
-      const paired = similarity >= 0.25 ? similarity + dp[i + 1]![j + 1]! : -1;
+      const paired = similarity >= GAP_PAIRING_SIMILARITY ? similarity + dp[i + 1]![j + 1]! : -1;
       dp[i]![j] = Math.max(paired, dp[i + 1]![j]!, dp[i]![j + 1]!);
     }
   }
@@ -634,7 +835,7 @@ function similarParagraphPairs(
     const similarity = paragraphSimilarity(
       original[i]!, revised[j]!, originalNumberingIdentities, revisedNumberingIdentities,
     );
-    if (similarity >= 0.25 && Math.abs(dp[i]![j]! - (similarity + dp[i + 1]![j + 1]!)) < 1e-9) {
+    if (similarity >= GAP_PAIRING_SIMILARITY && Math.abs(dp[i]![j]! - (similarity + dp[i + 1]![j + 1]!)) < 1e-9) {
       pairs.push([i++, j++]);
     } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
@@ -702,11 +903,17 @@ function constructBoth(
   }
   const originalChildren = childElements(original);
   const revisedChildren = childElements(revised);
+  const cellKeys = isTableRow(original) && isTableRow(revised) &&
+      !rowProfile(original).wrappedCells && !rowProfile(revised).wrappedCells &&
+      rowProfile(original).shape === rowProfile(revised).shape
+    ? { original: cellGridIntervalKeys(original), revised: cellGridIntervalKeys(revised) }
+    : undefined;
   const pairs = lcsPairs(
     originalChildren,
     revisedChildren,
     originalNumberingIdentities,
     revisedNumberingIdentities,
+    cellKeys,
   );
   const children: TaggedNode[] = [];
   const emitAlignedPair = (left: WmlElement, right: WmlElement): void => {
@@ -741,6 +948,13 @@ function constructBoth(
       oi++;
       ri++;
     }
+    // A gap holding a row that must keep same-position pairing (see
+    // `similarRows`) pairs all its rows by position, as before: refusing an
+    // earlier pair would end this loop before that row is reached.
+    const legacyRowGap = originalEnd - oi === revisedEnd - ri && [
+      ...originalChildren.slice(oi, originalEnd),
+      ...revisedChildren.slice(ri, revisedEnd),
+    ].some((element) => isTableRow(element) && isLegacyRow(element));
     while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;
@@ -749,6 +963,7 @@ function constructBoth(
         semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
         (childElements(left).length > 0 || childElements(right).length > 0) &&
         canRecursivelyAlignContent(left, right) &&
+        (!isTableRow(left) || legacyRowGap || similarRows(left, right, true)) &&
         (left.localName !== 'r' || (
           left.textContent === right.textContent &&
           left.getElementsByTagNameNS(
@@ -1223,6 +1438,7 @@ export function constructTaggedTree(
       (original.localName ?? original.tagName) !== (revised.localName ?? revised.tagName)) {
     throw new Error('tagged-tree roots must have the same element identity and story role');
   }
+  rowProfiles = new WeakMap();
   const settings: ResolvedTaggedTreeConstructionOptions = {
     detectFormatChanges: options.detectFormatChanges ?? true,
     detectMoves: options.detectMoves ?? true,
