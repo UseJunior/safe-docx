@@ -658,8 +658,17 @@ function bigramDice(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
 }
 
 interface CellProfile { words: Set<string>; bigrams: Set<string> }
-interface RowProfile { shape: string; words: Set<string>; cells: CellProfile[] }
-const rowProfiles = new WeakMap<WmlElement, RowProfile>();
+interface RowProfile {
+  shape: string;
+  words: Set<string>;
+  cells: CellProfile[];
+  /** Cells sit inside a cell-level `w:sdt`/`w:customXml`, out of reach of grid-interval keys. */
+  wrappedCells: boolean;
+  /** `w:trPr` already carries a row insertion or deletion. */
+  rowRevision: boolean;
+}
+/** Reset per construction, so a DOM reused after mutation is profiled afresh. */
+let rowProfiles = new WeakMap<WmlElement, RowProfile>();
 function rowProfile(row: WmlElement): RowProfile {
   let profile = rowProfiles.get(row);
   if (!profile) {
@@ -667,6 +676,12 @@ function rowProfile(row: WmlElement): RowProfile {
       shape: rowShape(row),
       words: blockWords(row),
       cells: rowCells(row).map((cell) => ({ words: blockWords(cell), bigrams: blockBigrams(cell) })),
+      wrappedCells: childElements(row).some((child) =>
+        child.namespaceURI === row.namespaceURI && ['sdt', 'customXml'].includes(child.localName)),
+      rowRevision: childElements(row)
+        .filter((child) => child.namespaceURI === row.namespaceURI && child.localName === 'trPr')
+        .some((trPr) => childElements(trPr).some((child) =>
+          child.namespaceURI === row.namespaceURI && ['ins', 'del'].includes(child.localName))),
     };
     rowProfiles.set(row, profile);
   }
@@ -714,12 +729,22 @@ function rowSimilarity(left: WmlElement, right: WmlElement): number {
  * pair across positions; a skeleton change at the same position still
  * reaches the table-topology guard.
  *
+ * Two kinds of row keep the earlier same-position pairing and never pair
+ * across positions: a row whose cells sit in a cell-level content wrapper,
+ * whose cells grid-interval keys cannot reach, and a row whose `w:trPr`
+ * already carries a row revision, which a whole-row revision would
+ * duplicate.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @see https://github.com/UseJunior/safe-docx/issues/1227
  */
 function similarRows(left: WmlElement, right: WmlElement, samePosition: boolean): boolean {
-  if (!samePosition && rowProfile(left).shape !== rowProfile(right).shape) return false;
+  const a = rowProfile(left);
+  const b = rowProfile(right);
+  const legacy = a.wrappedCells || b.wrappedCells || a.rowRevision || b.rowRevision;
+  if (legacy) return samePosition;
+  if (!samePosition && a.shape !== b.shape) return false;
   return rowSimilarity(left, right) >= GAP_PAIRING_SIMILARITY;
 }
 
@@ -730,7 +755,7 @@ function isTableRow(element: WmlElement): boolean {
 
 /**
  * Alignment keys that pair a row's direct cells by grid interval, for two
- * rows with the same skeleton. Text keys would anchor a cell to an equal-text
+ * rows with the same skeleton and no cell-level content wrappers. Text keys would anchor a cell to an equal-text
  * cell in another column and leave the cells between them side-only, which
  * no `w:tc` revision can express; by interval every cell pairs with the cell
  * in its own columns and is diffed in place.
@@ -875,6 +900,7 @@ function constructBoth(
   const originalChildren = childElements(original);
   const revisedChildren = childElements(revised);
   const cellKeys = isTableRow(original) && isTableRow(revised) &&
+      !rowProfile(original).wrappedCells && !rowProfile(revised).wrappedCells &&
       rowProfile(original).shape === rowProfile(revised).shape
     ? { original: cellGridIntervalKeys(original), revised: cellGridIntervalKeys(revised) }
     : undefined;
@@ -1401,6 +1427,7 @@ export function constructTaggedTree(
       (original.localName ?? original.tagName) !== (revised.localName ?? revised.tagName)) {
     throw new Error('tagged-tree roots must have the same element identity and story role');
   }
+  rowProfiles = new WeakMap();
   const settings: ResolvedTaggedTreeConstructionOptions = {
     detectFormatChanges: options.detectFormatChanges ?? true,
     detectMoves: options.detectMoves ?? true,

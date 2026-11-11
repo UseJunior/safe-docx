@@ -119,7 +119,7 @@ async function assertSchema(buffer: Buffer): Promise<void> {
   }
 }
 
-/** Accept-all is the revised document and reject-all the original, with both appliers and the table footprint. */
+/** Accept-all projects to the revised document and reject-all to the original, with both appliers and the table footprint. */
 async function assertParity(original: Buffer, revised: Buffer, compared: Buffer): Promise<void> {
   const source = await xmlOf(original);
   const target = await xmlOf(revised);
@@ -130,11 +130,14 @@ async function assertParity(original: Buffer, revised: Buffer, compared: Buffer)
   await rejected.rejectChanges();
   const coreAccepted = await xmlOf((await accepted.toBuffer()).buffer);
   const coreRejected = await xmlOf((await rejected.toBuffer()).buffer);
+  // Inputs may carry their own revisions: compare against their projections.
+  const expectedAccept = acceptAllChanges(target);
+  const expectedReject = rejectAllChanges(source);
   for (const [projected, expected] of [
-    [acceptAllChanges(output), target],
-    [coreAccepted, target],
-    [rejectAllChanges(output), source],
-    [coreRejected, source],
+    [acceptAllChanges(output), expectedAccept],
+    [coreAccepted, expectedAccept],
+    [rejectAllChanges(output), expectedReject],
+    [coreRejected, expectedReject],
   ] as const) {
     expect(extractTextWithParagraphs(projected)).toBe(extractTextWithParagraphs(expected));
     expect(bodyTableFootprint(projected)).toEqual(bodyTableFootprint(expected));
@@ -252,6 +255,41 @@ describe('table rows pair by cell-text similarity', () => {
     await assertParity(original, revised, result.document);
     await assertSchema(result.document);
     expect(tableView(await xmlOf(result.document)).map((entry) => entry.marker)).toEqual(['', 'del', 'ins', 'ins', '', '']);
+  });
+
+  test('keeps same-position pairing for rows whose cells sit in a cell-level wrapper', async () => {
+    // Grid-interval keys do not reach wrapped cells, so such rows never pair
+    // across positions; text keys inside the wrapper must not emit w:tc
+    // revision wrappers.
+    for (const wrapper of ['sdt', 'customXml'] as const) {
+      const open = wrapper === 'sdt' ? '<w:sdt><w:sdtPr/><w:sdtContent>' : '<w:customXml w:element="cells">';
+      const close = wrapper === 'sdt' ? '</w:sdtContent></w:sdt>' : '</w:customXml>';
+      const cell = (text: string) => `<w:tc><w:tcPr/>${p(text)}</w:tc>`;
+      const wrapped = (cells: string[]) => `<w:tr>${open}${cell(cells[0]!)}${cell(cells[1]!)}${close}${cell(cells[2]!)}</w:tr>`;
+      const grid = `<w:tblGrid>${'<w:gridCol w:w="2000"/>'.repeat(3)}</w:tblGrid>`;
+      const tableOf = (rows: string[]) => `<w:tbl><w:tblPr/>${grid}${rows.join('')}</w:tbl>`;
+      const heading = row(['Heading', 'Kept', 'Third']);
+      await compareChecked(
+        tableOf([heading, wrapped(['Alpha beta', 'Gamma delta', 'Shared column'])]),
+        tableOf([heading, wrapped(['Gamma delta', 'Epsilon zeta', 'Shared column']), row(['Unrelated', 'New', 'Row'])]),
+      );
+    }
+  });
+
+  test('keeps same-position pairing for rows that already carry a row revision', async () => {
+    // A whole-row revision on a row whose w:trPr already holds w:ins or w:del
+    // would duplicate the marker.
+    for (const marker of ['ins', 'del'] as const) {
+      const revised = (cells: string[]) => row(cells).replace('<w:tr>',
+        `<w:tr><w:trPr><w:${marker} w:id="90" w:author="Earlier" w:date="2026-01-01T00:00:00Z"/></w:trPr>`);
+      const { xml } = await compareChecked(
+        table([R0[0]!]).replace('</w:tbl>', `${revised(['Apple', 'Red', 'Fruit'])}${row(['Kept', 'Row', 'Here'])}</w:tbl>`),
+        table([R0[0]!]).replace('</w:tbl>', `${revised(['Zebra', 'Black', 'Animal'])}${row(['Kept', 'Row', 'Here'])}</w:tbl>`),
+      );
+      for (const trPr of Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'trPr'))) {
+        expect(directChildren(trPr, marker).length).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });
 
