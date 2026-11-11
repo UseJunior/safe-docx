@@ -413,6 +413,14 @@ function runMatchesRetainedFormat(run: Element | undefined, format: RetainedForm
   return underlineMatches && highlightMatches;
 }
 
+function retainedFormattingDiagnosticPassed(diagnostic: RetainedFormattingReport['diagnostics'][number]): boolean {
+  return diagnostic.textRevisionOverlaps === 0
+    && diagnostic.emittedPropertyRanges > 0
+    && diagnostic.propertyCoverageComplete
+    && diagnostic.textMatches
+    && diagnostic.propertyStateMatches;
+}
+
 /**
  * Certify native run-property revisions without trusting comparator summary
  * statistics, and reject text-revision wrappers over property-only intervals.
@@ -477,11 +485,7 @@ export function certifyRetainedFormatting(document: DocxDocument, spans: Resolve
     diagnostics,
     passed: true,
   };
-  report.passed = report.textRevisionOverlaps === 0
-    && diagnostics.every((diagnostic) => diagnostic.emittedPropertyRanges > 0
-      && diagnostic.propertyCoverageComplete
-      && diagnostic.textMatches
-      && diagnostic.propertyStateMatches);
+  report.passed = diagnostics.every(retainedFormattingDiagnosticPassed);
   return report;
 }
 
@@ -2531,10 +2535,13 @@ export async function compileMarkdoc(
   certificate.projectionPassed = projectionChecksPassed(certificate);
   certificate.deliveryReady = certificate.projectionPassed && certificate.draftCompletenessPassed;
   certificate.passed = certificate.deliveryReady;
+  const failedRetainedOperationIds = [...new Set(retainedFormatting.diagnostics
+    .filter((diagnostic) => !retainedFormattingDiagnosticPassed(diagnostic))
+    .map((diagnostic) => diagnostic.operationId))];
   if (!certificate.projectionPassed) throw new DocxMarkdocError(
     retainedSpans.length > 0 && !retainedFormatting.passed ? 'NON_COMMON_RETAINED_SCOPE' : 'VERIFICATION_FAILED',
     retainedSpans.length > 0 && !retainedFormatting.passed
-      ? 'Retained formatting could not be certified over comparator-common text.'
+      ? `Retained formatting could not be certified over comparator-common text for edits: ${failedRetainedOperationIds.join(', ')}.`
       : 'Strict replay verification failed.', {
     certificate,
     sourceText,

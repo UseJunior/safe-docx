@@ -416,14 +416,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "bb96da6371bd2b547e07d0e3ef311aa3cf494dbf4cbad75f103a827015292644",
+            "xmlSha256": "b76948be6dcc7f7d780486db2f1327b315677fe68cf4f934f8cc596e01cff17c",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "ac3259121b498c2dcf76c5270fb670c041b3190c3bb62153a668cb84e4b16f02",
+            "xmlSha256": "b9c1b85dd358e9dd9fd43dfc5fbe07faf680cb593bd5b41385f610c5b9339589",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -493,8 +493,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 1204138,
-            "sha256": "47afb99fccff3c0310416cf11720f6751908b80b1e559180e85bb32de10391e4",
+            "bytes": 928787,
+            "sha256": "c1b3ca4483243f923e165d00a0d0968bed6bdf5f33d9ff32fa8817fa1cd68da6",
             "kind": "xml"
           },
           {
@@ -722,22 +722,22 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 814,
-          "deletions": 734,
-          "modifications": 491,
-          "insertedRanges": 814,
-          "deletedRanges": 734,
-          "insertedAtoms": 2932,
-          "deletedAtoms": 1385,
-          "modifiedParagraphs": 491,
+          "insertions": 465,
+          "deletions": 409,
+          "modifications": 528,
+          "insertedRanges": 465,
+          "deletedRanges": 409,
+          "insertedAtoms": 3156,
+          "deletedAtoms": 1377,
+          "modifiedParagraphs": 528,
           "formatChanges": 16,
           "formatChangeAtoms": 16,
           "insertedTableRows": 0,
           "deletedTableRows": 0,
-          "moves": 276,
+          "moves": 21,
           "movedParagraphs": 0,
-          "moveFromRanges": 276,
-          "moveToRanges": 278
+          "moveFromRanges": 21,
+          "moveToRanges": 21
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"
@@ -1391,14 +1391,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "6d10bb22c753735aee5c3c97d6bfeb1509251222fde4857ba06049a519d9d81d",
+            "xmlSha256": "8f5f6bb27a9b2aada26681da3bc68beade5b8273d8f37a0b449636e0fa59ba26",
             "textSha256": "708094ea72e7000c794b348f7994c2e6d5390b937d81c916a315fffb2f8f0931",
             "sourceTextSha256": "708094ea72e7000c794b348f7994c2e6d5390b937d81c916a315fffb2f8f0931",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "cae78aaab1c9c71f1750eb1657c507da3a2851cfbc4bac7ca60b3094dea00746",
+            "xmlSha256": "08e27615cf2379861534c6d6a9303f50b891c5b0e0728cf514ae74234d32358c",
             "textSha256": "f0b3e43b082b628387e94d73a3db1d9357ddd30e443b044dfa8b8cb9a241405c",
             "sourceTextSha256": "f0b3e43b082b628387e94d73a3db1d9357ddd30e443b044dfa8b8cb9a241405c",
             "matchesSourceText": true,
@@ -1462,8 +1462,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 433051,
-            "sha256": "9a709396180aa4233d621215a5a7a4d7710b8fdd8602b377bf7b6402d71492b5",
+            "bytes": 432248,
+            "sha256": "a41d522fa98f410dda29c4fb070d6a4e6acad02402a9df194c332c8934087433",
             "kind": "xml"
           },
           {
@@ -1505,22 +1505,22 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 46,
-          "deletions": 11,
+          "insertions": 45,
+          "deletions": 10,
           "modifications": 13,
-          "insertedRanges": 46,
-          "deletedRanges": 11,
-          "insertedAtoms": 35,
+          "insertedRanges": 45,
+          "deletedRanges": 10,
+          "insertedAtoms": 36,
           "deletedAtoms": 105,
           "modifiedParagraphs": 13,
           "formatChanges": 1,
           "formatChangeAtoms": 1,
           "insertedTableRows": 0,
           "deletedTableRows": 0,
-          "moves": 1,
+          "moves": 0,
           "movedParagraphs": 0,
-          "moveFromRanges": 1,
-          "moveToRanges": 1
+          "moveFromRanges": 0,
+          "moveToRanges": 0
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"

@@ -287,6 +287,53 @@ describe('complete tagged-tree construction', () => {
     },
   );
 
+  moveConformanceTest('keeps resegmented runs in text-identical paragraphs out of global moves (#1414)', () => {
+    for (const terms of [['Alpha', 'Bravo'], ['Alpha', 'Alpha']]) {
+      for (const splitSource of [false, true]) {
+        const paragraph = (term: string, revised: boolean): string => '<w:p>'
+          + (revised || splitSource
+            ? `<w:r><w:t>“</w:t></w:r><w:r>${revised ? '<w:rPr><w:u w:val="single"/></w:rPr>' : ''}<w:t>${term}</w:t></w:r><w:r><w:t>” has the meaning given in the preamble.</w:t></w:r>`
+            : `<w:r><w:t>“${term}” has the meaning given in the preamble.</w:t></w:r>`)
+          + '</w:p>';
+        const original = documentWithBody(terms.map((term) => paragraph(term, false)).join(''));
+        const revised = documentWithBody(terms.map((term) => paragraph(term, true)).join(''));
+        const result = constructTaggedTree(original, revised);
+        expect(result.moves).toEqual([]);
+        const output = serializeTaggedTree(result.tree, createPreservePlan(original, revised, result.tree, {
+          author: 'Comparator', date: '2026-11-11T00:00:00Z',
+        }), { moves: result.moves });
+        expect(output).toContain('<w:rPrChange');
+        expect(output).not.toMatch(/<w:(?:ins|del|moveFrom|moveTo)(?:\s|>)/u);
+        expect(resolvedText(acceptAllChanges(output))).toBe(revised.textContent);
+        expect(resolvedText(rejectAllChanges(output))).toBe(original.textContent);
+      }
+    }
+  });
+
+  moveConformanceTest('still detects non-text runs moved between text-identical paragraph pairs', () => {
+    for (const [localName, content] of [
+      ['sym', '<w:sym w:font="Wingdings" w:char="F0FC"/>'],
+      ['br', '<w:br w:type="page"/>'],
+      ['drawing', '<w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:docPr id="1" name="Picture 1"/></wp:inline></w:drawing>'],
+    ]) {
+      const first = '<w:r><w:t>First paragraph text.</w:t></w:r>';
+      const second = '<w:r><w:t>Second paragraph text.</w:t></w:r>';
+      const moved = `<w:r>${content}</w:r>`;
+      const original = documentWithBody(`<w:p>${first}${moved}</w:p><w:p>${second}</w:p>`);
+      const revised = documentWithBody(`<w:p>${first}</w:p><w:p>${second}${moved}</w:p>`);
+      const result = constructTaggedTree(original, revised);
+      expect(result.moves).toHaveLength(1);
+      const output = serializeTaggedTree(result.tree, createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-11-11T00:00:00Z',
+      }), { moves: result.moves });
+      for (const [projection, owner] of [[acceptAllChanges(output), 1], [rejectAllChanges(output), 0]] as const) {
+        const paragraphs = parseXml(projection).getElementsByTagNameNS(W_NS, 'p');
+        expect(paragraphs[owner]!.getElementsByTagNameNS(W_NS, localName!).length).toBe(1);
+        expect(paragraphs[1 - owner]!.getElementsByTagNameNS(W_NS, localName!).length).toBe(0);
+      }
+    }
+  });
+
   test('honors fuzzy move threshold, minimum word count, and case behavior', () => {
     const original = body([
       'Opening anchor remains unchanged.',

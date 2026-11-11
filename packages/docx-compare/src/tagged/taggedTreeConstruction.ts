@@ -1314,12 +1314,19 @@ function moveCandidates<T extends OriginalNode | RevisedNode>(
   const candidates: TaggedMoveCandidate<T>[] = [];
   nodes.forEach((node, order) => {
     if (!moveCandidateIsSafe(node)) return;
+    const paragraphOwner = owners.get(node);
+    // A run split by a format-only edit still belongs to its text-identical
+    // paragraph. Global exact/fuzzy matching must not steal it for a repeated
+    // phrase in a neighbor before the serializer refines the local run gap.
+    // Whole-paragraph relocations have no paired paragraph owner.
+    if (isPlainTextRun(node.node) && paragraphOwner &&
+        paragraphOwner.original.textContent === paragraphOwner.revised.textContent) return;
     if (candidates.some((candidate) => candidate.node.node.contains(node.node))) return;
     candidates.push({
       node,
       text: node.node.textContent ?? '',
       order,
-      paragraphOwner: owners.get(node),
+      paragraphOwner,
     });
   });
   return candidates;
