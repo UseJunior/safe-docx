@@ -13,6 +13,11 @@
   part the section would inherit anyway is not a divergence. A reference that
   changes what a section shows still fails the check. (#1203)
 
+- Format-only Markdoc edits now compile together on adjacent paragraphs with
+  near-identical text. Run splitting for underline or highlight no longer
+  produces false moves between unchanged paragraphs. Retained-format
+  certification failures now name the affected edit IDs. (#1414)
+
 ## 0.25.1
 
 - Header and footer text edits are now tracked when the section layout also

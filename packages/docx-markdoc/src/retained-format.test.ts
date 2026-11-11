@@ -73,6 +73,32 @@ async function trackedXml(buffer: Buffer): Promise<string> {
 }
 
 describe('retained common-text formatting', () => {
+  retainedTest('[SDX-MDOC-138] certifies format-only edits in adjacent near-identical paragraphs (#1414)', async () => {
+    const paragraphs = ['1. Definitions.', '“Alpha” has the meaning given in the preamble.', '“Bravo” has the meaning given in the preamble.', 'The end.'];
+    const imported = await importDocxToMarkdoc(await buildSyntheticDocx({ paragraphs }));
+    let markdoc = imported.markdoc;
+    for (const [index, term] of ['Alpha', 'Bravo'].entries()) {
+      markdoc = change(markdoc, paragraphs[index + 1]!, `“{% retain-format underline="single" %}${term}{% /retain-format %}” has the meaning given in the preamble.`, `ul-${index + 1}`);
+    }
+    const result = await compileMarkdoc(imported.anchoredSource, markdoc);
+    expect(result.certificate.retainedFormatting).toMatchObject({ declaredSpans: 2, textRevisionOverlaps: 0, passed: true });
+    expect(result.certificate.passed).toBe(true);
+    const xml = await trackedXml(result.tracked);
+    expect(xml).not.toMatch(/<w:(?:ins|del|moveFrom|moveTo)(?:\s|>)/u);
+    for (const projection of ['clean', 'accept', 'reject'] as const) {
+      const document = await DocxDocument.load(projection === 'clean' ? result.clean : result.tracked);
+      if (projection === 'accept') await document.acceptChanges();
+      if (projection === 'reject') await document.rejectChanges();
+      expect(document.getParagraphs().map((paragraph) => getParagraphRuns(paragraph).map((run) => run.text).join(''))).toEqual(paragraphs);
+      for (const [index, paragraph] of document.getParagraphs().slice(1, 3).entries()) {
+        const underlined = getParagraphRuns(paragraph)
+          .filter((run) => run.r.getElementsByTagNameNS('*', 'u').length > 0)
+          .map((run) => run.text);
+        expect(underlined).toEqual(projection === 'reject' ? [] : [['Alpha', 'Bravo'][index]]);
+      }
+    }
+  });
+
   retainedTest('[SDX-MDOC-130][SDX-MDOC-131][SDX-MDOC-132][SDX-MDOC-136][SDX-MDOC-137] removes one repeated highlight with native property revision evidence', async () => {
     const imported = await importedStyled([
       { text: 'Complete / ', highlight: true, bold: true },
@@ -225,12 +251,13 @@ describe('retained common-text formatting', () => {
   });
 
   retainedTest('[SDX-MDOC-133][SDX-MDOC-138] maps comparator-wide punctuation replacement to a retained-scope diagnostic', async () => {
-    const imported = await importedStyled([{ text: 'Draft-Complete', highlight: true }]);
-    await expect(compileMarkdoc(imported.anchoredSource, change(
-      imported.markdoc,
-      'Draft-Complete',
-      'Final-{% retain-format highlight="none" %}Complete{% /retain-format %}',
-    ))).rejects.toMatchObject({ code: 'NON_COMMON_RETAINED_SCOPE' });
+    const imported = await importDocxToMarkdoc(await buildSyntheticDocx({ paragraphs: ['Draft-Complete', 'Status pending'] }));
+    const failing = change(imported.markdoc, 'Draft-Complete', 'Final-{% retain-format underline="single" %}Complete{% /retain-format %}', 'bad-edit');
+    const both = change(failing, 'Status pending', '{% retain-format underline="single" %}Status{% /retain-format %} pending', 'good-edit');
+    await expect(compileMarkdoc(imported.anchoredSource, both)).rejects.toMatchObject({
+      code: 'NON_COMMON_RETAINED_SCOPE',
+      message: 'Retained formatting could not be certified over comparator-common text for edits: bad-edit.',
+    });
   });
 
   retainedTest('[SDX-MDOC-138] rejects a tracked character wrapper over a declared property-only interval', async () => {
