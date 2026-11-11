@@ -12,6 +12,14 @@
 ## 3. Verification
 
 - [x] 3.1 Flip SDX-COMPTABLE-03; accept-all equals revised and reject-all equals original with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`, on text and `bodyTableFootprint`; emitted-document schema gate passes.
-- [x] 3.2 Keep vertical merges, pending cell-topology revisions and wrapped cells refused (SDX-COMPTABLE-09).
+- [x] 3.2 Keep pending cell-topology revisions and wrapped cells refused (SDX-COMPTABLE-09); vertical merges were refused here until section 4.
 - [x] 3.3 LibreOffice accept/reject reproduce the revised and original tables.
 - [ ] 3.4 Real NVCA smoke after merge.
+
+## 4. Vertical merges (#1397)
+
+- [x] 4.1 Reproduce the abort (RED) for two- and three-row merges created, extended, shrunk and split, a merge with a horizontal span, and deleting a merge-start or merge-end row.
+- [x] 4.2 Replace each vertical-merge band (every merge chain the change touches, in both documents) as its original rows deleted then its revised rows inserted; keep bands minimal and leave bands holding unreplaceable cells to the guard.
+- [x] 4.3 Accept/reject parity with both acceptors on text and `bodyTableFootprint`, schema gate, crossing bookmarks, and the comment anchors pinned at their pre-existing shape.
+- [x] 4.4 LibreOffice accept/reject reproduce the revised and original tables, including row spans.
+- [ ] 4.5 Real NVCA smoke after merge; Word reader evidence deferred.

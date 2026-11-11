@@ -152,8 +152,12 @@ describe('main-body table comparison topology', () => {
       expect(result.stats.deletedTableRows).toBe(0);
       await assertProjections(original, revised, result.document);
       await assertSchema(result.document);
+      // A real merge change is no longer refused: it replaces the merge's band of rows (SDX-COMPTABLE-10).
       const changed = await docx(table(1, [start, explicit.replace('continue', 'restart')]));
-      await expect(compareDocuments(original, changed)).rejects.toMatchObject({ feature: 'vMerge' });
+      const split = await compareDocuments(original, changed);
+      expect(rowMarkers(await xml(split.document))).toEqual([['del'], ['del'], ['ins'], ['ins']]);
+      await assertProjections(original, changed, split.document);
+      await assertSchema(split.document);
     },
   );
 
@@ -302,24 +306,44 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
-    'keeps refusing vertical merges and cells inside a cell-level content control', async () => {
+  test.openspec('[SDX-COMPTABLE-10] a vertical-merge change emits a native band replacement')(
+    'replaces a row whose vertical merge starts beside a horizontal span or legacy hMerge change', async () => {
       const original = await docx(table(2, [row(['A', 'B'])]));
       const verticallyMerged = await docx(table(2, [
         `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/></w:tcPr>${paragraph('A B')}</w:tc></w:tr>`,
       ]));
-      await expect(compareDocuments(original, verticallyMerged)).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
-      await expect(compareDocuments(original, verticallyMerged)).rejects.toMatchObject({ tableIndex: 0, rowIndex: 0 });
-      // The feature names the first difference the guard finds: here the cell count.
-      await expect(compareDocuments(original, verticallyMerged)).rejects.toMatchObject({ feature: 'cellCount' });
       const sameCount = await docx(table(2, [row(['A', 'B']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>')
         .replace('</w:tc><w:tc>', '</w:tc><w:tc><w:tcPr><w:gridSpan w:val="1"/><w:hMerge w:val="restart"/></w:tcPr>')]));
-      await expect(compareDocuments(original, sameCount)).rejects.toMatchObject({ feature: 'vMerge', tableIndex: 0, rowIndex: 0 });
-      const wrappedCell = row(['A', 'B']).replace('</w:tc><w:tc>',
-        '</w:tc><w:sdt><w:sdtPr/><w:sdtContent><w:tc>')
+      for (const revised of [verticallyMerged, sameCount]) {
+        const result = await compareDocuments(original, revised);
+        expect(rowMarkers(await xml(result.document))).toEqual([['del'], ['ins']]);
+        await assertProjections(original, revised, result.document);
+        await assertSchema(result.document);
+      }
+    },
+  );
+
+  test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
+    'keeps refusing cells inside a cell-level content control, including inside a vertical-merge band', async () => {
+      const original = await docx(table(2, [row(['A', 'B'])]));
+      const wrap = (source: string) => source.replace('</w:tc><w:tc>', '</w:tc><w:sdt><w:sdtPr/><w:sdtContent><w:tc>')
         .replace('</w:tc></w:tr>', '</w:tc></w:sdtContent></w:sdt></w:tr>');
-      await expect(compareDocuments(original, await docx(table(2, [wrappedCell]))))
+      await expect(compareDocuments(original, await docx(table(2, [wrap(row(['A', 'B']))]))))
         .rejects.toMatchObject({ feature: 'occupancy', tableIndex: 0, rowIndex: 0, cellIndex: 1 });
+      // A vertical merge whose band would take a row with a wrapped cell stays refused.
+      const restart = row(['A', 'B']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>');
+      const continuation = row(['', 'D']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge/></w:tcPr>');
+      await expect(compareDocuments(
+        await docx(table(2, [row(['A', 'B']), wrap(row(['C', 'D']))])),
+        await docx(table(2, [restart, wrap(continuation)])),
+      )).rejects.toMatchObject({ name: 'UnsupportedTableTopologyComparisonError', feature: 'vMerge', tableIndex: 0, rowIndex: 0 });
+      // And so does one whose band would take a pending cell-level topology revision.
+      const pending = (source: string) => source.replace('</w:tc><w:tc>',
+        '</w:tc><w:tc><w:tcPr><w:cellIns w:id="80" w:author="Earlier"/></w:tcPr>');
+      await expect(compareDocuments(
+        await docx(table(2, [row(['A', 'B']), pending(row(['C', 'D']))])),
+        await docx(table(2, [restart, pending(continuation)])),
+      )).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
     },
   );
 });
