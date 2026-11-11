@@ -1674,38 +1674,41 @@ export async function sectionAlignedOrdinaryStoryInputs(
       const root = parseXml(xml).documentElement;
       const relationshipsXml = await archive.getFile(owningRelationshipsPath(path));
       const relationships = relationshipsXml ? parseXml(relationshipsXml) : undefined;
-      const resolved = new Map<string, string>();
+      // undefined: the id resolves to nothing usable (no record, or an
+      // internal target missing from the package).
+      const resolved = new Map<string, string | undefined>();
       for (const relationship of relationships ? Array.from(relationships.getElementsByTagName('Relationship')) : []) {
         const id = relationship.getAttribute('Id');
         if (!id) continue;
+        const type = relationship.getAttribute('Type') ?? '';
         const target = relationship.getAttribute('Target') ?? '';
-        const external = relationship.getAttribute('TargetMode') === 'External';
-        let content = '';
-        if (!external) {
-          const targetPath = posix.normalize(posix.join(posix.dirname(path), target)).replace(/^\/+/u, '');
-          const bytes = await archive.getFileBuffer(targetPath);
-          content = bytes ? createHash('sha256').update(bytes).digest('hex') : 'missing';
+        if (relationship.getAttribute('TargetMode') === 'External') {
+          resolved.set(id, `${type}|external|${target}`);
+          continue;
         }
-        resolved.set(id, [relationship.getAttribute('Type') ?? '', external ? target : '', content].join('|'));
+        // A relative target resolves against the source part's directory; a
+        // target starting with "/" is package-absolute.
+        const targetPath = target.startsWith('/')
+          ? posix.normalize(target).replace(/^\/+/u, '')
+          : posix.normalize(posix.join(posix.dirname(path), target));
+        const bytes = await archive.getFileBuffer(targetPath);
+        resolved.set(id, bytes ? `${type}|internal|${createHash('sha256').update(bytes).digest('hex')}` : undefined);
       }
-      const references: string[] = [];
+      // Relationship ids are local names: compare what each one resolves to,
+      // so the same link under a different id is the same story.
+      const semantic = root.cloneNode(true) as Element;
       let unresolved = false;
-      for (const element of [root, ...Array.from(root.getElementsByTagName('*'))]) {
+      for (const element of [semantic, ...Array.from(semantic.getElementsByTagName('*'))]) {
         for (const attribute of Array.from(element.attributes)) {
           if (attribute.namespaceURI !== RELATIONSHIPS_NS) continue;
           const target = resolved.get(attribute.value);
           if (target === undefined) unresolved = true;
-          references.push(`${attribute.value}=${target ?? ''}`);
+          else element.setAttributeNS(RELATIONSHIPS_NS, attribute.name, target);
         }
       }
-      // An unresolvable reference never matches anything, so the slot is not
-      // treated as represented.
-      identities.set(
-        path,
-        unresolved
-          ? `unresolved:${label}:${path}`
-          : `${canonicalNode(root)}\n${references.join('\n')}`,
-      );
+      // An unresolvable reference never matches anything, so no slot showing
+      // it is treated as represented.
+      identities.set(path, unresolved ? `unresolved:${label}:${path}` : canonicalNode(semantic));
     }
     return identities;
   };

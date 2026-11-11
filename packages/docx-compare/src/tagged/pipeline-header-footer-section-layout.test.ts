@@ -244,6 +244,56 @@ async function oddFooterLinks(buffer: Buffer, project: Projection): Promise<stri
   return links;
 }
 
+
+const PNG_RED = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+const PNG_BLUE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC';
+
+/**
+ * Replaces `word/<name>.xml` with a footer holding `text` and one inline
+ * picture whose `r:embed` targets `target`; `png` (base64) is written to that
+ * media part unless it is undefined.
+ */
+async function withPictureFooter(buffer: Buffer, name: string, text: string, target: string, png: string | undefined): Promise<Buffer> {
+  const archive = await DocxArchive.load(buffer);
+  const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+  archive.setFile(`word/${name}.xml`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}" xmlns:r="${R_NS}" xmlns:a="${A}"` +
+    ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<w:p><w:r><w:t>${text}</w:t></w:r><w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Picture 1"/>` +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="image.png"/><pic:cNvPicPr/></pic:nvPicPr>' +
+    '<pic:blipFill><a:blip r:embed="rIdImage"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:ftr>');
+  archive.setFile(`word/_rels/${name}.xml.rels`,
+    `<Relationships xmlns="${PKG_NS}"><Relationship Id="rIdImage" Type="${R_NS}/image" Target="${target}"/></Relationships>`);
+  if (png !== undefined) {
+    archive.setFile(target.startsWith('/') ? target.slice(1) : `word/${target}`, Buffer.from(png, 'base64'));
+  }
+  const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+  if (!contentTypes.includes('Extension="png"')) {
+    archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>', '<Default Extension="png" ContentType="image/png"/></Types>'));
+  }
+  return archive.save();
+}
+
+/** Two original sections with their own footers; the revision shares footer1 across both and turns section 2 landscape. */
+async function twoFootersSharedInRevision(): Promise<{ original: Buffer; revised: Buffer }> {
+  return {
+    original: await packageWith(sectionEnd('One', ref('footer', 'rIdA')) + paragraph('Two'), ref('footer', 'rIdC'),
+      [part('rIdA', 'footer', 'footer1.xml', 'x'), part('rIdC', 'footer', 'footer2.xml', 'x')]),
+    revised: await packageWith(sectionEnd('One', ref('footer', 'rIdB')) + paragraph('Two'), ref('footer', 'rIdB') + LANDSCAPE,
+      [part('rIdB', 'footer', 'footer1.xml', 'x')]),
+  };
+}
+
+async function expectBothFootersStayReported(result: TaggedCompareResult): Promise<void> {
+  expect(await revisionCounts(result.document, 'word/footer1.xml')).toEqual({ ins: 0, del: 0 });
+  expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ scope: 'footer', sectionIndex: 0 }),
+    expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
+  ]));
+}
+
 describe('header/footer edits across section-layout changes (#1390)', () => {
   test.openspec('[SDX-CMP-SLOTPAIR-01] Header/footer edit across a page-layout change is tracked')(
     'tracks a shared footer edit when the revision turns section 2 landscape (issue reproduction)',
@@ -544,6 +594,62 @@ describe('header/footer edits across section-layout changes (#1390)', () => {
         expect(await oddFooterLinks(result.document, rejectAllChanges)).toEqual(['https://alpha.example', 'https://alpha.example']);
         expect(await oddFooterLinks(result.document, acceptAllChanges)).toEqual(['https://alpha.example', 'https://alpha.example']);
       });
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'keeps two original footers apart whose pictures differ only in media bytes, for relative and package-absolute targets',
+    async ({ given, when, then }: AllureBddContext) => {
+      for (const absolute of [false, true]) {
+        const [original, revised] = await given(`same footer markup with pictures of different bytes (${absolute ? 'absolute' : 'relative'} targets)`, async () => {
+          const shape = await twoFootersSharedInRevision();
+          const media = (file: string): string => (absolute ? `/word/media/${file}` : `media/${file}`);
+          let original = await withPictureFooter(shape.original, 'footer1', 'Old', media('a.png'), PNG_RED);
+          original = await withPictureFooter(original, 'footer2', 'Old', media('b.png'), PNG_BLUE);
+          const revised = await withPictureFooter(shape.revised, 'footer1', 'New', media('a.png'), PNG_RED);
+          return [original, revised] as const;
+        });
+        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+        await then('the shared footer is not redlined and both footer changes stay reported', async () => {
+          await expectBothFootersStayReported(result);
+          await assertSchema(result.document);
+        });
+      }
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'keeps footers apart whose pictures point at media parts missing from the package',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('two original footers whose picture targets are absent', async () => {
+        const shape = await twoFootersSharedInRevision();
+        let original = await withPictureFooter(shape.original, 'footer1', 'Old', 'media/a.png', undefined);
+        original = await withPictureFooter(original, 'footer2', 'Old', 'media/b.png', undefined);
+        const revised = await withPictureFooter(shape.revised, 'footer1', 'New', 'media/a.png', undefined);
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('nothing that cannot be resolved counts as represented', () => expectBothFootersStayReported(result));
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'pairs two original footers that link to the same URL under different relationship ids',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('the same link under rIdLink in one footer and rIdOther in the other', async () => {
+        const shape = await twoFootersSharedInRevision();
+        let original = await withLinkedFooter(shape.original, 'footer1', 'Old', 'https://alpha.example');
+        original = await withLinkedFooter(original, 'footer2', 'Old', 'https://alpha.example');
+        const archive = await DocxArchive.load(original);
+        for (const path of ['word/footer2.xml', 'word/_rels/footer2.xml.rels']) {
+          archive.setFile(path, (await archive.getFile(path))!.replaceAll('rIdLink', 'rIdOther'));
+        }
+        original = await archive.save();
+        const revised = await withLinkedFooter(shape.revised, 'footer1', 'New', 'https://alpha.example');
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await expectRepresentedRedline({ then }, original, revised, result, ['word/footer1.xml']);
     },
   );
 });
