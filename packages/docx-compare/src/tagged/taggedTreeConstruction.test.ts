@@ -746,8 +746,14 @@ describe('complete tagged-tree construction', () => {
     const accepted = parseXml(acceptAllChanges(output));
     const rejected = parseXml(rejectAllChanges(output));
 
-    expect(accepted.getElementsByTagNameNS(W_NS, 'fldSimple')[0]!.getAttributeNS(W_NS, 'instr')).toBe(' TIME ');
-    expect(rejected.getElementsByTagNameNS(W_NS, 'fldSimple')[0]!.getAttributeNS(W_NS, 'instr')).toBe(' DATE ');
+    // A changed simple field is tracked as complex-field runs (#1422), so each
+    // projection carries the instruction in w:instrText rather than w:instr.
+    const instruction = (document: ReturnType<typeof parseXml>): string =>
+      Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple'), (field) => field.getAttributeNS(W_NS, 'instr') ?? '')
+        .concat(Array.from(document.getElementsByTagNameNS(W_NS, 'instrText'), (text) => text.textContent ?? ''))
+        .join('');
+    expect(instruction(accepted)).toBe(' TIME ');
+    expect(instruction(rejected)).toBe(' DATE ');
     expect(accepted.getElementsByTagNameNS(W_NS, 't')[0]!.getAttribute('xml:space')).toBeNull();
     expect(rejected.getElementsByTagNameNS(W_NS, 't')[0]!.getAttribute('xml:space')).toBe('preserve');
   });
