@@ -37,7 +37,7 @@
 
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { auditSectPr, OOXML, parseXml } from '@usejunior/docx-core';
+import { auditSectPr, normalizeOpcRelationshipTarget, OOXML, parseXml } from '@usejunior/docx-core';
 import type { DocxArchive } from '@usejunior/docx-core';
 import type { UnrepresentedChange, UnrepresentedPictureChange } from '../compare-types.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
@@ -65,10 +65,20 @@ export function relationshipsPartPath(partPath: string): string {
   return `${directory === '.' ? '' : `${directory}/`}_rels/${posix.basename(partPath)}.rels`;
 }
 
-function resolvePartPath(ownerPartPath: string, target: string): string {
-  return target.startsWith('/')
-    ? posix.normalize(target).replace(/^\/+/u, '')
-    : posix.normalize(posix.join(posix.dirname(ownerPartPath), target));
+/**
+ * The package part an internal relationship target names, decoded and
+ * resolved as a package reader resolves it (`media/image%201.png` is the part
+ * `word/media/image 1.png`). A target the package policy refuses falls back
+ * to its literal path, which reads as missing on both sides alike.
+ */
+export function resolvePartPath(ownerPartPath: string, target: string): string {
+  try {
+    return normalizeOpcRelationshipTarget({ ownerPart: ownerPartPath, target }).target;
+  } catch {
+    return target.startsWith('/')
+      ? posix.normalize(target).replace(/^\/+/u, '')
+      : posix.normalize(posix.join(posix.dirname(ownerPartPath), target));
+  }
 }
 
 function readRelationships(xml: string | null): Map<string, Relationship> {
@@ -104,16 +114,19 @@ export function isRelationshipReference(attribute: Attr): boolean {
  * Payload fingerprints for one package, memoized per part so a document with
  * many pictures sharing parts hashes each part once.
  *
- * A part's local entry — its bytes and, for each of its own relationships,
- * the id, type, mode and the target's bytes — depends on nothing else and is
- * memoized. A payload fingerprint is then the sorted multiset of local
- * entries over every part reachable from the root, which is the same however
- * the walk reaches it, so relationship cycles cannot truncate it (the defect
- * a recursive per-part memo has; round-3 review of #1380).
+ * A payload fingerprint is a canonical encoding of the rooted graph the
+ * payload reaches: parts are numbered in the order a depth-first walk from
+ * the root first meets them, following each part's relationships in id
+ * order, and each part is written as its own bytes digest plus, per
+ * relationship, its id, type, mode and the number of the part it reaches (or
+ * the external target). The root is part 0, every edge keeps the subgraph it
+ * leads to, and a relationship cycle is a back-reference rather than a
+ * truncation, so two payloads compare equal only when their graphs match
+ * edge for edge (round-1 review of #1430). Part names are not part of the
+ * encoding, so a payload imported under a new name keeps its fingerprint.
  */
 export class PayloadFingerprints {
   private readonly bytesDigests = new Map<string, Promise<string>>();
-  private readonly localEntries = new Map<string, Promise<{ entry: string; next: string[] }>>();
   private readonly closures = new Map<string, Promise<string>>();
   private readonly relationshipTables = new Map<string, Promise<Map<string, Relationship>>>();
 
@@ -139,45 +152,34 @@ export class PayloadFingerprints {
     return pending;
   }
 
-  private localEntry(partPath: string): Promise<{ entry: string; next: string[] }> {
-    let pending = this.localEntries.get(partPath);
-    if (!pending) {
-      pending = (async () => {
-        const own = await this.bytesDigest(partPath);
-        if (own === 'missing') return { entry: own, next: [] };
-        const edges: string[] = [];
-        const next: string[] = [];
-        for (const [id, relationship] of await this.relationshipsOf(partPath)) {
-          if (relationship.targetMode === 'External') {
-            edges.push(`${id}|${relationship.type}|External|${relationship.target}`);
-            continue;
-          }
-          const childPath = resolvePartPath(partPath, relationship.target);
-          next.push(childPath);
-          edges.push(`${id}|${relationship.type}||${await this.bytesDigest(childPath)}`);
-        }
-        return { entry: `${own}[${edges.sort().join(',')}]`, next };
-      })();
-      this.localEntries.set(partPath, pending);
-    }
-    return pending;
-  }
-
   /** The payload fingerprint of the part at `partPath` and everything it reaches. */
   closureOf(partPath: string): Promise<string> {
     let pending = this.closures.get(partPath);
     if (!pending) {
       pending = (async () => {
-        const reached = new Map<string, string>();
-        const queue = [partPath];
-        while (queue.length > 0) {
-          const current = queue.pop()!;
-          if (reached.has(current)) continue;
-          const { entry, next } = await this.localEntry(current);
-          reached.set(current, entry);
-          queue.push(...next);
-        }
-        return createHash('sha256').update([...reached.values()].sort().join('\n')).digest('hex');
+        const ordinals = new Map<string, number>();
+        const lines: string[] = [];
+        const visit = async (current: string): Promise<number> => {
+          const known = ordinals.get(current);
+          if (known !== undefined) return known;
+          const ordinal = ordinals.size;
+          ordinals.set(current, ordinal);
+          const own = await this.bytesDigest(current);
+          const edges: string[] = [];
+          if (own !== 'missing') {
+            const relationships = [...await this.relationshipsOf(current)]
+              .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+            for (const [id, relationship] of relationships) {
+              edges.push(relationship.targetMode === 'External'
+                ? `${id}|${relationship.type}|External|${relationship.target}`
+                : `${id}|${relationship.type}||#${await visit(resolvePartPath(current, relationship.target))}`);
+            }
+          }
+          lines[ordinal] = `${own}[${edges.join(',')}]`;
+          return ordinal;
+        };
+        await visit(partPath);
+        return createHash('sha256').update(lines.join('\n')).digest('hex');
       })();
       this.closures.set(partPath, pending);
     }
@@ -571,10 +573,13 @@ export async function auditPicturePayloads(
       { story: 'body', sectionIndex: 0 },
       await outputRelationships(MAIN_DOCUMENT_PART),
     );
-    for (const change of mainChanges) {
-      const container = pictureReferences(outputMain.documentElement!)
-        .find((reference) => reference.containerIndex === change.picture!.index)?.container;
-      if (container) change.sectionIndex = sectionIndexOf(container);
+    if (mainChanges.length > 0) {
+      const containers = new Map(pictureReferences(outputMain.documentElement!)
+        .map((reference) => [reference.containerIndex, reference.container]));
+      for (const change of mainChanges) {
+        const container = containers.get(change.picture!.index);
+        if (container) change.sectionIndex = sectionIndexOf(container);
+      }
     }
     changes.push(...mainChanges);
 
@@ -629,10 +634,12 @@ export async function auditPicturePayloads(
         { story: kind, sectionIndex: 0 },
         await outputRelationships(outputNotes.story.partPath),
       );
-      const pictures = await projectedPictures(outputNotes.story);
+      const pictures = noteChanges.length > 0
+        ? new Map((await projectedPictures(outputNotes.story))
+          .map((candidate) => [candidate.reference.containerIndex, candidate]))
+        : new Map<number, ProjectedPicture>();
       for (const change of noteChanges) {
-        const picture = pictures.find((candidate) =>
-          candidate.reference.containerIndex === change.picture!.index);
+        const picture = pictures.get(change.picture!.index);
         const noteIndex = picture ? outputNotes.story.roots.indexOf(picture.root) : -1;
         if (noteIndex >= 0) change.sectionIndex = outputNotes.sectionIndexes[noteIndex] ?? 0;
       }

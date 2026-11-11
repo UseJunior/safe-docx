@@ -402,6 +402,127 @@ describe('Pictures and objects whose payload changes under the same markup (#143
     });
   });
 
+  test('redlines a picture whose URI-encoded target names a replaced image', async ({
+    given, when, then, and,
+  }: AllureBddContext) => {
+    // `media/image%201.png` names the part `word/media/image 1.png`; reading
+    // the literal name would hash two missing parts as equal (round-1 review).
+    const body = `<w:p>${run('Intro')}</w:p><w:p>${drawingPicture()}</w:p>`;
+    const withImage = async (image: Buffer): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await buildPackage({ body }));
+      archive.setFile('word/_rels/document.xml.rels', relationships([['rIdImage', 'image', 'media/image%201.png']]));
+      archive.setFile('word/media/image 1.png', image);
+      return archive.save();
+    };
+    const original = await given('a picture whose relationship target is URI-encoded', () => withImage(PNG));
+    const revised = await given('the same markup and target, with the image bytes replaced', () => withImage(OTHER_PNG));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the swap is a tracked deletion and insertion', async () => {
+      expect(await picturePlacement(result.document)).toEqual(['drawing:del', 'drawing:ins']);
+      expect(result.unrepresentedChanges ?? []).toEqual([]);
+    });
+    await and('the original image survives Reject All', async () => {
+      const archive = await DocxArchive.load(result.document);
+      const rejected = parseXml(rejectAllChanges(await archive.getDocumentXml()));
+      const id = rejected.getElementsByTagNameNS(NAMESPACES.a, 'blip').item(0)!.getAttributeNS(R_NS, 'embed');
+      const target = Array.from(parseXml((await archive.getFile('word/_rels/document.xml.rels'))!)
+        .getElementsByTagNameNS(PKG_NS, 'Relationship'))
+        .find((relationship) => relationship.getAttribute('Id') === id)!.getAttribute('Target')!;
+      const bytes = await archive.getFileBuffer(posix.join('word', decodeURIComponent(target)));
+      expect(bytes?.equals(PNG)).toBe(true);
+      await assertSchema(result.document);
+    });
+  });
+
+  test('redlines a chart whose payload changed only by which part of a cycle is its root', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // Two charts relate to each other through the same relationship. Swapping
+    // their bytes keeps the set of reachable parts identical; only which one
+    // the picture reaches first changes (round-1 review).
+    const chart =
+      `<w:r><w:drawing><wp:inline><wp:extent cx="100000" cy="100000"/><wp:docPr id="8" name="Chart 8"/>` +
+      `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">` +
+      `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart"/>` +
+      `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+    const chartPart = (title: string): string =>
+      `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="${R_NS}">` +
+      `<c:chart><c:title><c:tx><c:v>${title}</c:v></c:tx></c:title></c:chart></c:chartSpace>`;
+    const withCycle = async (text: string, first: string, second: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await buildPackage({ body: `<w:p>${run(text)}</w:p><w:p>${chart}</w:p>` }));
+      archive.setFile('word/_rels/document.xml.rels', relationships([['rIdChart', 'chart', 'charts/a.xml']]));
+      archive.setFile('word/charts/a.xml', chartPart(first));
+      archive.setFile('word/charts/b.xml', chartPart(second));
+      archive.setFile('word/charts/_rels/a.xml.rels', relationships([['rIdPeer', 'chart', 'b.xml']]));
+      archive.setFile('word/charts/_rels/b.xml.rels', relationships([['rIdPeer', 'chart', 'a.xml']]));
+      return archive.save();
+    };
+    const original = await given('a chart that relates to a peer chart, titled RED then BLUE', () =>
+      withCycle('Intro old', 'RED', 'BLUE'));
+    const revised = await given('the two charts with their bytes exchanged, beside a body edit', () =>
+      withCycle('Intro new', 'BLUE', 'RED'));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the chart is a tracked deletion and insertion, with nothing listed', async () => {
+      expect(await picturePlacement(result.document)).toEqual(['drawing:del', 'drawing:ins']);
+      expect(result.unrepresentedChanges ?? []).toEqual([]);
+    });
+  });
+
+  test('keeps an imported chart cycle bound to the imported chart', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The chart bytes are equal on both sides; its workbook differs and
+    // relates back to the chart. The import must copy the chart aside before
+    // writing the workbook's back-edge, or the back-edge lands on the revised
+    // chart (round-1 review).
+    const chart =
+      `<w:r><w:drawing><wp:inline><wp:extent cx="100000" cy="100000"/><wp:docPr id="8" name="Chart 8"/>` +
+      `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">` +
+      `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart"/>` +
+      `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+    const withCycle = async (text: string, workbook: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await buildPackage({ body: `<w:p>${run(text)}</w:p><w:p>${chart}</w:p>` }));
+      archive.setFile('word/_rels/document.xml.rels', relationships([['rIdChart', 'chart', 'charts/chart1.xml']]));
+      archive.setFile(
+        'word/charts/chart1.xml',
+        `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="${R_NS}">` +
+          `<c:chart><c:plotArea><c:layout/></c:plotArea></c:chart><c:externalData r:id="rIdWorkbook"/></c:chartSpace>`,
+      );
+      archive.setFile('word/charts/_rels/chart1.xml.rels', relationships([['rIdWorkbook', 'package', '../embeddings/workbook.xlsx']]));
+      archive.setFile('word/embeddings/_rels/workbook.xlsx.rels', relationships([['rIdBack', 'chart', '../charts/chart1.xml']]));
+      archive.setFile('word/embeddings/workbook.xlsx', Buffer.from(workbook));
+      return archive.save();
+    };
+    const original = await given('a chart whose workbook relates back to it', () => withCycle('Intro old', 'workbook one'));
+    const revised = await given('the workbook bytes replaced, beside a body edit', () => withCycle('Intro new', 'workbook two'));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('Reject All reaches a copied chart whose workbook relates back to that copy', async () => {
+      expect(await picturePlacement(result.document)).toEqual(['drawing:del', 'drawing:ins']);
+      expect(result.unrepresentedChanges ?? []).toEqual([]);
+      const archive = await DocxArchive.load(result.document);
+      const targetOf = async (owner: string, id?: string): Promise<string> => {
+        const relationship = Array.from(parseXml((await archive.getFile(relationshipsPath(owner)))!)
+          .getElementsByTagNameNS(PKG_NS, 'Relationship'))
+          .find((candidate) => id === undefined || candidate.getAttribute('Id') === id)!;
+        return posix.normalize(posix.join(posix.dirname(owner), relationship.getAttribute('Target')!));
+      };
+      const rejected = parseXml(rejectAllChanges(await archive.getDocumentXml()));
+      const chartId = rejected.getElementsByTagNameNS('http://schemas.openxmlformats.org/drawingml/2006/chart', 'chart')
+        .item(0)!.getAttributeNS(R_NS, 'id')!;
+      const root = await targetOf('word/document.xml', chartId);
+      const workbook = await targetOf(root);
+      expect(root).not.toBe('word/charts/chart1.xml');
+      expect((await archive.getFileBuffer(workbook))?.toString()).toBe('workbook one');
+      expect(await targetOf(workbook)).toBe(root);
+    });
+  });
+
   test('redlines a picture swapped inside an unchanged text box in the main story', async ({
     given, when, then, and,
   }: AllureBddContext) => {

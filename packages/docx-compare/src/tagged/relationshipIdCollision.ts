@@ -41,6 +41,7 @@ import { posix } from 'node:path';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { normalizeOpcRelationshipTarget, parseXml } from '@usejunior/docx-core';
 import type { DocxArchive } from '@usejunior/docx-core';
+import { PayloadFingerprints } from './picturePayload.js';
 
 const serializer = new XMLSerializer();
 
@@ -293,6 +294,7 @@ async function copyPartClosure(
   resultArchive: DocxArchive,
   partPath: string,
   copiedAs: Map<string, string>,
+  payloads: { source: PayloadFingerprints; result: PayloadFingerprints },
 ): Promise<string> {
   const already = copiedAs.get(partPath);
   if (already !== undefined) return already;
@@ -307,16 +309,22 @@ async function copyPartClosure(
   const existing = resultArchive.hasFile(partPath)
     ? await resultArchive.getFileBuffer(partPath)
     : null;
-  const reused = existing !== null && existing.equals(bytes);
+  // Identical bytes are only the same part when what it reaches is the same
+  // too: a chart whose embedded workbook was replaced keeps byte-identical
+  // chart XML. Reusing the base's chart would bind the import to the base's
+  // workbook (#1430). Deciding before any relationship below is written keeps
+  // a cycle's back-edge pointing at the part's final landing place.
+  const reused = existing !== null && existing.equals(bytes) &&
+    await payloads.source.closureOf(partPath) === await payloads.result.closureOf(partPath);
   if (existing === null) {
     resultArchive.setFile(partPath, bytes);
     await ensureContentType(sourceArchive, resultArchive, partPath);
-  } else if (!existing.equals(bytes)) {
+  } else if (!reused) {
     targetPath = allocatePartPath(resultArchive, partPath);
     resultArchive.setFile(targetPath, bytes);
     await ensureContentType(sourceArchive, resultArchive, partPath, targetPath);
   }
-  // Identical bytes: the base already carries this exact part, so reuse it.
+  // Identical payload: the base already carries this exact part, so reuse it.
   copiedAs.set(partPath, targetPath);
 
   const nested = await readRelationships(sourceArchive, partPath);
@@ -333,30 +341,16 @@ async function copyPartClosure(
       resultArchive,
       sourceTarget,
       copiedAs,
+      payloads,
     );
     if (landedTarget !== sourceTarget) {
       nestedRewrites.set(entry.id, posix.relative(posix.dirname(targetPath), landedTarget));
     }
   }
 
-  const nestedRelsXml = await sourceArchive.getFile(relsPathFor(partPath));
-  // Identical bytes are only the same part when what it reaches is the same
-  // too: a chart whose embedded workbook was replaced keeps byte-identical
-  // chart XML. Reusing the base's chart would bind the import to the base's
-  // workbook (#1430), so a part whose closure diverges is copied aside.
-  if (
-    reused &&
-    (nestedRewrites.size > 0 ||
-      (await resultArchive.getFile(relsPathFor(partPath))) !== nestedRelsXml)
-  ) {
-    targetPath = allocatePartPath(resultArchive, partPath);
-    resultArchive.setFile(targetPath, bytes);
-    await ensureContentType(sourceArchive, resultArchive, partPath, targetPath);
-    copiedAs.set(partPath, targetPath);
-  }
-
   const nestedRelsPath = relsPathFor(targetPath);
   if (!resultArchive.hasFile(nestedRelsPath)) {
+    const nestedRelsXml = await sourceArchive.getFile(relsPathFor(partPath));
     if (nestedRelsXml) {
       if (nestedRewrites.size === 0) {
         resultArchive.setFile(nestedRelsPath, nestedRelsXml);
@@ -453,6 +447,11 @@ export async function importReferencedRelationships(
   if (!relsRoot) return [];
 
   const copiedAs = new Map<string, string>();
+  // Copies land on free paths, so they never change what a base part reaches.
+  const payloads = {
+    source: new PayloadFingerprints(mergeSourceArchive),
+    result: new PayloadFingerprints(resultArchive),
+  };
   const imported: ImportedRelationship[] = [];
   for (const entry of importable) {
     let target = entry.target;
@@ -463,6 +462,7 @@ export async function importReferencedRelationships(
         resultArchive,
         sourceTarget,
         copiedAs,
+        payloads,
       );
       // The part may have been copied aside to dodge a name collision; point
       // the relationship at where it actually landed, not where it came from.

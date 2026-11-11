@@ -330,6 +330,25 @@ async function compare(originalBody: string, revisedBody: string, revisedImageTa
   return { original, revised, compare: () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS) };
 }
 
+/**
+ * Since #1430 a payload swapped under unchanged markup inside a changed box
+ * no longer refuses the comparison: the box's text edit is tracked and the
+ * picture is named in `unrepresentedChanges`, so nothing is carried silently.
+ */
+async function expectListedPayloadSwap(
+  result: Awaited<ReturnType<typeof compareDocumentsAtomizer>>,
+  relationshipId: string,
+): Promise<void> {
+  const [box] = boxes(await documentXmlOf(result.document));
+  expect(trackedText(box!)).toEqual({ inserted: 'new', deleted: 'old' });
+  const pictures = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'picture');
+  expect(pictures.length).toBeGreaterThan(0);
+  expect(pictures[0]).toMatchObject({
+    kind: 'changed',
+    picture: { story: 'body', partPath: 'word/document.xml', projection: 'reject', relationshipId },
+  });
+}
+
 describe('Text-box stories holding pictures, objects and nested boxes (#1380)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   test('tracks a text edit in a box holding a VML picture and carries the picture untouched', async ({
     given, when, then, and,
@@ -441,30 +460,22 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
     ['an r:id picture whose image part was replaced', vmlPicture(), { image: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([0])]) }],
     ['an o:relid picture whose image part was replaced', vmlPicture({ relid: true }), { image: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([0])]) }],
   ] as const) {
-    test(`refuses, rather than loses, ${label} under the same relationship`, async ({
+    test(`lists, rather than loses or refuses, ${label} under the same relationship`, async ({
       given, when, then,
     }: AllureBddContext) => {
       const original = await given('a box holding the leaf, with its original part', () =>
         packageWith(bodyWithBox(run('Box old') + storyXml)));
       const revised = await given('the box text edited and the part bytes replaced at the same path', () =>
         packageWith(bodyWithBox(run('Box new') + storyXml), undefined, payload));
-      let failure: unknown;
-      await when('the documents are compared', async () => {
-        try {
-          await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
-        } catch (error) {
-          failure = error;
-        }
-      });
-
-      await then('the changed part is named instead of being carried untracked', () => {
-        expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-        expect((failure as Error).message).toContain('relationship closure changed');
-      });
+      const relationshipId = storyXml === EMBEDDED_OBJECT && 'embedding' in payload ? 'rIdObject' : 'rIdImage';
+      const result = await when('the documents are compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the box edit is tracked and the changed part is listed instead of being carried untracked', () =>
+        expectListedPayloadSwap(result, relationshipId));
     });
   }
 
-  test('refuses, rather than loses, a chart whose embedded workbook was replaced', async ({
+  test('lists, rather than loses or refuses, a chart whose embedded workbook was replaced', async ({
     given, when, then,
   }: AllureBddContext) => {
     const chart =
@@ -499,30 +510,22 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
       withChart('Box old', 'workbook one'));
     const revised = await given('the box text edited and the workbook bytes replaced', () =>
       withChart('Box new', 'workbook two'));
-    let failure: unknown;
-    await when('the documents are compared', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
-      } catch (error) {
-        failure = error;
-      }
-    });
-
-    await then('the replaced workbook below the chart is seen', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect((failure as Error).message).toContain('relationship closure changed');
-    });
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('the replaced workbook below the chart is listed', () =>
+      expectListedPayloadSwap(result, 'rIdChart'));
   });
 
   // Round-3 review of #1380: the workbook relates back to the chart, closing
   // a cycle, and the document part also relates to the workbook directly. If
   // that direct relationship is fingerprinted first, a per-part memo caches
   // the chart with the workbook cut off as the cycle, and the box's chart
-  // closure then misses the replaced workbook. Both orders must refuse.
+  // closure then misses the replaced workbook. Both orders must see it (since
+  // #1430 by listing it rather than refusing the comparison).
   // Round-4 review: the chart's own relationship may use a namespace prefix
   // (`<pr:Relationship>`); the closure must still follow it to the workbook.
   for (const workbookFirst of [true, false]) for (const prefixed of [false, true]) {
-    test(`refuses a replaced workbook on a relationship cycle (workbook listed ${workbookFirst ? 'first' : 'last'}${prefixed ? ', prefixed chart relationship' : ''})`, async ({
+    test(`lists a replaced workbook on a relationship cycle (workbook listed ${workbookFirst ? 'first' : 'last'}${prefixed ? ', prefixed chart relationship' : ''})`, async ({
       given, when, then,
     }: AllureBddContext) => {
       const chart =
@@ -570,19 +573,10 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
         withCycle('Box old', 'workbook one'));
       const revised = await given('the box text edited and the workbook bytes replaced', () =>
         withCycle('Box new', 'workbook two'));
-      let failure: unknown;
-      await when('the documents are compared', async () => {
-        try {
-          await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
-        } catch (error) {
-          failure = error;
-        }
-      });
-
-      await then('the replaced workbook on the cycle is seen', () => {
-        expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-        expect((failure as Error).message).toContain('relationship closure changed');
-      });
+      const result = await when('the documents are compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the replaced workbook on the cycle is listed', () =>
+        expectListedPayloadSwap(result, 'rIdChart'));
     });
   }
 
