@@ -46,14 +46,14 @@ async function assertProjections(original: Buffer, revised: Buffer, compared: Bu
   const output = await xml(compared);
   const expectedAccept = bodyTableFootprint(acceptAllChanges(target));
   const expectedReject = bodyTableFootprint(rejectAllChanges(source));
-  expect(bodyTableFootprint(acceptAllChanges(output))).toBe(expectedAccept);
-  expect(bodyTableFootprint(rejectAllChanges(output))).toBe(expectedReject);
+  expect(bodyTableFootprint(acceptAllChanges(output))).toEqual(expectedAccept);
+  expect(bodyTableFootprint(rejectAllChanges(output))).toEqual(expectedReject);
   const accepted = await DocxDocument.load(compared);
   const rejected = await DocxDocument.load(compared);
   await accepted.acceptChanges();
   await rejected.rejectChanges();
-  expect(bodyTableFootprint(await xml((await accepted.toBuffer()).buffer))).toBe(expectedAccept);
-  expect(bodyTableFootprint(await xml((await rejected.toBuffer()).buffer))).toBe(expectedReject);
+  expect(bodyTableFootprint(await xml((await accepted.toBuffer()).buffer))).toEqual(expectedAccept);
+  expect(bodyTableFootprint(await xml((await rejected.toBuffer()).buffer))).toEqual(expectedReject);
 }
 
 describe('main-body table comparison topology', () => {

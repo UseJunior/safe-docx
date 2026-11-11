@@ -2551,6 +2551,22 @@ verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages
 
 This claim is bounded to the runtime and test evidence listed above.
 
+## [ECMA-PART1-17-13-5-33] Table-grid revisions (w:tblGridChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.33"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange
+verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts
+```
+
+The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
+`@usejunior/docx-compare`) resolves `w:tblGridChange`: accept keeps the live
+grid, reject restores the snapshot's `w:gridCol` list. docx-core's native
+accept/reject do not yet resolve it, and comparison does not emit it.
+
 ## [ECMA-PART1-17-13-5-34] Table-property revisions (w:tblPrChange)
 
 ```yaml
@@ -2559,10 +2575,46 @@ part: 1
 section: "17.13.5.34"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange
-verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
 ```
 
 This claim is bounded to the runtime and test evidence listed above.
+
+## [ECMA-PART1-17-13-5-35] Table-property-exception revisions (w:tblPrExChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.35"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange
+verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
+```
+
+The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
+`@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live
+exceptions, reject restores the snapshot's `w:tblPrEx` content. docx-core's
+native accept/reject do not yet resolve it, and comparison does not emit it.
+
+Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
+safe-docx validates its documented API-supported enum and safe-integer subset,
+duplicate declarations, table-grid arithmetic, and style/numbering references
+before emission, then preserves the authored parts through package load/save.
+The XML Schema integer domains can exceed JavaScript's exact-number range;
+numeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and
+`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated
+by this surface, the full lexical domain is pinned to the vendored transitional
+XSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,
+`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run
+color, and table/numbering style types, are reported as unsupported API
+features rather than schema-invalid XML. Values absent from the applicable XSD
+domain are reported as invalid. These
+claims do not cover Word's
+table layout algorithm or pagination, numbering rendering or complete
+override/counter behavior, style cascade or latent-style semantics,
+theme/font resolution, rendering, or tracked table-topology and
+property-revision records. Preservation does not imply semantic
+interpretation of unknown third-party markup.
 
 ## [ECMA-PART1-17-13-5-36] Table-cell-property revisions (w:tcPrChange)
 
@@ -2716,51 +2768,3 @@ verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.
 
 safe-docx validates placement and preserves sampled `w:cellMerge` records,
 but does not interpret vertical merge/split topology.
-
-## [ECMA-PART1-17-13-5-33] Table-grid revisions (w:tblGridChange)
-
-```yaml
-edition: 5
-part: 1
-section: "17.13.5.33"
-url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange
-verifiedBy:
-```
-
-safe-docx recognizes `w:tblGridChange` metadata and placement but does not emit,
-accept, or reject its grid semantics.
-
-## [ECMA-PART1-17-13-5-35] Table-property-exception revisions (w:tblPrExChange)
-
-```yaml
-edition: 5
-part: 1
-section: "17.13.5.35"
-url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange
-verifiedBy:
-```
-
-safe-docx recognizes `w:tblPrExChange` metadata but does not emit, accept, or
-reject table-level property-exception semantics.
-
-Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
-safe-docx validates its documented API-supported enum and safe-integer subset,
-duplicate declarations, table-grid arithmetic, and style/numbering references
-before emission, then preserves the authored parts through package load/save.
-The XML Schema integer domains can exceed JavaScript's exact-number range;
-numeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and
-`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated
-by this surface, the full lexical domain is pinned to the vendored transitional
-XSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,
-`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run
-color, and table/numbering style types, are reported as unsupported API
-features rather than schema-invalid XML. Values absent from the applicable XSD
-domain are reported as invalid. These
-claims do not cover Word's
-table layout algorithm or pagination, numbering rendering or complete
-override/counter behavior, style cascade or latent-style semantics,
-theme/font resolution, rendering, or tracked table-topology and
-property-revision records. Preservation does not imply semantic
-interpretation of unknown third-party markup.
