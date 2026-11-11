@@ -129,8 +129,20 @@ export class PayloadFingerprints {
   private readonly bytesDigests = new Map<string, Promise<string>>();
   private readonly closures = new Map<string, Promise<string>>();
   private readonly relationshipTables = new Map<string, Promise<Map<string, Relationship>>>();
+  private readonly sortedRelationships = new Map<string, Promise<Array<[string, Relationship]>>>();
 
   constructor(private readonly archive: DocxArchive) {}
+
+  /** `relationshipsOf`, in id order, memoized so each walk does not re-sort. */
+  private relationshipsInIdOrder(partPath: string): Promise<Array<[string, Relationship]>> {
+    let pending = this.sortedRelationships.get(partPath);
+    if (!pending) {
+      pending = this.relationshipsOf(partPath).then((relationships) =>
+        [...relationships].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
+      this.sortedRelationships.set(partPath, pending);
+    }
+    return pending;
+  }
 
   /** The relationships `partPath` owns, by id. */
   relationshipsOf(partPath: string): Promise<Map<string, Relationship>> {
@@ -167,9 +179,7 @@ export class PayloadFingerprints {
           const own = await this.bytesDigest(current);
           const edges: string[] = [];
           if (own !== 'missing') {
-            const relationships = [...await this.relationshipsOf(current)]
-              .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-            for (const [id, relationship] of relationships) {
+            for (const [id, relationship] of await this.relationshipsInIdOrder(current)) {
               edges.push(relationship.targetMode === 'External'
                 ? `${id}|${relationship.type}|External|${relationship.target}`
                 : `${id}|${relationship.type}||#${await visit(resolvePartPath(current, relationship.target))}`);
@@ -469,9 +479,17 @@ async function partMayHoldPictures(archive: DocxArchive, partPath: string | unde
   return xml !== null && PICTURE_CONTAINER_TAG.test(xml);
 }
 
+/** The special note kinds (`ST_FtnEdn`) a reader meets without a body reference. */
+const SPECIAL_NOTE_TYPES = ['separator', 'continuationSeparator', 'continuationNotice'] as const;
+
 /**
- * Notes as a reader meets them: each note the projected main story
- * references, in reference order.
+ * Notes as a reader meets them: the separator, continuation-separator and
+ * continuation-notice definitions (selected through settings rather than a
+ * body reference, so paired by type), then each note the projected main
+ * story references, in reference order (round-2 review of #1430).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.1
  */
 async function projectedNotes(
   pkg: AuditedPackage,
@@ -484,12 +502,24 @@ async function projectedNotes(
   const xml = await pkg.projected(partPath, projection);
   if (xml === null) return undefined;
   const notes = new Map<string, Element>();
+  const special = new Map<string, Element[]>(SPECIAL_NOTE_TYPES.map((type) => [type, []]));
   for (const note of Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, kind))) {
+    const type = note.getAttributeNS(W_NS, 'type') || note.getAttribute('w:type');
+    if (type && special.has(type)) {
+      special.get(type)!.push(note);
+      continue;
+    }
     const id = note.getAttributeNS(W_NS, 'id') || note.getAttribute('w:id');
     if (id) notes.set(id, note);
   }
   const roots: Element[] = [];
   const sectionIndexes: number[] = [];
+  for (const type of SPECIAL_NOTE_TYPES) {
+    for (const note of special.get(type)!) {
+      roots.push(note);
+      sectionIndexes.push(0);
+    }
+  }
   for (const reference of Array.from(mainStory.getElementsByTagNameNS(W_NS, `${kind}Reference`))) {
     const note = notes.get(reference.getAttributeNS(W_NS, 'id') || reference.getAttribute('w:id') || '');
     if (!note) continue;

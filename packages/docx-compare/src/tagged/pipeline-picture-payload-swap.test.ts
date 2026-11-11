@@ -17,6 +17,7 @@
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.3
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.23
  * @see https://github.com/UseJunior/safe-docx/issues/1430
  */
 
@@ -49,6 +50,7 @@ const test = testAllure
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.3' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.10' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.23' },
   );
 
 const W_NS = OOXML.W_NS;
@@ -646,6 +648,37 @@ describe('Pictures and objects whose payload changes under the same markup (#143
       expect(pictures).toHaveLength(1);
       expect(pictures[0]).toMatchObject({
         kind: 'changed',
+        picture: { story: 'footnote', partPath: 'word/footnotes.xml', relationshipId: 'rIdImage', name: 'Logo' },
+      });
+    });
+  });
+
+  test('lists a picture swapped in the footnote separator', async ({ given, when, then }: AllureBddContext) => {
+    // The separator has no body reference; Word selects it by its type. Its
+    // picture must still be audited (round-2 review).
+    const withSeparatorPicture = async (text: string, image: Buffer): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await buildPackage({
+        body: `<w:p>${run(text)}</w:p>`,
+        footnote: run(' Note'),
+        storyPayloads: { image },
+      }));
+      const footnotes = (await archive.getFile('word/footnotes.xml'))!;
+      archive.setFile('word/footnotes.xml', footnotes.replace(
+        '<w:r><w:separator/></w:r>',
+        `<w:r><w:separator/></w:r>${drawingPicture()}`,
+      ));
+      return archive.save();
+    };
+    const original = await given('a footnote separator holding a picture', () => withSeparatorPicture('Body old', PNG));
+    const revised = await given('the separator picture bytes replaced, beside a body edit', () =>
+      withSeparatorPicture('Body new', OTHER_PNG));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the separator picture is named in unrepresentedChanges', () => {
+      const pictures = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'picture');
+      expect(pictures).toHaveLength(1);
+      expect(pictures[0]).toMatchObject({
         picture: { story: 'footnote', partPath: 'word/footnotes.xml', relationshipId: 'rIdImage', name: 'Logo' },
       });
     });
