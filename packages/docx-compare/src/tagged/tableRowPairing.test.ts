@@ -340,6 +340,21 @@ describe('table rows pair by cell-text similarity', () => {
       .flatMap((ins) => Array.from(ins.getElementsByTagNameNS(W_NS, 't')).map((text) => text.textContent)).join('')).toBe('60');
   });
 
+  test('pairs an edited row that holds a complete field in another cell', async () => {
+    // A field complete within a row cannot be split by pairing the row, so
+    // the row is still diffed cell by cell.
+    const field = '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+    const tableOf = (deadline: string) => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+      `<w:tr><w:tc>${p('Policy')}</w:tc><w:tc>${p('Page')}</w:tc></w:tr>` +
+      `<w:tr><w:tc>${p(`Audit committee deadline ${deadline} days`)}</w:tc><w:tc>${field}</w:tc></w:tr></w:tbl>`;
+    const { xml, result } = await compareChecked(tableOf('90'), tableOf('60'));
+    const view = tableView(xml);
+    expect(view.map((entry) => entry.marker)).toEqual(['', '']);
+    expect(view[1]!.cells.map((cell) => [cell.inserted, cell.deleted])).toEqual([['60', '90'], ['', '']]);
+    expect(result.stats).toMatchObject({ insertedTableRows: 0, deletedTableRows: 0 });
+  });
+
   test('keeps same-position pairing for rows whose cells sit in a cell-level wrapper', async () => {
     // Grid-interval keys do not reach wrapped cells, so such rows never pair
     // across positions; text keys inside the wrapper must not emit w:tc

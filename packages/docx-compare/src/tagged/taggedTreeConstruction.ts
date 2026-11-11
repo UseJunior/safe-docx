@@ -1040,12 +1040,23 @@ function constructBoth(
     const gapRevisedStart = ri;
     const originalGap = originalChildren.slice(gapOriginalStart, originalEnd);
     const revisedGap = revisedChildren.slice(gapRevisedStart, revisedEnd);
+    const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    // A table row whose fields all begin and end inside it is diffed cell by
+    // cell, so pairing it cannot split a field complex.
+    const fieldsCompleteWithin = (row: WmlElement): boolean => {
+      let depth = 0;
+      for (const fieldChar of Array.from(row.getElementsByTagNameNS(W, 'fldChar'))) {
+        const type = fieldChar.getAttributeNS(W, 'fldCharType');
+        if (type === 'begin') depth++;
+        else if (type === 'end' && --depth < 0) return false;
+      }
+      return depth === 0;
+    };
     const containsFieldControl = (elements: readonly WmlElement[]): boolean => elements.some((element) =>
-      element.getElementsByTagNameNS(
-        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
-      ).length > 0 || element.getElementsByTagNameNS(
-        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
-      ).length > 0);
+      isTableRow(element)
+        ? !fieldsCompleteWithin(element)
+        : element.getElementsByTagNameNS(W, 'fldChar').length > 0 ||
+          element.getElementsByTagNameNS(W, 'instrText').length > 0);
     // Field-context keys deliberately keep different complete fields out of
     // the LCS. Do not re-pair their individual runs through the generic fuzzy
     // gap matcher: that interleaves one source field with multiple revised
