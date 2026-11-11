@@ -1363,9 +1363,12 @@ async function compareDocumentsTagged(
   // A w:sectPrChange snapshot is CT_SectPrBase, so reject-all keeps a live
   // header/footer reference (#944). A story the compared document still
   // selects after reject-all cannot be a tracked insertion; it stays in
-  // unrepresentedChanges.
+  // unrepresentedChanges. A reference Reject All only carries forward from the
+  // removed inserted boundary (#1144) selects the story blank (#1204).
   const rejectedComparedStoryPaths =
-    await rejectedSelectedAncillaryStoryPaths(outerResult.document);
+    await rejectedSelectedAncillaryStoryPaths(outerResult.document, {
+      ignoreCarriedReferences: true,
+    });
   // A removed section's story is representable only where the outer
   // comparison left it reachable from revision markup (#754). Stories that
   // fail that check are skipped here and stay in unrepresentedChanges.

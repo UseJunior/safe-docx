@@ -23,6 +23,13 @@ import {
   textBoxPairingCandidates,
 } from './textBoxIdentityPairing.js';
 import {
+  pageStorySlots,
+  effectiveStorySlot,
+  isBlankStoryPart,
+  resolveEffectiveStoryBindings,
+  storySlotKey,
+} from './effectiveStoryBindings.js';
+import {
   addParagraphMarkRevisionMarker,
   createRevisionIdState,
   formatDate,
@@ -30,16 +37,6 @@ import {
 } from './revisionMarkup.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
-
-/**
- * Document projections for the header/footer story checks below. They ask
- * which stories surviving references still select, so they do not apply
- * Word's carry of a removed section's references onto a linked following
- * section (#1144). With the carry, a lifecycle story whose content projects
- * to empty would also stay selected, and these explicit-binding checks would
- * treat that as a different story graph.
- */
-const SELECTION_PROJECTION = { carryHeaderFooterReferences: false } as const;
 const VML_NS = 'urn:schemas-microsoft-com:vml';
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 const RELATIONSHIPS_NS =
@@ -1567,21 +1564,92 @@ async function ancillaryStoryInputs(
   };
 }
 
-export async function rejectedSelectedAncillaryStoryPaths(
-  compared: Buffer,
-): Promise<Set<string>> {
-  const archive = await DocxArchive.load(compared);
-  const documentXml = rejectAllChanges(await archive.getDocumentXml(), SELECTION_PROJECTION);
-  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
-  return new Set(
-    auditSectPr(documentXml, relationshipsXml).bindings.map(
-      (binding) => binding.targetPath,
-    ),
+const BINDING_ORIGIN_NS = 'urn:usejunior:safe-docx:story-binding-origin';
+const BINDING_ORIGIN_ATTRIBUTE = 'sdxBindingOrigin:section';
+
+function liveSectionPropertiesInAuditOrder(document: Document): Element[] {
+  return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'sectPr')).filter(
+    (sectPr) => !hasAncestorLocalName(sectPr, 'sectPrChange'),
   );
 }
 
-function slotKey(binding: Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role'>): string {
-  return `${binding.sectionOrdinal}:${binding.kind}:${binding.role}`;
+function isHeaderFooterReference(element: Element): boolean {
+  return element.namespaceURI === OOXML.W_NS &&
+    (element.localName === 'headerReference' || element.localName === 'footerReference');
+}
+
+/**
+ * Records, on a copy of the main document, which section each live
+ * `w:sectPr` and each of its header/footer references started in. The
+ * appliers clone a removed boundary's references onto the following section
+ * (Word's carry, #1144), and a clone keeps the attribute, so after Accept All
+ * or Reject All a reference whose origin differs from its section's was
+ * carried there. The copy is only ever projected and read, never published.
+ */
+function withSectionReferenceOrigins(documentXml: string): string {
+  const document = parseXml(documentXml);
+  for (const [ordinal, sectPr] of liveSectionPropertiesInAuditOrder(document).entries()) {
+    sectPr.setAttributeNS(BINDING_ORIGIN_NS, BINDING_ORIGIN_ATTRIBUTE, String(ordinal));
+    for (const reference of directChildElements(sectPr).filter(isHeaderFooterReference)) {
+      reference.setAttributeNS(BINDING_ORIGIN_NS, BINDING_ORIGIN_ATTRIBUTE, String(ordinal));
+    }
+  }
+  return serializer.serializeToString(document);
+}
+
+/**
+ * Slots (`section:kind:role`) of a projected, origin-tagged document whose
+ * reference was carried onto that section from a removed boundary.
+ */
+function carriedReferenceSlots(projectedDocumentXml: string): Set<string> {
+  const carried = new Set<string>();
+  const document = parseXml(projectedDocumentXml);
+  for (const [sectionOrdinal, sectPr] of liveSectionPropertiesInAuditOrder(document).entries()) {
+    const host = sectPr.getAttributeNS(BINDING_ORIGIN_NS, 'section');
+    for (const reference of directChildElements(sectPr).filter(isHeaderFooterReference)) {
+      const origin = reference.getAttributeNS(BINDING_ORIGIN_NS, 'section');
+      if (!host || !origin || host === origin) continue;
+      const role = reference.getAttributeNS(OOXML.W_NS, 'type') || reference.getAttribute('w:type') || '';
+      carried.add(`${sectionOrdinal}:${reference.localName === 'headerReference' ? 'header' : 'footer'}:${role}`);
+    }
+  }
+  return carried;
+}
+
+/**
+ * Part paths that Reject All of `compared` still binds to a section.
+ *
+ * The projection applies Word's carry (#1144): rejecting an inserted section
+ * boundary moves its references onto a following section that has none. With
+ * `ignoreCarriedReferences`, those carried references do not count. The
+ * comparison passes it for its own output, where an inserted lifecycle story
+ * reached only through a carried reference is marked as a whole insertion and
+ * so projects to a blank story on that section; what the section then shows is
+ * checked against the original by `assertAncillaryTextBoxStoryProjection`. A
+ * reference that Reject All keeps in place (a `w:sectPrChange` snapshot cannot
+ * remove one, #944) still counts.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1204
+ */
+export async function rejectedSelectedAncillaryStoryPaths(
+  compared: Buffer,
+  options: { ignoreCarriedReferences?: boolean } = {},
+): Promise<Set<string>> {
+  const archive = await DocxArchive.load(compared);
+  const documentXml = rejectAllChanges(
+    withSectionReferenceOrigins(await archive.getDocumentXml()),
+  );
+  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
+  const carried = options.ignoreCarriedReferences
+    ? carriedReferenceSlots(documentXml)
+    : new Set<string>();
+  return new Set(
+    auditSectPr(documentXml, relationshipsXml).bindings
+      .filter((binding) => !carried.has(storySlotKey(binding)))
+      .map((binding) => binding.targetPath),
+  );
 }
 
 /**
@@ -1592,14 +1660,23 @@ function slotKey(binding: Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role'
  * snapshot is `CT_SectPrBase` and cannot carry it, see #944), and imports the
  * selected part wherever the package
  * allocator placed it. A story is representable only when reject-all of the
- * outer document reselects one part for every one of its original slots and
- * accept-all selects that part through no slot at all; otherwise a tracked
- * deletion would not project to the original/revised states and the story
- * is left unrepresented. Returns the output part path per representable story.
+ * outer document shows one part in every one of its original slots (after
+ * inheritance) and accept-all keeps no reference of its own to that part;
+ * otherwise a tracked deletion would not project to the original/revised
+ * states and the story is left unrepresented. Returns the output part path
+ * per representable story.
+ *
+ * Both projections apply Word's carry (#1144). Accepting the removed boundary
+ * can carry its reference onto a following section with none of its own;
+ * that reference does not count against the story, whose content is then a
+ * whole tracked deletion and projects to a blank story on that section.
+ * `assertAncillaryTextBoxStoryProjection` checks what each section shows.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @see https://github.com/UseJunior/safe-docx/issues/754
+ * @see https://github.com/UseJunior/safe-docx/issues/1204
  */
 export async function deletedAncillaryStoryOutputPaths(
   compared: Buffer,
@@ -1609,21 +1686,22 @@ export async function deletedAncillaryStoryOutputPaths(
   const candidates = stories.filter((story) => story.ancillaryMode === 'deleted');
   if (candidates.length === 0) return resolved;
   const archive = await DocxArchive.load(compared);
-  const documentXml = await archive.getDocumentXml();
+  const documentXml = withSectionReferenceOrigins(await archive.getDocumentXml());
   const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
-  const rejectedPathBySlot = new Map(
-    auditSectPr(rejectAllChanges(documentXml, SELECTION_PROJECTION), relationshipsXml).bindings.map(
-      (binding) => [slotKey(binding), binding.targetPath],
-    ),
-  );
+  const rejected = resolveEffectiveStoryBindings({
+    documentXml: rejectAllChanges(documentXml),
+    relationshipsXml,
+  });
+  const acceptedXml = acceptAllChanges(documentXml);
+  const carried = carriedReferenceSlots(acceptedXml);
   const acceptedPaths = new Set(
-    auditSectPr(acceptAllChanges(documentXml, SELECTION_PROJECTION), relationshipsXml).bindings.map(
-      (binding) => binding.targetPath,
-    ),
+    auditSectPr(acceptedXml, relationshipsXml).bindings
+      .filter((binding) => !carried.has(storySlotKey(binding)))
+      .map((binding) => binding.targetPath),
   );
   for (const story of candidates) {
     const paths = new Set(
-      (story.selectedSlots ?? []).map((slot) => rejectedPathBySlot.get(slotKey(slot))),
+      (story.selectedSlots ?? []).map((slot) => effectiveStorySlot(rejected, slot)?.targetPath),
     );
     const [outputPath] = paths;
     if (
@@ -2333,7 +2411,23 @@ async function markLifecycleAncillaryStoryParagraphs(
   };
 }
 
-async function selectedStoryProjectionInventory(
+/**
+ * What a projected document shows in its headers and footers: one entry per
+ * section, kind and kind of page (first, odd, even), naming the content of the
+ * story that page uses after inheritance, with the bound part projected the
+ * same way. Keying by page rather than by reference type means a display
+ * switch (`w:titlePg`, `w:evenAndOddHeaders`) that moves a page onto another
+ * story changes the inventory. Blank parts are left out, so a page showing a
+ * story whose content was entirely a tracked insertion (rejected) or deletion
+ * (accepted) reads the same as a page with no story at all.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
+ * @see https://github.com/UseJunior/safe-docx/issues/1204
+ */
+async function displayedStoryProjectionInventory(
   archive: DocxArchive,
   documentXml: string,
   projection: 'accept' | 'reject',
@@ -2352,35 +2446,67 @@ async function selectedStoryProjectionInventory(
     const xml = await archive.getFile(targetPath);
     if (xml !== null) parts.set(targetPath, xml);
   }
-  const audit = auditSectPr(documentXml, relationshipsXml, parts);
-  if (!audit.ok) {
+  const bindings = resolveEffectiveStoryBindings({
+    documentXml,
+    relationshipsXml,
+    settingsXml: await archive.getFile('word/settings.xml'),
+    packageParts: parts,
+  });
+  if (!bindings.ok) {
     throw new UnsupportedTextBoxRevisionError(
-      unsupportedBindingChanges(audit.issues),
+      unsupportedBindingChanges(bindings.issues),
     );
   }
   const project = projection === 'accept' ? acceptAllChanges : rejectAllChanges;
-  return audit.bindings.map((binding) => {
-    const xml = parts.get(binding.targetPath)!;
-    const projectedXml = project(xml);
-    return [
-      binding.sectionOrdinal,
-      binding.kind,
-      binding.role,
-      ordinaryStoryScaffoldFingerprint(projectedXml),
-      extractRoundTripComparisonText(projectedXml),
-    ].join('|');
-  });
+  const projectedParts = new Map<string, string | null>();
+  const shown = (targetPath: string): string | null => {
+    if (!projectedParts.has(targetPath)) {
+      const projectedXml = project(parts.get(targetPath)!);
+      projectedParts.set(
+        targetPath,
+        isBlankStoryPart(projectedXml)
+          ? null
+          : [
+            ordinaryStoryScaffoldFingerprint(projectedXml),
+            extractRoundTripComparisonText(projectedXml),
+          ].join('|'),
+      );
+    }
+    return projectedParts.get(targetPath)!;
+  };
+  const inventory = [`sections|${bindings.sectionCount}`];
+  for (const { page, slot } of pageStorySlots(bindings)) {
+    const content = slot.targetPath === undefined ? null : shown(slot.targetPath);
+    if (content === null) continue;
+    inventory.push([slot.sectionOrdinal, slot.kind, page, content].join('|'));
+  }
+  return inventory;
 }
 
 /**
- * Validate the selected header/footer story graph after accept-all and
+ * Validate the header/footer stories each section shows after accept-all and
  * reject-all, independent of physical part allocation.
+ *
+ * Word shows effective bindings, not the literal references: Accept All and
+ * Reject All carry a removed section boundary's references onto a following
+ * section that has none (#1144), and a section without a reference of some
+ * type shows the previous section's story of that type. The check therefore
+ * projects with the carry, resolves each section's slots through
+ * inheritance, and compares what the first, odd and even pages of each
+ * section show (`w:titlePg` and `w:evenAndOddHeaders` decide which story a
+ * page uses); a story that projects to blank counts as no story. The
+ * compared package carries the revised settings part, so a revision that
+ * turns `w:evenAndOddHeaders` on or off is refused when Reject All would
+ * leave the original's even pages showing a different story.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.4
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
  * @see https://github.com/UseJunior/safe-docx/issues/726
+ * @see https://github.com/UseJunior/safe-docx/issues/1204
  */
 export async function assertAncillaryTextBoxStoryProjection(
   original: Buffer,
@@ -2403,24 +2529,24 @@ export async function assertAncillaryTextBoxStoryProjection(
     rejectedCompared,
     acceptedCompared,
   ] = await Promise.all([
-    selectedStoryProjectionInventory(
+    displayedStoryProjectionInventory(
       originalArchive,
-      rejectAllChanges(originalXml, SELECTION_PROJECTION),
+      rejectAllChanges(originalXml),
       'reject',
     ),
-    selectedStoryProjectionInventory(
+    displayedStoryProjectionInventory(
       revisedArchive,
-      acceptAllChanges(revisedXml, SELECTION_PROJECTION),
+      acceptAllChanges(revisedXml),
       'accept',
     ),
-    selectedStoryProjectionInventory(
+    displayedStoryProjectionInventory(
       comparedArchive,
-      rejectAllChanges(comparedXml, SELECTION_PROJECTION),
+      rejectAllChanges(comparedXml),
       'reject',
     ),
-    selectedStoryProjectionInventory(
+    displayedStoryProjectionInventory(
       comparedArchive,
-      acceptAllChanges(comparedXml, SELECTION_PROJECTION),
+      acceptAllChanges(comparedXml),
       'accept',
     ),
   ]);

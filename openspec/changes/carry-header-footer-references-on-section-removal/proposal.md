@@ -51,6 +51,9 @@ so the rule has to live in the appliers.
   removed section's own story is inherited by a following section that, on
   the other side, displays a different story can still round-trip
   differently under Word's Accept/Reject All.
+- Superseded by #1204: the story checks now project with the carry and
+  compare effective bindings, and the `carryHeaderFooterReferences` option
+  was removed. Such a comparison now fails closed instead.
 
 ## Impact
 
