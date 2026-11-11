@@ -52,6 +52,15 @@
   rather than carried silently. A nested box in a
   header or footer text box is still refused. (#1380)
 
+- A change to a vertical table merge (`w:vMerge`) is now redlined instead of
+  failing the comparison with `UnsupportedTableTopologyComparisonError`. That
+  covers creating, extending, shrinking or splitting a merge, combining it
+  with a horizontal span, and deleting the row where it starts or ends. The
+  smallest band of rows that holds every merge the change touches is shown as
+  its old rows deleted (ECMA-376 Part 1 §17.13.5.12), then its new rows
+  inserted (§17.13.5.17), so Accept All and Reject All each keep whole merges.
+  Rows outside the band keep their ordinary redline. (#1397)
+
 ## 0.25.1
 
 - Header and footer text edits are now tracked when the section layout also
