@@ -13,6 +13,17 @@ function describeScope(change: UnrepresentedChange): string {
     const element = control?.element ?? 'sdtPr';
     return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
   }
+  if (change.scope === 'picture') {
+    const picture = change.picture;
+    if (!picture) return 'picture';
+    const story = picture.story === 'body'
+      ? 'the main story'
+      : `the ${change.role ? `${change.role} ` : ''}${picture.story} (${picture.partPath})`;
+    const name = picture.name !== undefined ? ` "${picture.name}"` : '';
+    const target = picture.target !== undefined ? ` -> ${picture.target}` : '';
+    return `picture${name} (w:${picture.element} #${picture.index + 1}, relationship ${picture.relationshipId}${target}) ` +
+      `in ${story}`;
+  }
   return change.role ? `${change.role} ${change.scope}` : change.scope;
 }
 

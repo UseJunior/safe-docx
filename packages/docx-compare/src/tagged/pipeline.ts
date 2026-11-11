@@ -51,6 +51,7 @@ import {
   compareTexts,
 } from './trackChangesAcceptorAst.js';
 import { detectUnrepresentedChanges, subtractRepresentedPackageChanges } from './unrepresentedChanges.js';
+import { auditPicturePayloads, payloadSwappedRelationshipIds } from './picturePayload.js';
 import {
   type NumberingIntegrationOptions,
   DEFAULT_NUMBERING_OPTIONS,
@@ -166,6 +167,13 @@ export interface StandaloneTaggedPackageOptions {
   minimumRevisionId?: number;
   /** @internal Selected story calls disable the main-body topology gate. */
   guardTableTopology?: boolean;
+  /**
+   * @internal Redline a picture whose payload was replaced under unchanged
+   * markup. Only the main-story comparison sets it: a nested story is spliced
+   * back through its owner's relationship table, which cannot hold the
+   * imported original payload (#1430).
+   */
+  representPicturePayloadSwaps?: boolean;
 }
 
 export interface StandaloneTaggedPackageResult {
@@ -377,7 +385,11 @@ export async function buildStandaloneTaggedPackage(
     revisedArchive,
   );
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
-  await renumberCollidingRelationshipIds(originalArchive, revisedArchive);
+  await renumberCollidingRelationshipIds(originalArchive, revisedArchive, {
+    payloadSwappedIds: options.representPicturePayloadSwaps
+      ? await payloadSwappedRelationshipIds(originalArchive, revisedArchive)
+      : undefined,
+  });
 
   let [originalXml, revisedXml, originalNumberingXml, revisedNumberingXml, originalStylesXml, revisedStylesXml] =
     await Promise.all([
@@ -1290,6 +1302,7 @@ async function compareDocumentsTaggedCore(
   bookmarkNameReservations?: Set<string>,
   minimumRevisionId?: number,
   guardTableTopology = true,
+  representPicturePayloadSwaps = false,
 ): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
     author: options.author ?? 'Comparison',
@@ -1313,6 +1326,7 @@ async function compareDocumentsTaggedCore(
     bookmarkNameReservations,
     minimumRevisionId,
     guardTableTopology,
+    representPicturePayloadSwaps,
   });
   return {
     document: standalone.document,
@@ -1370,8 +1384,11 @@ async function compareDocumentsTagged(
       preparedPlan.outerRevised,
       options,
       bookmarkNameReservations,
+      undefined,
+      true,
+      true,
     )
-    : await compareDocumentsTaggedCore(original, revised, options);
+    : await compareDocumentsTaggedCore(original, revised, options, undefined, undefined, true, true);
   let sectionAligned: Awaited<ReturnType<typeof sectionAlignedOrdinaryStoryInputs>> | undefined;
   if (!preparedPlan) {
     // No text-box or topology-matched story to split out. A header/footer
@@ -1712,6 +1729,32 @@ async function withRepresentedPackageChangesRemoved(
   return { ...result, unrepresentedChanges: kept.length > 0 ? kept : undefined };
 }
 
+/**
+ * List every picture or object whose payload the redline does not reproduce:
+ * after Reject All it must resolve to the original's payload and after
+ * Accept All to the revised's, in every story a reader sees. The main story
+ * redlines such swaps itself; a header, footer or note story cannot, so a
+ * swap there is named in `unrepresentedChanges` rather than carried silently.
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1430
+ */
+async function withPicturePayloadAudit(
+  original: Buffer,
+  revised: Buffer,
+  result: TaggedCompareResult,
+): Promise<TaggedCompareResult> {
+  const [originalArchive, revisedArchive, outputArchive] = await Promise.all([
+    DocxArchive.load(original),
+    DocxArchive.load(revised),
+    DocxArchive.load(result.document),
+  ]);
+  const reported = result.unrepresentedChanges ?? [];
+  const pictures = await auditPicturePayloads(originalArchive, revisedArchive, outputArchive, reported);
+  if (pictures.length === 0) return result;
+  return { ...result, unrepresentedChanges: [...reported, ...pictures] };
+}
+
 /** Publish through the sole revised-base tagged assembler. */
 export async function compareDocumentsAtomizer(
   original: Buffer,
@@ -1723,7 +1766,11 @@ export async function compareDocumentsAtomizer(
     revisedBytes: revised.length,
   });
   try {
-    return await compareDocumentsTagged(original, revised, options);
+    return await withPicturePayloadAudit(
+      original,
+      revised,
+      await compareDocumentsTagged(original, revised, options),
+    );
   } catch (error) {
     // A raw xmldom ParseError names no part; find and name it (#1024).
     if (!isUnattributedXmlParseError(error)) throw error;

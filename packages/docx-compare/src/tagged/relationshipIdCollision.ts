@@ -41,11 +41,13 @@ import { posix } from 'node:path';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { normalizeOpcRelationshipTarget, parseXml } from '@usejunior/docx-core';
 import type { DocxArchive } from '@usejunior/docx-core';
+import { PayloadFingerprints } from './picturePayload.js';
 
 const serializer = new XMLSerializer();
 
 const PACKAGE_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const OFFICE_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const OFFICE_VML_NS = 'urn:schemas-microsoft-com:office:office';
 const CONTENT_TYPES_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const CONTENT_TYPES_PATH = '[Content_Types].xml';
 const DOCUMENT_PART = 'word/document.xml';
@@ -107,13 +109,26 @@ function sameRelationship(left: RelationshipEntry, right: RelationshipEntry): bo
   );
 }
 
-/** Rewrite every relationship-namespace attribute value through `mapping`. */
+/**
+ * Does this attribute hold a relationship id? Every `r:*` attribute does, and
+ * so does `o:relid`, which `v:imagedata` may name its image by
+ * (vml-officeDrawing.xsd types it `r:ST_RelationshipId`). Missing `o:relid`
+ * would leave such a picture bound to an id that was renumbered away.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.11
+ */
+function isRelationshipReference(attribute: Attr): boolean {
+  return attribute.namespaceURI === OFFICE_REL_NS
+    || (attribute.namespaceURI === OFFICE_VML_NS && attribute.localName === 'relid');
+}
+
+/** Rewrite every relationship-reference attribute value through `mapping`. */
 function remapRelationshipAttributes(root: Element, mapping: ReadonlyMap<string, string>): number {
   let rewrites = 0;
   const visit = (element: Element): void => {
     for (let i = 0; i < element.attributes.length; i++) {
       const attribute = element.attributes.item(i)!;
-      if (attribute.namespaceURI !== OFFICE_REL_NS) continue;
+      if (!isRelationshipReference(attribute)) continue;
       const next = mapping.get(attribute.value);
       if (next === undefined) continue;
       attribute.value = next;
@@ -140,10 +155,20 @@ function remapRelationshipAttributes(root: Element, mapping: ReadonlyMap<string,
  * inherits, churning ids for no benefit. Always pass the side that will be the
  * *merge source* -- the original for in-place output, the revised for rebuild,
  * since each mode clones the opposite package.
+ *
+ * `payloadSwappedIds` names ids that resolve to the same type and target on
+ * both sides but to different payloads (a picture whose image bytes were
+ * replaced in place). They are renumbered too, so the picture's markup
+ * differs between the sides, the comparison tracks the swap, and the import
+ * copies the original payload aside under the new id (#1430).
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1430
  */
 export async function renumberCollidingRelationshipIds(
   rewriteArchive: DocxArchive,
   againstArchive: DocxArchive,
+  { payloadSwappedIds = new Set<string>() }: { payloadSwappedIds?: ReadonlySet<string> } = {},
 ): Promise<RenumberedRelationshipId[]> {
   const againstRels = await readRelationships(againstArchive, DOCUMENT_PART);
   const rewriteRels = await readRelationships(rewriteArchive, DOCUMENT_PART);
@@ -162,7 +187,8 @@ export async function renumberCollidingRelationshipIds(
   const mapping = new Map<string, string>();
   for (const [id, entry] of rewriteRels) {
     const counterpart = againstRels.get(id);
-    if (!counterpart || sameRelationship(counterpart, entry)) continue;
+    if (!counterpart) continue;
+    if (sameRelationship(counterpart, entry) && !payloadSwappedIds.has(id)) continue;
     const nextId = allocateId();
     mapping.set(id, nextId);
     renumbered.push({ previousId: id, nextId, type: entry.type });
@@ -268,6 +294,7 @@ async function copyPartClosure(
   resultArchive: DocxArchive,
   partPath: string,
   copiedAs: Map<string, string>,
+  payloads: { source: PayloadFingerprints; result: PayloadFingerprints },
 ): Promise<string> {
   const already = copiedAs.get(partPath);
   if (already !== undefined) return already;
@@ -282,15 +309,22 @@ async function copyPartClosure(
   const existing = resultArchive.hasFile(partPath)
     ? await resultArchive.getFileBuffer(partPath)
     : null;
+  // Identical bytes are only the same part when what it reaches is the same
+  // too: a chart whose embedded workbook was replaced keeps byte-identical
+  // chart XML. Reusing the base's chart would bind the import to the base's
+  // workbook (#1430). Deciding before any relationship below is written keeps
+  // a cycle's back-edge pointing at the part's final landing place.
+  const reused = existing !== null && existing.equals(bytes) &&
+    await payloads.source.closureOf(partPath) === await payloads.result.closureOf(partPath);
   if (existing === null) {
     resultArchive.setFile(partPath, bytes);
     await ensureContentType(sourceArchive, resultArchive, partPath);
-  } else if (!existing.equals(bytes)) {
+  } else if (!reused) {
     targetPath = allocatePartPath(resultArchive, partPath);
     resultArchive.setFile(targetPath, bytes);
     await ensureContentType(sourceArchive, resultArchive, partPath, targetPath);
   }
-  // Identical bytes: the base already carries this exact part, so reuse it.
+  // Identical payload: the base already carries this exact part, so reuse it.
   copiedAs.set(partPath, targetPath);
 
   const nested = await readRelationships(sourceArchive, partPath);
@@ -307,6 +341,7 @@ async function copyPartClosure(
       resultArchive,
       sourceTarget,
       copiedAs,
+      payloads,
     );
     if (landedTarget !== sourceTarget) {
       nestedRewrites.set(entry.id, posix.relative(posix.dirname(targetPath), landedTarget));
@@ -361,7 +396,7 @@ export async function importReferencedRelationships(
   const collect = (element: Element): void => {
     for (let i = 0; i < element.attributes.length; i++) {
       const attribute = element.attributes.item(i)!;
-      if (attribute.namespaceURI === OFFICE_REL_NS && attribute.value) {
+      if (isRelationshipReference(attribute) && attribute.value) {
         referenced.add(attribute.value);
       }
     }
@@ -412,6 +447,11 @@ export async function importReferencedRelationships(
   if (!relsRoot) return [];
 
   const copiedAs = new Map<string, string>();
+  // Copies land on free paths, so they never change what a base part reaches.
+  const payloads = {
+    source: new PayloadFingerprints(mergeSourceArchive),
+    result: new PayloadFingerprints(resultArchive),
+  };
   const imported: ImportedRelationship[] = [];
   for (const entry of importable) {
     let target = entry.target;
@@ -422,6 +462,7 @@ export async function importReferencedRelationships(
         resultArchive,
         sourceTarget,
         copiedAs,
+        payloads,
       );
       // The part may have been copied aside to dodge a name collision; point
       // the relationship at where it actually landed, not where it came from.

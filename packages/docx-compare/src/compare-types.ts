@@ -126,7 +126,7 @@ export type ComparisonStrategy = 'tagged-tree' | 'legacy';
 export type ComparisonStrategyFallbackReason =
   | 'tagged_tree_publication_safety_check_failed';
 
-export type UnrepresentedChangeScope = 'section' | 'header' | 'footer' | 'contentControl';
+export type UnrepresentedChangeScope = 'section' | 'header' | 'footer' | 'contentControl' | 'picture';
 export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 
 /** Identity of the content control whose properties differ (`contentControl` scope). */
@@ -142,6 +142,35 @@ export interface UnrepresentedContentControlChange {
 }
 
 /**
+ * A picture or embedded object whose payload (image bytes, OLE binary, chart
+ * part, or relationship target) changed in a way the redline does not show
+ * (`picture` scope). The picture is named as the redline holds it: Reject All
+ * (or Accept All) of the output resolves it to a different payload than the
+ * original (or revised) document does.
+ */
+export interface UnrepresentedPictureChange {
+  /** The story holding the picture. */
+  story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote';
+  /** The output package part holding the picture, e.g. `word/footer1.xml`. */
+  partPath: string;
+  /** The projection in which the payload differs from its source document. */
+  projection: 'accept' | 'reject';
+  /**
+   * Zero-based reading-order ordinal, in that projection, of the outermost
+   * picture, object or text box holding the picture among those of its story.
+   */
+  index: number;
+  /** The picture's own WordprocessingML container: `w:drawing`, `w:pict` or `w:object`. */
+  element: 'drawing' | 'pict' | 'object';
+  /** The relationship id the picture names its payload by. */
+  relationshipId: string;
+  /** The relationship target in the output part, when it resolves. */
+  target?: string;
+  /** `wp:docPr/@name`, the OLE ProgID or the VML shape id, when present. */
+  name?: string;
+}
+
+/**
  * A package-level input difference not expressed by emitted tracked-change
  * markup. Revision counts intentionally remain text-oriented.
  */
@@ -154,6 +183,8 @@ export interface UnrepresentedChange {
   role?: 'default' | 'first' | 'even';
   /** The affected control when scope is `contentControl` (a changed `w:sdtPr`/`w:sdtEndPr`). */
   contentControl?: UnrepresentedContentControlChange;
+  /** The affected picture or object when scope is `picture`. */
+  picture?: UnrepresentedPictureChange;
 }
 
 /** @deprecated Tagged publication throws instead of falling back to reconstruction. */
