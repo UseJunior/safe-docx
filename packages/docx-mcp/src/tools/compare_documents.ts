@@ -7,6 +7,7 @@ import {
   compareDocuments,
   formatUnrepresentedChangeWarnings,
   summarizeUnrepresentedChanges,
+  type CompareRevisionGrouping,
 } from '@usejunior/docx-compare';
 import {
   mergeSessionResolutionMetadata,
@@ -15,6 +16,13 @@ import {
 } from './session_resolution.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { conformanceRefusalResponse } from './conformance_refusal.js';
+
+/**
+ * The tool's readers are reviewing lawyers, so a rewritten passage reads as
+ * one deletion followed by one insertion by default. The library default
+ * stays token-minimal; callers can still ask for it explicitly (#1411).
+ */
+export const DEFAULT_COMPARE_REVISION_GROUPING: CompareRevisionGrouping = 'readable-semantic';
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
@@ -30,6 +38,7 @@ export async function compareDocuments_tool(
     author?: string;
     ignore_formatting?: boolean;
     compare_moves?: boolean;
+    revision_grouping?: CompareRevisionGrouping;
   },
 ): Promise<ToolResponse> {
   try {
@@ -50,6 +59,14 @@ export async function compareDocuments_tool(
     }
 
     const author = params.author ?? 'Comparison';
+    const revisionGrouping = params.revision_grouping ?? DEFAULT_COMPARE_REVISION_GROUPING;
+    if (revisionGrouping !== 'readable-semantic' && revisionGrouping !== 'token-minimal') {
+      return err(
+        'INVALID_PARAMS',
+        `Unsupported revision_grouping: ${String(revisionGrouping)}`,
+        "Use 'readable-semantic' (default) or 'token-minimal'.",
+      );
+    }
 
     let originalBuffer: Buffer;
     let revisedBuffer: Buffer;
@@ -108,6 +125,7 @@ export async function compareDocuments_tool(
       author,
       ignoreFormatting: params.ignore_formatting,
       detectMoves: params.compare_moves,
+      revisionGrouping,
     });
 
     // Validate and write output
@@ -135,6 +153,7 @@ export async function compareDocuments_tool(
       size_bytes: result.document.length,
       package_base: 'revised',
       author,
+      revision_grouping: revisionGrouping,
       stats: result.stats,
       ...(unrepresented.length > 0
         ? {

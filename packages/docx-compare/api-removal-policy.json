@@ -27,6 +27,7 @@
       "CompareOptions",
       "compareProjectedFormattingFidelity",
       "CompareResult",
+      "CompareRevisionGrouping",
       "compareSourceProjectedFormattingFidelity",
       "CompareStats",
       "compareTexts",
@@ -163,7 +164,8 @@
     "ignoreFormatting": "stable compatibility",
     "maxWordRefinementChangeRanges": "breaking removal",
     "premergeRuns": "breaking removal",
-    "reconstructionMode": "breaking removal"
+    "reconstructionMode": "breaking removal",
+    "revisionGrouping": "stable compatibility"
   },
   "publicResultFields": {
     "stable compatibility": [

@@ -628,6 +628,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       author: z.string().optional().describe("Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF)."),
       ignore_formatting: z.boolean().optional().describe('Ignore formatting differences (DOCX only). Default: false.'),
       compare_moves: z.boolean().optional().describe('Detect moved content (DOCX only). Default: true.'),
+      revision_grouping: z
+        .enum(['readable-semantic', 'token-minimal'])
+        .optional()
+        .describe(
+          "How DOCX revisions are grouped. 'readable-semantic' (default) shows each rewritten passage as one deletion followed by one insertion, absorbing short unchanged words, spaces and punctuation between changes; runs keep their own formatting, and moves, fields, bookmarks, comment ranges and note references are never absorbed. 'token-minimal' emits the smallest word-level deletion/insertion set, which alternates word by word in heavily rewritten paragraphs. Accept All and Reject All results are the same either way. DOCX only.",
+        ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
