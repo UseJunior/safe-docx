@@ -1658,6 +1658,51 @@ export async function sectionAlignedOrdinaryStoryInputs(
   // whose r:id points at different hyperlinks or images are different stories.
   // An internal target also carries its bytes, so a same-named media part
   // whose content differs between packages does not read as the same story.
+  // What each relationship id owned by `owner` resolves to; undefined means
+  // nothing usable (an internal target missing from the package, or a part
+  // reached again through a cycle). An internal target is its bytes plus,
+  // recursively, what its own relationships resolve to, so a chart whose
+  // drawing differs is a different target even when the chart XML is equal.
+  const resolveRelationships = async (
+    archive: DocxArchive,
+    owner: string,
+    visiting: ReadonlySet<string>,
+  ): Promise<Map<string, string | undefined>> => {
+    const relationshipsXml = await archive.getFile(owningRelationshipsPath(owner));
+    const resolved = new Map<string, string | undefined>();
+    if (!relationshipsXml) return resolved;
+    for (const relationship of Array.from(parseXml(relationshipsXml).getElementsByTagName('Relationship'))) {
+      const id = relationship.getAttribute('Id');
+      if (!id) continue;
+      const type = relationship.getAttribute('Type') ?? '';
+      const target = relationship.getAttribute('Target') ?? '';
+      if (relationship.getAttribute('TargetMode') === 'External') {
+        resolved.set(id, `${type}|external|${target}`);
+        continue;
+      }
+      // A relative target resolves against the source part's directory; a
+      // target starting with "/" is package-absolute.
+      const targetPath = target.startsWith('/')
+        ? posix.normalize(target).replace(/^\/+/u, '')
+        : posix.normalize(posix.join(posix.dirname(owner), target));
+      const bytes = visiting.has(targetPath) ? null : await archive.getFileBuffer(targetPath);
+      if (!bytes) {
+        resolved.set(id, undefined);
+        continue;
+      }
+      const nested = await resolveRelationships(archive, targetPath, new Set([...visiting, targetPath]));
+      if ([...nested.values()].some((value) => value === undefined)) {
+        resolved.set(id, undefined);
+        continue;
+      }
+      const digest = createHash('sha256').update(bytes);
+      for (const [nestedId, value] of [...nested].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+        digest.update(`\n${nestedId}=${value}`);
+      }
+      resolved.set(id, `${type}|internal|${digest.digest('hex')}`);
+    }
+    return resolved;
+  };
   const storyIdentities = async (
     label: string,
     archive: DocxArchive,
@@ -1672,28 +1717,7 @@ export async function sectionAlignedOrdinaryStoryInputs(
         continue;
       }
       const root = parseXml(xml).documentElement;
-      const relationshipsXml = await archive.getFile(owningRelationshipsPath(path));
-      const relationships = relationshipsXml ? parseXml(relationshipsXml) : undefined;
-      // undefined: the id resolves to nothing usable (no record, or an
-      // internal target missing from the package).
-      const resolved = new Map<string, string | undefined>();
-      for (const relationship of relationships ? Array.from(relationships.getElementsByTagName('Relationship')) : []) {
-        const id = relationship.getAttribute('Id');
-        if (!id) continue;
-        const type = relationship.getAttribute('Type') ?? '';
-        const target = relationship.getAttribute('Target') ?? '';
-        if (relationship.getAttribute('TargetMode') === 'External') {
-          resolved.set(id, `${type}|external|${target}`);
-          continue;
-        }
-        // A relative target resolves against the source part's directory; a
-        // target starting with "/" is package-absolute.
-        const targetPath = target.startsWith('/')
-          ? posix.normalize(target).replace(/^\/+/u, '')
-          : posix.normalize(posix.join(posix.dirname(path), target));
-        const bytes = await archive.getFileBuffer(targetPath);
-        resolved.set(id, bytes ? `${type}|internal|${createHash('sha256').update(bytes).digest('hex')}` : undefined);
-      }
+      const resolved = await resolveRelationships(archive, path, new Set([path]));
       // Relationship ids are local names: compare what each one resolves to,
       // so the same link under a different id is the same story.
       const semantic = root.cloneNode(true) as Element;

@@ -294,6 +294,33 @@ async function expectBothFootersStayReported(result: TaggedCompareResult): Promi
   ]));
 }
 
+
+/**
+ * Replaces `word/<name>.xml` with a footer holding `text` and one chart whose
+ * part is `word/charts/<chart>.xml`. Every chart's XML is the same; its
+ * `c:userShapes` drawing carries `label`, so charts differ only one
+ * relationship hop away from the footer.
+ */
+async function withChartFooter(buffer: Buffer, name: string, text: string, chart: string, label: string): Promise<Buffer> {
+  const archive = await DocxArchive.load(buffer);
+  const C = 'http://schemas.openxmlformats.org/drawingml/2006/chart';
+  const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+  archive.setFile(`word/${name}.xml`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}" xmlns:r="${R_NS}" xmlns:a="${A}" xmlns:c="${C}"` +
+    ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">' +
+    `<w:p><w:r><w:t>${text}</w:t></w:r><w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Chart 1"/>` +
+    `<a:graphic><a:graphicData uri="${C}"><c:chart r:id="rIdChart"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:ftr>`);
+  archive.setFile(`word/_rels/${name}.xml.rels`,
+    `<Relationships xmlns="${PKG_NS}"><Relationship Id="rIdChart" Type="${R_NS}/chart" Target="charts/${chart}.xml"/></Relationships>`);
+  archive.setFile(`word/charts/${chart}.xml`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="${C}" xmlns:r="${R_NS}"><c:chart><c:plotArea><c:layout/></c:plotArea></c:chart><c:userShapes r:id="rIdShapes"/></c:chartSpace>`);
+  archive.setFile(`word/charts/_rels/${chart}.xml.rels`,
+    `<Relationships xmlns="${PKG_NS}"><Relationship Id="rIdShapes" Type="${R_NS}/chartUserShapes" Target="../drawings/${chart}.xml"/></Relationships>`);
+  archive.setFile(`word/drawings/${chart}.xml`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:userShapes xmlns:c="${C}" xmlns:cdr="http://schemas.openxmlformats.org/drawingml/2006/chartDrawing" xmlns:a="${A}"><cdr:relSizeAnchor><cdr:from><cdr:x>0</cdr:x><cdr:y>0</cdr:y></cdr:from><cdr:to><cdr:x>1</cdr:x><cdr:y>1</cdr:y></cdr:to><cdr:sp macro="" textlink=""><cdr:nvSpPr><cdr:cNvPr id="2" name="Label"/><cdr:cNvSpPr/></cdr:nvSpPr><cdr:spPr/><cdr:txBody><a:bodyPr/><a:p><a:r><a:t>${label}</a:t></a:r></a:p></cdr:txBody></cdr:sp></cdr:relSizeAnchor></c:userShapes>`);
+  return archive.save();
+}
+
 describe('header/footer edits across section-layout changes (#1390)', () => {
   test.openspec('[SDX-CMP-SLOTPAIR-01] Header/footer edit across a page-layout change is tracked')(
     'tracks a shared footer edit when the revision turns section 2 landscape (issue reproduction)',
@@ -650,6 +677,21 @@ describe('header/footer edits across section-layout changes (#1390)', () => {
       });
       const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
       await expectRepresentedRedline({ then }, original, revised, result, ['word/footer1.xml']);
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'keeps two original footers apart whose charts differ only in a drawing one relationship further away',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('equal chart XML whose user-shape drawings say ALPHA and BETA', async () => {
+        const shape = await twoFootersSharedInRevision();
+        let original = await withChartFooter(shape.original, 'footer1', 'Old', 'chart1', 'ALPHA');
+        original = await withChartFooter(original, 'footer2', 'Old', 'chart2', 'BETA');
+        const revised = await withChartFooter(shape.revised, 'footer1', 'New', 'chart1', 'ALPHA');
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the shared footer is not redlined and both footer changes stay reported', () => expectBothFootersStayReported(result));
     },
   );
 });

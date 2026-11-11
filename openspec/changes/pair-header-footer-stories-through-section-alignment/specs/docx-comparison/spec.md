@@ -15,10 +15,12 @@ explicit versus inherited references, section count and section properties
 SHALL NOT establish or prevent story identity. Story content SHALL be
 compared together with what each of its relationship ids resolves to
 (ECMA-376 Part 2 §6.5.2.3, §6.5.3.4): the target of an external relationship,
-and the content of an internal target part, resolved from the source part's
-directory or from the package root for a target that starts with `/`.
+and the content of an internal target part together with, recursively, what
+that part's own relationships resolve to, each target resolved from its source
+part's directory or from the package root for a target that starts with `/`.
 Relationship ids are local names and SHALL NOT distinguish two stories. A
-reference that resolves to nothing SHALL NOT match any story.
+reference that resolves to nothing, directly or through a nested relationship
+or a cycle, SHALL NOT match any story.
 
 A pair SHALL be kept only when every page it touches shows the original story
 after Reject All and the revised story after Accept All. A story that cannot
