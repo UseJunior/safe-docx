@@ -321,6 +321,40 @@ async function withChartFooter(buffer: Buffer, name: string, text: string, chart
   return archive.save();
 }
 
+
+/**
+ * Replaces `word/<name>.xml` with a footer holding `text` and a VML picture
+ * whose `v:imagedata` names its image through `o:relid` (vml-main.xsd), with
+ * `png` written to `word/media/<file>`.
+ */
+async function withVmlPictureFooter(buffer: Buffer, name: string, text: string, file: string, png: string): Promise<Buffer> {
+  const archive = await DocxArchive.load(buffer);
+  archive.setFile(`word/${name}.xml`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}" xmlns:r="${R_NS}"` +
+    ' xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">' +
+    `<w:p><w:r><w:t>${text}</w:t></w:r><w:r><w:pict><v:shape id="pic1" style="width:20pt;height:20pt">` +
+    '<v:imagedata o:relid="rIdImage"/></v:shape></w:pict></w:r></w:p></w:ftr>');
+  archive.setFile(`word/_rels/${name}.xml.rels`,
+    `<Relationships xmlns="${PKG_NS}"><Relationship Id="rIdImage" Type="${R_NS}/image" Target="media/${file}"/></Relationships>`);
+  archive.setFile(`word/media/${file}`, Buffer.from(png, 'base64'));
+  const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+  if (!contentTypes.includes('Extension="png"')) {
+    archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>', '<Default Extension="png" ContentType="image/png"/></Types>'));
+  }
+  return archive.save();
+}
+
+/** Rewrites a part's relationships with a `pr:` prefix on every element; same meaning. */
+async function withPrefixedRelationships(buffer: Buffer, relsPath: string): Promise<Buffer> {
+  const archive = await DocxArchive.load(buffer);
+  const xml = (await archive.getFile(relsPath))!;
+  archive.setFile(relsPath, xml
+    .replace(`<Relationships xmlns="${PKG_NS}">`, `<pr:Relationships xmlns:pr="${PKG_NS}">`)
+    .replaceAll('<Relationship ', '<pr:Relationship ')
+    .replace('</Relationships>', '</pr:Relationships>'));
+  return archive.save();
+}
+
 describe('header/footer edits across section-layout changes (#1390)', () => {
   test.openspec('[SDX-CMP-SLOTPAIR-01] Header/footer edit across a page-layout change is tracked')(
     'tracks a shared footer edit when the revision turns section 2 landscape (issue reproduction)',
@@ -692,6 +726,43 @@ describe('header/footer edits across section-layout changes (#1390)', () => {
       });
       const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
       await then('the shared footer is not redlined and both footer changes stay reported', () => expectBothFootersStayReported(result));
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'reads nested relationship parts by namespace, so prefixed chart relationships still tell the charts apart',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('the chart case with prefixed relationship elements in each chart part', async () => {
+        const shape = await twoFootersSharedInRevision();
+        let original = await withChartFooter(shape.original, 'footer1', 'Old', 'chart1', 'ALPHA');
+        original = await withChartFooter(original, 'footer2', 'Old', 'chart2', 'BETA');
+        original = await withPrefixedRelationships(original, 'word/charts/_rels/chart1.xml.rels');
+        original = await withPrefixedRelationships(original, 'word/charts/_rels/chart2.xml.rels');
+        const revised = await withPrefixedRelationships(
+          await withChartFooter(shape.revised, 'footer1', 'New', 'chart1', 'ALPHA'),
+          'word/charts/_rels/chart1.xml.rels');
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the shared footer is not redlined and both footer changes stay reported', () => expectBothFootersStayReported(result));
+    },
+  );
+
+  test.openspec('[SDX-CMP-SLOTPAIR-07] Story identity includes what its relationship ids resolve to')(
+    'resolves VML o:relid references, so footers whose VML pictures differ stay apart',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('equal VML markup naming red and blue images through o:relid', async () => {
+        const shape = await twoFootersSharedInRevision();
+        let original = await withVmlPictureFooter(shape.original, 'footer1', 'Old', 'a.png', PNG_RED);
+        original = await withVmlPictureFooter(original, 'footer2', 'Old', 'b.png', PNG_BLUE);
+        const revised = await withVmlPictureFooter(shape.revised, 'footer1', 'New', 'a.png', PNG_RED);
+        return [original, revised] as const;
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the shared footer is not redlined and both footer changes stay reported', async () => {
+        await expectBothFootersStayReported(result);
+        await assertSchema(result.document);
+      });
     },
   );
 });

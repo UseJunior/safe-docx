@@ -18,7 +18,11 @@ compared together with what each of its relationship ids resolves to
 and the content of an internal target part together with, recursively, what
 that part's own relationships resolve to, each target resolved from its source
 part's directory or from the package root for a target that starts with `/`.
-Relationship ids are local names and SHALL NOT distinguish two stories. A
+References are the attributes in the relationships namespace and VML's
+`o:relid`; an attribute of any other name whose value is one of the part's
+relationship ids SHALL make the story unresolved. Relationship parts SHALL be
+read by namespace, whatever prefix they use. Relationship ids are local names
+and SHALL NOT distinguish two stories. A
 reference that resolves to nothing, directly or through a nested relationship
 or a cycle, SHALL NOT match any story.
 
