@@ -13,7 +13,7 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
  * The pair (footer present, footer removed) is the smallest removed-story
  * input: since #754 the redline marks the footer's content as a tracked
  * deletion and reports nothing in `unrepresentedChanges` for it. Use
- * `buildDocxWithPageWidth` for an input that stays unrepresented.
+ * `buildDocxWithTitlePage` for an input that stays unrepresented.
  */
 export async function buildDocxWithDefaultFooter(
   bodyText: string,
@@ -39,22 +39,27 @@ export async function buildDocxWithDefaultFooter(
 }
 
 /**
- * A one-section document whose `sectPr` declares a page width in twips.
+ * A one-section document whose `sectPr` turns a distinct first page
+ * (`w:titlePg`) on or off.
  *
- * Two of these with different widths are the smallest input on which
- * `compareDocuments` reports a non-empty `unrepresentedChanges` (#1029): the
- * comparison emits no revision for section properties, so the difference is
- * reported as `{ scope: 'section', kind: 'changed' }`.
+ * Turning it on is the smallest input on which `compareDocuments` reports a
+ * non-empty `unrepresentedChanges` (#1029): the `w:sectPrChange` snapshot
+ * holds the original properties, which have no `w:titlePg`, and Word's Reject
+ * All applies a snapshot property by property, keeping a live property the
+ * snapshot omits. The difference is therefore reported as
+ * `{ scope: 'section', kind: 'changed' }` (#1181). A page-size change no
+ * longer serves: its snapshot names every live attribute, so it is
+ * represented.
  */
-export async function buildDocxWithPageWidth(
+export async function buildDocxWithTitlePage(
   bodyText: string,
-  pageWidthTwips: number,
+  titlePage: boolean,
 ): Promise<Buffer> {
   const body = `<w:p><w:r><w:t>${bodyText}</w:t></w:r></w:p>`;
   const archive = await DocxArchive.load(await buildDocxFromBodyXml(body));
   archive.setDocumentXml((await archive.getDocumentXml()).replace(
     '<w:sectPr/>',
-    `<w:sectPr><w:pgSz w:w="${pageWidthTwips}" w:h="15840"/></w:sectPr>`,
+    `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>${titlePage ? '<w:titlePg/>' : ''}</w:sectPr>`,
   ));
   return archive.save();
 }

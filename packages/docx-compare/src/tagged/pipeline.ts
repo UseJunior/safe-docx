@@ -50,7 +50,7 @@ import {
   rejectAllChanges,
   compareTexts,
 } from './trackChangesAcceptorAst.js';
-import { detectUnrepresentedChanges } from './unrepresentedChanges.js';
+import { detectUnrepresentedChanges, subtractRepresentedPackageChanges } from './unrepresentedChanges.js';
 import {
   type NumberingIntegrationOptions,
   DEFAULT_NUMBERING_OPTIONS,
@@ -603,8 +603,20 @@ export async function buildStandaloneTaggedPackage(
     acceptAllChanges(taggedRevisedXml),
     taggedXml,
   );
+  // A section entry the redline already carries (a tracked break mark, a
+  // Word-safe w:sectPrChange) is dropped before the gate reads the list, so a
+  // genuinely unrepresented section divergence is not admitted on the strength
+  // of an index-shifted entry (#1181). Header/footer entries wait for the
+  // stories to be spliced (`compareDocumentsTagged`).
+  const reportedChanges = await subtractRepresentedPackageChanges({
+    original: { archive: originalArchive, documentXml: originalXml },
+    revised: { archive: revisedArchive, documentXml: revisedXml },
+    compared: { archive: resultArchive, documentXml: taggedXml },
+    changes: unrepresentedChanges,
+    scopes: SECTION_SCOPE,
+  });
   const sectionFormattingIsExplicitlyUnrepresented =
-    unrepresentedChanges.some((change) =>
+    reportedChanges.some((change) =>
       change.scope === 'section' || change.scope === 'header' || change.scope === 'footer') &&
     [formattingFidelity.accept, formattingFidelity.reject].every((report) =>
       report.runFormatting.score === 1 &&
@@ -613,7 +625,7 @@ export async function buildStandaloneTaggedPackage(
       report.unalignedExpectedParagraphs === 0 &&
       report.unalignedActualParagraphs === 0 &&
       report.divergences.every((divergence) =>
-        sectionDivergenceIsReported(divergence, unrepresentedChanges)),
+        sectionDivergenceIsReported(divergence, reportedChanges)),
     );
   // Disabling detection opts out of representing original-to-revised format
   // differences; it does not opt out of validating the published package.
@@ -650,9 +662,12 @@ export async function buildStandaloneTaggedPackage(
     formattingFidelity,
     revisionAttributions,
     unrepresentedChanges:
-      unrepresentedChanges.length > 0 ? unrepresentedChanges : undefined,
+      reportedChanges.length > 0 ? reportedChanges : undefined,
   };
 }
+
+const SECTION_SCOPE: ReadonlySet<'section'> = new Set(['section']);
+const PACKAGE_SCOPES: ReadonlySet<'section' | 'header' | 'footer'> = new Set(['section', 'header', 'footer']);
 
 const STORY_SCOPE_BY_REFERENCE_PROPERTY: Readonly<Record<string, 'header' | 'footer'>> = {
   'w:headerReference': 'header',
@@ -1368,7 +1383,9 @@ async function compareDocumentsTagged(
       outerResult.document,
       new Set(),
     );
-    if (sectionAligned.stories.length === 0) return outerResult;
+    if (sectionAligned.stories.length === 0) {
+      return withRepresentedPackageChangesRemoved(original, revised, outerResult);
+    }
   }
   bookmarkNameReservations ??= await reserveBookmarkNames();
   const textBoxPlan: TextBoxStoryComparisonPlan = preparedPlan ?? {
@@ -1648,7 +1665,7 @@ async function compareDocumentsTagged(
     ),
   );
 
-  return {
+  return withRepresentedPackageChangesRemoved(original, revised, {
     ...outerResult,
     document,
     stats,
@@ -1656,7 +1673,39 @@ async function compareDocumentsTagged(
       unrepresentedChanges && unrepresentedChanges.length > 0
         ? unrepresentedChanges
         : undefined,
-  };
+  });
+}
+
+/**
+ * Drop the section, header and footer entries the finished package
+ * represents, judged on the spliced stories through the section alignment
+ * (`subtractRepresentedPackageChanges`). Text-box and section-aligned story
+ * redlines are in place only now, so this is the first point at which a
+ * header/footer entry can be checked against them (#1427, #1030).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1427
+ */
+async function withRepresentedPackageChangesRemoved(
+  original: Buffer,
+  revised: Buffer,
+  result: TaggedCompareResult,
+): Promise<TaggedCompareResult> {
+  if (!result.unrepresentedChanges?.some((change) => (PACKAGE_SCOPES as ReadonlySet<string>).has(change.scope))) {
+    return result;
+  }
+  const [originalArchive, revisedArchive, comparedArchive] = await Promise.all([
+    DocxArchive.load(original),
+    DocxArchive.load(revised),
+    DocxArchive.load(result.document),
+  ]);
+  const kept = await subtractRepresentedPackageChanges({
+    original: { archive: originalArchive },
+    revised: { archive: revisedArchive },
+    compared: { archive: comparedArchive },
+    changes: result.unrepresentedChanges,
+    scopes: PACKAGE_SCOPES,
+  });
+  return { ...result, unrepresentedChanges: kept.length > 0 ? kept : undefined };
 }
 
 /** Publish through the sole revised-base tagged assembler. */

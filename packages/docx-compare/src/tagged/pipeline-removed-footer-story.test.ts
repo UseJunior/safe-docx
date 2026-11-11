@@ -221,10 +221,11 @@ describe('relationship-selected story removed with its section (#754)', () => {
         for (const text of FOOTER_TEXTS) expect(rejectedFooter).toContain(text);
       });
 
-      await then('the footer is no longer reported as unrepresented; the section removal still is', () => {
-        expect(result.unrepresentedChanges).toEqual([
-          { scope: 'section', kind: 'removed', sectionIndex: 1 },
-        ]);
+      await then('neither the footer nor the section removal is reported as unrepresented', () => {
+        // The removed break rides on a tracked paragraph-mark deletion that
+        // carries its full w:sectPr: Reject All restores the section and
+        // Accept All removes it, so the removal is represented (#1181).
+        expect(result.unrepresentedChanges).toBeUndefined();
       });
     },
   );
@@ -324,22 +325,21 @@ describe('relationship-selected story removed with its section (#754)', () => {
       // must not read as an empty comparison.
       expect(result.stats.deletions).toBeGreaterThanOrEqual(2);
       expect(result.stats.deletedRanges).toBeGreaterThanOrEqual(2);
-      expect(result.unrepresentedChanges).toEqual([
-        { scope: 'section', kind: 'removed', sectionIndex: 1 },
-      ]);
+      // The removed break is a tracked paragraph-mark deletion (#1181).
+      expect(result.unrepresentedChanges).toBeUndefined();
     },
   );
 
   test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
-    'tracks the footer of a deleted middle section while the positional detector still reports later slots',
+    'tracks the footer of a deleted middle section and reports none of the index-shifted slots',
     async () => {
       // Sections A/B/C each select their own footer; the revision removes B.
       // The planner identifies B's footer by pairing, not position, so the
       // redline deletes it and leaves A and C untouched.
-      // detectUnrepresentedChanges is positional over section index
-      // (pre-existing, shared with the insertion side), so it also reports
-      // the shift of C into B's position; those entries stay listed rather
-      // than being claimed as represented by B's deletion.
+      // detectUnrepresentedChanges pairs sections by index, so it sees C
+      // shifted into B's position. Reject All of the redline shows A, B, C
+      // and Accept All shows A, C, each section with its own footer, so those
+      // index-shifted entries are represented and dropped (#1427).
       const sectionParagraph = (id: string, text: string): string =>
         `<w:p><w:pPr><w:sectPr><w:footerReference w:type="default" r:id="${id}"/></w:sectPr></w:pPr>` +
         `<w:r><w:t>${text}</w:t></w:r></w:p>`;
@@ -379,11 +379,7 @@ describe('relationship-selected story removed with its section (#754)', () => {
         .toEqual(['word/footer-A.xml', 'word/footer-C.xml']);
       expect(await selectedTargets(archive, rejectAllChanges(documentXml)))
         .toEqual(['word/footer-A.xml', 'word/footer-B.xml', 'word/footer-C.xml']);
-      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-        { scope: 'footer', kind: 'changed', sectionIndex: 1, role: 'default' },
-        { scope: 'footer', kind: 'removed', sectionIndex: 2, role: 'default' },
-        { scope: 'section', kind: 'removed', sectionIndex: 3 },
-      ]));
+      expect(result.unrepresentedChanges).toBeUndefined();
     },
   );
 

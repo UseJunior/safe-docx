@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { buildDocxWithPageWidth } from '../testing/footer-story-fixture.js';
+import { buildDocxWithTitlePage } from '../testing/footer-story-fixture.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Bin Symlink Entrypoint' });
 
@@ -78,11 +78,11 @@ describe('docx-comparison bin entry guard', () => {
     let dir!: string;
     let result!: ReturnType<typeof runCliEntry>;
 
-    await given('an original on US Letter and a revision on A4', async () => {
+    await given('an original without a distinct first page and a revision with one', async () => {
       dir = mkdtempSync(join(tmpdir(), 'docx-comparison-entry-unrepresented-'));
       tempDirs.push(dir);
-      writeFileSync(join(dir, 'original.docx'), await buildDocxWithPageWidth('Body text', 12240));
-      writeFileSync(join(dir, 'revised.docx'), await buildDocxWithPageWidth('Body text, revised', 11906));
+      writeFileSync(join(dir, 'original.docx'), await buildDocxWithTitlePage('Body text', false));
+      writeFileSync(join(dir, 'revised.docx'), await buildDocxWithTitlePage('Body text, revised', true));
     });
 
     await when('the entrypoint compares the pair by its real path', () => {

@@ -5,7 +5,7 @@ import { testAllure, type AllureBddContext } from '../../testing/allure-test.js'
 import {
   makeMinimalDocx,
   makeMinimalDocxWithFooter,
-  makeMinimalDocxWithPageWidth,
+  makeMinimalDocxWithTitlePage,
 } from '../../testing/docx_test_utils.js';
 import { createTrackedTempDir, registerCleanup } from '../../testing/session-test-utils.js';
 import { runCompareCommand } from './compare.js';
@@ -56,10 +56,10 @@ describe('safe-docx compare command', () => {
     const tmpDir = await createTrackedTempDir('safe-docx-compare-unrepresented-');
     const originalPath = path.join(tmpDir, 'original.docx');
     const revisedPath = path.join(tmpDir, 'revised.docx');
-    await given('an original on US Letter and a revision on A4', async () => {
+    await given('an original without a distinct first page and a revision with one', async () => {
       await Promise.all([
-        fs.writeFile(originalPath, await makeMinimalDocxWithPageWidth(['Body text'], 12240)),
-        fs.writeFile(revisedPath, await makeMinimalDocxWithPageWidth(['Body text, revised'], 11906)),
+        fs.writeFile(originalPath, await makeMinimalDocxWithTitlePage(['Body text'], false)),
+        fs.writeFile(revisedPath, await makeMinimalDocxWithTitlePage(['Body text, revised'], true)),
       ]);
     });
 
