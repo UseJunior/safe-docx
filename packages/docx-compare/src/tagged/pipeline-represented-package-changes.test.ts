@@ -373,6 +373,32 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  for (const [label, before, after] of [
+    ['fill', 'style="width:100pt;height:50pt" fillcolor="red"', 'style="width:100pt;height:50pt" fillcolor="blue"'],
+    ['height', 'style="width:100pt;height:50pt" fillcolor="red"', 'style="width:100pt;height:200pt" fillcolor="red"'],
+  ] as const) {
+    test(`an empty header text box whose ${label} changes stays listed`, async () => {
+      // The box shows no text, but its carrier still draws a shape the
+      // redline does not track; it must not read as a blank story.
+      const header = (shape: string): Part => ({
+        id: 'rIdH',
+        kind: 'header',
+        target: 'header1.xml',
+        contentXml: `<w:p><w:r><w:pict><v:rect id="tb" ${shape}><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:rect></w:pict></w:r></w:p>`,
+      });
+      const original = await packageWith(paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header(before)]);
+      const revised = await packageWith(paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header(after)]);
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const headerXml = (await (await DocxArchive.load(result.document)).getFile('word/header1.xml'))!;
+
+      expect(rejectAllChanges(headerXml)).toContain(after);
+      expect(result.unrepresentedChanges).toEqual([
+        { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' },
+      ]);
+    });
+  }
+
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
     // snapshot without w:titlePg leaves the revised title page in place on

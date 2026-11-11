@@ -330,6 +330,15 @@ function normalizedStoryXml(xml: string): string {
   const document = parseXml(xml);
   const root = document.documentElement;
   const visit = (element: Element): void => {
+    // Without xml:space="preserve", Word drops a text element's leading and
+    // trailing white space, so only the text it shows is compared.
+    if (
+      element.namespaceURI === W_NS &&
+      TEXT_BEARING.has(localName(element)) &&
+      element.getAttributeNS(XML_NS, 'space') !== 'preserve'
+    ) {
+      element.textContent = (element.textContent ?? '').trim();
+    }
     for (const attribute of Array.from(element.attributes)) {
       const name = attribute.localName ?? attribute.name;
       if (
@@ -384,7 +393,12 @@ function normalizedStoryXml(xml: string): string {
         continue;
       }
       const properties = childElements(child).find((candidate) => isW(candidate, 'rPr'));
-      const signature = properties ? canonicalElement(properties) : '';
+      // Runs join only when their own attributes and properties agree.
+      const runAttributes = Array.from(child.attributes)
+        .map((attribute) => `${attribute.namespaceURI ?? ''}|${attribute.localName ?? attribute.name}=${attribute.value}`)
+        .sort()
+        .join(',');
+      const signature = `${runAttributes}#${properties ? canonicalElement(properties) : ''}`;
       const content = childElements(child).filter((candidate) => candidate !== properties);
       if (content.length === 0) {
         element.removeChild(child);
@@ -412,12 +426,43 @@ function normalizedStoryXml(xml: string): string {
   return new XMLSerializer().serializeToString(document);
 }
 
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+const DRAWING_CARRIERS = new Set(['pict', 'drawing', 'object']);
+
+/** Whether a story part holds a picture, shape or object carrier, which draws even when its text is empty. */
+function holdsDrawingCarrier(xml: string): boolean {
+  return Array.from(parseXml(xml).getElementsByTagName('*')).some((element) =>
+    (element.namespaceURI === W_NS && DRAWING_CARRIERS.has(localName(element))) ||
+    (element.namespaceURI === MC_NS && localName(element) === 'AlternateContent'));
+}
+
+/** What a slot shows: nothing (no part), or a projected part, which may itself show nothing. */
+interface StoryIdentity {
+  absent: boolean;
+  /** The part shows nothing and holds no drawing carrier. */
+  blank: boolean;
+  identity: string;
+}
+
+const ABSENT_STORY: StoryIdentity = { absent: true, blank: true, identity: BLANK_STORY_IDENTITY };
+
+/**
+ * Whether two slots show the same story. A part that shows nothing reads as
+ * no part (Word draws an empty header or footer either way); two parts are
+ * otherwise the same only when their normalized, relationship-resolved
+ * projections are, so two differently formatted empty parts still differ.
+ */
+function sameStory(left: StoryIdentity, right: StoryIdentity): boolean {
+  if (left.absent || right.absent) return left.blank && right.blank;
+  return left.identity === right.identity;
+}
+
 interface PackageProjectionView {
   rawSectionCount: number;
   sections: string[];
   snapshotsWordSafe: boolean;
   bindings: EffectiveStoryBindings | undefined;
-  storyIdentity: (path: string | undefined) => Promise<string>;
+  storyIdentity: (path: string | undefined) => Promise<StoryIdentity>;
 }
 
 async function packageProjectionView(
@@ -436,24 +481,27 @@ async function packageProjectionView(
     settingsXml: await source.archive.getFile('word/settings.xml'),
   });
   if (!bindings.ok) bindings = undefined;
-  const identities = new Map<string, Promise<string>>();
+  const identities = new Map<string, Promise<StoryIdentity>>();
   return {
     rawSectionCount: liveSectionProperties(rawDocument).length,
     sections: liveSectionProperties(projectedDocument).map(sectionPropertySignature),
     snapshotsWordSafe: everySnapshotIsWordSafe(rawDocument),
     bindings,
     storyIdentity: (path) => {
-      if (path === undefined) return Promise.resolve(BLANK_STORY_IDENTITY);
+      if (path === undefined) return Promise.resolve(ABSENT_STORY);
       let identity = identities.get(path);
       if (!identity) {
-        identity = (async () => {
+        identity = (async (): Promise<StoryIdentity> => {
           const xml = await source.archive.getFile(path);
-          if (xml === null) return BLANK_STORY_IDENTITY;
+          if (xml === null) return ABSENT_STORY;
           const projected = project(xml);
-          if (isBlankStoryPart(projected)) return BLANK_STORY_IDENTITY;
+          // An empty text box still draws its shape, fill and size, so a
+          // part holding a drawing carrier never reads as blank.
+          const blank = isBlankStoryPart(projected) && !holdsDrawingCarrier(projected);
           // An unresolvable reference gets an identity nothing else has.
-          return (await readStory(source.archive, path, normalizedStoryXml(projected)))?.semantic
+          const resolved = (await readStory(source.archive, path, normalizedStoryXml(projected)))?.semantic
             ?? `unresolved:${label}:${path}`;
+          return { absent: false, blank, identity: resolved };
         })();
         identities.set(path, identity);
       }
@@ -474,7 +522,7 @@ async function storySlotMatches(
   const left = effectiveStorySlot(actual.bindings, { sectionOrdinal, kind, role });
   const right = effectiveStorySlot(expected.bindings, { sectionOrdinal, kind, role });
   if (!left || !right || left.displayed !== right.displayed) return false;
-  if (await actual.storyIdentity(left.targetPath) !== await expected.storyIdentity(right.targetPath)) return false;
+  if (!sameStory(await actual.storyIdentity(left.targetPath), await expected.storyIdentity(right.targetPath))) return false;
   // The pages of the section must show the same stories too: a display switch
   // can move a page onto a slot the role comparison does not cover.
   const pagesOf = (bindings: EffectiveStoryBindings) =>
@@ -485,8 +533,10 @@ async function storySlotMatches(
   for (let index = 0; index < actualPages.length; index++) {
     if (
       actualPages[index]!.page !== expectedPages[index]!.page ||
-      await actual.storyIdentity(actualPages[index]!.slot.targetPath) !==
-        await expected.storyIdentity(expectedPages[index]!.slot.targetPath)
+      !sameStory(
+        await actual.storyIdentity(actualPages[index]!.slot.targetPath),
+        await expected.storyIdentity(expectedPages[index]!.slot.targetPath),
+      )
     ) {
       return false;
     }
