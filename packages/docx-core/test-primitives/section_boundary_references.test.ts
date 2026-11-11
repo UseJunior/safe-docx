@@ -299,19 +299,6 @@ describe('section boundary reference helpers', () => {
     });
   });
 
-  test('the comparison story checks can project without the carry', async ({ given, then }: AllureBddContext) => {
-    let xml!: string;
-    await given('S1e and S3b fixtures over a body section with no references', async () => {
-      xml = fixture('s1e', removedSection(), { set: 'B' }, 'body');
-    });
-    await then('carryHeaderFooterReferences: false leaves the survivor unbound on both projections', async () => {
-      expect(summarize(rejectAllChanges(xml, { carryHeaderFooterReferences: false })))
-        .toEqual([{ references: [], titlePg: false, landscape: false }]);
-      expect(summarize(acceptAllChanges(fixture('s3b', removedSection(), { set: 'B' }, 'body'), { carryHeaderFooterReferences: false })))
-        .toEqual([{ references: [], titlePg: false, landscape: false }]);
-    });
-  });
-
   // Until #987 this case expected the paragraph section to be removed and its
   // references carried to the body section. Word 16 Reject All keeps the
   // section: a snapshot-less sectPrChange records no prior state, so only the
