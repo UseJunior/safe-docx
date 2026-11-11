@@ -257,6 +257,104 @@ describe('table rows pair by cell-text similarity', () => {
     expect(tableView(await xmlOf(result.document)).map((entry) => entry.marker)).toEqual(['', 'del', 'ins', 'ins', '', '']);
   });
 
+  /**
+   * Rows that share boilerplate (`policy`, `[N] days post-Closing]`) must not
+   * pair with each other on that boilerplate alone: two mediocre pairs would
+   * outscore the one edited row and show inserted and deleted rows as edits
+   * of their neighbours. Shape of the NVCA Investors' Rights Agreement
+   * governance-policy table.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/1419
+   */
+  test('pairs the edited row, not boilerplate-sharing neighbours, in a governance-policy table', async () => {
+    const policies: Array<[string, string]> = [
+      ['[Investment and cash management policy', '[60] days post-Closing]'],
+      ['[Code of conduct', '[60] days post-Closing]'],
+      ['[Anti-harassment and discrimination policy', '[60] days post-Closing]'],
+      ['[Policies and procedures to promote diversity, equity and inclusion', '[90] days post-Closing]'],
+      ['[Policies on executive hiring and independent directors', '[90] days post-Closing]'],
+      ['[FCPA policy', '[180] days post-Closing]'],
+      ['[Cybersecurity policy', '[180] days post-Closing]'],
+    ];
+    const governance = (rows: Array<[string, string]>) => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/>` +
+      `<w:gridCol w:w="3000"/></w:tblGrid>${([['Required Governance Policy', 'Deadline'], ...rows] as Array<[string, string]>)
+        .map(([policy, deadline]) => `<w:tr><w:tc>${p(policy)}</w:tc><w:tc>${p(deadline)}</w:tc></w:tr>`).join('')}</w:tbl>`;
+    const whistleblower: [string, string] = ['[Whistleblower policy', '[30] days post-Closing]'];
+    const fcpa: [string, string] = ['[FCPA policy', '[120] days post-Closing]'];
+    const cases: Array<[string, Array<[string, string]>, string[]]> = [
+      // Inserted before FCPA, FCPA edited, Cybersecurity replaced by an unrelated row.
+      ['unequal gap', [...policies.slice(0, 5), whistleblower, fcpa, ['[Board diversity statement', 'Annual]']],
+        ['', '', '', '', '', '', 'ins', '', 'del', 'ins']],
+      // Inserted before FCPA, FCPA edited, Cybersecurity deleted: an equal-count gap.
+      ['equal-count gap', [...policies.slice(0, 5), whistleblower, fcpa],
+        ['', '', '', '', '', '', 'ins', '', 'del']],
+    ];
+    for (const [name, revisedRows, markers] of cases) {
+      const { xml } = await compareChecked(governance(policies), governance(revisedRows));
+      const view = tableView(xml);
+      expect(view.map((entry) => entry.marker), name).toEqual(markers);
+      const edited = view.find((entry) => entry.marker === '' && entry.cells[0]!.text === '[FCPA policy')!;
+      expect(edited.cells.map((cell) => [cell.inserted, cell.deleted]), name).toEqual([['', ''], ['120', '180']]);
+      expect(view.find((entry) => entry.marker === 'ins' && entry.cells[0]!.text.includes('Whistleblower')), name).toBeDefined();
+      expect(view.find((entry) => entry.marker === 'del' && entry.cells[0]!.deleted.includes('Cybersecurity')), name).toBeDefined();
+    }
+  });
+
+  /**
+   * Refusing an early row pair in an equal-count gap must not strand the
+   * elements after it that pair by position: a row whose skeleton changed
+   * still reaches the table-topology guard, and an edited row inside a
+   * row-level content control is still diffed in place.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/1419
+   */
+  test('keeps later position anchors after refusing a row pair in an equal-count gap', async () => {
+    const cells = (policy: string, deadline: string) => `<w:tc>${p(policy)}</w:tc><w:tc>${p(deadline)}</w:tc>`;
+    const plain = (policy: string, deadline: string) => `<w:tr>${cells(policy, deadline)}</w:tr>`;
+    const governance = (rows: string[]) => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/>` +
+      `<w:gridCol w:w="3000"/></w:tblGrid>${plain('Required Governance Policy', 'Deadline')}${rows.join('')}</w:tbl>`;
+    const fcpa = plain('[FCPA policy', '[180] days post-Closing]');
+    const cyber = plain('[Cybersecurity policy', '[180] days post-Closing]');
+    const leading = [fcpa, cyber];
+    const shifted = [plain('[Whistleblower policy', '[30] days post-Closing]'), plain('[FCPA policy', '[120] days post-Closing]')];
+
+    // A later row merges its cells: the skeleton change goes to the guard.
+    const merged = `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>${p('[Audit committee charter [90] days post-Closing]')}</w:tc></w:tr>`;
+    await expect(compareDocuments(
+      await docx(governance([...leading, plain('[Audit committee charter', '[90] days post-Closing]')])),
+      await docx(governance([...shifted, merged])),
+    )).rejects.toMatchObject({ name: 'UnsupportedTableTopologyComparisonError', feature: 'cellCount' });
+
+    // A later row sits in a row-level content control: it pairs by position.
+    const controlled = (deadline: string) =>
+      `<w:sdt><w:sdtPr/><w:sdtContent>${plain('[Audit committee charter', deadline)}</w:sdtContent></w:sdt>`;
+    const { xml } = await compareChecked(
+      governance([...leading, controlled('[90] days post-Closing]')]),
+      governance([...shifted, controlled('[60] days post-Closing]')]),
+    );
+    expect(tableView(xml).map((entry) => entry.marker)).toEqual(['', 'ins', '', 'del']);
+    const controlledRow = parseXml(xml).getElementsByTagNameNS(W_NS, 'sdtContent')[0]!;
+    expect(controlledRow.getElementsByTagNameNS(W_NS, 'trPr').length).toBe(0);
+    expect(Array.from(controlledRow.getElementsByTagNameNS(W_NS, 'delText')).map((text) => text.textContent).join('')).toBe('90');
+    expect(Array.from(controlledRow.getElementsByTagNameNS(W_NS, 'ins'))
+      .flatMap((ins) => Array.from(ins.getElementsByTagNameNS(W_NS, 't')).map((text) => text.textContent)).join('')).toBe('60');
+  });
+
+  test('pairs an edited row that holds a complete field in another cell', async () => {
+    // A field complete within a row cannot be split by pairing the row, so
+    // the row is still diffed cell by cell.
+    const field = '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+    const tableOf = (deadline: string) => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/><w:gridCol w:w="3000"/></w:tblGrid>` +
+      `<w:tr><w:tc>${p('Policy')}</w:tc><w:tc>${p('Page')}</w:tc></w:tr>` +
+      `<w:tr><w:tc>${p(`Audit committee deadline ${deadline} days`)}</w:tc><w:tc>${field}</w:tc></w:tr></w:tbl>`;
+    const { xml, result } = await compareChecked(tableOf('90'), tableOf('60'));
+    const view = tableView(xml);
+    expect(view.map((entry) => entry.marker)).toEqual(['', '']);
+    expect(view[1]!.cells.map((cell) => [cell.inserted, cell.deleted])).toEqual([['60', '90'], ['', '']]);
+    expect(result.stats).toMatchObject({ insertedTableRows: 0, deletedTableRows: 0 });
+  });
+
   test('keeps same-position pairing for rows whose cells sit in a cell-level wrapper', async () => {
     // Grid-interval keys do not reach wrapped cells, so such rows never pair
     // across positions; text keys inside the wrapper must not emit w:tc
