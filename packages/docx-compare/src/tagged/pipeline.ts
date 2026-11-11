@@ -1649,7 +1649,10 @@ async function compareDocumentsTagged(
       moveToRanges: 0,
     },
   );
-  const alignedSectionKinds = sectionAligned.representedSectionKinds;
+  // Section-aligned header/footer entries are not dropped here by section
+  // index and kind: that pairing reads a part with no text as no part, so it
+  // would hide a removed empty-but-tall header. `withRepresentedPackageChangesRemoved`
+  // judges each entry on the spliced package instead (#1427).
   const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(
     (change) => !textBoxPlan.representedAncillaryChanges.some(
       (represented) =>
@@ -1658,10 +1661,6 @@ async function compareDocumentsTagged(
         change.kind === represented.kind &&
         change.sectionIndex === represented.sectionIndex &&
         change.role === represented.role,
-    ) && !alignedSectionKinds.some(
-      (represented) =>
-        change.scope === represented.kind &&
-        change.sectionIndex === represented.sectionIndex,
     ),
   );
 

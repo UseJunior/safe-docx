@@ -517,8 +517,21 @@ async function storySlotMatches(
   if (!actual.bindings || !expected.bindings) return false;
   const left = effectiveStorySlot(actual.bindings, { sectionOrdinal, kind, role });
   const right = effectiveStorySlot(expected.bindings, { sectionOrdinal, kind, role });
-  if (!left || !right || left.displayed !== right.displayed) return false;
-  if (!sameStory(await actual.storyIdentity(left.targetPath), await expected.storyIdentity(right.targetPath))) return false;
+  if (!left || !right) return false;
+  if (left.displayed === right.displayed) {
+    // Shown or not, the slot's story must match, so a latent part (a first
+    // page story without w:titlePg) is not lost either.
+    if (!sameStory(await actual.storyIdentity(left.targetPath), await expected.storyIdentity(right.targetPath))) {
+      return false;
+    }
+  } else {
+    // A display switch (w:titlePg, w:evenAndOddHeaders) moves pages between
+    // slots, and the page check below decides what each page shows. The side
+    // that does not show the slot must hold no part there, so no latent
+    // story is lost (#1390).
+    const [hiddenView, hiddenSlot] = left.displayed ? [expected, right] : [actual, left];
+    if (!(await hiddenView.storyIdentity(hiddenSlot.targetPath)).absent) return false;
+  }
   // The pages of the section must show the same stories too: a display switch
   // can move a page onto a slot the role comparison does not cover.
   const pagesOf = (bindings: EffectiveStoryBindings) =>
@@ -603,17 +616,39 @@ export async function subtractRepresentedPackageChanges(input: {
     return [...input.changes];
   }
 
+  // A section that exists on one side only has no counterpart index on the
+  // other: its pages there fold into a neighbouring section. That side must
+  // then match in full, every section (and, for a story entry, every slot of
+  // that kind), so the entry is not dropped on a vacuous comparison.
+  const ROLES = ['default', 'first', 'even'] as const;
+  const sideMatches = async (
+    actual: PackageProjectionView,
+    expected: PackageProjectionView,
+    count: number,
+    k: number,
+    scope: PackageChangeScope,
+    role: 'default' | 'first' | 'even' | undefined,
+  ): Promise<boolean> => {
+    if (scope === 'section') {
+      if (k < count) return actual.sections[k] === expected.sections[k];
+      return actual.sections.every((section, index) => section === expected.sections[index]);
+    }
+    if (!role) return false;
+    if (k < count) return storySlotMatches(actual, expected, k, scope, role);
+    for (let index = 0; index < count; index++) {
+      for (const each of ROLES) {
+        if (!(await storySlotMatches(actual, expected, index, scope, each))) return false;
+      }
+    }
+    return true;
+  };
   const represented = async (change: UnrepresentedChange): Promise<boolean> => {
     const k = change.sectionIndex;
     if (k < 0 || k >= Math.max(originalCount, revisedCount)) return false;
-    if (change.scope === 'section') {
-      return rejected.snapshotsWordSafe &&
-        (k >= originalCount || rejected.sections[k] === original.sections[k]) &&
-        (k >= revisedCount || accepted.sections[k] === revised.sections[k]);
-    }
-    if ((change.scope !== 'header' && change.scope !== 'footer') || !change.role) return false;
-    return (k >= originalCount || await storySlotMatches(rejected, original, k, change.scope, change.role)) &&
-      (k >= revisedCount || await storySlotMatches(accepted, revised, k, change.scope, change.role));
+    if (change.scope !== 'section' && change.scope !== 'header' && change.scope !== 'footer') return false;
+    if (change.scope === 'section' && !rejected.snapshotsWordSafe) return false;
+    return await sideMatches(rejected, original, originalCount, k, change.scope, change.role) &&
+      await sideMatches(accepted, revised, revisedCount, k, change.scope, change.role);
   };
   const kept: UnrepresentedChange[] = [];
   for (const change of input.changes) {

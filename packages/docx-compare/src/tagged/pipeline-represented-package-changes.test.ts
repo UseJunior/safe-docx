@@ -425,6 +425,35 @@ describe('changes the redline still does not carry stay listed', () => {
     }
   }
 
+  for (const [label, contentXml] of TALL_EMPTY_HEADERS) {
+    for (const kind of ['removed', 'added'] as const) {
+      test(`a first-page header with no text but ${label} stays listed when ${kind} with a section break and a default header edit`, async () => {
+        // The section-aligned story pairing reads a part with no text as no
+        // part; its index-based drop used to hide this entry before the
+        // package check ran (Codex round 3). On the side without the extra
+        // section, the merged section must match in full.
+        const withFirst = await packageWith(
+          sectionEnd('Section one.', LAYOUT) + paragraph('Body.'),
+          ref('header', 'rIdD') + ref('header', 'rIdFirst', 'first') + LAYOUT + '<w:titlePg/>',
+          [story('rIdD', 'header', 'header1.xml', 'Old default'),
+            { id: 'rIdFirst', kind: 'header', target: 'header2.xml', contentXml }],
+        );
+        const withoutFirst = await packageWith(
+          paragraph('Section one.') + paragraph('Body.'),
+          ref('header', 'rIdD') + LAYOUT + '<w:titlePg/>',
+          [story('rIdD', 'header', 'header1.xml', 'New default')],
+        );
+        const [original, revised] = kind === 'removed' ? [withFirst, withoutFirst] : [withoutFirst, withFirst];
+
+        const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+        expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+          { scope: 'header', kind, sectionIndex: 1, role: 'first' },
+        ]));
+      });
+    }
+  }
+
   for (const [label, space] of [['no-break space', '\u00a0'], ['em space', '\u2003']] as const) {
     test(`a header ${label} the compared package does not track stays listed`, async () => {
       // Word drops only XML white space from an unpreserved w:t, so a leading
