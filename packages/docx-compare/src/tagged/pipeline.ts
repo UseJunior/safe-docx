@@ -115,8 +115,10 @@ import {
   markInsertedAncillaryStoryParagraphs,
   markTrackedTextBoxLifecycles,
   prepareTextBoxStoryComparison,
+  type TextBoxStoryComparisonPlan,
   type TextBoxStoryInput,
   rejectedSelectedAncillaryStoryPaths,
+  sectionAlignedOrdinaryStoryInputs,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
 import {
@@ -1327,25 +1329,49 @@ async function compareDocumentsTagged(
   options: AtomizerOptions,
 ): Promise<TaggedCompareResult> {
   await assertTransitionalComparisonInputs(original, revised);
-  const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
-  if (!textBoxPlan) {
-    return compareDocumentsTaggedCore(original, revised, options);
-  }
-
+  const preparedPlan = await prepareTextBoxStoryComparison(original, revised);
   const [originalArchive, revisedArchive] = await Promise.all([
     DocxArchive.load(original),
     DocxArchive.load(revised),
   ]);
-  const bookmarkNameReservations = await collectWordPartBookmarkNames([
-    originalArchive,
-    revisedArchive,
-  ]);
-  const outerResult = await compareDocumentsTaggedCore(
-    textBoxPlan.outerOriginal,
-    textBoxPlan.outerRevised,
-    options,
-    bookmarkNameReservations,
-  );
+  // The outer comparison runs first on the plain path, so a malformed part
+  // still fails with its own typed error before the bookmark scan reads it.
+  const reserveBookmarkNames = (): Promise<Set<string>> =>
+    collectWordPartBookmarkNames([originalArchive, revisedArchive]);
+  let bookmarkNameReservations = preparedPlan ? await reserveBookmarkNames() : undefined;
+  const outerResult = preparedPlan
+    ? await compareDocumentsTaggedCore(
+      preparedPlan.outerOriginal,
+      preparedPlan.outerRevised,
+      options,
+      bookmarkNameReservations,
+    )
+    : await compareDocumentsTaggedCore(original, revised, options);
+  let sectionAligned: Awaited<ReturnType<typeof sectionAlignedOrdinaryStoryInputs>> | undefined;
+  if (!preparedPlan) {
+    // No text-box or topology-matched story to split out. A header/footer
+    // text edit across a section-layout change is paired only now, through
+    // the section alignment the body comparison emitted (#1390).
+    sectionAligned = await sectionAlignedOrdinaryStoryInputs(
+      original,
+      revised,
+      outerResult.document,
+      new Set(),
+    );
+    if (sectionAligned.stories.length === 0) return outerResult;
+  }
+  bookmarkNameReservations ??= await reserveBookmarkNames();
+  const textBoxPlan: TextBoxStoryComparisonPlan = preparedPlan ?? {
+    outerOriginal: original,
+    outerRevised: revised,
+    originalDocumentXml: await originalArchive.getDocumentXml(),
+    revisedDocumentXml: await revisedArchive.getDocumentXml(),
+    stories: [],
+    validateAncillaryProjection: false,
+    hasAncillaryTextBoxStories: false,
+    hasUnpairedTextBoxes: false,
+    representedAncillaryChanges: [],
+  };
 
   const storyResults: Array<{
     index: number;
@@ -1376,21 +1402,22 @@ async function compareDocumentsTagged(
     outerResult.document,
     textBoxPlan.stories,
   );
+  const sectionAlignedStories = new Set<TextBoxStoryInput>();
   const representedPartPaths = new Set<string>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
-  for (const story of textBoxPlan.stories) {
+  const compareStory = async (story: TextBoxStoryInput): Promise<void> => {
     if (
       story.ancillaryMode === 'inserted' &&
       (rejectedSelectedStoryPaths.has(story.partPath) ||
         rejectedComparedStoryPaths.has(story.partPath))
     ) {
-      continue;
+      return;
     }
     if (
       story.ancillaryMode === 'deleted' &&
       !deletedStoryOutputPaths.has(story)
     ) {
-      continue;
+      return;
     }
     // A lifecycle story has content on one side only; its nested comparison
     // runs the empty side against itself and the marker below supplies the
@@ -1458,7 +1485,9 @@ async function compareDocumentsTagged(
       nextPackageRevisionId,
       await firstAvailablePackageRevisionId(result.document),
     );
-    if (story.container === 'ancillaryPart') representedPartPaths.add(story.partPath);
+    if (story.container === 'ancillaryPart' && !sectionAlignedStories.has(story)) {
+      representedPartPaths.add(story.partPath);
+    }
     storyResults.push({
       index: story.index,
       visualIndex: story.visualIndex,
@@ -1469,6 +1498,21 @@ async function compareDocumentsTagged(
       result,
       story,
     });
+  };
+  for (const story of textBoxPlan.stories) await compareStory(story);
+  // Every part no story above wrote is open to section-aligned pairing (#1390).
+  // These stories prove their own pages right in both projections
+  // (`pairStoriesThroughSectionAlignment`), so they do not ask for the
+  // whole-package projection check, which also judges pages they leave alone.
+  sectionAligned ??= await sectionAlignedOrdinaryStoryInputs(
+    original,
+    revised,
+    outerResult.document,
+    new Set(storyResults.map((storyResult) => storyResult.partPath)),
+  );
+  for (const story of sectionAligned.stories) {
+    sectionAlignedStories.add(story);
+    await compareStory(story);
   }
 
   const assembled = await assembleTextBoxStoryComparison(
@@ -1578,6 +1622,7 @@ async function compareDocumentsTagged(
       moveToRanges: 0,
     },
   );
+  const alignedSectionKinds = sectionAligned.representedSectionKinds;
   const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(
     (change) => !textBoxPlan.representedAncillaryChanges.some(
       (represented) =>
@@ -1586,6 +1631,10 @@ async function compareDocumentsTagged(
         change.kind === represented.kind &&
         change.sectionIndex === represented.sectionIndex &&
         change.role === represented.role,
+    ) && !alignedSectionKinds.some(
+      (represented) =>
+        change.scope === represented.kind &&
+        change.sectionIndex === represented.sectionIndex,
     ),
   );
 

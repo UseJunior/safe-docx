@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Header and footer text edits are now tracked when the section layout also
+  changes: a section added or removed, a page-size, orientation or margin
+  change, `w:titlePg` switched, or a slot moved to a differently named part
+  or from an explicit to an inherited reference. Before, any such difference
+  left every header/footer edit in `unrepresentedChanges` and out of the
+  redline. A story is now identified by its effective slot (section, kind and
+  role after inheritance) and paired through the section alignment the body
+  comparison emitted, and a pair is kept only when every page it touches shows
+  the original story after Reject All and the revised one after Accept All.
+  Turning different even pages on with a new even-page story redlines that
+  story against the default story the original showed on even pages, since
+  the settings part keeps the revised `w:evenAndOddHeaders`. Still
+  unrepresented: turning even pages off, turning them on with no even story,
+  structural (scaffold) changes, and text-box stories, which keep the #1204
+  checks. (#1390)
+
 - The comparison's header/footer story checks now judge what Word shows
   after Accept All and Reject All, not the literal `w:headerReference` and
   `w:footerReference` elements. They project with Word's carry of a removed

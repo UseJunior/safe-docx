@@ -30,6 +30,10 @@ import {
   storySlotKey,
 } from './effectiveStoryBindings.js';
 import {
+  BLANK_STORY_IDENTITY,
+  pairStoriesThroughSectionAlignment,
+} from './sectionAlignedStoryPairing.js';
+import {
   addParagraphMarkRevisionMarker,
   createRevisionIdState,
   formatDate,
@@ -1562,6 +1566,171 @@ async function ancillaryStoryInputs(
       ),
     ],
   };
+}
+
+/**
+ * Ordinary header/footer stories paired through the section alignment the
+ * outer comparison emitted (`sectionAlignedStoryPairing.ts`), for every part
+ * the topology-matched pass in `ancillaryStoryInputs` left alone.
+ *
+ * A story's identity is its effective slot (section × kind × role after
+ * inheritance), not its part name or whether a section names it or inherits
+ * it. Reject All of `compared` has the original's sections and Accept All the
+ * revised document's, so a section added or removed, a page-size or
+ * orientation change, or a `w:titlePg` / `w:evenAndOddHeaders` switch no
+ * longer stops a header/footer text edit from being tracked.
+ *
+ * Only plain stories qualify: neither side may hold a text box (those keep the
+ * #1204 checks), the compared part must still be the revised part as the outer
+ * comparison left it, and the two stories must share the admitted scaffold and
+ * relationship closure, as for topology-matched stories. `handledOutputPaths`
+ * names compared parts another story (text box, lifecycle, topology-matched)
+ * already writes.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
+ * @see https://github.com/UseJunior/safe-docx/issues/1390
+ */
+export async function sectionAlignedOrdinaryStoryInputs(
+  original: Buffer,
+  revised: Buffer,
+  compared: Buffer,
+  handledOutputPaths: ReadonlySet<string>,
+): Promise<{
+  stories: TextBoxStoryInput[];
+  representedSectionKinds: Array<{ sectionIndex: number; kind: 'header' | 'footer' }>;
+}> {
+  const none = { stories: [], representedSectionKinds: [] };
+  const [originalArchive, revisedArchive, comparedArchive] = await Promise.all([
+    DocxArchive.load(original),
+    DocxArchive.load(revised),
+    DocxArchive.load(compared),
+  ]);
+  const [originalState, revisedState] = await Promise.all([
+    selectedAncillaryState(originalArchive),
+    selectedAncillaryState(revisedArchive),
+  ]);
+  if (!originalState.bindingAuditValid || !revisedState.bindingAuditValid) return none;
+
+  const bindingsOf = async (
+    archive: DocxArchive,
+    project: (xml: string) => string,
+  ): Promise<ReturnType<typeof resolveEffectiveStoryBindings>> =>
+    resolveEffectiveStoryBindings({
+      documentXml: project(await archive.getDocumentXml()),
+      relationshipsXml: await archive.getFile('word/_rels/document.xml.rels'),
+      settingsXml: await archive.getFile('word/settings.xml'),
+    });
+  const [originalBindings, revisedBindings, rejectedBindings, acceptedBindings] = await Promise.all([
+    bindingsOf(originalArchive, rejectAllChanges),
+    bindingsOf(revisedArchive, acceptAllChanges),
+    bindingsOf(comparedArchive, rejectAllChanges),
+    bindingsOf(comparedArchive, acceptAllChanges),
+  ]);
+  if (![originalBindings, revisedBindings, rejectedBindings, acceptedBindings].every((bindings) => bindings.ok)) {
+    return none;
+  }
+
+  const partXml = async (archive: DocxArchive, bindings: ReturnType<typeof resolveEffectiveStoryBindings>[]): Promise<Map<string, string>> => {
+    const parts = new Map<string, string>();
+    for (const path of new Set(bindings.flatMap((entry) => entry.slots.map((slot) => slot.targetPath)))) {
+      if (path === undefined) continue;
+      const xml = await archive.getFile(path);
+      if (xml !== null) parts.set(path, xml);
+    }
+    return parts;
+  };
+  const [originalParts, revisedParts, comparedParts] = await Promise.all([
+    partXml(originalArchive, [originalBindings]),
+    partXml(revisedArchive, [revisedBindings]),
+    partXml(comparedArchive, [rejectedBindings, acceptedBindings]),
+  ]);
+  const identityOf = (parts: ReadonlyMap<string, string>): ((path: string | undefined) => string) => {
+    const cache = new Map<string, string>();
+    return (path) => {
+      if (path === undefined) return BLANK_STORY_IDENTITY;
+      let identity = cache.get(path);
+      if (identity === undefined) {
+        const xml = parts.get(path);
+        identity = xml === undefined || isBlankStoryPart(xml)
+          ? BLANK_STORY_IDENTITY
+          : canonicalNode(parseXml(xml).documentElement);
+        cache.set(path, identity);
+      }
+      return identity;
+    };
+  };
+  const originalStories = new Map(originalState.stories.map((story) => [story.targetPath, story]));
+  const revisedStories = new Map(revisedState.stories.map((story) => [story.targetPath, story]));
+  const comparedIdentity = identityOf(comparedParts);
+  const revisedIdentity = identityOf(revisedParts);
+
+  const eligible = (comparedPath: string, originalPath: string): boolean => {
+    const originalStory = originalStories.get(originalPath);
+    const revisedStory = revisedStories.get(comparedPath);
+    if (!originalStory || !revisedStory || handledOutputPaths.has(comparedPath)) return false;
+    if (originalStory.kind !== revisedStory.kind) return false;
+    if (originalStory.textBoxes.length > 0 || revisedStory.textBoxes.length > 0) return false;
+    // The compared part must still be the revised part: the redline goes there.
+    if (comparedIdentity(comparedPath) !== revisedIdentity(comparedPath)) return false;
+    if (originalStory.ordinaryContent === revisedStory.ordinaryContent) return false;
+    if (ordinaryStoryScaffoldFingerprint(originalStory.xml) !== ordinaryStoryScaffoldFingerprint(revisedStory.xml)) {
+      return false;
+    }
+    const originalClosure = relationshipClosureFingerprint(
+      parseXml(originalStory.xml).documentElement,
+      relationshipTargets(originalStory.relationshipsXml),
+    );
+    const revisedClosure = relationshipClosureFingerprint(
+      parseXml(revisedStory.xml).documentElement,
+      relationshipTargets(revisedStory.relationshipsXml),
+    );
+    return originalClosure !== undefined && originalClosure === revisedClosure;
+  };
+
+  const pairing = pairStoriesThroughSectionAlignment({
+    rejected: rejectedBindings,
+    original: originalBindings,
+    accepted: acceptedBindings,
+    revised: revisedBindings,
+    originalIdentity: identityOf(originalParts),
+    revisedIdentity,
+    comparedIdentity,
+    eligible,
+  });
+  if (pairing.pairs.size === 0) return none;
+
+  const originalDocumentXml = await originalArchive.getDocumentXml();
+  const revisedDocumentXml = await revisedArchive.getDocumentXml();
+  const stories: TextBoxStoryInput[] = [];
+  for (const [comparedPath, originalPath] of pairing.pairs) {
+    const originalStory = originalStories.get(originalPath)!;
+    const revisedStory = revisedStories.get(comparedPath)!;
+    const storyOriginalArchive = await originalArchive.clone();
+    const storyRevisedArchive = await revisedArchive.clone();
+    storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(originalDocumentXml, originalStory.xml));
+    storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(revisedDocumentXml, revisedStory.xml));
+    storyOriginalArchive.setFile(
+      'word/_rels/document.xml.rels',
+      originalStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    storyRevisedArchive.setFile(
+      'word/_rels/document.xml.rels',
+      revisedStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    stories.push({
+      index: 0,
+      visualIndex: 0,
+      partPath: comparedPath,
+      container: 'ancillaryPart',
+      ancillaryMode: 'ordinary',
+      original: await storyOriginalArchive.save(),
+      revised: await storyRevisedArchive.save(),
+    });
+  }
+  return { stories, representedSectionKinds: pairing.representedSectionKinds };
 }
 
 const BINDING_ORIGIN_NS = 'urn:usejunior:safe-docx:story-binding-origin';
