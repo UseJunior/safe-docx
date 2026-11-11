@@ -437,8 +437,9 @@ describe('readable semantic revision grouping (#1411)', () => {
       const side = fc.array(segment, { minLength: 1, maxLength: 6 });
       const pairs = await given('random paragraphs built from short legal words in mixed formatting', () =>
         fc.sample(fc.tuple(side, side), { numRuns: 25, seed: 1411 }));
-      await then('every pair projects exactly and validates', async () => {
-        for (const [before, after] of pairs) {
+      await then('every pair projects exactly and validates against the schema', async () => {
+        const variants: Array<[string, string]> = [];
+        for (const [index, [before, after]] of pairs.entries()) {
           const body = (segments: typeof before): string =>
             paragraph(...segments.map(({ text, format }, index) => run(`${index > 0 ? ' ' : ''}${text}`, format)));
           const pair = await compareGrouped(
@@ -451,7 +452,9 @@ describe('readable semantic revision grouping (#1411)', () => {
             expect(formattedRunTexts(pair.accepted, property).join('')).toBe(formattedRunTexts(pair.revisedXml, property).join(''));
             expect(formattedRunTexts(pair.rejected, property).join('')).toBe(formattedRunTexts(pair.originalXml, property).join(''));
           }
+          variants.push([`tracked-${index}`, pair.tracked], [`accepted-${index}`, pair.accepted], [`rejected-${index}`, pair.rejected]);
         }
+        expectSchemaValid(variants);
       });
     },
   );
