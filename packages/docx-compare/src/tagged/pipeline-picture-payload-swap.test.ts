@@ -554,12 +554,15 @@ async function odtImages(odt: Buffer): Promise<string[]> {
 // unusable LibreOffice.
 const reader = process.env.SAFE_DOCX_PICTURE_PAYLOAD_READER_REQUIRED === '1' ? describe : describe.skip;
 reader('LibreOffice reads a redlined picture swap as the source pictures (#1430)', () => {
-  test('accepts and rejects a swapped DrawingML and VML picture to the revised and original images', async () => {
+  test('accepts and rejects a swapped DrawingML picture to the revised and original images', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
-    const cases = await Promise.all([drawingPicture(), vmlPicture()].map(async (leaf) => {
-      const body = `<w:p>${run('Intro')}</w:p><w:p>${leaf}</w:p>`;
-      return compare({ body }, { body, payloads: { image: OTHER_PNG } });
-    }));
+    // DrawingML only: LibreOffice imports a VML picture as a drawing shape
+    // outside its tracked-change regions, so it keeps both copies of any
+    // tracked VML picture on Accept and on Reject. That holds equally for a
+    // VML picture resized with an unchanged payload, which #1380 already
+    // redlines this way, so it is a reader limit, not part of this fix.
+    const body = `<w:p>${run('Intro')}</w:p><w:p>${drawingPicture()}</w:p>`;
+    const cases = [await compare({ body }, { body, payloads: { image: OTHER_PNG } })];
     const packages: Buffer[] = [];
     await runLibreOfficeOracle(
       cases.flatMap(({ original, revised, result }) => [
