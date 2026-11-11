@@ -300,6 +300,46 @@ describe('table rows pair by cell-text similarity', () => {
     }
   });
 
+  /**
+   * Refusing an early row pair in an equal-count gap must not strand the
+   * elements after it that pair by position: a row whose skeleton changed
+   * still reaches the table-topology guard, and an edited row inside a
+   * row-level content control is still diffed in place.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/1419
+   */
+  test('keeps later position anchors after refusing a row pair in an equal-count gap', async () => {
+    const cells = (policy: string, deadline: string) => `<w:tc>${p(policy)}</w:tc><w:tc>${p(deadline)}</w:tc>`;
+    const plain = (policy: string, deadline: string) => `<w:tr>${cells(policy, deadline)}</w:tr>`;
+    const governance = (rows: string[]) => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="6000"/>` +
+      `<w:gridCol w:w="3000"/></w:tblGrid>${plain('Required Governance Policy', 'Deadline')}${rows.join('')}</w:tbl>`;
+    const fcpa = plain('[FCPA policy', '[180] days post-Closing]');
+    const cyber = plain('[Cybersecurity policy', '[180] days post-Closing]');
+    const leading = [fcpa, cyber];
+    const shifted = [plain('[Whistleblower policy', '[30] days post-Closing]'), plain('[FCPA policy', '[120] days post-Closing]')];
+
+    // A later row merges its cells: the skeleton change goes to the guard.
+    const merged = `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>${p('[Audit committee charter [90] days post-Closing]')}</w:tc></w:tr>`;
+    await expect(compareDocuments(
+      await docx(governance([...leading, plain('[Audit committee charter', '[90] days post-Closing]')])),
+      await docx(governance([...shifted, merged])),
+    )).rejects.toMatchObject({ name: 'UnsupportedTableTopologyComparisonError', feature: 'cellCount' });
+
+    // A later row sits in a row-level content control: it pairs by position.
+    const controlled = (deadline: string) =>
+      `<w:sdt><w:sdtPr/><w:sdtContent>${plain('[Audit committee charter', deadline)}</w:sdtContent></w:sdt>`;
+    const { xml } = await compareChecked(
+      governance([...leading, controlled('[90] days post-Closing]')]),
+      governance([...shifted, controlled('[60] days post-Closing]')]),
+    );
+    expect(tableView(xml).map((entry) => entry.marker)).toEqual(['', 'ins', '', 'del']);
+    const controlledRow = parseXml(xml).getElementsByTagNameNS(W_NS, 'sdtContent')[0]!;
+    expect(controlledRow.getElementsByTagNameNS(W_NS, 'trPr').length).toBe(0);
+    expect(Array.from(controlledRow.getElementsByTagNameNS(W_NS, 'delText')).map((text) => text.textContent).join('')).toBe('90');
+    expect(Array.from(controlledRow.getElementsByTagNameNS(W_NS, 'ins'))
+      .flatMap((ins) => Array.from(ins.getElementsByTagNameNS(W_NS, 't')).map((text) => text.textContent)).join('')).toBe('60');
+  });
+
   test('keeps same-position pairing for rows whose cells sit in a cell-level wrapper', async () => {
     // Grid-interval keys do not reach wrapped cells, so such rows never pair
     // across positions; text keys inside the wrapper must not emit w:tc

@@ -965,54 +965,77 @@ function constructBoth(
       ...originalChildren.slice(oi, originalEnd),
       ...revisedChildren.slice(ri, revisedEnd),
     ].some((element) => isTableRow(element) && isLegacyRow(element));
-    // Rows with the same skeleton pair by position only where the gap's
-    // similarity pairing pairs them too, so one confident edit beside an
-    // inserted row is not split into two mediocre position pairs (#1419).
-    // Rows whose skeletons differ still pair by position, for the
-    // table-topology guard.
-    const positionStart = oi;
-    const positionRevisedStart = ri;
-    let diagonalRowPairs: Set<number> | undefined;
-    const rowPairsByPosition = (left: WmlElement, right: WmlElement): boolean => {
-      if (legacyRowGap) return true;
-      if (rowProfile(left).shape !== rowProfile(right).shape) return similarRows(left, right, true);
-      diagonalRowPairs ??= new Set(similarParagraphPairs(
-        originalChildren.slice(positionStart, originalEnd),
-        revisedChildren.slice(positionRevisedStart, revisedEnd),
-        originalNumberingIdentities,
-        revisedNumberingIdentities,
-      ).filter(([original, revised]) => original === revised).map(([original]) => original));
-      return diagonalRowPairs.has(oi - positionStart);
-    };
+    const samePositionIdentity = (left: WmlElement, right: WmlElement): boolean =>
+      (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
+      (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
+      semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
+      (childElements(left).length > 0 || childElements(right).length > 0) &&
+      canRecursivelyAlignContent(left, right) &&
+      (left.localName !== 'r' || (
+        left.textContent === right.textContent &&
+        left.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+        ).length === 0 &&
+        right.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+        ).length === 0 &&
+        left.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+        ).length === 0 &&
+        right.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+        ).length === 0
+      ));
+    // Rows with the same skeleton never pair by position alone: in an
+    // equal-count gap they pair through the gap's similarity pairing, so one
+    // confident edit beside an inserted row is not split into two mediocre
+    // position pairs (#1419). The elements that do pair by position (rows
+    // whose skeleton differs, for the table-topology guard, and row-level
+    // content controls) anchor that pairing: the rows between two anchors
+    // are paired among themselves, and refusing one row pair never strands
+    // a later anchor.
+    const count = originalEnd - oi;
+    const rowSegmentedGap = !legacyRowGap && count === revisedEnd - ri &&
+      originalChildren.slice(oi, originalEnd).some((left, index) => {
+        const right = revisedChildren[ri + index]!;
+        return isTableRow(left) && isTableRow(right) && rowProfile(left).shape === rowProfile(right).shape;
+      });
+    if (rowSegmentedGap) {
+      const positionStart = oi;
+      const positionRevisedStart = ri;
+      const anchors = Array.from({ length: count }, (_, index) => {
+        const left = originalChildren[positionStart + index]!;
+        const right = revisedChildren[positionRevisedStart + index]!;
+        if (!samePositionIdentity(left, right)) return false;
+        if (!isTableRow(left)) return true;
+        return rowProfile(left).shape !== rowProfile(right).shape && similarRows(left, right, true);
+      });
+      for (let index = 0; index < count;) {
+        if (anchors[index]) {
+          emitAlignedPair(originalChildren[oi++]!, revisedChildren[ri++]!);
+          index++;
+          continue;
+        }
+        let segmentEnd = index;
+        while (segmentEnd < count && !anchors[segmentEnd]) segmentEnd++;
+        emitSimilarityGap(positionStart + segmentEnd, positionRevisedStart + segmentEnd);
+        index = segmentEnd;
+      }
+      return;
+    }
     while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;
-      const sameIdentity = (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
-        (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
-        semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
-        (childElements(left).length > 0 || childElements(right).length > 0) &&
-        canRecursivelyAlignContent(left, right) &&
-        (!isTableRow(left) || rowPairsByPosition(left, right)) &&
-        (left.localName !== 'r' || (
-          left.textContent === right.textContent &&
-          left.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
-          ).length === 0 &&
-          right.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
-          ).length === 0 &&
-          left.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
-          ).length === 0 &&
-          right.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
-          ).length === 0
-        ));
-      if (!sameIdentity) break;
+      if (!samePositionIdentity(left, right) ||
+          (isTableRow(left) && !legacyRowGap && !similarRows(left, right, true))) break;
       emitAlignedPair(left, right);
       oi++;
       ri++;
     }
+    emitSimilarityGap(originalEnd, revisedEnd);
+  };
+  /** Pairs the side-only siblings before the given ends by similarity. */
+  const emitSimilarityGap = (originalEnd: number, revisedEnd: number): void => {
     const gapOriginalStart = oi;
     const gapRevisedStart = ri;
     const originalGap = originalChildren.slice(gapOriginalStart, originalEnd);
