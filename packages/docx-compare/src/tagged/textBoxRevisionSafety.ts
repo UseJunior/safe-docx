@@ -408,8 +408,12 @@ function relationshipTargets(
   if (!relationshipsXml) return new Map();
   const document = parseXml(relationshipsXml);
   const targets = new Map<string, string>();
+  // By namespace and local name, as a package reader resolves them: a
+  // prefixed `<pr:Relationship>` is as real as an unprefixed one, and missing
+  // it would leave a reachable payload out of the closure (round-4 review of
+  // #1380).
   for (const relationship of Array.from(
-    document.getElementsByTagName('Relationship'),
+    document.getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship'),
   )) {
     const id = relationship.getAttribute('Id');
     if (!id) continue;

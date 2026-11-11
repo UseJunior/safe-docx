@@ -519,8 +519,10 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
   // that direct relationship is fingerprinted first, a per-part memo caches
   // the chart with the workbook cut off as the cycle, and the box's chart
   // closure then misses the replaced workbook. Both orders must refuse.
-  for (const workbookFirst of [true, false]) {
-    test(`refuses a replaced workbook on a relationship cycle (workbook listed ${workbookFirst ? 'first' : 'last'})`, async ({
+  // Round-4 review: the chart's own relationship may use a namespace prefix
+  // (`<pr:Relationship>`); the closure must still follow it to the workbook.
+  for (const workbookFirst of [true, false]) for (const prefixed of [false, true]) {
+    test(`refuses a replaced workbook on a relationship cycle (workbook listed ${workbookFirst ? 'first' : 'last'}${prefixed ? ', prefixed chart relationship' : ''})`, async ({
       given, when, then,
     }: AllureBddContext) => {
       const chart =
@@ -550,8 +552,11 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
         );
         archive.setFile(
           'word/charts/_rels/chart1.xml.rels',
-          `<Relationships xmlns="${PKG_NS}">` +
-            `<Relationship Id="rIdWorkbook" Type="${R_NS}/package" Target="../embeddings/workbook.xlsx"/></Relationships>`,
+          prefixed
+            ? `<pr:Relationships xmlns:pr="${PKG_NS}">` +
+                `<pr:Relationship Id="rIdWorkbook" Type="${R_NS}/package" Target="../embeddings/workbook.xlsx"/></pr:Relationships>`
+            : `<Relationships xmlns="${PKG_NS}">` +
+                `<Relationship Id="rIdWorkbook" Type="${R_NS}/package" Target="../embeddings/workbook.xlsx"/></Relationships>`,
         );
         archive.setFile(
           'word/embeddings/_rels/workbook.xlsx.rels',
