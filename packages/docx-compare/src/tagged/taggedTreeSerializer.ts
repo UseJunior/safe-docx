@@ -327,6 +327,83 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
 
 const RUN_REVISION_WRAPPERS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
 
+/**
+ * Re-express each simple field that sits directly in a run revision as the
+ * equivalent complex field. `w:ins`, `w:del`, `w:moveFrom` and `w:moveTo`
+ * admit only run content, and `w:fldSimple` is paragraph content, so a whole
+ * inserted or deleted simple field (including a changed instruction, which the
+ * comparison records as a deletion plus an insertion) cannot be wrapped as is.
+ * The complex form carries the same instruction, lock and dirty flags, field
+ * data and cached result, as begin / instruction / separate / result / end
+ * runs, which is the shape the atomic complex-field revision path emits.
+ * Deleted instructions use `w:delInstrText`. Simple fields outside a revision
+ * are left untouched.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1422
+ */
+function expandRevisionWrappedSimpleFields(root: WmlElement): void {
+  const wrapped = (): WmlElement[] => (Array.from(root.getElementsByTagNameNS(W_NS, 'fldSimple')) as WmlElement[])
+    .filter((field) => field.parentNode !== null && isRunRevisionWrapper(field.parentNode));
+  // Expanding an outer field lifts any nested simple field into the wrapper.
+  for (let pending = wrapped(); pending.length > 0; pending = wrapped()) {
+    for (const field of pending) {
+      const wrapper = field.parentNode as WmlElement;
+      const document = field.ownerDocument!;
+      const deleted = wrapper.localName === 'del';
+      const content = childElements(field);
+      const fieldData = content.find((child) => child.namespaceURI === W_NS && child.localName === 'fldData');
+      const result = content.filter((child) => child !== fieldData);
+      const firstResultRun = result.flatMap((child) =>
+        child.localName === 'r' ? [child] : Array.from(child.getElementsByTagNameNS(W_NS, 'r')) as WmlElement[])[0];
+      const resultProperties = firstResultRun
+        ? childElements(firstResultRun).find((child) => child.localName === 'rPr')
+        : undefined;
+      const controlRun = (control: WmlElement): WmlElement => {
+        const run = document.createElementNS(W_NS, 'w:r') as WmlElement;
+        if (resultProperties) {
+          // Field-character runs share the result's look; a formatting
+          // revision belongs to the result run alone.
+          const properties = cloneElement(resultProperties);
+          for (const change of childElements(properties).filter((child) => child.localName === 'rPrChange')) {
+            properties.removeChild(change);
+          }
+          run.appendChild(properties);
+        }
+        run.appendChild(control);
+        return run;
+      };
+      const fieldCharacter = (type: 'begin' | 'separate' | 'end'): WmlElement => {
+        const control = document.createElementNS(W_NS, 'w:fldChar') as WmlElement;
+        control.setAttributeNS(W_NS, 'w:fldCharType', type);
+        if (type === 'begin') {
+          for (const flag of ['fldLock', 'dirty']) {
+            const value = field.getAttributeNS(W_NS, flag);
+            if (value !== null && value !== '') control.setAttributeNS(W_NS, `w:${flag}`, value);
+          }
+          if (fieldData) control.appendChild(fieldData);
+        }
+        return controlRun(control);
+      };
+      const instruction = document.createElementNS(W_NS, deleted ? 'w:delInstrText' : 'w:instrText') as WmlElement;
+      instruction.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+      instruction.appendChild(document.createTextNode(field.getAttributeNS(W_NS, 'instr') ?? ''));
+      const replacement = [
+        fieldCharacter('begin'),
+        controlRun(instruction),
+        fieldCharacter('separate'),
+        ...result,
+        fieldCharacter('end'),
+      ];
+      for (const item of replacement) wrapper.insertBefore(item, field);
+      wrapper.removeChild(field);
+    }
+  }
+}
+
 function isRunRevisionWrapper(node: Node): node is WmlElement {
   return node.nodeType === 1 &&
     (node as WmlElement).namespaceURI === W_NS &&
@@ -2592,6 +2669,9 @@ export function serializeTaggedTree(
   normalizeWholeParagraphMoveRangeStarts(emitted, options.moves ?? []);
   normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);
   hoistFieldCharactersFromDeletions(emitted);
+  // After hoisting: partial-field hoisting lifts every field character out of
+  // a deletion, which must not include fields re-expressed from simple ones.
+  expandRevisionWrappedSimpleFields(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
   if (options.revisionGrouping === 'readable-semantic') {
     groupReadableSemanticRevisions(emitted, {
