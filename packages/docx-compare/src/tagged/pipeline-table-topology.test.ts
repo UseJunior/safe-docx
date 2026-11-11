@@ -28,6 +28,19 @@ const twoRows = [row(['A', 'B']), row(['C', 'D'])];
 const docx = (body: string) => buildDocxFromBodyXml(body);
 const xml = async (buffer: Buffer) => (await DocxArchive.load(buffer)).getDocumentXml();
 
+/** `w:trPr` revision markers of each direct row of the first table. */
+function rowMarkers(output: string): string[][] {
+  const tbl = parseXml(output).getElementsByTagNameNS(W_NS, 'tbl')[0]!;
+  return Array.from(tbl.childNodes)
+    .filter((node): node is Element => node.nodeType === 1 && (node as Element).localName === 'tr')
+    .map((tr) => {
+      const trPr = Array.from(tr.childNodes).find((node) => (node as Element).localName === 'trPr') as Element | undefined;
+      return trPr ? Array.from(trPr.childNodes)
+        .filter((node): node is Element => node.nodeType === 1 && ['ins', 'del'].includes((node as Element).localName))
+        .map((node) => node.localName) : [];
+    });
+}
+
 async function assertSchema(buffer: Buffer): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'sdx-comptable-'));
   try {
@@ -92,14 +105,18 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
-    'refuses a horizontal cell merge in one matched row', async () => {
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'replaces a horizontally merged row with a deleted row and an inserted row', async () => {
       const original = await docx(table(2, twoRows));
       const merged = await docx(table(2, [twoRows[0]!,
         `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>${paragraph('C')}</w:tc></w:tr>`,
       ]));
-      await expect(compareDocuments(original, merged)).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
-      await expect(compareDocuments(original, merged)).rejects.toMatchObject({ feature: 'cellCount', tableIndex: 0, rowIndex: 1 });
+      const result = await compareDocuments(original, merged);
+      expect(rowMarkers(await xml(result.document))).toEqual([[], ['del'], ['ins']]);
+      expect(result.stats.deletedTableRows).toBe(1);
+      expect(result.stats.insertedTableRows).toBe(1);
+      await assertProjections(original, merged, result.document);
+      await assertSchema(result.document);
     },
   );
 
@@ -246,7 +263,7 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
+  test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
     'rejects a changed pending cell-topology revision even when geometry is unchanged', async () => {
       const original = await docx(table(1, [row(['A'])]));
       const pending = await docx(table(1, [row(['A']).replace('<w:tc>',
@@ -257,28 +274,42 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
-    'locates the changed legacy horizontal-merge cell rather than the first merge cell', async () => {
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'replaces a row whose legacy horizontal merge changes', async () => {
       const originalRow = row(['A', 'B', 'C'])
         .replace('<w:tc>', '<w:tc><w:tcPr><w:hMerge w:val="restart"/></w:tcPr>')
         .replace('</w:tc><w:tc>', '</w:tc><w:tc><w:tcPr><w:hMerge/></w:tcPr>');
       const revisedRow = originalRow.replace('<w:tc><w:p><w:r><w:t>C',
         '<w:tc><w:tcPr><w:hMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>C');
-      await expect(compareDocuments(await docx(table(3, [originalRow])),
-        await docx(table(3, [revisedRow])))).rejects.toMatchObject({
-        feature: 'hMerge', tableIndex: 0, rowIndex: 0, cellIndex: 2,
-      });
+      const original = await docx(table(3, [originalRow]));
+      const revised = await docx(table(3, [revisedRow]));
+      const result = await compareDocuments(original, revised);
+      expect(rowMarkers(await xml(result.document))).toEqual([['del'], ['ins']]);
+      await assertProjections(original, revised, result.document);
+      await assertSchema(result.document);
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
-    'preserves offset and wrapped-cell diagnostics when direct cell counts change', async () => {
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'replaces a row whose gridBefore offset changes', async () => {
       const original = await docx(table(2, [row(['A', 'B'])]));
       const offset = await docx(table(2, [row(['B']).replace('<w:tr>',
         '<w:tr><w:trPr><w:gridBefore w:val="1"/></w:trPr>')]));
-      await expect(compareDocuments(original, offset)).rejects.toMatchObject({
-        feature: 'gridBefore', tableIndex: 0, rowIndex: 0,
-      });
+      const result = await compareDocuments(original, offset);
+      expect(rowMarkers(await xml(result.document))).toEqual([['del'], ['ins']]);
+      await assertProjections(original, offset, result.document);
+      await assertSchema(result.document);
+    },
+  );
+
+  test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
+    'keeps refusing vertical merges and cells inside a cell-level content control', async () => {
+      const original = await docx(table(2, [row(['A', 'B'])]));
+      const verticallyMerged = await docx(table(2, [
+        `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/></w:tcPr>${paragraph('A B')}</w:tc></w:tr>`,
+      ]));
+      await expect(compareDocuments(original, verticallyMerged)).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
+      await expect(compareDocuments(original, verticallyMerged)).rejects.toMatchObject({ tableIndex: 0, rowIndex: 0 });
       const wrappedCell = row(['A', 'B']).replace('</w:tc><w:tc>',
         '</w:tc><w:sdt><w:sdtPr/><w:sdtContent><w:tc>')
         .replace('</w:tc></w:tr>', '</w:tc></w:sdtContent></w:sdt></w:tr>');

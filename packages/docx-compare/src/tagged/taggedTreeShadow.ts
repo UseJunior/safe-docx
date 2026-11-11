@@ -24,6 +24,7 @@ import type {
 } from '../compare-types.js';
 import { paragraphJoinParts, representative, type TaggedMoveRelation, type TaggedNode } from './taggedTree.js';
 import { guardBodyTableTopology } from './tableTopologyGuard.js';
+import { replaceSkeletonChangedRows } from './tableTopologyNormalization.js';
 import { collectContentControlPropertyChanges } from './unrepresentedChanges.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
@@ -497,7 +498,12 @@ export function buildTaggedTreePublication(
     revisionAttributionRanges: input.revisionAttributionRanges,
     minimumRevisionId: input.minimumRevisionId,
   });
-  if (input.guardTableTopology) guardBodyTableTopology(constructed.tree);
+  if (input.guardTableTopology) {
+    // Main body only: selected header/footer stories keep their own
+    // unrepresented-change contract for table topology.
+    replaceSkeletonChangedRows(constructed.tree);
+    guardBodyTableTopology(constructed.tree);
+  }
   const serialized = serializeTaggedTree(
     constructed.tree,
     createPreservePlan(original, revised, constructed.tree, {
