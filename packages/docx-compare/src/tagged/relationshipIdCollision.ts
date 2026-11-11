@@ -46,6 +46,7 @@ const serializer = new XMLSerializer();
 
 const PACKAGE_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const OFFICE_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const OFFICE_VML_NS = 'urn:schemas-microsoft-com:office:office';
 const CONTENT_TYPES_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const CONTENT_TYPES_PATH = '[Content_Types].xml';
 const DOCUMENT_PART = 'word/document.xml';
@@ -107,13 +108,26 @@ function sameRelationship(left: RelationshipEntry, right: RelationshipEntry): bo
   );
 }
 
-/** Rewrite every relationship-namespace attribute value through `mapping`. */
+/**
+ * Does this attribute hold a relationship id? Every `r:*` attribute does, and
+ * so does `o:relid`, which `v:imagedata` may name its image by
+ * (vml-officeDrawing.xsd types it `r:ST_RelationshipId`). Missing `o:relid`
+ * would leave such a picture bound to an id that was renumbered away.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.11
+ */
+function isRelationshipReference(attribute: Attr): boolean {
+  return attribute.namespaceURI === OFFICE_REL_NS
+    || (attribute.namespaceURI === OFFICE_VML_NS && attribute.localName === 'relid');
+}
+
+/** Rewrite every relationship-reference attribute value through `mapping`. */
 function remapRelationshipAttributes(root: Element, mapping: ReadonlyMap<string, string>): number {
   let rewrites = 0;
   const visit = (element: Element): void => {
     for (let i = 0; i < element.attributes.length; i++) {
       const attribute = element.attributes.item(i)!;
-      if (attribute.namespaceURI !== OFFICE_REL_NS) continue;
+      if (!isRelationshipReference(attribute)) continue;
       const next = mapping.get(attribute.value);
       if (next === undefined) continue;
       attribute.value = next;
@@ -140,10 +154,20 @@ function remapRelationshipAttributes(root: Element, mapping: ReadonlyMap<string,
  * inherits, churning ids for no benefit. Always pass the side that will be the
  * *merge source* -- the original for in-place output, the revised for rebuild,
  * since each mode clones the opposite package.
+ *
+ * `payloadSwappedIds` names ids that resolve to the same type and target on
+ * both sides but to different payloads (a picture whose image bytes were
+ * replaced in place). They are renumbered too, so the picture's markup
+ * differs between the sides, the comparison tracks the swap, and the import
+ * copies the original payload aside under the new id (#1430).
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1430
  */
 export async function renumberCollidingRelationshipIds(
   rewriteArchive: DocxArchive,
   againstArchive: DocxArchive,
+  { payloadSwappedIds = new Set<string>() }: { payloadSwappedIds?: ReadonlySet<string> } = {},
 ): Promise<RenumberedRelationshipId[]> {
   const againstRels = await readRelationships(againstArchive, DOCUMENT_PART);
   const rewriteRels = await readRelationships(rewriteArchive, DOCUMENT_PART);
@@ -162,7 +186,8 @@ export async function renumberCollidingRelationshipIds(
   const mapping = new Map<string, string>();
   for (const [id, entry] of rewriteRels) {
     const counterpart = againstRels.get(id);
-    if (!counterpart || sameRelationship(counterpart, entry)) continue;
+    if (!counterpart) continue;
+    if (sameRelationship(counterpart, entry) && !payloadSwappedIds.has(id)) continue;
     const nextId = allocateId();
     mapping.set(id, nextId);
     renumbered.push({ previousId: id, nextId, type: entry.type });
@@ -282,6 +307,7 @@ async function copyPartClosure(
   const existing = resultArchive.hasFile(partPath)
     ? await resultArchive.getFileBuffer(partPath)
     : null;
+  const reused = existing !== null && existing.equals(bytes);
   if (existing === null) {
     resultArchive.setFile(partPath, bytes);
     await ensureContentType(sourceArchive, resultArchive, partPath);
@@ -313,9 +339,24 @@ async function copyPartClosure(
     }
   }
 
+  const nestedRelsXml = await sourceArchive.getFile(relsPathFor(partPath));
+  // Identical bytes are only the same part when what it reaches is the same
+  // too: a chart whose embedded workbook was replaced keeps byte-identical
+  // chart XML. Reusing the base's chart would bind the import to the base's
+  // workbook (#1430), so a part whose closure diverges is copied aside.
+  if (
+    reused &&
+    (nestedRewrites.size > 0 ||
+      (await resultArchive.getFile(relsPathFor(partPath))) !== nestedRelsXml)
+  ) {
+    targetPath = allocatePartPath(resultArchive, partPath);
+    resultArchive.setFile(targetPath, bytes);
+    await ensureContentType(sourceArchive, resultArchive, partPath, targetPath);
+    copiedAs.set(partPath, targetPath);
+  }
+
   const nestedRelsPath = relsPathFor(targetPath);
   if (!resultArchive.hasFile(nestedRelsPath)) {
-    const nestedRelsXml = await sourceArchive.getFile(relsPathFor(partPath));
     if (nestedRelsXml) {
       if (nestedRewrites.size === 0) {
         resultArchive.setFile(nestedRelsPath, nestedRelsXml);
@@ -361,7 +402,7 @@ export async function importReferencedRelationships(
   const collect = (element: Element): void => {
     for (let i = 0; i < element.attributes.length; i++) {
       const attribute = element.attributes.item(i)!;
-      if (attribute.namespaceURI === OFFICE_REL_NS && attribute.value) {
+      if (isRelationshipReference(attribute) && attribute.value) {
         referenced.add(attribute.value);
       }
     }

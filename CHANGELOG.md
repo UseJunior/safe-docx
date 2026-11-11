@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- A picture or embedded object whose markup is unchanged but whose payload
+  changed (image bytes replaced at the same `media/` path, the relationship
+  pointed at a new part, an OLE binary or a chart's embedded workbook
+  replaced) is no longer carried silently by `compareDocuments`. In the main
+  document story the swap is redlined: the original picture becomes a tracked
+  deletion bound to a copy of its original payload under a fresh relationship
+  id, and the revised picture a tracked insertion. In a header, footer,
+  footnote or endnote story, where the redline cannot hold two payloads under
+  one relationship id, the picture is listed in `unrepresentedChanges` with
+  the new `picture` scope, naming the story part, the relationship id and the
+  picture. A final check confirms that Reject All and Accept All of every
+  story resolve each picture to the original's and the revised's payload, and
+  lists any picture where they do not. When an imported part has the same
+  bytes as the base's but reaches different parts (a chart whose workbook
+  changed), the import now copies it aside instead of reusing the base's copy
+  (ECMA-376 Part 2 §6.5.3.4). (#1430)
+
 - Deleting a section break the way Word does it no longer fails the
   comparison with `TaggedPublicationSafetyError ... formattingFidelity` when
   the following section had no header/footer references of its own. Word
