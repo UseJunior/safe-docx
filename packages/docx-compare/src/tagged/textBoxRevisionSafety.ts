@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { posix } from 'node:path';
 import { XMLSerializer } from '@xmldom/xmldom';
 import {
   auditSectPr,
