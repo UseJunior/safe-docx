@@ -278,6 +278,8 @@ describe('matched rows whose cell skeleton changes', () => {
         }
       }
     },
+    // Several full comparisons, each with schema and projection checks.
+    60000,
   );
 
   test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
@@ -391,6 +393,8 @@ describe('matched rows whose cell skeleton changes', () => {
         expect(kept).toHaveLength(1);
       }
     },
+    // Several full comparisons, each with schema and projection checks.
+    60000,
   );
 });
 
