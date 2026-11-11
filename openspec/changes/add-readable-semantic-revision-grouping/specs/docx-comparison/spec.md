@@ -15,8 +15,8 @@ SHALL repeat until no stretch qualifies. Each cluster SHALL be emitted as one
 `w:del` holding the original-side runs (absorbed unchanged runs re-emitted with
 `w:delText`) followed by one `w:ins` holding the revised-side runs, and each run
 SHALL keep its own run properties. Moves, fields, bookmarks, comment ranges,
-note references, pre-existing input revisions and every other non-text atom
-SHALL be barriers that a cluster never crosses. Accept All and Reject All
+note references, pre-existing input revisions (including an input's own
+`w:rPrChange`) and every other non-text atom SHALL be barriers that a cluster never crosses. Accept All and Reject All
 projections SHALL be identical to those of the token-minimal output.
 
 #### Scenario: A rewritten paragraph with a highlighted placeholder groups into one deletion and one insertion
@@ -43,7 +43,7 @@ projections SHALL be identical to those of the token-minimal output.
 
 #### Scenario: Non-text atoms are barriers that grouping never crosses
 
-- **GIVEN** rewritten phrases on both sides of a bookmark, a complex field, a note reference or a pre-existing tracked insertion
+- **GIVEN** rewritten phrases on both sides of a bookmark, a complex field, a note reference, a pre-existing tracked insertion or a pre-existing formatting revision
 - **WHEN** the documents are compared with readable semantic grouping
 - **THEN** the atom SHALL stay outside the generated clusters, with a separate cluster on each side of it
 - **AND** both projections SHALL remain exact and schema-valid

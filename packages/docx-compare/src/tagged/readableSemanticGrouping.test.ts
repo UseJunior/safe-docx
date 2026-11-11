@@ -394,6 +394,37 @@ describe('readable semantic revision grouping (#1411)', () => {
     },
   );
 
+  test.openspec('Non-text atoms are barriers that grouping never crosses')(
+    'keeps a pre-existing formatting revision outside the grouped clusters',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const authored = '<w:rPr><w:i/><w:rPrChange w:id="90" w:author="Alice" w:date="2026-01-01T00:00:00Z"><w:rPr><w:b/></w:rPr></w:rPrChange></w:rPr>';
+      const originalDocx = await given('two replaced names joined by a word carrying an authored formatting revision', () =>
+        buildDocxFromBodyXml(paragraph(run('Signed by Alpha Holdings '), run('and', authored), run(' Beta Fund today.'))));
+      const revisedDocx = await given('the names replaced around the same authored formatting revision', () =>
+        buildDocxFromBodyXml(paragraph(run('Signed by Gamma Partners '), run('and', authored), run(' Delta Trust today.'))));
+      const readable = await when('the pair is compared with readable semantic grouping', () =>
+        compareGrouped(originalDocx, revisedDocx));
+
+      await then('the authored formatting revision survives with its identity and stays outside generated wrappers', () => {
+        const changes = Array.from(parseXml(readable.tracked).getElementsByTagNameNS(W_NS, 'rPrChange'));
+        expect(changes.map((change) => [
+          change.getAttributeNS(W_NS, 'author'),
+          change.getAttributeNS(W_NS, 'date'),
+          change.parentNode!.parentNode!.textContent,
+        ])).toEqual([['Alice', '2026-01-01T00:00:00Z', 'and']]);
+        expect(isInsideRevision(changes[0]!)).toBe(false);
+      });
+      await and('the names form two separate clusters on either side of it', () => {
+        const [p] = bodyParagraphs(readable.tracked);
+        expect(wrapperTexts(p!, 'del')).toEqual(['Alpha Holdings', 'Beta Fund']);
+        expect(wrapperTexts(p!, 'ins')).toEqual(['Gamma Partners', 'Delta Trust']);
+      });
+      await and('both projections are exact and schema-valid', () => {
+        expectExactProjections(readable);
+      });
+    },
+  );
+
   test.openspec('Mixed run formatting does not disable grouping')(
     'keeps Accept All and Reject All exact for random mixed-format rewrites',
     async ({ given, then }: AllureBddContext) => {
