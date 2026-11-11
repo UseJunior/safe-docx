@@ -18,6 +18,20 @@
   produces false moves between unchanged paragraphs. Retained-format
   certification failures now name the affected edit IDs. (#1414)
 
+- A text edit inside a text box that also holds a picture (`w:pict` or
+  `w:drawing`), an embedded object (`w:object`) or a nested text box is now
+  tracked instead of failing the comparison with
+  `UnsupportedTextBoxRevisionError`. The picture or object is carried as one
+  atomic leaf; a resized or otherwise changed one is a tracked deletion plus a
+  tracked insertion. A nested box in a main-document text box is compared as
+  its own story, and one inserted or deleted with its enclosing story has its
+  paragraphs marked. VML `o:relid` picture references now count toward the
+  text-box relationship closure, and the closure now includes the content of
+  each internal target part (and, recursively, of the parts it reaches), so a picture or object that names a different
+  part, or whose part bytes were replaced at the same path, is still refused
+  rather than carried silently. A nested box in a
+  header or footer text box is still refused. (#1380)
+
 ## 0.25.1
 
 - Header and footer text edits are now tracked when the section layout also

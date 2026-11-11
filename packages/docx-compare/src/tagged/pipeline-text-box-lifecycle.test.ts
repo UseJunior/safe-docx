@@ -464,9 +464,9 @@ describe('body text-box insertion and deletion', () => {
     });
   });
 
-  test('an inserted or deleted box holding a nested text box is refused', async ({ given, when, then }: AllureBddContext) => {
-    // Peer review of #1031: a whole-box lifecycle must not carry a story
-    // shape the comparison refuses for a paired box (#1380).
+  test('an inserted or deleted box holding a nested text box is tracked with its nested story', async ({ given, when, then }: AllureBddContext) => {
+    // #1380: the nested box's story is marked with the box, so neither
+    // direction carries an unmarked story into the redline.
     const nestedBox =
       `<w:p><w:r><w:pict><v:shape id="outer" style="width:200pt;height:50pt"><v:textbox><w:txbxContent>` +
       `<w:p><w:r><w:t>Outer</w:t></w:r><w:r><w:pict><v:shape id="inner"><v:textbox><w:txbxContent>` +
@@ -476,24 +476,23 @@ describe('body text-box insertion and deletion', () => {
     const nested = await given('the same document with a box holding a nested box', () =>
       docx(para('Lead.') + nestedBox));
 
-    const failures = await when('the box is inserted, then deleted', async () => {
-      const outcomes: unknown[] = [];
-      for (const [before, after] of [[plain, nested], [nested, plain]] as const) {
-        try {
-          await compareDocuments(before, after);
-          outcomes.push(undefined);
-        } catch (error) {
-          outcomes.push(error);
-        }
-      }
-      return outcomes;
-    });
+    const results = await when('the box is inserted, then deleted', async () => [
+      { original: plain, revised: nested, kind: 'ins', result: await compareDocuments(plain, nested) },
+      { original: nested, revised: plain, kind: 'del', result: await compareDocuments(nested, plain) },
+    ]);
 
-    await then('both directions are refused with the nested-box reason', () => {
-      for (const failure of failures) {
-        expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-        expect((failure as UnsupportedTextBoxRevisionError).changes[0]?.reason)
-          .toContain('nested text boxes');
+    await then('both directions mark the outer and the nested story, and round-trip', async () => {
+      for (const { original, revised, kind, result } of results) {
+        const output = parseXml(await documentXml(result.document));
+        const [outer, inner] = Array.from(output.getElementsByTagNameNS(W_NS, 'txbxContent'));
+        expect(anchorWrapper(outer!)).toBe(kind);
+        const innerParagraph = inner!.getElementsByTagNameNS(W_NS, 'p').item(0)!;
+        const mark = innerParagraph.getElementsByTagNameNS(W_NS, 'rPr').item(0);
+        expect(mark?.getElementsByTagNameNS(W_NS, kind).length).toBe(1);
+        const innerRun = innerParagraph.getElementsByTagNameNS(W_NS, 'r').item(0)!;
+        expect((innerRun.parentNode as Element).localName).toBe(kind);
+        await assertProjections(original, revised, result.document);
+        await assertSchema(result.document);
       }
     });
   });

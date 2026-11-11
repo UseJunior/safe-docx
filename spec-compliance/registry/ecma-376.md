@@ -112,7 +112,25 @@ WordprocessingML-content container inside a drawing object. It prohibits
 references to comments, footnotes, and endnotes, as well as nested
 `w:txbxContent`. safe-docx compares a bounded subset of these stories
 independently of the surrounding body, preserves the drawing scaffold around
-each one, and rejects the prohibited nested forms before comparison.
+each one, and rejects story references to comments, footnotes and endnotes
+before comparison.
+
+**Pictures, objects and nested boxes inside a story are inside the subset.** A
+VML picture (`w:pict`), a DrawingML picture (`w:drawing`) or an embedded object
+(`w:object`) in a changed story is carried as one atomic comparison leaf: an
+unchanged one passes through without revision markup, and one whose markup
+changed is a tracked deletion of the old run plus a tracked insertion of the new
+one. A change to the relationship closure the story reaches through `r:*` or
+`o:relid` attributes is still refused, and the closure includes the content of
+every internal target part, so a picture or object that now names another part,
+or whose part was replaced under the same relationship, is never carried
+silently. A main-document story holding a nested box —
+non-conformant under this clause, but present in documents a comparison
+receives — is compared too: the nested box is compared as a story of its own,
+cut before its enclosing story and spliced back after it, and a nested box whose
+anchor the enclosing story tracks as inserted or deleted has its own story
+marked the same way. A header or footer story holding a nested box is still
+refused.
 
 **Text boxes authored in Microsoft Word are inside that subset.** Word stores
 one modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`
@@ -142,9 +160,49 @@ DrawingML `wp:docPr/@id`, combined for the two stored copies of one twinned box
 identified boxes. A box with no counterpart stays whole in the body comparison,
 which tracks its anchor run as inserted or deleted, and every paragraph and text
 run of its story is marked with the same revision kind, in every stored copy.
-An inserted or deleted box whose story holds a nested box or a prohibited
-reference is refused, as a changed one is. Anonymous boxes whose storage
-shapes disagree are still refused.
+An inserted or deleted box whose story holds a prohibited reference is
+refused, as a changed one is; a picture, an object or a nested box in it is
+carried and marked with the box. Anonymous boxes whose storage shapes disagree
+are still refused.
+
+## [ECMA-PART4-19-1-2-11] VML image data relationship (v:imagedata)
+
+```yaml
+edition: 5
+part: 4
+section: "19.1.2.11"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts
+```
+
+Part 4 §19.1.2.11 defines `v:imagedata`, the image of a VML picture, which names
+its image part by relationship id through either `r:id` or the
+`urn:schemas-microsoft-com:office:office` attribute `o:relid`; both are typed
+`ST_RelationshipId`. safe-docx reads both spellings as relationship references
+when it fingerprints the relationship closure of a text-box story and when it
+rebinds a compared story's relationship ids to the owning part, so a picture in
+a text box stays bound to its image and a swapped image is refused rather than
+lost.
+
+## [ECMA-PART1-20-4-2-38] DrawingML rich text-box content (w:txbxContent)
+
+```yaml
+edition: 5
+part: 1
+section: "20.4.2.38"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts
+```
+
+Part 1 §20.4.2.38 defines `w:txbxContent` inside a DrawingML text box
+(`wps:txbx`) and, like Part 4 §14.9.1.1 for VML, calls a story non-conformant
+when it holds references to the comment, footnote or endnote stories or another
+`w:txbxContent`. safe-docx compares the DrawingML copy of a Word text box under
+the same rules as its VML twin: a picture in the story is an atomic leaf, a
+nested box in a main-document story is compared as its own story, and story
+references stay refused.
 
 ## [ECMA-PART4-19-1-2-22] VML text-box host (v:textbox)
 
