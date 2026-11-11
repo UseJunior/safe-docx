@@ -122,6 +122,17 @@
   footnotes, endnotes, comments, drawings, hyperlinks or earlier tracked changes
   keeps the previous delete-and-insert representation. (#873)
 
+- `compare_documents` now shows a heavily rewritten passage as one deletion
+  followed by one insertion instead of alternating word by word. Its new
+  `revision_grouping` parameter defaults to `readable-semantic`;
+  `token-minimal` restores the previous word-level redline. The library's
+  `compareDocuments` gains the same `revisionGrouping` option and keeps
+  `token-minimal` as its default. Grouping works across runs with different
+  formatting, absorbs short unchanged words, spaces and punctuation between
+  changes, and never crosses moves, fields, bookmarks, comment ranges, note
+  references or earlier tracked changes. Accept All and Reject All give the
+  same documents in both modes. (#1411)
+
 ## 0.25.0
 
 - **Breaking for `docx-markdoc create` sources: bare brackets are now literal

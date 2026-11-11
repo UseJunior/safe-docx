@@ -10,7 +10,25 @@ export interface CompareOptions {
   ignoreFormatting?: boolean;
   /** Detect content moved within the document. Default: true */
   detectMoves?: boolean;
+  /**
+   * How generated run revisions are grouped. `'token-minimal'` (the default)
+   * emits the smallest deletion/insertion set, which alternates word by word
+   * in a heavily rewritten paragraph. `'readable-semantic'` regroups each
+   * change cluster as one deletion followed by one insertion, absorbing short
+   * unchanged stretches between changes; Accept All and Reject All projections
+   * are unchanged.
+   */
+  revisionGrouping?: CompareRevisionGrouping;
 }
+
+/** Public revision-grouping presentation policies accepted by `compareDocuments`. */
+export type CompareRevisionGrouping = 'token-minimal' | 'readable-semantic';
+
+/** The public revision-grouping values, in documentation order. */
+export const COMPARE_REVISION_GROUPINGS: readonly CompareRevisionGrouping[] = [
+  'token-minimal',
+  'readable-semantic',
+];
 
 /** @internal A source-side range whose generated revision must remain attributable. */
 export interface RevisionAttributionRange {
@@ -22,8 +40,11 @@ export interface RevisionAttributionRange {
   end: number;
 }
 
-/** @internal Bounded presentation policy used by the Markdoc compiler. */
-export type RevisionGroupingPolicy = 'token-minimal' | 'readable-whitespace';
+/**
+ * @internal Presentation policy for generated run revisions. Markdoc selects
+ * `readable-whitespace`; `readable-semantic` is the public readable policy.
+ */
+export type RevisionGroupingPolicy = 'token-minimal' | 'readable-whitespace' | 'readable-semantic';
 
 /** @internal The exact generated revision interval for one attributed operation. */
 export interface RevisionAttribution {

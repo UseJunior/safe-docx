@@ -6,7 +6,7 @@
  */
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
-import type { CompareOptions, CompareResult } from './compare-types.js';
+import { COMPARE_REVISION_GROUPINGS, type CompareOptions, type CompareResult } from './compare-types.js';
 export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
 
 const REMOVED_COMPARISON_OPTIONS = [
@@ -19,6 +19,7 @@ const REMOVED_COMPARISON_OPTIONS = [
 
 export type {
   CompareOptions,
+  CompareRevisionGrouping,
   CompareResult,
   CompareStats,
   AncillaryBindingLocator,
@@ -88,7 +89,14 @@ export async function compareDocuments(
     date,
     ignoreFormatting,
     detectMoves,
+    revisionGrouping,
   } = options;
+  if (revisionGrouping !== undefined && !COMPARE_REVISION_GROUPINGS.includes(revisionGrouping)) {
+    throw new TypeError(
+      `Unsupported revisionGrouping: ${String(revisionGrouping)}. ` +
+      `Expected one of: ${COMPARE_REVISION_GROUPINGS.join(', ')}.`,
+    );
+  }
 
   const tagged = await compareDocumentsAtomizer(original, revised, {
     author,
@@ -101,6 +109,7 @@ export async function compareDocuments(
       detectMoves === undefined
         ? undefined
         : { detectMoves },
+    ...(revisionGrouping === undefined ? {} : { revisionGrouping }),
   });
 
   return {
