@@ -110,6 +110,8 @@ export interface TableLevelRecordFactory {
  * The published element holds the revised live state. A revision record is
  * appended only when the original's reject projection differs from it:
  *
+ * - a record both inputs carry unchanged, over the same live state, is
+ *   published as the revised side has it;
  * - the original's own pending record is kept (with a fresh ID) when the two
  *   live states agree, so a prior reviewer's revision keeps its attribution;
  * - otherwise a comparison record holds the original's reject projection,
@@ -144,24 +146,27 @@ export function resolveTableLevelProperty(
     published.removeChild(stale);
   }
   const live = liveChildren(published, localName);
+  const originalRecord = changeRecordOf(original, localName);
+  const revisedRecord = changeRecordOf(revised, localName);
+  const sameLiveState = signature(liveChildren(original, localName)) === signature(live);
+  if (sameLiveState && originalRecord && revisedRecord &&
+      subtreeSignature(revisedRecord) === subtreeSignature(originalRecord)) {
+    // Both inputs carry the same pending revision over the same live state:
+    // publish the revised element unchanged, record included.
+    return { element: revised!.cloneNode(true) as WmlElement, record: 'preserved' };
+  }
   const prior = originalPriorState(original, localName);
   if (signature(prior) === signature(live)) {
     if (localName === 'tblPrEx' && live.length === 0 && !revised) return { element: null, record: 'none' };
     return { element: published, record: 'none' };
   }
-  const originalRecord = changeRecordOf(original, localName);
-  const revisedRecord = changeRecordOf(revised, localName);
   let record: WmlElement;
   let kind: TableLevelPropertyResolution['record'];
-  if (originalRecord && signature(liveChildren(original, localName)) === signature(live)) {
-    // The only difference is the original's pending revision: keep it. When
-    // the revised side carries the same record, publish that one unchanged.
-    if (revisedRecord && subtreeSignature(revisedRecord) === subtreeSignature(originalRecord)) {
-      record = revisedRecord.cloneNode(true) as WmlElement;
-    } else {
-      record = originalRecord.cloneNode(true) as WmlElement;
-      record.setAttributeNS(W_NS, 'w:id', String(records.freshId()));
-    }
+  if (originalRecord && sameLiveState) {
+    // The only difference is the original's pending revision: keep it, with a
+    // fresh ID, since revised content published beside it may use the same one.
+    record = originalRecord.cloneNode(true) as WmlElement;
+    record.setAttributeNS(W_NS, 'w:id', String(records.freshId()));
     kind = 'preserved';
   } else if (!allowComparisonRecord) {
     if (localName === 'tblPrEx' && live.length === 0 && !revised) return { element: null, record: 'none' };
