@@ -200,6 +200,11 @@ describe('matched rows whose cell skeleton changes', () => {
       const startingRow = row([cell([]).replace('</w:tcPr>', `</w:tcPr>${marked('Delta', start)}`), cell(['Echo']), cell(['Foxtrot'])]);
       const pending = (source: string, kind: 'ins' | 'del') =>
         source.replace('<w:tr>', `<w:tr><w:trPr><w:${kind} w:id="90" w:author="Earlier" w:date="2026-01-01T00:00:00Z"/></w:trPr>`);
+      const earlierStart = (kind: 'ins' | 'del') => {
+        const textTag = kind === 'del' ? 'w:delText' : 'w:t';
+        return `<w:p><w:${kind} w:id="92" w:author="Earlier" w:date="2026-01-01T00:00:00Z">${start}<w:r>` +
+          `<${textTag} xml:space="preserve">Alpha</${textTag}></w:r></w:${kind}></w:p>`;
+      };
       const earlierAfter = (kind: 'ins' | 'del') => {
         const textTag = kind === 'del' ? 'w:delText' : 'w:t';
         return `<w:p><w:${kind} w:id="91" w:author="Earlier" w:date="2026-01-01T00:00:00Z"><w:r>` +
@@ -234,6 +239,12 @@ describe('matched rows whose cell skeleton changes', () => {
         ['into a row with a pending deletion from plain text',
           table([split(marked('Alpha', start)), secondRow]) + marked('After', '', end),
           table([pending(merged(marked('Alpha', start)), 'del'), secondRow]) + marked('After', '', end)],
+        // A pending inline revision around the start inside the replaced row:
+        // the outside end is left to the projection's own counterpart cleanup.
+        ...(['ins', 'del'] as const).map((kind): [string, string, string] => [
+          `from a pending inline ${kind === 'ins' ? 'insertion' : 'deletion'} in a replaced row`,
+          table([split(earlierStart(kind)), secondRow]) + marked('After', '', end),
+          table([merged(earlierStart(kind)), secondRow]) + marked('After', '', end)]),
       ];
       // Unmatched and duplicate boundary counts: a projection of the redline
       // must be as balanced as the same projection of its source.
@@ -267,6 +278,71 @@ describe('matched rows whose cell skeleton changes', () => {
         }
       }
     },
+  );
+
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'keeps a crossing bookmark as balanced as its source under every mix of pending row and inline revisions', async () => {
+      // A start inside the replaced row and an end in the next paragraph, each
+      // optionally inside earlier inline revisions, with an optional pending
+      // row revision on either side. Each comparison projection must be at
+      // least as balanced as the same projection of its source, and a range
+      // the source keeps whole must cover the same text.
+      const crossStart = '<w:bookmarkStart w:id="7" w:name="Cross"/>';
+      const crossEnd = '<w:bookmarkEnd w:id="7"/>';
+      const run = (text: string) => `<w:r><w:t>${text}</w:t></w:r>`;
+      const wrappers: string[][] = [[], ['ins'], ['del'], ['moveFrom'], ['moveTo'], ['ins', 'del'], ['del', 'ins']];
+      let revisionId = 50;
+      const wrap = (path: string[], content: string) => path.reduceRight((inner, kind) =>
+        `<w:${kind} w:id="${revisionId++}" w:author="Earlier">${inner}</w:${kind}>`, content);
+      const source = (merged: boolean, rowKind: string, inner: string[], outer: string[]) => {
+        revisionId = 50;
+        const trPr = rowKind ? `<w:trPr><w:${rowKind} w:id="40" w:author="Earlier"/></w:trPr>` : '';
+        const first = `<w:tc><w:tcPr>${merged ? '<w:gridSpan w:val="2"/>' : ''}</w:tcPr>` +
+          `<w:p>${wrap(inner, crossStart + run('Alpha'))}</w:p>${merged ? `<w:p>${run('Beta')}</w:p>` : ''}</w:tc>`;
+        const second = merged ? '' : `<w:tc><w:tcPr/><w:p>${run('Beta')}</w:p></w:tc>`;
+        return '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>' +
+          `<w:tr>${trPr}${first}${second}</w:tr></w:tbl><w:p>${run('Before')}${wrap(outer, run('After') + crossEnd)}</w:p>`;
+      };
+      const summary = (xml: string) => {
+        const report = validateBookmarkIntegrity(xml);
+        const document = parseXml(xml);
+        let inside = false;
+        let span = '';
+        for (const element of Array.from(document.getElementsByTagNameNS(W_NS, '*'))) {
+          if (element.localName === 'bookmarkStart') inside = true;
+          else if (element.localName === 'bookmarkEnd') inside = false;
+          else if (inside && (element.localName === 't' || element.localName === 'delText')) span += element.textContent;
+        }
+        return {
+          starts: document.getElementsByTagNameNS(W_NS, 'bookmarkStart').length,
+          ends: document.getElementsByTagNameNS(W_NS, 'bookmarkEnd').length,
+          span,
+          broken: report.unmatchedStartIds.length + report.unmatchedEndIds.length +
+            report.duplicateStartIds.length + report.duplicateEndIds.length,
+        };
+      };
+      const failures: string[] = [];
+      for (const originalRowKind of ['', 'ins', 'del']) for (const revisedRowKind of ['', 'ins', 'del']) {
+        for (const inner of wrappers) for (const outer of wrappers) {
+          const original = await docx(source(false, originalRowKind, inner, outer));
+          const revised = await docx(source(true, revisedRowKind, inner, outer));
+          const output = await xmlOf((await compareDocuments(original, revised)).document);
+          for (const [side, project, from] of [
+            ['accept', acceptAllChanges, revised], ['reject', rejectAllChanges, original],
+          ] as const) {
+            const expected = summary(project(await xmlOf(from)));
+            const actual = summary(project(output));
+            const wholeRange = expected.starts === 1 && expected.ends === 1 && actual.starts === 1 && actual.ends === 1;
+            if (actual.broken > expected.broken || (wholeRange && actual.span !== expected.span)) {
+              failures.push(`${side} row=${originalRowKind || '-'}/${revisedRowKind || '-'} ` +
+                `start=${inner.join('>') || '-'} end=${outer.join('>') || '-'}: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`);
+            }
+          }
+        }
+      }
+      expect(failures).toEqual([]);
+    },
+    60000,
   );
 
   test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(

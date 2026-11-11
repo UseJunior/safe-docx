@@ -94,16 +94,8 @@ function bookmarkRangeHasMatchingRevisionWrappers(
   const counterpart = Array.from(document.getElementsByTagName(counterpartTag))
     .find((candidate) => candidate.getAttribute('w:id') === id);
   if (!counterpart) return false;
-  // Hoisting only helps when the counterpart outlives the marker. If every
-  // projection that removes the marker also removes its counterpart (including
-  // a row that leaves with both), keeping the marker in place never orphans it.
-  const markerRemoval = projectionRemoval(marker);
-  const counterpartRemoval = projectionRemoval(counterpart);
-  if (
-    (markerRemoval.accept || markerRemoval.reject) &&
-    (!markerRemoval.accept || counterpartRemoval.accept) &&
-    (!markerRemoval.reject || counterpartRemoval.reject)
-  ) return true;
+  const keep = keepingBeatsHoisting(marker, counterpart);
+  if (keep !== undefined) return keep;
   for (let ancestor = counterpart.parentNode as Element | null; ancestor;
     ancestor = ancestor.parentNode as Element | null) {
     if (REVISION_WRAPPER_TAGS.has(ancestor.tagName)) return ancestor.tagName === wrapper.tagName;
@@ -134,6 +126,15 @@ function rowRevisionKind(element: Element): string | null | undefined {
   return undefined;
 }
 
+type Projection = 'accept' | 'reject';
+const PROJECTIONS: readonly Projection[] = ['accept', 'reject'];
+
+/** Per projection, whether an enclosing inline wrapper or revised row removes a node. */
+interface ProjectionRemoval {
+  inline: Record<Projection, boolean>;
+  row: Record<Projection, boolean>;
+}
+
 /**
  * Which projections remove `node` with an enclosing revision: Accept All
  * removes `w:del`/`w:moveFrom` content and a row whose `w:trPr` carries
@@ -143,20 +144,64 @@ function rowRevisionKind(element: Element): string | null | undefined {
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1396
  */
-function projectionRemoval(node: Element): { accept: boolean; reject: boolean } {
-  let accept = false;
-  let reject = false;
+function projectionRemoval(node: Element): ProjectionRemoval {
+  const removal: ProjectionRemoval = {
+    inline: { accept: false, reject: false },
+    row: { accept: false, reject: false },
+  };
   for (let ancestor = node.parentNode as Element | null; ancestor && ancestor.nodeType === 1;
     ancestor = ancestor.parentNode as Element | null) {
-    if (ancestor.tagName === 'w:del' || ancestor.tagName === 'w:moveFrom') accept = true;
-    else if (ancestor.tagName === 'w:ins' || ancestor.tagName === 'w:moveTo') reject = true;
+    if (ancestor.tagName === 'w:del' || ancestor.tagName === 'w:moveFrom') removal.inline.accept = true;
+    else if (ancestor.tagName === 'w:ins' || ancestor.tagName === 'w:moveTo') removal.inline.reject = true;
     else if (ancestor.tagName === 'w:tr') {
       const trPr = findChildByTagName(ancestor, 'w:trPr');
-      if (trPr && findChildByTagName(trPr, 'w:del')) accept = true;
-      if (trPr && findChildByTagName(trPr, 'w:ins')) reject = true;
+      if (trPr && findChildByTagName(trPr, 'w:del')) removal.row.accept = true;
+      if (trPr && findChildByTagName(trPr, 'w:ins')) removal.row.reject = true;
     }
   }
-  return { accept, reject };
+  return removal;
+}
+
+/**
+ * Whether keeping a boundary inside its inline revision leaves fewer orphaned
+ * boundaries across Accept All and Reject All than hoisting it out, or
+ * `undefined` when the counts tie and the nearest-wrapper rule decides.
+ *
+ * A kept boundary leaves with its wrappers; a hoisted one leaves only with a
+ * revised row around it. A boundary orphans a projection when exactly one end
+ * of the range survives it, except that the projection's counterpart cleanup
+ * drops an unrevised boundary whose counterpart sits inside an inline revision
+ * that projection removes (outside a row it also removes, since revised rows
+ * resolve first); it never drops a boundary still inside a revision.
+ * Comparing the two outcomes keeps both ends together when they leave with the
+ * same projections (for instance inside a row that leaves with both, #1396),
+ * and still hoists when the cleanup would tidy the hoisted boundary.
+ */
+function keepingBeatsHoisting(marker: Element, counterpart: Element): boolean | undefined {
+  const markerRemoval = projectionRemoval(marker);
+  const counterpartRemoval = projectionRemoval(counterpart);
+  const counterpartRevised = counterpartRemoval.inline.accept || counterpartRemoval.inline.reject;
+  // Revised rows are resolved before the cleanup runs, so only a boundary that
+  // leaves with an inline revision, not with its row, triggers it.
+  const triggersCleanup = (removal: ProjectionRemoval, inline: Record<Projection, boolean>, projection: Projection) =>
+    inline[projection] && !removal.row[projection];
+  const orphans = (markerInline: Record<Projection, boolean>) => {
+    const markerRevised = markerInline.accept || markerInline.reject;
+    return PROJECTIONS.filter((projection) => {
+      const markerLeaves = markerInline[projection] || markerRemoval.row[projection];
+      const counterpartLeaves = counterpartRemoval.inline[projection] || counterpartRemoval.row[projection];
+      if (markerLeaves === counterpartLeaves) return false;
+      // The cleanup drops the surviving end when it is unrevised and the
+      // leaving end left with an inline revision.
+      return markerLeaves
+        ? counterpartRevised || !triggersCleanup(markerRemoval, markerInline, projection)
+        : markerRevised || !triggersCleanup(counterpartRemoval, counterpartRemoval.inline, projection);
+    }).length;
+  };
+  const kept = orphans(markerRemoval.inline);
+  const hoisted = orphans({ accept: false, reject: false });
+  if (kept === hoisted) return undefined;
+  return kept < hoisted;
 }
 
 /** Whether the marker has any sibling before/after it inside its parent. */
