@@ -147,6 +147,63 @@ export function evenAndOddHeadersEnabled(settingsXml: string | null | undefined)
   return onOffProperty(directChild(settings, 'evenAndOddHeaders'));
 }
 
+/** One section, kind and role after inheritance, for any kind of reference value. */
+export interface InheritedStoryReference<T> {
+  sectionOrdinal: number;
+  kind: StoryKind;
+  role: StoryRole;
+  /** The section's own reference, else the one the previous section shows; `undefined` when blank. */
+  value: T | undefined;
+  /** Section whose reference supplies `value`; `undefined` when blank. */
+  sourceSectionOrdinal: number | undefined;
+  /** The section's own reference for this kind and role, if it has one. */
+  explicit: T | undefined;
+}
+
+/**
+ * Apply header/footer inheritance to per-section references of any shape: a
+ * section without a reference of a kind and type shows the one the previous
+ * section shows, and the first such section shows a blank story
+ * (§17.10.5, §17.10.2). `resolveEffectiveStoryBindings` runs it over resolved
+ * package parts; callers that only hold `word/document.xml` can run it over
+ * the reference elements themselves, since within one package two sections
+ * naming the same relationship id show the same part.
+ *
+ * Results are ordered by section ordinal, then kind (header, footer), then
+ * role (default, first, even), as `EffectiveStoryBindings.slots` is.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ */
+export function inheritStoryReferences<T>(
+  sectionCount: number,
+  explicitReference: (slot: { sectionOrdinal: number; kind: StoryKind; role: StoryRole }) => T | undefined,
+): InheritedStoryReference<T>[] {
+  const references: InheritedStoryReference<T>[] = [];
+  const shown = new Map<string, { value: T; sourceSectionOrdinal: number }>();
+  for (let sectionOrdinal = 0; sectionOrdinal < sectionCount; sectionOrdinal += 1) {
+    for (const kind of STORY_KINDS) {
+      for (const role of STORY_ROLES) {
+        const lineage = `${kind}:${role}`;
+        const explicit = explicitReference({ sectionOrdinal, kind, role });
+        if (explicit !== undefined) {
+          shown.set(lineage, { value: explicit, sourceSectionOrdinal: sectionOrdinal });
+        }
+        const source = shown.get(lineage);
+        references.push({
+          sectionOrdinal,
+          kind,
+          role,
+          value: source?.value,
+          sourceSectionOrdinal: source?.sourceSectionOrdinal,
+          explicit,
+        });
+      }
+    }
+  }
+  return references;
+}
+
 /**
  * Resolve the header/footer part each section shows, per kind and role.
  */
@@ -163,33 +220,22 @@ export function resolveEffectiveStoryBindings(
     explicitBySlot.set(storySlotKey(binding), binding);
   }
 
-  const slots: EffectiveStorySlot[] = [];
-  const shown = new Map<string, { targetPath: string; sourceSectionOrdinal: number }>();
-  for (let sectionOrdinal = 0; sectionOrdinal < sections.length; sectionOrdinal += 1) {
-    for (const kind of STORY_KINDS) {
-      for (const role of STORY_ROLES) {
-        const lineage = `${kind}:${role}`;
-        const explicit = explicitBySlot.get(storySlotKey({ sectionOrdinal, kind, role }));
-        if (explicit) {
-          shown.set(lineage, { targetPath: explicit.targetPath, sourceSectionOrdinal: sectionOrdinal });
-        }
-        const source = shown.get(lineage);
-        slots.push({
-          sectionOrdinal,
-          kind,
-          role,
-          targetPath: source?.targetPath,
-          sourceSectionOrdinal: source?.sourceSectionOrdinal,
-          inherited: source !== undefined && explicit === undefined,
-          displayed:
-            role === 'default' ||
-            (role === 'first' && titlePages[sectionOrdinal] === true) ||
-            (role === 'even' && evenAndOddHeaders),
-          explicit,
-        });
-      }
-    }
-  }
+  const slots: EffectiveStorySlot[] = inheritStoryReferences(
+    sections.length,
+    (slot) => explicitBySlot.get(storySlotKey(slot)),
+  ).map(({ sectionOrdinal, kind, role, value, sourceSectionOrdinal, explicit }) => ({
+    sectionOrdinal,
+    kind,
+    role,
+    targetPath: value?.targetPath,
+    sourceSectionOrdinal,
+    inherited: value !== undefined && explicit === undefined,
+    displayed:
+      role === 'default' ||
+      (role === 'first' && titlePages[sectionOrdinal] === true) ||
+      (role === 'even' && evenAndOddHeaders),
+    explicit,
+  }));
 
   return {
     ok: audit.ok,
