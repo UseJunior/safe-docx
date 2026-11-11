@@ -12,7 +12,7 @@
 ## 3. Verification
 
 - [x] 3.1 Flip SDX-COMPTABLE-03; accept-all equals revised and reject-all equals original with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`, on text and `bodyTableFootprint`; emitted-document schema gate passes.
-- [x] 3.2 Keep vertical merges, pending cell-topology revisions and wrapped cells refused (SDX-COMPTABLE-09).
+- [x] 3.2 Keep pending cell-topology revisions and wrapped cells refused (SDX-COMPTABLE-09); vertical merges were refused here until section 4.
 - [x] 3.3 LibreOffice accept/reject reproduce the revised and original tables.
 - [ ] 3.4 Real NVCA smoke after merge.
 

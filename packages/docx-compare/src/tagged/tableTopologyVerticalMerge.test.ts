@@ -378,6 +378,36 @@ describe('bookmarks and comments that cross the edge of a band', () => {
   );
 
   test.openspec('[SDX-COMPTABLE-10] a vertical-merge change emits a native band replacement')(
+    'keeps a table-level bookmark between band rows once, whether it is kept, removed or inserted', async () => {
+      const tableStart = '<w:bookmarkStart w:id="8" w:name="TableLevel"/>';
+      const tableEnd = '<w:bookmarkEnd w:id="8"/>';
+      // Between data rows 0 and 1, and between data rows 2 and 3: inside and just after the band.
+      const rows = (merges: Merge[], marked: boolean) => table([HEADER, data(0, merges[0]!),
+        ...(marked ? [tableStart] : []), data(1, merges[1]!), data(2, merges[2]!),
+        ...(marked ? [tableEnd] : []), data(3, merges[3]!), TRAILER]);
+      for (const [name, originalMarked, revisedMarked] of [
+        ['kept', true, true], ['removed', true, false], ['inserted', false, true]] as const) {
+        const { original, revised, xml } = await compareChecked(body(rows(['R', 'C', '', ''], originalMarked)),
+          body(rows(['R', 'C', 'C', ''], revisedMarked)));
+        expect(rowMarkers(xml).map((item) => item.marker), name).toEqual(band(3, 3, 1, 2));
+        const starts = parseXml(xml).getElementsByTagNameNS(W_NS, 'bookmarkStart');
+        expect(Array.from(starts).filter((node) => node.getAttributeNS(W_NS, 'name') === 'TableLevel'), name)
+          .toHaveLength(originalMarked || revisedMarked ? 1 : 0);
+        for (const [projection, projected, source] of [
+          ['accept', acceptAllChanges(xml), acceptAllChanges(await xmlOf(revised))],
+          ['reject', rejectAllChanges(xml), rejectAllChanges(await xmlOf(original))],
+        ] as const) {
+          expect(integrity(projected), `${name}: ${projection}`).toEqual(integrity(source));
+          const names = (documentXml: string) => Array.from(parseXml(documentXml).getElementsByTagNameNS(W_NS, 'bookmarkStart'))
+            .map((node) => node.getAttributeNS(W_NS, 'name'));
+          expect(names(projected), `${name}: ${projection}`).toEqual(names(source));
+        }
+      }
+    },
+    60000,
+  );
+
+  test.openspec('[SDX-COMPTABLE-10] a vertical-merge change emits a native band replacement')(
     'pins the comment anchors of a comment that crosses the edge of a band', async () => {
       const commentStart = '<w:commentRangeStart w:id="3"/>';
       const commentEnd = '<w:commentRangeEnd w:id="3"/><w:r><w:commentReference w:id="3"/></w:r>';

@@ -198,17 +198,18 @@ function replaceVerticalMergeBands(table: BothNode): void {
       continue;
     }
     replaced.push(...children.slice(next, low));
-    // Anything between the rows (a table-level bookmark or comment boundary)
-    // keeps its order ahead of the band.
-    replaced.push(...members.filter((_, index) => sides[index] === null));
-    replaced.push(...members.flatMap((member): TaggedNode[] => {
+    // A matched non-row child between the rows (a table-level bookmark or
+    // comment boundary present in both documents) keeps its order ahead of
+    // the band. A side-only one stays among its own side's rows.
+    replaced.push(...members.filter((member, index) => member.tag === 'both' && sides[index] === null));
+    replaced.push(...members.flatMap((member, index): TaggedNode[] => {
       if (member.tag === 'original') return [member];
-      if (member.tag !== 'both' || !isRow(member.original)) return [];
+      if (member.tag !== 'both' || sides[index] === null) return [];
       return [{ tag: 'original', node: member.original, children: [], opaque: true }];
     }));
-    replaced.push(...members.flatMap((member): TaggedNode[] => {
+    replaced.push(...members.flatMap((member, index): TaggedNode[] => {
       if (member.tag === 'revised') return [member];
-      if (member.tag !== 'both' || !isRow(member.revised)) return [];
+      if (member.tag !== 'both' || sides[index] === null) return [];
       return [{ tag: 'revised', node: member.revised, children: [], opaque: true }];
     }));
     next = high + 1;

@@ -52,13 +52,13 @@ The comparator SHALL publish schema-valid native whole-row insertion and deletio
 - **AND** no invalid direct `w:tc` insertion/deletion wrapper SHALL be published
 
 #### Scenario: [SDX-COMPTABLE-10] a vertical-merge change emits a native band replacement
-- **GIVEN** matched main-body tables with an unchanged grid where a vertical merge (`w:vMerge`) is created, extended, shrunk or split, is combined with a horizontal span, or loses the row where it starts or ends, so that a matched row's skeleton changes
+- **GIVEN** matched main-body tables with an unchanged grid where a vertical merge (`w:vMerge`) is created, extended, shrunk or split, is combined with a horizontal span, or loses the row where it starts or ends, so that a matched row's skeleton changes, or where an unmatched row of one document interrupts a merge of the other without continuing that merge at the same grid columns (for example a merged row whose text changed too much to pair)
 - **WHEN** the documents are compared
 - **THEN** the result SHALL contain the band (the smallest run of consecutive rows that holds every merge chain the change touches, in both documents) as all of its original rows carrying a `w:trPr/w:del` marker, immediately followed by all of its revised rows carrying a `w:trPr/w:ins` marker
 - **AND** rows outside every band SHALL keep their ordinary redline, so an unrelated merge or an in-row text edit beside the band carries no row marker, and two separate merge changes in one table SHALL form two bands
 - **AND** a merge continuation row deleted or inserted while every other row keeps its skeleton SHALL stay a plain whole-row deletion or insertion
 - **AND** accept-all SHALL project to the revised document and reject-all to the original document with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`, including every cell's `w:vMerge` state in the `bodyTableFootprint`, and the emitted document SHALL validate against the vendored Transitional schema
-- **AND** a bookmark range that crosses into or out of a band SHALL be as balanced in each projection as in the same projection of its source document
+- **AND** a bookmark range that crosses into or out of a band SHALL be as balanced in each projection as in the same projection of its source document, and a table-level bookmark boundary between band rows SHALL appear once, with its own document's rows
 
 #### Scenario: [SDX-COMPTABLE-07] selected story scaffold changes remain explicit
 - **GIVEN** a selected header or footer has unsupported table insertion, deletion, row, or column topology changes
