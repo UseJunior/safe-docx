@@ -312,16 +312,6 @@ function scaffoldFingerprint(textBox: Element): string | undefined {
  * @see https://github.com/UseJunior/safe-docx/issues/794
  * @see https://github.com/UseJunior/safe-docx/issues/795
  */
-function hasTextBoxAncestor(textBox: Element): boolean {
-  for (let node = textBox.parentNode; node?.nodeType === 1; node = node.parentNode) {
-    const element = node as Element;
-    if (element.namespaceURI === OOXML.W_NS && element.localName === 'txbxContent') {
-      return true;
-    }
-  }
-  return false;
-}
-
 function hasAlternateContentAncestor(textBox: Element): boolean {
   let node: Node | null = textBox.parentNode;
   while (node?.nodeType === 1) {
@@ -364,8 +354,33 @@ function scaffoldPairingReason(
   return undefined;
 }
 
-function unsupportedStoryReason(textBox: Element): string | undefined {
+/**
+ * Why a text-box story cannot be compared as a story, or `undefined` to admit.
+ *
+ * Pictures (`w:pict`, `w:drawing`) and embedded objects (`w:object`) inside a
+ * story are admitted: the story comparison carries each one as an atomic leaf,
+ * so an unchanged picture passes through untouched and a changed one is a
+ * tracked deletion plus insertion of its run, like any other atomic leaf
+ * (#1380). A body story holding a nested text box is admitted too: the nested
+ * box is compared as a story of its own (see `prepareTextBoxStoryComparison`).
+ * Part 4 § 14.9.1.1 and Part 1 § 20.4.2.38 call such nesting non-conformant,
+ * but a document that carries it still deserves a redline rather than an
+ * abort. A header or footer story still refuses nesting, because its stories
+ * are spliced back by raw position, which a nested box would shift.
+ *
+ * References to the comment, footnote and endnote stories stay refused here;
+ * they are tracked separately (#1385).
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1380
+ */
+function unsupportedStoryReason(
+  textBox: Element,
+  { allowNestedTextBoxes = false }: { allowNestedTextBoxes?: boolean } = {},
+): string | undefined {
   if (
+    !allowNestedTextBoxes &&
     textBox.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0
   ) {
     return 'nested text boxes are not supported';
@@ -375,8 +390,6 @@ function unsupportedStoryReason(textBox: Element): string | undefined {
     'commentReference',
     'endnoteReference',
     'footnoteReference',
-    'object',
-    'pict',
   ]);
   for (const element of Array.from(textBox.getElementsByTagName('*'))) {
     if (
@@ -412,6 +425,22 @@ function relationshipTargets(
   return targets;
 }
 
+/**
+ * Does this attribute hold a relationship id of its part? Every `r:*`
+ * attribute does, and so does `o:relid`, the relationship id a VML picture's
+ * `v:imagedata` may name its image by (vml-officeDrawing.xsd types it
+ * `r:ST_RelationshipId`). A text box may hold such a picture since #1380, so
+ * the closure check and the story remap read both spellings; missing
+ * `o:relid` would let a picture swap through unseen.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.11
+ * @see https://github.com/UseJunior/safe-docx/issues/1380
+ */
+function isRelationshipReference(attribute: Attr): boolean {
+  return attribute.namespaceURI === RELATIONSHIPS_NS
+    || (attribute.namespaceURI === OFFICE_VML_NS && attribute.localName === 'relid');
+}
+
 function relationshipClosureFingerprint(
   textBox: Element,
   targets: ReadonlyMap<string, string>,
@@ -419,7 +448,7 @@ function relationshipClosureFingerprint(
   const references: string[] = [];
   for (const element of [textBox, ...Array.from(textBox.getElementsByTagName('*'))]) {
     for (const attribute of Array.from(element.attributes)) {
-      if (attribute.namespaceURI !== RELATIONSHIPS_NS) continue;
+      if (!isRelationshipReference(attribute)) continue;
       const target = targets.get(attribute.value);
       if (!target) return undefined;
       references.push(
@@ -460,7 +489,7 @@ async function remapComparedStoryRelationshipIds(
 
   for (const element of [storyBody, ...Array.from(storyBody.getElementsByTagName('*'))]) {
     for (const attribute of Array.from(element.attributes)) {
-      if (attribute.namespaceURI !== RELATIONSHIPS_NS) continue;
+      if (!isRelationshipReference(attribute)) continue;
       const semantics = temporaryTargets.get(attribute.value);
       const ownerId = semantics ? ownerIdByTarget.get(semantics) : undefined;
       if (!ownerId) {
@@ -475,15 +504,15 @@ async function remapComparedStoryRelationshipIds(
   }
 }
 
-function storyDocumentXml(documentXml: string, textBoxIndex: number): string {
+/**
+ * A story document whose body is `textBox`'s current content, inside the
+ * scaffold of `documentXml`. The box is read as it stands, so a nested box
+ * already replaced by its placeholder stays a placeholder (#1380).
+ */
+function storyDocumentXmlFromTextBox(documentXml: string, textBox: Element): string {
   const document = parseXml(documentXml);
   const body = document.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0);
-  const textBox = document
-    .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')
-    .item(textBoxIndex);
-  if (!body || !textBox) {
-    throw new Error(`Could not isolate w:txbxContent[${textBoxIndex}]`);
-  }
+  if (!body) throw new Error('Could not isolate a w:txbxContent story');
   replaceChildren(body, textBox);
   return serializer.serializeToString(document);
 }
@@ -2112,9 +2141,9 @@ export async function prepareTextBoxStoryComparison(
     pairedCopies.length !== originalTextBoxes.length ||
     pairedCopies.length !== revisedTextBoxes.length;
   // A box with no counterpart is tracked whole, but its story must still be
-  // inside the supported subset: a nested box or a note/comment reference in
-  // it would be carried into the redline without its own lifecycle (#1380,
-  // #1385).
+  // inside the supported subset: a note/comment reference in it would be
+  // carried into the redline without its own lifecycle (#1385). Pictures,
+  // objects and nested boxes are marked with the box (#1380).
   const sides = [
     {
       side: 'original' as const,
@@ -2135,7 +2164,7 @@ export async function prepareTextBoxStoryComparison(
     for (const [candidateIndex, candidate] of candidates.entries()) {
       if (paired.has(candidateIndex)) continue;
       for (const copy of candidate.copies) {
-        const reason = unsupportedStoryReason(copy);
+        const reason = unsupportedStoryReason(copy, { allowNestedTextBoxes: true });
         if (!reason) continue;
         const index = rawIndex.get(copy)!;
         const paragraphId = textBoxParagraphId(copy);
@@ -2166,11 +2195,8 @@ export async function prepareTextBoxStoryComparison(
       revisedRelationshipTargets,
     );
     const reason =
-      unsupportedStoryReason(originalTextBox) ??
-      unsupportedStoryReason(revisedTextBox) ??
-      (hasTextBoxAncestor(originalTextBox) || hasTextBoxAncestor(revisedTextBox)
-        ? 'nested text boxes are not supported'
-        : undefined) ??
+      unsupportedStoryReason(originalTextBox, { allowNestedTextBoxes: true }) ??
+      unsupportedStoryReason(revisedTextBox, { allowNestedTextBoxes: true }) ??
       (originalRelationshipClosure === undefined ||
       revisedRelationshipClosure === undefined ||
       originalRelationshipClosure !== revisedRelationshipClosure
@@ -2196,17 +2222,31 @@ export async function prepareTextBoxStoryComparison(
     });
   }
 
-  const stories: TextBoxStoryInput[] = [...ancillary.stories];
-  for (const { originalIndex, revisedIndex: index } of changedCopies) {
+  // Stories are cut innermost first (#1380). A changed box nested in another
+  // changed box is replaced by its placeholder before the enclosing box's
+  // story is taken, so the enclosing story carries one unchanged placeholder
+  // leaf and the nested box's text is compared, with its own revisions, in a
+  // story of its own. Raw positions are document order, which visits an
+  // enclosing box before the boxes inside it, so descending raw position is
+  // innermost first. Splicing runs outermost first: the nested placeholder
+  // only exists in the output once the enclosing story is in place.
+  const bodyStories: TextBoxStoryInput[] = [];
+  const innermostFirst = [...changedCopies].sort(
+    (left, right) => right.revisedIndex - left.revisedIndex,
+  );
+  for (const { originalIndex, revisedIndex: index } of innermostFirst) {
     const storyOriginalArchive = await originalArchive.clone();
     const storyRevisedArchive = await revisedArchive.clone();
     storyOriginalArchive.setDocumentXml(
-      storyDocumentXml(originalDocumentXml, originalIndex),
+      storyDocumentXmlFromTextBox(
+        originalDocumentXml,
+        originalTextBoxes[originalIndex]!,
+      ),
     );
     storyRevisedArchive.setDocumentXml(
-      storyDocumentXml(revisedDocumentXml, index),
+      storyDocumentXmlFromTextBox(revisedDocumentXml, revisedTextBoxes[index]!),
     );
-    stories.push({
+    bodyStories.unshift({
       index,
       visualIndex: visualOrdinals[index] ?? index,
       partPath: 'word/document.xml',
@@ -2219,6 +2259,7 @@ export async function prepareTextBoxStoryComparison(
     createPlaceholder(originalTextBoxes[originalIndex]!, index);
     createPlaceholder(revisedTextBoxes[index]!, index);
   }
+  const stories: TextBoxStoryInput[] = [...ancillary.stories, ...bodyStories];
 
   if (
     stories.length === 0 &&
@@ -2357,10 +2398,14 @@ export async function assembleTextBoxStoryComparison(
  */
 function anchorRevisionWrapper(
   textBox: Element,
+  { withinStory = false }: { withinStory?: boolean } = {},
 ): 'ins' | 'del' | 'moveFrom' | 'moveTo' | undefined {
   for (let node = textBox.parentNode; node?.nodeType === 1; node = node.parentNode) {
     const element = node as Element;
     if (element.namespaceURI !== OOXML.W_NS) continue;
+    // `withinStory` stops at the enclosing text box: only a wrapper in the
+    // story that holds this box's anchor belongs to this box.
+    if (withinStory && element.localName === 'txbxContent') return undefined;
     if (
       element.localName === 'ins' ||
       element.localName === 'del' ||
@@ -2432,9 +2477,13 @@ async function spliceBodyTextBoxStory(
   comparedStoryBody: Element,
 ): Promise<void> {
   const token = placeholderToken(storyResult.index);
+  // A box whose only text is a nested placeholder reads as the token too, so
+  // a placeholder is a box with the token and no box inside it (#1380).
   const occurrences = Array.from(
     targetDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
-  ).filter((textBox) => (textBox.textContent ?? '') === token);
+  ).filter((textBox) =>
+    (textBox.textContent ?? '') === token &&
+    textBox.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length === 0);
   const kept = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) === undefined);
   const tracked = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) !== undefined);
   const sideBody = async (side: Buffer | undefined): Promise<Element | undefined> =>
@@ -2497,10 +2546,12 @@ export async function markTrackedTextBoxLifecycles(
   const trackedBoxes = Array.from(
     document.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
   ).filter((textBox) => {
-    if (hasTextBoxAncestor(textBox)) return false;
     // A moved anchor carries the same story on both sides of the move, so
-    // its story is not an insertion or a deletion and stays unmarked.
-    const wrapper = anchorRevisionWrapper(textBox);
+    // its story is not an insertion or a deletion and stays unmarked. A
+    // nested box is marked when its own anchor, inside the enclosing story,
+    // is tracked (#1380); a nested box inside a tracked enclosing box is
+    // marked with that box's paragraphs instead.
+    const wrapper = anchorRevisionWrapper(textBox, { withinStory: true });
     return wrapper === 'ins' || wrapper === 'del';
   });
   if (trackedBoxes.length === 0) {

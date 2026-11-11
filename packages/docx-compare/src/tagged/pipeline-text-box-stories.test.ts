@@ -883,7 +883,7 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     });
   });
 
-  test('fails closed for nested text boxes', async ({
+  test('tracks an outer-story edit in a box holding a nested text box (#1380)', async ({
     given,
     when,
     then,
@@ -907,26 +907,22 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
     );
-    let failure: unknown;
 
-    await when('comparison classifies the prohibited nesting', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
-    });
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, {}),
+    );
+    const outputXml = await documentXml(result.document);
 
-    await then('the typed diagnostic identifies nested text boxes', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            reason: expect.stringContaining('nested text boxes'),
-          }),
-        ],
-      });
+    await then('the outer edit is tracked and the nested box is carried unchanged', () => {
+      const accepted = acceptAllChanges(outputXml);
+      const rejected = rejectAllChanges(outputXml);
+      expect(textBoxText(accepted)).toBe('RevisedNested');
+      expect(textBoxText(rejected)).toBe('OriginalNested');
+      const nested = parseXml(outputXml)
+        .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')
+        .item(1);
+      expect(nested?.textContent).toBe('Nested');
+      expect(hasTrackedRevisionAncestor(nested!)).toBe(false);
     });
   });
 

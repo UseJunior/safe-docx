@@ -4098,6 +4098,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-20-4-2-38",
+      "title": "DrawingML rich text-box content (w:txbxContent)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "20.4.2.38"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent",
+      "claimRationale": "Part 1 §20.4.2.38 defines `w:txbxContent` inside a DrawingML text box\n(`wps:txbx`) and, like Part 4 §14.9.1.1 for VML, calls a story non-conformant\nwhen it holds references to the comment, footnote or endnote stories or another\n`w:txbxContent`. safe-docx compares the DrawingML copy of a Word text box under\nthe same rules as its VML twin: a picture in the story is an atomic leaf, a\nnested box in a main-document story is compared as its own story, and story\nreferences stay refused.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART2-6-5-2-3",
       "title": "part Relationships part ownership and naming",
       "classification": "targeted",
@@ -4165,7 +4189,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent",
-      "claimRationale": "Part 4 §14.9.1.1 defines `w:txbxContent` as the rich\nWordprocessingML-content container inside a drawing object. It prohibits\nreferences to comments, footnotes, and endnotes, as well as nested\n`w:txbxContent`. safe-docx compares a bounded subset of these stories\nindependently of the surrounding body, preserves the drawing scaffold around\neach one, and rejects the prohibited nested forms before comparison.\n\n**Text boxes authored in Microsoft Word are inside that subset.** Word stores\none modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`\nholding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`\nholding the VML spelling (`v:textbox`) — and renders exactly one of them.\nsafe-docx groups the two stored copies as the one visual box a reader sees,\nnumbers diagnostics by that visual ordinal, compares each stored copy as its own\nstory, and fails closed when the two sides' storage shapes do not correspond.\nAccepting every revision in the result reproduces the revised story text and\nrejecting every revision reproduces the original, in both stored branches.\n\nThe claim covers main-document stories and stories in relationship-selected\nheader and footer parts. It does not cover a **standalone** DrawingML text box —\na `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host\nanywhere above it. Such a box has no drawing scaffold this implementation can\nfingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,\nwhich aborts the whole comparison rather than emitting a partial redline. The\nclaim likewise does not cover a change to the relationship closure of any\ntext-box story — that check runs ahead of the twin carve-out and applies to\ntwinned and untwinned boxes alike — nor a change to the containing scaffold of\nan untwinned box.\n\n**Inserted and deleted main-document text boxes are inside the subset.** Boxes\npair across the two documents by anchor identity — the VML shape `id` and the\nDrawingML `wp:docPr/@id`, combined for the two stored copies of one twinned box\n— and only boxes without a usable identity fall back to their position between\nidentified boxes. A box with no counterpart stays whole in the body comparison,\nwhich tracks its anchor run as inserted or deleted, and every paragraph and text\nrun of its story is marked with the same revision kind, in every stored copy.\nAn inserted or deleted box whose story holds a nested box or a prohibited\nreference is refused, as a changed one is. Anonymous boxes whose storage\nshapes disagree are still refused.",
+      "claimRationale": "Part 4 §14.9.1.1 defines `w:txbxContent` as the rich\nWordprocessingML-content container inside a drawing object. It prohibits\nreferences to comments, footnotes, and endnotes, as well as nested\n`w:txbxContent`. safe-docx compares a bounded subset of these stories\nindependently of the surrounding body, preserves the drawing scaffold around\neach one, and rejects story references to comments, footnotes and endnotes\nbefore comparison.\n\n**Pictures, objects and nested boxes inside a story are inside the subset.** A\nVML picture (`w:pict`), a DrawingML picture (`w:drawing`) or an embedded object\n(`w:object`) in a changed story is carried as one atomic comparison leaf: an\nunchanged one passes through without revision markup, and one whose markup\nchanged is a tracked deletion of the old run plus a tracked insertion of the new\none. A change to the relationship closure the story reaches through `r:*` or\n`o:relid` attributes is still refused, so a picture that now names another image\npart is never carried silently. A main-document story holding a nested box —\nnon-conformant under this clause, but present in documents a comparison\nreceives — is compared too: the nested box is compared as a story of its own,\ncut before its enclosing story and spliced back after it, and a nested box whose\nanchor the enclosing story tracks as inserted or deleted has its own story\nmarked the same way. A header or footer story holding a nested box is still\nrefused.\n\n**Text boxes authored in Microsoft Word are inside that subset.** Word stores\none modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`\nholding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`\nholding the VML spelling (`v:textbox`) — and renders exactly one of them.\nsafe-docx groups the two stored copies as the one visual box a reader sees,\nnumbers diagnostics by that visual ordinal, compares each stored copy as its own\nstory, and fails closed when the two sides' storage shapes do not correspond.\nAccepting every revision in the result reproduces the revised story text and\nrejecting every revision reproduces the original, in both stored branches.\n\nThe claim covers main-document stories and stories in relationship-selected\nheader and footer parts. It does not cover a **standalone** DrawingML text box —\na `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host\nanywhere above it. Such a box has no drawing scaffold this implementation can\nfingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,\nwhich aborts the whole comparison rather than emitting a partial redline. The\nclaim likewise does not cover a change to the relationship closure of any\ntext-box story — that check runs ahead of the twin carve-out and applies to\ntwinned and untwinned boxes alike — nor a change to the containing scaffold of\nan untwinned box.\n\n**Inserted and deleted main-document text boxes are inside the subset.** Boxes\npair across the two documents by anchor identity — the VML shape `id` and the\nDrawingML `wp:docPr/@id`, combined for the two stored copies of one twinned box\n— and only boxes without a usable identity fall back to their position between\nidentified boxes. A box with no counterpart stays whole in the body comparison,\nwhich tracks its anchor run as inserted or deleted, and every paragraph and text\nrun of its story is marked with the same revision kind, in every stored copy.\nAn inserted or deleted box whose story holds a prohibited reference is\nrefused, as a changed one is; a picture, an object or a nested box in it is\ncarried and marked with the box. Anonymous boxes whose storage shapes disagree\nare still refused.",
       "evidence": [
         {
           "kind": "source",
@@ -4178,6 +4202,30 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART4-19-1-2-11",
+      "title": "VML image data relationship (v:imagedata)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 4,
+        "section": "19.1.2.11"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata",
+      "claimRationale": "Part 4 §19.1.2.11 defines `v:imagedata`, the image of a VML picture, which names\nits image part by relationship id through either `r:id` or the\n`urn:schemas-microsoft-com:office:office` attribute `o:relid`; both are typed\n`ST_RelationshipId`. safe-docx reads both spellings as relationship references\nwhen it fingerprints the relationship closure of a text-box story and when it\nrebinds a compared story's relationship ids to the owning part, so a picture in\na text box stays bound to its image and a swapped image is refused rather than\nlost.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts"
         }
       ]
     },
@@ -4249,6 +4297,36 @@
         {
           "contextPath": "schema/element:document",
           "declaredType": "CT_Document"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+      "kind": "element",
+      "name": "txbxContent",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_TextboxInfo/sequence/element:txbxContent",
+          "declaredType": "CT_TxbxContent",
+          "minOccurs": "1",
+          "maxOccurs": "1"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "urn:schemas-microsoft-com:vml",
+      "kind": "element",
+      "name": "imagedata",
+      "occurrences": [
+        {
+          "contextPath": "schema/element:imagedata",
+          "declaredType": "CT_ImageData"
         }
       ]
     },
