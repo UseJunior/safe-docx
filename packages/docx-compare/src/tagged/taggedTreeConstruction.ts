@@ -812,19 +812,31 @@ function paragraphSimilarity(
   return wordJaccard(similarityWords(left.textContent ?? ''), similarityWords(right.textContent ?? ''));
 }
 
+/**
+ * Order-preserving pairing of a gap's side-only siblings that maximizes the
+ * summed pair weight, among pairs at least `GAP_PAIRING_SIMILARITY` alike.
+ * A paragraph pair weighs its similarity; a table-row pair weighs its
+ * similarity squared, so one confident row edit outweighs two mediocre pairs
+ * of rows that share only boilerplate text (#1419).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1419
+ */
 function similarParagraphPairs(
   original: readonly WmlElement[],
   revised: readonly WmlElement[],
   originalNumberingIdentities: ReadonlyMap<WmlElement, string>,
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): Array<[number, number]> {
+  const weights = original.map((left) => revised.map((right) => {
+    const similarity = paragraphSimilarity(left, right, originalNumberingIdentities, revisedNumberingIdentities);
+    if (similarity < GAP_PAIRING_SIMILARITY) return -1;
+    return isTableRow(left) && isTableRow(right) ? similarity * similarity : similarity;
+  }));
   const dp = Array.from({ length: original.length + 1 }, () => Array<number>(revised.length + 1).fill(0));
   for (let i = original.length - 1; i >= 0; i--) {
     for (let j = revised.length - 1; j >= 0; j--) {
-      const similarity = paragraphSimilarity(
-        original[i]!, revised[j]!, originalNumberingIdentities, revisedNumberingIdentities,
-      );
-      const paired = similarity >= GAP_PAIRING_SIMILARITY ? similarity + dp[i + 1]![j + 1]! : -1;
+      const weight = weights[i]![j]!;
+      const paired = weight >= 0 ? weight + dp[i + 1]![j + 1]! : -1;
       dp[i]![j] = Math.max(paired, dp[i + 1]![j]!, dp[i]![j + 1]!);
     }
   }
@@ -832,10 +844,8 @@ function similarParagraphPairs(
   let i = 0;
   let j = 0;
   while (i < original.length && j < revised.length) {
-    const similarity = paragraphSimilarity(
-      original[i]!, revised[j]!, originalNumberingIdentities, revisedNumberingIdentities,
-    );
-    if (similarity >= GAP_PAIRING_SIMILARITY && Math.abs(dp[i]![j]! - (similarity + dp[i + 1]![j + 1]!)) < 1e-9) {
+    const weight = weights[i]![j]!;
+    if (weight >= 0 && Math.abs(dp[i]![j]! - (weight + dp[i + 1]![j + 1]!)) < 1e-9) {
       pairs.push([i++, j++]);
     } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
     else j++;
@@ -955,45 +965,98 @@ function constructBoth(
       ...originalChildren.slice(oi, originalEnd),
       ...revisedChildren.slice(ri, revisedEnd),
     ].some((element) => isTableRow(element) && isLegacyRow(element));
+    const samePositionIdentity = (left: WmlElement, right: WmlElement): boolean =>
+      (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
+      (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
+      semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
+      (childElements(left).length > 0 || childElements(right).length > 0) &&
+      canRecursivelyAlignContent(left, right) &&
+      (left.localName !== 'r' || (
+        left.textContent === right.textContent &&
+        left.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+        ).length === 0 &&
+        right.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
+        ).length === 0 &&
+        left.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+        ).length === 0 &&
+        right.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
+        ).length === 0
+      ));
+    // Rows with the same skeleton never pair by position alone: in an
+    // equal-count gap they pair through the gap's similarity pairing, so one
+    // confident edit beside an inserted row is not split into two mediocre
+    // position pairs (#1419). The elements that do pair by position (rows
+    // whose skeleton differs, for the table-topology guard, and row-level
+    // content controls) anchor that pairing: the rows between two anchors
+    // are paired among themselves, and refusing one row pair never strands
+    // a later anchor.
+    const count = originalEnd - oi;
+    const rowSegmentedGap = !legacyRowGap && count === revisedEnd - ri &&
+      originalChildren.slice(oi, originalEnd).some((left, index) => {
+        const right = revisedChildren[ri + index]!;
+        return isTableRow(left) && isTableRow(right) && rowProfile(left).shape === rowProfile(right).shape;
+      });
+    if (rowSegmentedGap) {
+      const positionStart = oi;
+      const positionRevisedStart = ri;
+      const anchors = Array.from({ length: count }, (_, index) => {
+        const left = originalChildren[positionStart + index]!;
+        const right = revisedChildren[positionRevisedStart + index]!;
+        if (!samePositionIdentity(left, right)) return false;
+        if (!isTableRow(left)) return true;
+        return rowProfile(left).shape !== rowProfile(right).shape && similarRows(left, right, true);
+      });
+      for (let index = 0; index < count;) {
+        if (anchors[index]) {
+          emitAlignedPair(originalChildren[oi++]!, revisedChildren[ri++]!);
+          index++;
+          continue;
+        }
+        let segmentEnd = index;
+        while (segmentEnd < count && !anchors[segmentEnd]) segmentEnd++;
+        emitSimilarityGap(positionStart + segmentEnd, positionRevisedStart + segmentEnd);
+        index = segmentEnd;
+      }
+      return;
+    }
     while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;
-      const sameIdentity = (left.namespaceURI ?? '') === (right.namespaceURI ?? '') &&
-        (left.localName ?? left.tagName) === (right.localName ?? right.tagName) &&
-        semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
-        (childElements(left).length > 0 || childElements(right).length > 0) &&
-        canRecursivelyAlignContent(left, right) &&
-        (!isTableRow(left) || legacyRowGap || similarRows(left, right, true)) &&
-        (left.localName !== 'r' || (
-          left.textContent === right.textContent &&
-          left.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
-          ).length === 0 &&
-          right.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
-          ).length === 0 &&
-          left.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
-          ).length === 0 &&
-          right.getElementsByTagNameNS(
-            'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
-          ).length === 0
-        ));
-      if (!sameIdentity) break;
+      if (!samePositionIdentity(left, right) ||
+          (isTableRow(left) && !legacyRowGap && !similarRows(left, right, true))) break;
       emitAlignedPair(left, right);
       oi++;
       ri++;
     }
+    emitSimilarityGap(originalEnd, revisedEnd);
+  };
+  /** Pairs the side-only siblings before the given ends by similarity. */
+  const emitSimilarityGap = (originalEnd: number, revisedEnd: number): void => {
     const gapOriginalStart = oi;
     const gapRevisedStart = ri;
     const originalGap = originalChildren.slice(gapOriginalStart, originalEnd);
     const revisedGap = revisedChildren.slice(gapRevisedStart, revisedEnd);
+    const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    // A table row whose fields all begin and end inside it is diffed cell by
+    // cell, so pairing it cannot split a field complex.
+    const fieldsCompleteWithin = (row: WmlElement): boolean => {
+      let depth = 0;
+      for (const fieldChar of Array.from(row.getElementsByTagNameNS(W, 'fldChar'))) {
+        const type = fieldChar.getAttributeNS(W, 'fldCharType');
+        if (type === 'begin') depth++;
+        else if (type === 'end' && --depth < 0) return false;
+      }
+      return depth === 0;
+    };
     const containsFieldControl = (elements: readonly WmlElement[]): boolean => elements.some((element) =>
-      element.getElementsByTagNameNS(
-        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
-      ).length > 0 || element.getElementsByTagNameNS(
-        'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'instrText',
-      ).length > 0);
+      isTableRow(element)
+        ? !fieldsCompleteWithin(element)
+        : element.getElementsByTagNameNS(W, 'fldChar').length > 0 ||
+          element.getElementsByTagNameNS(W, 'instrText').length > 0);
     // Field-context keys deliberately keep different complete fields out of
     // the LCS. Do not re-pair their individual runs through the generic fuzzy
     // gap matcher: that interleaves one source field with multiple revised
