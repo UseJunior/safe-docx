@@ -446,7 +446,6 @@ async function relationshipTargetsWithContent(
   relationshipsXml: string | null,
   ownerPartPath: string,
 ): Promise<ReadonlyMap<string, string>> {
-  const fingerprints = new Map<string, Promise<string>>();
   const internalTargets = (
     xml: string | null,
     owner: string,
@@ -459,27 +458,58 @@ async function relationshipTargetsWithContent(
         : posix.normalize(posix.join(posix.dirname(owner), target));
       return [id, semantics, partPath];
     });
-  const fingerprint = (partPath: string, visiting: ReadonlySet<string>): Promise<string> => {
-    if (visiting.has(partPath)) return Promise.resolve('cycle');
-    let pending = fingerprints.get(partPath);
+  // A part's own digest (its bytes and its relationships) depends on nothing
+  // else, so it can be memoized. A closure fingerprint is then the sorted set
+  // of every part reachable from the target, which is the same however the
+  // walk reaches it. A recursive fingerprint memoized per part is not: inside
+  // a relationship cycle, a part first reached through another member of the
+  // cycle would be cached with that member cut off, and a target reaching
+  // the cycle later would reuse the truncated digest and miss a replacement
+  // (round-3 review of #1380).
+  const partDigests = new Map<string, Promise<{ digest: string; next: string[] }>>();
+  const partDigest = (partPath: string): Promise<{ digest: string; next: string[] }> => {
+    let pending = partDigests.get(partPath);
     if (!pending) {
       pending = (async () => {
         const bytes = await archive.getFileBuffer(partPath);
-        if (!bytes) return 'missing';
+        if (!bytes) return { digest: 'missing', next: [] };
         const digest = createHash('sha256').update(bytes);
         const nested = internalTargets(
           await archive.getFile(owningRelationshipsPath(partPath)),
           partPath,
         ).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+        const next: string[] = [];
         for (const [id, semantics, nestedPath] of nested) {
-          const content = nestedPath === undefined
-            ? ''
-            : await fingerprint(nestedPath, new Set([...visiting, partPath]));
-          digest.update(`\n${id}=${semantics}|${content}`);
+          digest.update(`\n${id}=${semantics}`);
+          if (nestedPath !== undefined) next.push(nestedPath);
         }
-        return digest.digest('hex');
+        return { digest: digest.digest('hex'), next };
       })();
-      fingerprints.set(partPath, pending);
+      partDigests.set(partPath, pending);
+    }
+    return pending;
+  };
+  const fingerprints = new Map<string, Promise<string>>();
+  const fingerprint = (root: string): Promise<string> => {
+    let pending = fingerprints.get(root);
+    if (!pending) {
+      pending = (async () => {
+        const reached = new Map<string, string>();
+        const queue = [root];
+        while (queue.length > 0) {
+          const partPath = queue.pop()!;
+          if (reached.has(partPath)) continue;
+          const { digest, next } = await partDigest(partPath);
+          reached.set(partPath, digest);
+          queue.push(...next);
+        }
+        const closure = createHash('sha256');
+        for (const partPath of [...reached.keys()].sort()) {
+          closure.update(`${partPath}=${reached.get(partPath)}\n`);
+        }
+        return closure.digest('hex');
+      })();
+      fingerprints.set(root, pending);
     }
     return pending;
   };
@@ -487,7 +517,7 @@ async function relationshipTargetsWithContent(
   for (const [id, semantics, partPath] of internalTargets(relationshipsXml, ownerPartPath)) {
     targets.set(
       id,
-      partPath === undefined ? semantics : `${semantics}|${await fingerprint(partPath, new Set())}`,
+      partPath === undefined ? semantics : `${semantics}|${await fingerprint(partPath)}`,
     );
   }
   return targets;

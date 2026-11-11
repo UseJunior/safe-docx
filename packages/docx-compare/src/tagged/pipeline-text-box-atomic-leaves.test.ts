@@ -514,6 +514,73 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
     });
   });
 
+  // Round-3 review of #1380: the workbook relates back to the chart, closing
+  // a cycle, and the document part also relates to the workbook directly. If
+  // that direct relationship is fingerprinted first, a per-part memo caches
+  // the chart with the workbook cut off as the cycle, and the box's chart
+  // closure then misses the replaced workbook. Both orders must refuse.
+  for (const workbookFirst of [true, false]) {
+    test(`refuses a replaced workbook on a relationship cycle (workbook listed ${workbookFirst ? 'first' : 'last'})`, async ({
+      given, when, then,
+    }: AllureBddContext) => {
+      const chart =
+        `<w:r><w:drawing><wp:inline><wp:extent cx="100000" cy="100000"/><wp:docPr id="8" name="Chart 8"/>` +
+        `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">` +
+        `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart"/>` +
+        `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      const withCycle = async (text: string, workbook: string): Promise<Buffer> => {
+        const archive = await DocxArchive.load(await packageWith(bodyWithBox(run(text) + chart)));
+        const workbookRelationship =
+          `<Relationship Id="rIdAWorkbook" Type="${R_NS}/package" Target="embeddings/workbook.xlsx"/>`;
+        const chartRelationship =
+          `<Relationship Id="rIdChart" Type="${R_NS}/chart" Target="charts/chart1.xml"/>`;
+        archive.setFile(
+          'word/_rels/document.xml.rels',
+          `<Relationships xmlns="${PKG_NS}">` +
+            (workbookFirst
+              ? workbookRelationship + chartRelationship
+              : chartRelationship + workbookRelationship) +
+            `</Relationships>`,
+        );
+        archive.setFile(
+          'word/charts/chart1.xml',
+          `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="${R_NS}">` +
+            `<c:chart><c:plotArea><c:layout/></c:plotArea></c:chart>` +
+            `<c:externalData r:id="rIdWorkbook"/></c:chartSpace>`,
+        );
+        archive.setFile(
+          'word/charts/_rels/chart1.xml.rels',
+          `<Relationships xmlns="${PKG_NS}">` +
+            `<Relationship Id="rIdWorkbook" Type="${R_NS}/package" Target="../embeddings/workbook.xlsx"/></Relationships>`,
+        );
+        archive.setFile(
+          'word/embeddings/_rels/workbook.xlsx.rels',
+          `<Relationships xmlns="${PKG_NS}">` +
+            `<Relationship Id="rIdBack" Type="${R_NS}/chart" Target="../charts/chart1.xml"/></Relationships>`,
+        );
+        archive.setFile('word/embeddings/workbook.xlsx', Buffer.from(workbook));
+        return archive.save();
+      };
+      const original = await given('a box holding a chart whose workbook relates back to it', () =>
+        withCycle('Box old', 'workbook one'));
+      const revised = await given('the box text edited and the workbook bytes replaced', () =>
+        withCycle('Box new', 'workbook two'));
+      let failure: unknown;
+      await when('the documents are compared', async () => {
+        try {
+          await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+        } catch (error) {
+          failure = error;
+        }
+      });
+
+      await then('the replaced workbook on the cycle is seen', () => {
+        expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+        expect((failure as Error).message).toContain('relationship closure changed');
+      });
+    });
+  }
+
   test('keeps an o:relid picture bound to its image across a text edit', async ({
     given, when, then, and,
   }: AllureBddContext) => {
