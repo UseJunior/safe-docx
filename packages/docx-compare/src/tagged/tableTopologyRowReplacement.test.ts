@@ -281,7 +281,7 @@ describe('matched rows whose cell skeleton changes', () => {
   );
 
   test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
-    'keeps a crossing bookmark as balanced as its source under every mix of pending row and inline revisions', async () => {
+    'keeps a crossing bookmark as balanced as its source under every mix of pending row, inline and paragraph-mark revisions', async () => {
       // A start inside the replaced row and an end in the next paragraph, each
       // optionally inside earlier inline revisions, with an optional pending
       // row revision on either side. Each comparison projection must be at
@@ -294,14 +294,19 @@ describe('matched rows whose cell skeleton changes', () => {
       let revisionId = 50;
       const wrap = (path: string[], content: string) => path.reduceRight((inner, kind) =>
         `<w:${kind} w:id="${revisionId++}" w:author="Earlier">${inner}</w:${kind}>`, content);
-      const source = (merged: boolean, rowKind: string, inner: string[], outer: string[]) => {
+      // `mark` optionally gives the start's paragraph (`inside`) or the end's
+      // paragraph (`outside`) a tracked paragraph mark.
+      const source = (merged: boolean, rowKind: string, inner: string[], outer: string[], mark = '', at = '') => {
         revisionId = 50;
+        const pPr = mark ? `<w:pPr><w:rPr><w:${mark} w:id="49" w:author="Earlier"/></w:rPr></w:pPr>` : '';
         const trPr = rowKind ? `<w:trPr><w:${rowKind} w:id="40" w:author="Earlier"/></w:trPr>` : '';
         const first = `<w:tc><w:tcPr>${merged ? '<w:gridSpan w:val="2"/>' : ''}</w:tcPr>` +
-          `<w:p>${wrap(inner, crossStart + run('Alpha'))}</w:p>${merged ? `<w:p>${run('Beta')}</w:p>` : ''}</w:tc>`;
+          `<w:p>${at === 'inside' ? pPr : ''}${wrap(inner, crossStart + run('Alpha'))}</w:p>` +
+          `${merged ? `<w:p>${run('Beta')}</w:p>` : ''}</w:tc>`;
         const second = merged ? '' : `<w:tc><w:tcPr/><w:p>${run('Beta')}</w:p></w:tc>`;
         return '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>' +
-          `<w:tr>${trPr}${first}${second}</w:tr></w:tbl><w:p>${run('Before')}${wrap(outer, run('After') + crossEnd)}</w:p>`;
+          `<w:tr>${trPr}${first}${second}</w:tr></w:tbl>` +
+          `<w:p>${at === 'outside' ? pPr : ''}${run('Before')}${wrap(outer, run('After') + crossEnd)}</w:p>`;
       };
       const summary = (xml: string) => {
         const report = validateBookmarkIntegrity(xml);
@@ -322,27 +327,38 @@ describe('matched rows whose cell skeleton changes', () => {
         };
       };
       const failures: string[] = [];
+      const check = async (label: string, originalBody: string, revisedBody: string) => {
+        const original = await docx(originalBody);
+        const revised = await docx(revisedBody);
+        const output = await xmlOf((await compareDocuments(original, revised)).document);
+        for (const [side, project, from] of [
+          ['accept', acceptAllChanges, revised], ['reject', rejectAllChanges, original],
+        ] as const) {
+          const expected = summary(project(await xmlOf(from)));
+          const actual = summary(project(output));
+          const wholeRange = expected.starts === 1 && expected.ends === 1 && actual.starts === 1 && actual.ends === 1;
+          if (actual.broken > expected.broken || (wholeRange && actual.span !== expected.span)) {
+            failures.push(`${side} ${label}: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`);
+          }
+        }
+      };
       for (const originalRowKind of ['', 'ins', 'del']) for (const revisedRowKind of ['', 'ins', 'del']) {
         for (const inner of wrappers) for (const outer of wrappers) {
-          const original = await docx(source(false, originalRowKind, inner, outer));
-          const revised = await docx(source(true, revisedRowKind, inner, outer));
-          const output = await xmlOf((await compareDocuments(original, revised)).document);
-          for (const [side, project, from] of [
-            ['accept', acceptAllChanges, revised], ['reject', rejectAllChanges, original],
-          ] as const) {
-            const expected = summary(project(await xmlOf(from)));
-            const actual = summary(project(output));
-            const wholeRange = expected.starts === 1 && expected.ends === 1 && actual.starts === 1 && actual.ends === 1;
-            if (actual.broken > expected.broken || (wholeRange && actual.span !== expected.span)) {
-              failures.push(`${side} row=${originalRowKind || '-'}/${revisedRowKind || '-'} ` +
-                `start=${inner.join('>') || '-'} end=${outer.join('>') || '-'}: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`);
-            }
-          }
+          await check(`row=${originalRowKind || '-'}/${revisedRowKind || '-'} start=${inner.join('>') || '-'} ` +
+            `end=${outer.join('>') || '-'}`,
+          source(false, originalRowKind, inner, outer), source(true, revisedRowKind, inner, outer));
+        }
+      }
+      // A tracked paragraph mark on either paragraph, with the same pending row revision on both sides.
+      for (const mark of ['ins', 'del', 'moveFrom', 'moveTo']) for (const at of ['inside', 'outside']) {
+        for (const rowKind of ['', 'ins', 'del']) for (const inner of wrappers) for (const outer of wrappers.slice(0, 3)) {
+          await check(`mark=${mark}@${at} row=${rowKind || '-'} start=${inner.join('>') || '-'} end=${outer.join('>') || '-'}`,
+            source(false, rowKind, inner, outer, mark, at), source(true, rowKind, inner, outer, mark, at));
         }
       }
       expect(failures).toEqual([]);
     },
-    60000,
+    120000,
   );
 
   test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
