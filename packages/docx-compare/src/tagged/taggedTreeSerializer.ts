@@ -2668,8 +2668,10 @@ export function serializeTaggedTree(
   normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);
   normalizeWholeParagraphMoveRangeStarts(emitted, options.moves ?? []);
   normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);
-  expandRevisionWrappedSimpleFields(emitted);
   hoistFieldCharactersFromDeletions(emitted);
+  // After hoisting: partial-field hoisting lifts every field character out of
+  // a deletion, which must not include fields re-expressed from simple ones.
+  expandRevisionWrappedSimpleFields(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
   if (options.revisionGrouping === 'readable-semantic') {
     groupReadableSemanticRevisions(emitted, {

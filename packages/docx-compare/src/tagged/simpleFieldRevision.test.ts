@@ -291,6 +291,42 @@ describe('changed simple fields (#1422)', () => {
     });
   });
 
+  for (const revisionGrouping of ['token-minimal', 'readable-semantic'] as const) test(`keeps a deleted simple field inside its deletion when a deleted complex field spans paragraphs (${revisionGrouping})`, async ({ given, when, then, and }: AllureBddContext) => {
+    // The deletion holding the simple field also holds an incomplete complex
+    // field (its end lies in the next paragraph), whose characters are hoisted
+    // live. The re-expressed simple field must stay inside the deletion: Accept
+    // All keeps exactly the fields it keeps when the result holds plain text.
+    const spanning = (result: string): string =>
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> QUOTE "x" </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' + text('First ') + '</w:p>' +
+      '<w:p>' + result + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>';
+    const compare = async (result: string): Promise<{ original: Buffer; document: Buffer }> => {
+      const original = await buildDocxFromBodyXml(paragraph(text('Kept.')) + spanning(result));
+      const revised = await buildDocxFromBodyXml(paragraph(text('Kept.')));
+      const compared = await compareDocumentsAtomizer(original, revised, {
+        date: new Date('2026-11-11T00:00:00Z'), revisionGrouping,
+      });
+      return { original, document: compared.document };
+    };
+    const withField = await given('a complex field spanning two paragraphs with a PAGE simple field in its result', () => compare(PAGE()));
+    const control = await when('both paragraphs are deleted, and again with plain text in place of the simple field', () => compare(text('1')));
+    const tracked = await storyXml(withField.document, 'word/document.xml');
+    const accepted = acceptAllChanges(tracked);
+    const rejected = rejectAllChanges(tracked);
+    const controlAccepted = acceptAllChanges(await storyXml(control.document, 'word/document.xml'));
+
+    await then('Accept All keeps no field the simple field would add, with both appliers', async () => {
+      const expected = fieldValues(controlAccepted).length;
+      expect(fieldValues(accepted)).toHaveLength(expected);
+      expect(fieldValues(await docxCoreProjection(withField.document, 'accept', 'word/document.xml'))).toHaveLength(expected);
+    });
+    await and('Reject All restores the original fields and the output stays schema-valid', async () => {
+      expect(fieldValues(rejected)).toEqual(fieldValues(await storyXml(withField.original, 'word/document.xml')));
+      expect(revisionWrappedSimpleFields(tracked)).toEqual([]);
+      expectSchemaValid([['tracked', tracked], ['accepted', accepted], ['rejected', rejected]]);
+    });
+  });
+
   test('leaves an unchanged simple field as w:fldSimple', async ({ given, when, then }: AllureBddContext) => {
     const originalDocx = await given('a PAGE simple field beside text', () =>
       buildDocxFromBodyXml(paragraph(text('Page ') + PAGE()) + paragraph(text('Old text.'))));
