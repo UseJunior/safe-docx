@@ -145,7 +145,11 @@ describe('tagged-tree offline evaluation', () => {
         date: new Date('2026-09-20T00:00:00.000Z'),
       });
       const output = parseXml(publication.xml);
-      expect(output.getElementsByTagNameNS(W_NS, 'tr')).toHaveLength(3);
+      // Dissimilar rows are a whole-row deletion plus insertion (#1227); either
+      // representation is allowed so long as both projections keep three rows.
+      for (const projected of [acceptAllChanges(publication.xml), rejectAllChanges(publication.xml)]) {
+        expect(parseXml(projected).getElementsByTagNameNS(W_NS, 'tr')).toHaveLength(3);
+      }
       expect(output.getElementsByTagNameNS(W_NS, 'ins').length).toBeGreaterThan(0);
       expect(output.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
       expect(parseXml(acceptAllChanges(publication.xml)).documentElement.textContent).toContain('DuplicateNewDuplicate');
