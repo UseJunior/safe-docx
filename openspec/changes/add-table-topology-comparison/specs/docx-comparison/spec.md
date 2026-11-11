@@ -23,7 +23,7 @@ The comparator SHALL publish schema-valid native whole-row insertion and deletio
 - **AND** `deletedTableRows` and `insertedTableRows` SHALL each count the replaced row once when the comparison emits its row marker
 - **AND** accept-all SHALL project to the revised document and reject-all to the original document with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`, including the `bodyTableFootprint`, and the emitted document SHALL validate against the vendored Transitional schema
 - **AND** a replaced row whose `w:trPr` already carries a pending `w:ins` or `w:del` SHALL keep that marker and its attribution, SHALL not receive a second marker of the same kind, and SHALL not be counted for that kind, because the comparison emitted no marker for it
-- **AND** a bookmark range that crosses out of a replaced row SHALL stay balanced, with no unmatched or duplicate start or end, in both projections
+- **AND** a bookmark range that crosses out of a replaced row SHALL be as balanced in each projection as in the same projection of its source document, so a source projection with no unmatched or duplicate start or end yields none, including when the replaced row carries a pending row revision
 
 #### Scenario: [SDX-COMPTABLE-04] ordinary table content remains comparable
 - **GIVEN** matched tables with unchanged grid and cell intervals but changed cell text or safe properties

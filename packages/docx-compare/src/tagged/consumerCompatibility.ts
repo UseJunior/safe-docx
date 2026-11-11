@@ -94,6 +94,16 @@ function bookmarkRangeHasMatchingRevisionWrappers(
   const counterpart = Array.from(document.getElementsByTagName(counterpartTag))
     .find((candidate) => candidate.getAttribute('w:id') === id);
   if (!counterpart) return false;
+  // Hoisting only helps when the counterpart outlives the marker. If every
+  // projection that removes the marker also removes its counterpart (including
+  // a row that leaves with both), keeping the marker in place never orphans it.
+  const markerRemoval = projectionRemoval(marker);
+  const counterpartRemoval = projectionRemoval(counterpart);
+  if (
+    (markerRemoval.accept || markerRemoval.reject) &&
+    (!markerRemoval.accept || counterpartRemoval.accept) &&
+    (!markerRemoval.reject || counterpartRemoval.reject)
+  ) return true;
   for (let ancestor = counterpart.parentNode as Element | null; ancestor;
     ancestor = ancestor.parentNode as Element | null) {
     if (REVISION_WRAPPER_TAGS.has(ancestor.tagName)) return ancestor.tagName === wrapper.tagName;
@@ -122,6 +132,31 @@ function rowRevisionKind(element: Element): string | null | undefined {
   if (deleted) return 'w:del';
   if (inserted) return 'w:ins';
   return undefined;
+}
+
+/**
+ * Which projections remove `node` with an enclosing revision: Accept All
+ * removes `w:del`/`w:moveFrom` content and a row whose `w:trPr` carries
+ * `w:del` (§17.13.5.12); Reject All removes `w:ins`/`w:moveTo` content and a
+ * row whose `w:trPr` carries `w:ins` (§17.13.5.17). A row carrying both, such
+ * as a pending insertion the comparison deletes, leaves with either.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1396
+ */
+function projectionRemoval(node: Element): { accept: boolean; reject: boolean } {
+  let accept = false;
+  let reject = false;
+  for (let ancestor = node.parentNode as Element | null; ancestor && ancestor.nodeType === 1;
+    ancestor = ancestor.parentNode as Element | null) {
+    if (ancestor.tagName === 'w:del' || ancestor.tagName === 'w:moveFrom') accept = true;
+    else if (ancestor.tagName === 'w:ins' || ancestor.tagName === 'w:moveTo') reject = true;
+    else if (ancestor.tagName === 'w:tr') {
+      const trPr = findChildByTagName(ancestor, 'w:trPr');
+      if (trPr && findChildByTagName(trPr, 'w:del')) accept = true;
+      if (trPr && findChildByTagName(trPr, 'w:ins')) reject = true;
+    }
+  }
+  return { accept, reject };
 }
 
 /** Whether the marker has any sibling before/after it inside its parent. */

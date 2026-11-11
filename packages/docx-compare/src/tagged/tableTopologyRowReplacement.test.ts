@@ -198,6 +198,13 @@ describe('matched rows whose cell skeleton changes', () => {
         cell(['Bravo', 'Charlie'], '<w:gridSpan w:val="2"/>')]);
       const endingRow = row([cell([]).replace('</w:tcPr>', `</w:tcPr>${marked('Delta', '', end)}`), cell(['Echo']), cell(['Foxtrot'])]);
       const startingRow = row([cell([]).replace('</w:tcPr>', `</w:tcPr>${marked('Delta', start)}`), cell(['Echo']), cell(['Foxtrot'])]);
+      const pending = (source: string, kind: 'ins' | 'del') =>
+        source.replace('<w:tr>', `<w:tr><w:trPr><w:${kind} w:id="90" w:author="Earlier" w:date="2026-01-01T00:00:00Z"/></w:trPr>`);
+      const earlierAfter = (kind: 'ins' | 'del') => {
+        const textTag = kind === 'del' ? 'w:delText' : 'w:t';
+        return `<w:p><w:${kind} w:id="91" w:author="Earlier" w:date="2026-01-01T00:00:00Z"><w:r>` +
+          `<${textTag} xml:space="preserve">After</${textTag}></w:r>${end}</w:${kind}></w:p>`;
+      };
       const cases: Array<[string, string, string]> = [
         // Start in the replaced row, end in the next row.
         ['into the next row', table([split(marked('Alpha', start)), endingRow]), table([merged(marked('Alpha', start)), endingRow])],
@@ -210,7 +217,31 @@ describe('matched rows whose cell skeleton changes', () => {
         // The same crossing from a dissimilar same-skeleton row, published as whole-row revisions (#1227).
         ['from a dissimilar row', table([plain(['Apple', 'Orchard', 'Red']).replace('<w:p>', `<w:p>${start}`), endingRow]),
           table([plain(['Zebra', 'Crossing', 'Black']).replace('<w:p>', `<w:p>${start}`), endingRow])],
+        // A replaced row that already carries a pending revision of the other
+        // kind leaves with both Accept All and Reject All, and so must the
+        // outside end of its side's range (here inside an earlier revision).
+        ['from a row with a pending insertion',
+          table([pending(split(marked('Alpha', start)), 'ins'), secondRow]) + earlierAfter('ins'),
+          table([merged(marked('Alpha', start)), secondRow]) + marked('After', '', end)],
+        ['into a row with a pending deletion', table([split(marked('Alpha', start)), secondRow]) + marked('After', '', end),
+          table([pending(merged(marked('Alpha', start)), 'del'), secondRow]) + earlierAfter('del')],
+        // The same rows with the outside end in plain text: one source
+        // projection already lacks the start, and the redline must not add an
+        // orphan to the other.
+        ['from a row with a pending insertion to plain text',
+          table([pending(split(marked('Alpha', start)), 'ins'), secondRow]) + marked('After', '', end),
+          table([merged(marked('Alpha', start)), secondRow]) + marked('After', '', end)],
+        ['into a row with a pending deletion from plain text',
+          table([split(marked('Alpha', start)), secondRow]) + marked('After', '', end),
+          table([pending(merged(marked('Alpha', start)), 'del'), secondRow]) + marked('After', '', end)],
       ];
+      // Unmatched and duplicate boundary counts: a projection of the redline
+      // must be as balanced as the same projection of its source.
+      const integrity = (xml: string) => {
+        const report = validateBookmarkIntegrity(xml);
+        return [report.unmatchedStartIds, report.unmatchedEndIds, report.duplicateStartIds, report.duplicateEndIds]
+          .map((ids) => ids.length);
+      };
       for (const [name, originalBody, revisedBody] of cases) {
         const original = await docx(originalBody);
         const revised = await docx(revisedBody);
@@ -222,15 +253,17 @@ describe('matched rows whose cell skeleton changes', () => {
         const rejected = await DocxDocument.load(result.document);
         await accepted.acceptChanges();
         await rejected.rejectChanges();
-        for (const [projection, projected] of [
-          ['comparison accept', acceptAllChanges(output)],
-          ['comparison reject', rejectAllChanges(output)],
-          ['docx-core accept', await xmlOf((await accepted.toBuffer()).buffer)],
-          ['docx-core reject', await xmlOf((await rejected.toBuffer()).buffer)],
+        const sourceAccept = integrity(acceptAllChanges(await xmlOf(revised)));
+        const sourceReject = integrity(rejectAllChanges(await xmlOf(original)));
+        // Comparison projections match their source; docx-core repairs any
+        // orphan the source carried, so its projections are always balanced.
+        for (const [projection, projected, expected] of [
+          ['comparison accept', acceptAllChanges(output), sourceAccept],
+          ['comparison reject', rejectAllChanges(output), sourceReject],
+          ['docx-core accept', await xmlOf((await accepted.toBuffer()).buffer), [0, 0, 0, 0]],
+          ['docx-core reject', await xmlOf((await rejected.toBuffer()).buffer), [0, 0, 0, 0]],
         ] as const) {
-          expect(validateBookmarkIntegrity(projected), `${name}: ${projection}`).toMatchObject({
-            unmatchedStartIds: [], unmatchedEndIds: [], duplicateStartIds: [], duplicateEndIds: [],
-          });
+          expect(integrity(projected), `${name}: ${projection}`).toEqual(expected);
         }
       }
     },
