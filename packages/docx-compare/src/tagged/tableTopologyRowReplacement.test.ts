@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { describe, expect } from 'vitest';
-import { DocxArchive, DocxDocument, parseXml, serializeXml } from '@usejunior/docx-core';
+import { DocxArchive, DocxDocument, parseXml, serializeXml, validateBookmarkIntegrity } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
 import { compareDocuments } from '../index.js';
@@ -188,6 +188,55 @@ describe('matched rows whose cell skeleton changes', () => {
   );
 
   test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'keeps a bookmark that crosses out of a replaced or whole-row-revised row balanced in both projections', async () => {
+      const start = '<w:bookmarkStart w:id="7" w:name="CrossRow"/>';
+      const end = '<w:bookmarkEnd w:id="7"/>';
+      const marked = (text: string, before = '', after = '') =>
+        `<w:p>${before}<w:r><w:t xml:space="preserve">${text}</w:t></w:r>${after}</w:p>`;
+      const split = (first: string) => row([cell([]).replace('</w:tcPr>', `</w:tcPr>${first}`), cell(['Bravo']), cell(['Charlie'])]);
+      const merged = (first: string) => row([cell([]).replace('</w:tcPr>', `</w:tcPr>${first}`),
+        cell(['Bravo', 'Charlie'], '<w:gridSpan w:val="2"/>')]);
+      const endingRow = row([cell([]).replace('</w:tcPr>', `</w:tcPr>${marked('Delta', '', end)}`), cell(['Echo']), cell(['Foxtrot'])]);
+      const startingRow = row([cell([]).replace('</w:tcPr>', `</w:tcPr>${marked('Delta', start)}`), cell(['Echo']), cell(['Foxtrot'])]);
+      const cases: Array<[string, string, string]> = [
+        // Start in the replaced row, end in the next row.
+        ['into the next row', table([split(marked('Alpha', start)), endingRow]), table([merged(marked('Alpha', start)), endingRow])],
+        // Start in the replaced row, end in body text after the table.
+        ['into the body', table([split(marked('Alpha', start)), secondRow]) + marked('After', '', end),
+          table([merged(marked('Alpha', start)), secondRow]) + marked('After', '', end)],
+        // Start in an earlier row, end in the replaced row.
+        ['from an earlier row', table([startingRow, split(marked('Alpha', '', end))]),
+          table([startingRow, merged(marked('Alpha', '', end))])],
+        // The same crossing from a dissimilar same-skeleton row, published as whole-row revisions (#1227).
+        ['from a dissimilar row', table([plain(['Apple', 'Orchard', 'Red']).replace('<w:p>', `<w:p>${start}`), endingRow]),
+          table([plain(['Zebra', 'Crossing', 'Black']).replace('<w:p>', `<w:p>${start}`), endingRow])],
+      ];
+      for (const [name, originalBody, revisedBody] of cases) {
+        const original = await docx(originalBody);
+        const revised = await docx(revisedBody);
+        const result = await compareDocuments(original, revised);
+        await assertParity(original, revised, result.document);
+        await assertSchema(result.document);
+        const output = await xmlOf(result.document);
+        const accepted = await DocxDocument.load(result.document);
+        const rejected = await DocxDocument.load(result.document);
+        await accepted.acceptChanges();
+        await rejected.rejectChanges();
+        for (const [projection, projected] of [
+          ['comparison accept', acceptAllChanges(output)],
+          ['comparison reject', rejectAllChanges(output)],
+          ['docx-core accept', await xmlOf((await accepted.toBuffer()).buffer)],
+          ['docx-core reject', await xmlOf((await rejected.toBuffer()).buffer)],
+        ] as const) {
+          expect(validateBookmarkIntegrity(projected), `${name}: ${projection}`).toMatchObject({
+            unmatchedStartIds: [], unmatchedEndIds: [], duplicateStartIds: [], duplicateEndIds: [],
+          });
+        }
+      }
+    },
+  );
+
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
     'never gives a replaced row a second marker of the kind its trPr already carries', async () => {
       const earlier = (kind: 'ins' | 'del') =>
         `<w:${kind} w:id="90" w:author="Earlier" w:date="2026-01-01T00:00:00Z"/>`;
@@ -195,18 +244,26 @@ describe('matched rows whose cell skeleton changes', () => {
       const split = (trPr = '') => plain(['Alpha', 'Bravo', 'Charlie'], trPr);
       const withMarker = (source: string, kind: 'ins' | 'del') => source.replace('<w:tr>',
         `<w:tr><w:trPr>${earlier(kind)}</w:trPr>`);
-      for (const [originalRow, revisedRow] of [
+      // [original row, revised row, deletedTableRows, insertedTableRows]: the
+      // counters count only the row markers this comparison emits, so a kept
+      // pending marker of the same kind (with its attribution) is not counted.
+      for (const [originalRow, revisedRow, deletedRows, insertedRows] of [
         // A pending insertion or deletion on the original row being replaced.
-        [split(earlier('ins')), merged],
-        [split(earlier('del')), merged],
+        [split(earlier('ins')), merged, 1, 1],
+        [split(earlier('del')), merged, 0, 1],
         // A pending insertion or deletion on the revised row replacing it.
-        [split(), withMarker(merged, 'ins')],
-        [split(), withMarker(merged, 'del')],
+        [split(), withMarker(merged, 'ins'), 1, 0],
+        [split(), withMarker(merged, 'del'), 1, 1],
       ] as const) {
-        const { xml } = await compareChecked(body([originalRow, secondRow]), body([revisedRow, secondRow]));
+        const { result, xml } = await compareChecked(body([originalRow, secondRow]), body([revisedRow, secondRow]));
         for (const trPr of Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'trPr'))) {
           for (const kind of ['ins', 'del']) expect(directChildren(trPr, kind).length).toBeLessThanOrEqual(1);
         }
+        expect([result.stats.deletedTableRows, result.stats.insertedTableRows]).toEqual([deletedRows, insertedRows]);
+        const kept = Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'trPr'))
+          .flatMap((trPr) => [...directChildren(trPr, 'ins'), ...directChildren(trPr, 'del')])
+          .filter((marker) => marker.getAttributeNS(W_NS, 'author') === 'Earlier');
+        expect(kept).toHaveLength(1);
       }
     },
   );

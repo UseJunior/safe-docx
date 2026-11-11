@@ -20,9 +20,10 @@ The comparator SHALL publish schema-valid native whole-row insertion and deletio
 - **GIVEN** matched main-body rows in a table with an unchanged grid that differ in physical-cell count, `gridSpan` or `hMerge` horizontal merges, or `gridBefore`/`gridAfter` row offsets
 - **WHEN** the documents are compared
 - **THEN** the result SHALL contain the original row carrying a `w:trPr/w:del` marker immediately followed by the revised row carrying a `w:trPr/w:ins` marker, and unchanged rows SHALL carry no row marker
-- **AND** `deletedTableRows` and `insertedTableRows` SHALL each count the replaced row once
+- **AND** `deletedTableRows` and `insertedTableRows` SHALL each count the replaced row once when the comparison emits its row marker
 - **AND** accept-all SHALL project to the revised document and reject-all to the original document with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`, including the `bodyTableFootprint`, and the emitted document SHALL validate against the vendored Transitional schema
-- **AND** a replaced row whose `w:trPr` already carries a pending `w:ins` or `w:del` SHALL not receive a second marker of the same kind
+- **AND** a replaced row whose `w:trPr` already carries a pending `w:ins` or `w:del` SHALL keep that marker and its attribution, SHALL not receive a second marker of the same kind, and SHALL not be counted for that kind, because the comparison emitted no marker for it
+- **AND** a bookmark range that crosses out of a replaced row SHALL stay balanced, with no unmatched or duplicate start or end, in both projections
 
 #### Scenario: [SDX-COMPTABLE-04] ordinary table content remains comparable
 - **GIVEN** matched tables with unchanged grid and cell intervals but changed cell text or safe properties
@@ -47,7 +48,7 @@ The comparator SHALL publish schema-valid native whole-row insertion and deletio
 #### Scenario: [SDX-COMPTABLE-09] cell topology without a native row replacement fails closed
 - **GIVEN** matched main-body rows whose cell skeleton differs where either row has a vertical merge (`w:vMerge`), a pending cell-level topology revision (`w:cellIns`, `w:cellDel` or `w:cellMerge`), or cells inside a cell-level content control
 - **WHEN** the documents are compared
-- **THEN** main-body comparison SHALL throw a typed `vMerge`, `topologyRevision` or `occupancy` diagnostic with table and row coordinates before returning a DOCX
+- **THEN** main-body comparison SHALL throw a typed `UnsupportedTableTopologyComparisonError` (its `feature` names the first difference found, such as `vMerge`, `cellCount`, `topologyRevision` or `occupancy`) with table and row coordinates before returning a DOCX
 - **AND** no invalid direct `w:tc` insertion/deletion wrapper SHALL be published
 
 #### Scenario: [SDX-COMPTABLE-07] selected story scaffold changes remain explicit

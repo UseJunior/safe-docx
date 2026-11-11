@@ -310,6 +310,11 @@ describe('main-body table comparison topology', () => {
       ]));
       await expect(compareDocuments(original, verticallyMerged)).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
       await expect(compareDocuments(original, verticallyMerged)).rejects.toMatchObject({ tableIndex: 0, rowIndex: 0 });
+      // The feature names the first difference the guard finds: here the cell count.
+      await expect(compareDocuments(original, verticallyMerged)).rejects.toMatchObject({ feature: 'cellCount' });
+      const sameCount = await docx(table(2, [row(['A', 'B']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>')
+        .replace('</w:tc><w:tc>', '</w:tc><w:tc><w:tcPr><w:gridSpan w:val="1"/><w:hMerge w:val="restart"/></w:tcPr>')]));
+      await expect(compareDocuments(original, sameCount)).rejects.toMatchObject({ feature: 'vMerge', tableIndex: 0, rowIndex: 0 });
       const wrappedCell = row(['A', 'B']).replace('</w:tc><w:tc>',
         '</w:tc><w:sdt><w:sdtPr/><w:sdtContent><w:tc>')
         .replace('</w:tc></w:tr>', '</w:tc></w:sdtContent></w:sdt></w:tr>');

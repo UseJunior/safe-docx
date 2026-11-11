@@ -94,11 +94,34 @@ function bookmarkRangeHasMatchingRevisionWrappers(
   const counterpart = Array.from(document.getElementsByTagName(counterpartTag))
     .find((candidate) => candidate.getAttribute('w:id') === id);
   if (!counterpart) return false;
-  let ancestor = counterpart.parentNode as Element | null;
-  while (ancestor && !REVISION_WRAPPER_TAGS.has(ancestor.tagName)) {
-    ancestor = ancestor.parentNode as Element | null;
+  for (let ancestor = counterpart.parentNode as Element | null; ancestor;
+    ancestor = ancestor.parentNode as Element | null) {
+    if (REVISION_WRAPPER_TAGS.has(ancestor.tagName)) return ancestor.tagName === wrapper.tagName;
+    const rowKind = rowRevisionKind(ancestor);
+    if (rowKind !== undefined) return rowKind === wrapper.tagName;
   }
-  return ancestor?.tagName === wrapper.tagName;
+  return false;
+}
+
+/**
+ * The inline wrapper whose projection a whole-row revision shares: a row whose
+ * `w:trPr` carries only `w:del` (§17.13.5.12) leaves with Accept All like
+ * `w:del` content, one carrying only `w:ins` (§17.13.5.17) leaves with Reject
+ * All like `w:ins` content. A row carrying both leaves with either, matching
+ * no wrapper (`null`); `undefined` means the element is not a revised row.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1396
+ */
+function rowRevisionKind(element: Element): string | null | undefined {
+  if (element.tagName !== 'w:tr') return undefined;
+  const trPr = findChildByTagName(element, 'w:trPr');
+  if (!trPr) return undefined;
+  const deleted = findChildByTagName(trPr, 'w:del') !== null;
+  const inserted = findChildByTagName(trPr, 'w:ins') !== null;
+  if (deleted && inserted) return null;
+  if (deleted) return 'w:del';
+  if (inserted) return 'w:ins';
+  return undefined;
 }
 
 /** Whether the marker has any sibling before/after it inside its parent. */
