@@ -727,7 +727,9 @@ function rowSimilarity(left: WmlElement, right: WmlElement): number {
  * inserted row is a whole-row deletion plus a whole-row insertion, not
  * in-row edits that carry no row marker. Only rows with the same skeleton
  * pair across positions; a skeleton change at the same position still
- * reaches the table-topology guard.
+ * pairs, and is then replaced by a deleted and an inserted row
+ * (`replaceSkeletonChangedRows`, #1396) or refused by the table-topology
+ * guard.
  *
  * Two kinds of row keep the earlier same-position pairing and never pair
  * across positions: a row whose cells sit in a cell-level content wrapper,
@@ -990,7 +992,7 @@ function constructBoth(
     // equal-count gap they pair through the gap's similarity pairing, so one
     // confident edit beside an inserted row is not split into two mediocre
     // position pairs (#1419). The elements that do pair by position (rows
-    // whose skeleton differs, for the table-topology guard, and row-level
+    // whose skeleton differs, for row replacement or the table-topology guard, and row-level
     // content controls) anchor that pairing: the rows between two anchors
     // are paired among themselves, and refusing one row pair never strands
     // a later anchor.

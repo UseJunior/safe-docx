@@ -73,8 +73,9 @@ function cellProperty(cell: Element | undefined, name: string): string | null {
 /**
  * Structural skeleton of one row: its grid offsets and, per cell-bearing
  * child, the cell's span and merge states. Matched rows whose skeletons
- * differ are refused by {@link guardBodyTableTopology}; comparison alignment
- * pairs rows across positions only when their skeletons agree.
+ * differ are replaced by a deleted and an inserted row before
+ * {@link guardBodyTableTopology}, which refuses the rest (#1396); comparison
+ * alignment pairs rows across positions only when their skeletons agree.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.17
  */

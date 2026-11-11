@@ -318,12 +318,16 @@ describe('table rows pair by cell-text similarity', () => {
     const leading = [fcpa, cyber];
     const shifted = [plain('[Whistleblower policy', '[30] days post-Closing]'), plain('[FCPA policy', '[120] days post-Closing]')];
 
-    // A later row merges its cells: the skeleton change goes to the guard.
+    // A later row merges its cells: it anchors at its own position and is
+    // replaced there, the old row deleted then the merged row inserted (#1396).
     const merged = `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>${p('[Audit committee charter [90] days post-Closing]')}</w:tc></w:tr>`;
-    await expect(compareDocuments(
-      await docx(governance([...leading, plain('[Audit committee charter', '[90] days post-Closing]')])),
-      await docx(governance([...shifted, merged])),
-    )).rejects.toMatchObject({ name: 'UnsupportedTableTopologyComparisonError', feature: 'cellCount' });
+    const replaced = await compareChecked(
+      governance([...leading, plain('[Audit committee charter', '[90] days post-Closing]')]),
+      governance([...shifted, merged]),
+    );
+    // The leading rows still pair by similarity: Whistleblower inserted, FCPA
+    // edited, Cybersecurity deleted.
+    expect(tableView(replaced.xml).map((entry) => entry.marker)).toEqual(['', 'ins', '', 'del', 'del', 'ins']);
 
     // A later row sits in a row-level content control: it pairs by position.
     const controlled = (deadline: string) =>

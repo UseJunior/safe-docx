@@ -1038,16 +1038,23 @@ function markWholeTableRow(
     trPr = row.ownerDocument!.createElementNS(W_NS, 'w:trPr') as WmlElement;
     row.insertBefore(trPr, propertyInsertionPoint(row));
   }
-  const marker = row.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
-  marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
-  marker.setAttributeNS(W_NS, 'w:author', revision.author);
-  marker.setAttributeNS(W_NS, 'w:date', revision.date);
-  markComparisonRevision(marker);
-  const boundary = childElements(trPr).find((child) =>
-    kind === 'ins'
-      ? ['del', 'trPrChange'].includes(child.localName)
-      : child.localName === 'trPrChange');
-  trPr.insertBefore(marker, boundary ?? null);
+  // `w:trPr` holds at most one `w:ins` and one `w:del` (§ 17.4.81). A row
+  // whose source already carries a pending marker of this kind projects the
+  // same way without a second one: Accept/Reject resolve the existing marker.
+  const existing = childElements(trPr).some((child) =>
+    child.namespaceURI === W_NS && child.localName === kind);
+  if (!existing) {
+    const marker = row.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+    marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
+    marker.setAttributeNS(W_NS, 'w:author', revision.author);
+    marker.setAttributeNS(W_NS, 'w:date', revision.date);
+    markComparisonRevision(marker);
+    const boundary = childElements(trPr).find((child) =>
+      kind === 'ins'
+        ? ['del', 'trPrChange'].includes(child.localName)
+        : child.localName === 'trPrChange');
+    trPr.insertBefore(marker, boundary ?? null);
+  }
 
   const ownsParagraph = (paragraph: WmlElement): boolean => {
     if (!ownedParagraphsOnly) return true;
