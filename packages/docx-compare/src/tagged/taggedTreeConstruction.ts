@@ -739,11 +739,15 @@ function rowSimilarity(left: WmlElement, right: WmlElement): number {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @see https://github.com/UseJunior/safe-docx/issues/1227
  */
+function isLegacyRow(row: WmlElement): boolean {
+  const profile = rowProfile(row);
+  return profile.wrappedCells || profile.rowRevision;
+}
+
 function similarRows(left: WmlElement, right: WmlElement, samePosition: boolean): boolean {
+  if (isLegacyRow(left) || isLegacyRow(right)) return samePosition;
   const a = rowProfile(left);
   const b = rowProfile(right);
-  const legacy = a.wrappedCells || b.wrappedCells || a.rowRevision || b.rowRevision;
-  if (legacy) return samePosition;
   if (!samePosition && a.shape !== b.shape) return false;
   return rowSimilarity(left, right) >= GAP_PAIRING_SIMILARITY;
 }
@@ -944,6 +948,13 @@ function constructBoth(
       oi++;
       ri++;
     }
+    // A gap holding a row that must keep same-position pairing (see
+    // `similarRows`) pairs all its rows by position, as before: refusing an
+    // earlier pair would end this loop before that row is reached.
+    const legacyRowGap = originalEnd - oi === revisedEnd - ri && [
+      ...originalChildren.slice(oi, originalEnd),
+      ...revisedChildren.slice(ri, revisedEnd),
+    ].some((element) => isTableRow(element) && isLegacyRow(element));
     while (originalEnd - oi === revisedEnd - ri && oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;
@@ -952,7 +963,7 @@ function constructBoth(
         semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
         (childElements(left).length > 0 || childElements(right).length > 0) &&
         canRecursivelyAlignContent(left, right) &&
-        (!isTableRow(left) || similarRows(left, right, true)) &&
+        (!isTableRow(left) || legacyRowGap || similarRows(left, right, true)) &&
         (left.localName !== 'r' || (
           left.textContent === right.textContent &&
           left.getElementsByTagNameNS(

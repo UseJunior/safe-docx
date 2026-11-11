@@ -282,12 +282,17 @@ describe('table rows pair by cell-text similarity', () => {
     for (const marker of ['ins', 'del'] as const) {
       const revised = (cells: string[]) => row(cells).replace('<w:tr>',
         `<w:tr><w:trPr><w:${marker} w:id="90" w:author="Earlier" w:date="2026-01-01T00:00:00Z"/></w:trPr>`);
-      const { xml } = await compareChecked(
-        table([R0[0]!]).replace('</w:tbl>', `${revised(['Apple', 'Red', 'Fruit'])}${row(['Kept', 'Row', 'Here'])}</w:tbl>`),
-        table([R0[0]!]).replace('</w:tbl>', `${revised(['Zebra', 'Black', 'Animal'])}${row(['Kept', 'Row', 'Here'])}</w:tbl>`),
-      );
-      for (const trPr of Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'trPr'))) {
-        expect(directChildren(trPr, marker).length).toBeLessThanOrEqual(1);
+      // Alone in its gap, and after a dissimilar unrevised row in the same gap.
+      for (const leading of [['', ''], [row(['Apple', 'Pear', 'Plum']), row(['Zebra', 'Lion', 'Wolf'])]]) {
+        const { xml } = await compareChecked(
+          table([R0[0]!]).replace('</w:tbl>',
+            `${leading[0]}${revised(['Apple', 'Red', 'Fruit'])}${row(['Kept', 'Row', 'Here'])}</w:tbl>`),
+          table([R0[0]!]).replace('</w:tbl>',
+            `${leading[1]}${revised(['Zebra', 'Black', 'Animal'])}${row(['Kept', 'Row', 'Here'])}</w:tbl>`),
+        );
+        for (const trPr of Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'trPr'))) {
+          expect(directChildren(trPr, marker).length).toBeLessThanOrEqual(1);
+        }
       }
     }
   });
