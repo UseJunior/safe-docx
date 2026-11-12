@@ -414,7 +414,7 @@ async function payloadDivergences(
 }
 
 /** Zero-based section of `element` within a projected main story. */
-function sectionIndexOf(element: Element): number {
+export function sectionIndexOf(element: Element): number {
   let topLevel: Node = element;
   while (topLevel.parentNode && !(
     topLevel.parentNode.nodeType === 1 &&

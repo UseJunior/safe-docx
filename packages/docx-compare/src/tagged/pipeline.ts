@@ -1430,7 +1430,9 @@ async function compareDocumentsTagged(
     textBoxPlan.stories,
   );
   const sectionAlignedStories = new Set<TextBoxStoryInput>();
-  const representedPartPaths = new Set<string>();
+  // A header/footer whose only differences are its text-box stories and the
+  // drawings listed with the `drawing` scope is represented by those (#1382).
+  const representedPartPaths = new Set<string>(textBoxPlan.drawingAccountedPartPaths);
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   const compareStory = async (story: TextBoxStoryInput): Promise<void> => {
     if (
@@ -1604,7 +1606,13 @@ async function compareDocumentsTagged(
     textBoxPlan.hasAncillaryTextBoxStories ||
     representedPartPaths.size > 0
   ) {
-    await assertAncillaryTextBoxStoryProjection(original, revised, document);
+    // Reject All shows the revised drawing of a listed header/footer text box
+    // (#1382), so the original it is held to carries that drawing too.
+    await assertAncillaryTextBoxStoryProjection(
+      textBoxPlan.ancillaryProjectionOriginal ?? original,
+      revised,
+      document,
+    );
   }
   const results = [outerResult, ...storyResults.map(({ result }) => result)];
   const stats = results.reduce<CompareStats>(
@@ -1650,7 +1658,7 @@ async function compareDocumentsTagged(
     },
   );
   const alignedSectionKinds = sectionAligned.representedSectionKinds;
-  const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(
+  const unrepresentedChanges = [...(outerResult.unrepresentedChanges ?? []).filter(
     (change) => !textBoxPlan.representedAncillaryChanges.some(
       (represented) =>
         representedPartPaths.has(represented.partPath) &&
@@ -1663,14 +1671,14 @@ async function compareDocumentsTagged(
         change.scope === represented.kind &&
         change.sectionIndex === represented.sectionIndex,
     ),
-  );
+  ), ...(textBoxPlan.drawingChanges ?? [])];
 
   return {
     ...outerResult,
     document,
     stats,
     unrepresentedChanges:
-      unrepresentedChanges && unrepresentedChanges.length > 0
+      unrepresentedChanges.length > 0
         ? unrepresentedChanges
         : undefined,
   };

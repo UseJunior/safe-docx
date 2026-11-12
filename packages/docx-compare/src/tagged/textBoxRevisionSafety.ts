@@ -20,6 +20,7 @@ import {
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { parseDocumentXml } from './xmlToWmlElement.js';
 import {
+  copyIdentityTokens,
   pairTextBoxCandidates,
   textBoxPairingCandidates,
 } from './textBoxIdentityPairing.js';
@@ -41,7 +42,8 @@ import {
   wrapRunWithTrackChange,
 } from './revisionMarkup.js';
 import { importRelationshipTarget } from './relationshipIdCollision.js';
-import { PayloadFingerprints, resolvePartPath } from './picturePayload.js';
+import { PayloadFingerprints, resolvePartPath, sectionIndexOf } from './picturePayload.js';
+import type { UnrepresentedChange, UnrepresentedDrawingChange } from '../compare-types.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const VML_NS = 'urn:schemas-microsoft-com:vml';
@@ -51,6 +53,8 @@ const RELATIONSHIPS_NS =
 const PACKAGE_RELATIONSHIPS_NS =
   'http://schemas.openxmlformats.org/package/2006/relationships';
 const OFFICE_VML_NS = 'urn:schemas-microsoft-com:office:office';
+const WORDPROCESSING_DRAWING_NS =
+  'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 const serializer = new XMLSerializer();
 
@@ -141,6 +145,24 @@ export interface TextBoxStoryComparisonPlan {
     role: 'default' | 'first' | 'even';
     partPath: string;
   }>;
+  /**
+   * Text boxes whose drawing (size, position, wrap) changed with no revision
+   * markup to carry it: listed in `unrepresentedChanges` with the `drawing`
+   * scope (#1382).
+   */
+  drawingChanges?: UnrepresentedChange[];
+  /**
+   * Header and footer parts whose whole difference is their text-box stories
+   * plus the drawings in `drawingChanges`; their header/footer entry is
+   * represented by those (#1382).
+   */
+  drawingAccountedPartPaths?: string[];
+  /**
+   * The original package with each listed header/footer drawing replaced by
+   * the revised drawing around the original stories: what Reject All of the
+   * redline must show, for the header/footer projection check (#1382).
+   */
+  ancillaryProjectionOriginal?: Buffer;
 }
 
 function textBoxParagraphId(textBox: Element): string | undefined {
@@ -335,7 +357,8 @@ function hasAlternateContentAncestor(textBox: Element): boolean {
  * Fails closed when either side has no scaffold to fingerprint. Two
  * `undefined`s are the absence of a pairing, never a successful one — the
  * defect in #795 was comparing them with `!==` and reading `false` as "these
- * pair".
+ * pair". A scaffold that *differs* is paired: the shape change is carried
+ * and reported by `drawingShapeChange` (#1382).
  */
 function scaffoldPairingReason(
   originalTextBox: Element,
@@ -348,12 +371,180 @@ function scaffoldPairingReason(
   ) {
     return undefined;
   }
-  const original = scaffoldFingerprint(originalTextBox);
-  const revised = scaffoldFingerprint(revisedTextBox);
-  if (original === undefined || revised === undefined || original !== revised) {
+  if (
+    scaffoldFingerprint(originalTextBox) === undefined ||
+    scaffoldFingerprint(revisedTextBox) === undefined
+  ) {
     return reason;
   }
   return undefined;
+}
+
+const DRAWING_CONTAINER_NAMES = new Set(['drawing', 'pict', 'object']);
+
+/**
+ * The run-level drawing container (`w:drawing`, `w:pict` or `w:object`) that
+ * hosts a text-box story, whichever vocabulary (VML or DrawingML) sits
+ * between the two.
+ */
+function drawingContainer(textBox: Element): Element | undefined {
+  for (let node = textBox.parentNode; node?.nodeType === 1; node = node.parentNode) {
+    const element = node as Element;
+    if (element.namespaceURI !== OOXML.W_NS) continue;
+    if (DRAWING_CONTAINER_NAMES.has(element.localName)) return element;
+    if (['txbxContent', 'r', 'p', 'body'].includes(element.localName)) return undefined;
+  }
+  return undefined;
+}
+
+/** The text boxes a drawing container hosts directly, not those nested in their stories. */
+function ownTextBoxes(container: Element): Element[] {
+  return Array.from(container.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))
+    .filter((textBox) => {
+      for (let node = textBox.parentNode; node && node !== container; node = node.parentNode) {
+        const element = node as Element;
+        if (element.namespaceURI === OOXML.W_NS && element.localName === 'txbxContent') return false;
+      }
+      return true;
+    });
+}
+
+const WORDPROCESSING_DRAWING_2010_NS =
+  'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing';
+
+/**
+ * Editing-session identifiers Word rewrites without changing what a reader
+ * sees: the DrawingML `wp14:anchorId`/`wp14:editId` and the VML `o:spid`.
+ */
+function isEditingSessionId(attribute: Attr): boolean {
+  return (attribute.namespaceURI === WORDPROCESSING_DRAWING_2010_NS &&
+      (attribute.localName === 'anchorId' || attribute.localName === 'editId')) ||
+    (attribute.namespaceURI === OFFICE_VML_NS && attribute.localName === 'spid');
+}
+
+/**
+ * The drawing with every story emptied: its shape, position, wrap and other
+ * geometry, optionally without editing-session identifiers.
+ */
+function drawingShapeFingerprint(
+  container: Element,
+  { withoutEditingSessionIds = false }: { withoutEditingSessionIds?: boolean } = {},
+): string {
+  const clone = container.cloneNode(true) as Element;
+  for (const textBox of Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))) {
+    while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
+  }
+  if (withoutEditingSessionIds) {
+    for (const element of [clone, ...Array.from(clone.getElementsByTagName('*'))]) {
+      for (const attribute of Array.from(element.attributes)) {
+        if (isEditingSessionId(attribute)) element.removeAttributeNode(attribute);
+      }
+    }
+  }
+  return canonicalNode(clone);
+}
+
+interface DrawingShapeChange {
+  originalContainer: Element;
+  revisedContainer: Element;
+  element: UnrepresentedDrawingChange['element'];
+  name?: string;
+  /**
+   * False when the drawings differ only in editing-session identifiers: the
+   * revised drawing is carried as for any shape change, but there is no
+   * shape change to report.
+   */
+  visible: boolean;
+}
+
+/**
+ * The shape change of a paired text box's drawing, or `undefined` when its
+ * drawing (the run-level container with every story emptied) is unchanged.
+ *
+ * A text box's size, position and wrap live in its drawing — `wp:extent`,
+ * `wp:positionH`/`wp:positionV` and the `wp:wrap*` choice of a DrawingML
+ * `wp:anchor` or `wp:inline`, or the `style` and `w10:wrap` of a VML shape.
+ * WordprocessingML defines revision markup for run, paragraph, section,
+ * table and numbering properties only, so none of these can be tracked. When
+ * the box's text also changed, the comparison tracks the text inside the box,
+ * carries the revised drawing, and lists the drawing in
+ * `unrepresentedChanges` (`drawing` scope).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
+ * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
+ * @see https://github.com/UseJunior/safe-docx/issues/1382
+ */
+function drawingShapeChange(
+  originalTextBox: Element,
+  revisedTextBox: Element,
+): DrawingShapeChange | undefined {
+  const originalContainer = drawingContainer(originalTextBox);
+  const revisedContainer = drawingContainer(revisedTextBox);
+  if (!originalContainer || !revisedContainer) return undefined;
+  if (drawingShapeFingerprint(originalContainer) === drawingShapeFingerprint(revisedContainer)) {
+    return undefined;
+  }
+  const insideStory = (element: Element): boolean => {
+    for (let node = element.parentNode; node && node !== revisedContainer; node = node.parentNode) {
+      const ancestor = node as Element;
+      if (ancestor.namespaceURI === OOXML.W_NS && ancestor.localName === 'txbxContent') return true;
+    }
+    return false;
+  };
+  const docPr = Array.from(
+    revisedContainer.getElementsByTagNameNS(WORDPROCESSING_DRAWING_NS, 'docPr'),
+  ).find((candidate) => !insideStory(candidate));
+  const name = docPr?.getAttribute('name') || nearestShape(revisedTextBox)?.getAttribute('id') || undefined;
+  const visible =
+    drawingShapeFingerprint(originalContainer, { withoutEditingSessionIds: true }) !==
+    drawingShapeFingerprint(revisedContainer, { withoutEditingSessionIds: true });
+  return {
+    originalContainer,
+    revisedContainer,
+    element: revisedContainer.localName as UnrepresentedDrawingChange['element'],
+    ...(name ? { name } : {}),
+    visible,
+  };
+}
+
+/**
+ * `revisedContainer`'s drawing holding `originalContainer`'s stories, built in
+ * the original's document, or `undefined` when the two host a different
+ * number of text boxes.
+ */
+function originalStoriesInRevisedDrawing(
+  originalContainer: Element,
+  revisedContainer: Element,
+): Element | undefined {
+  const originalBoxes = ownTextBoxes(originalContainer);
+  const aligned = originalContainer.ownerDocument!.importNode(revisedContainer, true) as Element;
+  const alignedBoxes = ownTextBoxes(aligned);
+  if (originalBoxes.length !== alignedBoxes.length) return undefined;
+  alignedBoxes.forEach((textBox, index) => replaceChildren(textBox, originalBoxes[index]!));
+  return aligned;
+}
+
+/**
+ * Do the relationship ids the revised drawing names outside its stories mean
+ * the same thing in the original document? Only then can the original side
+ * carry the revised drawing without rebinding it.
+ */
+function drawingRelationshipsAgree(
+  revisedContainer: Element,
+  originalTargets: ReadonlyMap<string, string>,
+  revisedTargets: ReadonlyMap<string, string>,
+): boolean {
+  const visit = (element: Element): boolean => {
+    if (element.namespaceURI === OOXML.W_NS && element.localName === 'txbxContent') return true;
+    for (const attribute of Array.from(element.attributes)) {
+      if (!isRelationshipReference(attribute)) continue;
+      const target = revisedTargets.get(attribute.value);
+      if (target === undefined || originalTargets.get(attribute.value) !== target) return false;
+    }
+    return directChildElements(element).every(visit);
+  };
+  return visit(revisedContainer);
 }
 
 /**
@@ -672,6 +863,32 @@ function partXmlWithRevisedTextBoxes(
   if (originalBoxes.length !== revisedBoxes.length) return originalPartXml;
   for (let index = 0; index < originalBoxes.length; index += 1) {
     replaceChildren(originalBoxes[index]!, revisedBoxes[index]!);
+  }
+  return serializer.serializeToString(original);
+}
+
+/**
+ * `originalPartXml` with the drawing of each listed text box (by raw
+ * position) replaced by its revised drawing around the original stories, or
+ * `undefined` when a drawing hosts a different number of stories on the two
+ * sides.
+ */
+function partXmlWithRevisedDrawings(
+  originalPartXml: string,
+  revisedPartXml: string,
+  rawIndexes: readonly number[],
+): string | undefined {
+  const original = parseXml(originalPartXml);
+  const revised = parseXml(revisedPartXml);
+  for (const rawIndex of rawIndexes) {
+    const originalBox = original.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').item(rawIndex);
+    const revisedBox = revised.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').item(rawIndex);
+    const originalContainer = originalBox ? drawingContainer(originalBox) : undefined;
+    const revisedContainer = revisedBox ? drawingContainer(revisedBox) : undefined;
+    if (!originalContainer || !revisedContainer) return undefined;
+    const aligned = originalStoriesInRevisedDrawing(originalContainer, revisedContainer);
+    if (!aligned) return undefined;
+    originalContainer.parentNode!.replaceChild(aligned, originalContainer);
   }
   return serializer.serializeToString(original);
 }
@@ -1436,6 +1653,9 @@ async function ancillaryStoryInputs(
   validateProjection: boolean;
   hasTextBoxStories: boolean;
   representedChanges: TextBoxStoryComparisonPlan['representedAncillaryChanges'];
+  drawingChanges: UnrepresentedChange[];
+  drawingAccountedPartPaths: string[];
+  drawingAlignedOriginalParts: Map<string, string>;
 }> {
   const [originalState, revisedState] = await Promise.all([
     selectedAncillaryState(originalArchive),
@@ -1447,6 +1667,9 @@ async function ancillaryStoryInputs(
       validateProjection: false,
       hasTextBoxStories: false,
       representedChanges: [],
+      drawingChanges: [],
+      drawingAccountedPartPaths: [],
+      drawingAlignedOriginalParts: new Map(),
     };
   }
   const topologyMatches = ordinaryStoryTopologyMatches(originalState, revisedState);
@@ -1468,6 +1691,9 @@ async function ancillaryStoryInputs(
 
   const stories: TextBoxStoryInput[] = [];
   const representedChanges: TextBoxStoryComparisonPlan['representedAncillaryChanges'] = [];
+  const drawingChanges: UnrepresentedChange[] = [];
+  const drawingAccountedPartPaths: string[] = [];
+  const drawingAlignedOriginalParts = new Map<string, string>();
   for (const pair of paired.pairs) {
     if (
       topologyMatches
@@ -1559,9 +1785,20 @@ async function ancillaryStoryInputs(
     // comparison being refused (#1430).
     const originalTargets = relationshipTargets(pair.original.relationshipsXml);
     const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
+    const shapedBoxes: Array<{ index: number; change: DrawingShapeChange }> = [];
     for (let index = 0; index < pair.original.textBoxes.length; index += 1) {
       const originalTextBox = pair.original.textBoxes[index]!;
       const revisedTextBox = pair.revised.textBoxes[index]!;
+      // A header or footer story is spliced into the revised part, so its
+      // drawing is the revised one whether or not its text changed. Neither
+      // can be tracked there, so both are listed (#1382).
+      // Header/footer boxes pair by position, so a drawing that now carries
+      // another anchor identity is a different box, whose insertion or
+      // deletion a header or footer cannot track yet (#1384).
+      const shapeChange = drawingShapeChange(originalTextBox, revisedTextBox);
+      const replacedDrawing = shapeChange !== undefined &&
+        copyIdentityTokens(originalTextBox).join('|') !== copyIdentityTokens(revisedTextBox).join('|');
+      if (shapeChange && !replacedDrawing) shapedBoxes.push({ index, change: shapeChange });
       const originalRelationshipClosure = relationshipClosureFingerprint(
         originalTextBox,
         originalTargets,
@@ -1589,8 +1826,11 @@ async function ancillaryStoryInputs(
         scaffoldPairingReason(
           originalTextBox,
           revisedTextBox,
-          'the ancillary VML shape scaffold changed or could not be paired',
-        );
+          'the ancillary VML shape scaffold could not be paired',
+        ) ??
+        (replacedDrawing
+          ? 'the ancillary text-box scaffold names a different drawing (its anchor identity changed)'
+          : undefined);
       if (reason) {
         throw new UnsupportedTextBoxRevisionError([{
           index: visualOrdinals[index] ?? index,
@@ -1633,6 +1873,61 @@ async function ancillaryStoryInputs(
         original: await storyOriginalArchive.save(),
         revised: await storyRevisedArchive.save(),
       });
+    }
+    if (shapedBoxes.length > 0) {
+      const alignedXml = partXmlWithRevisedDrawings(
+        pair.original.xml,
+        pair.revised.xml,
+        shapedBoxes.map(({ index }) => index),
+      );
+      if (alignedXml !== undefined) {
+        drawingAlignedOriginalParts.set(pair.original.targetPath, alignedXml);
+        // The part's entry is represented when its stories and drawings are
+        // all it changed: the stories are tracked (and projection-checked),
+        // the drawings listed.
+        if (
+          canonicalNode(
+            parseXml(partXmlWithRevisedTextBoxes(alignedXml, pair.revised.xml)).documentElement,
+          ) === pair.revised.canonical
+        ) {
+          drawingAccountedPartPaths.push(pair.revised.targetPath);
+          representedChanges.push(...pair.revised.bindings.map((binding) => ({
+            scope: binding.kind,
+            kind: 'changed' as const,
+            sectionIndex: binding.sectionOrdinal,
+            role: binding.role,
+            partPath: pair.revised.targetPath,
+          })));
+        }
+      }
+      const reported = new Set<number>();
+      for (const { index } of shapedBoxes) {
+        const visualIndex = visualOrdinals[index] ?? index;
+        if (reported.has(visualIndex)) continue;
+        const change = shapedBoxes.find((box) =>
+          (visualOrdinals[box.index] ?? box.index) === visualIndex && box.change.visible)?.change;
+        if (!change) continue;
+        reported.add(visualIndex);
+        const name = shapedBoxes
+          .filter((box) => (visualOrdinals[box.index] ?? box.index) === visualIndex)
+          .map((box) => box.change.name)
+          .find((candidate) => candidate !== undefined);
+        for (const binding of pair.revised.bindings) {
+          drawingChanges.push({
+            scope: 'drawing',
+            kind: 'changed',
+            sectionIndex: binding.sectionOrdinal,
+            role: binding.role,
+            drawing: {
+              story: binding.kind,
+              partPath: pair.revised.targetPath,
+              index: visualIndex,
+              element: change.element,
+              ...(name !== undefined ? { name } : {}),
+            },
+          });
+        }
+      }
     }
   }
 
@@ -1709,6 +2004,9 @@ async function ancillaryStoryInputs(
       paired.unpairedRevised.some((story) => story.textBoxes.length > 0) ||
       stories.length > 0,
     hasTextBoxStories: stories.some((story) => story.container === 'textBox'),
+    drawingChanges,
+    drawingAccountedPartPaths,
+    drawingAlignedOriginalParts,
     representedChanges: [
       ...representedChanges,
       ...insertedPartStories.flatMap((story) =>
@@ -2317,8 +2615,21 @@ export async function prepareTextBoxStoryComparison(
   }
 
   const changedCopies: Array<{ originalIndex: number; revisedIndex: number }> = [];
+  const shapeChanges: Array<{
+    originalIndex: number;
+    revisedIndex: number;
+    change: DrawingShapeChange;
+  }> = [];
   for (const [originalTextBox, revisedTextBox] of pairedCopies) {
     const index = revisedRawIndex.get(revisedTextBox)!;
+    const shapeChange = drawingShapeChange(originalTextBox, revisedTextBox);
+    if (shapeChange) {
+      shapeChanges.push({
+        originalIndex: originalRawIndex.get(originalTextBox)!,
+        revisedIndex: index,
+        change: shapeChange,
+      });
+    }
     const originalRelationshipClosure = relationshipClosureFingerprint(
       originalTextBox,
       originalRelationshipTargets,
@@ -2350,7 +2661,7 @@ export async function prepareTextBoxStoryComparison(
       scaffoldPairingReason(
         originalTextBox,
         revisedTextBox,
-        'the containing VML shape scaffold changed or could not be paired',
+        'the containing VML shape scaffold could not be paired',
       );
     if (reason) {
       throw new UnsupportedTextBoxRevisionError([{
@@ -2367,6 +2678,81 @@ export async function prepareTextBoxStoryComparison(
     });
   }
 
+  // A box whose text and drawing both changed has its text tracked inside
+  // the box and carries the revised drawing, listed in `unrepresentedChanges`
+  // (#1382): the original side takes the revised drawing around its own
+  // story, so the outer comparison sees one unchanged anchor and the story
+  // comparison tracks the text. Every stored copy of the box is aligned, or
+  // none is: a copy left behind would make the outer comparison replace the
+  // whole box, and the note would describe a shape the redline does track.
+  // A drawing whose text did not change stays in the outer comparison, which
+  // tracks it as a replaced atomic leaf; so does a box whose drawing cannot
+  // move across (a different number of hosted stories, or a relationship id
+  // that resolves elsewhere in the original document).
+  const changedVisualBoxes = new Set(
+    changedCopies.map(({ revisedIndex }) => visualOrdinals[revisedIndex] ?? revisedIndex),
+  );
+  const shapeChangesByBox = new Map<number, typeof shapeChanges>();
+  for (const shapeChange of shapeChanges) {
+    const visualIndex = visualOrdinals[shapeChange.revisedIndex] ?? shapeChange.revisedIndex;
+    if (!changedVisualBoxes.has(visualIndex)) continue;
+    const box = shapeChangesByBox.get(visualIndex);
+    if (box) box.push(shapeChange);
+    else shapeChangesByBox.set(visualIndex, [shapeChange]);
+  }
+  const alignedShapeCopies = new Map<number, number>();
+  const drawingChanges: UnrepresentedChange[] = [];
+  const renderedCopies = new Set(textBoxGroups(revisedDocument).map((group) => group.selected));
+  for (const [visualIndex, copies] of shapeChangesByBox) {
+    const movable = copies.every(({ change }) =>
+      ownTextBoxes(change.originalContainer).length === ownTextBoxes(change.revisedContainer).length &&
+      drawingRelationshipsAgree(
+        change.revisedContainer,
+        originalRelationshipTargets,
+        revisedRelationshipTargets,
+      ));
+    if (!movable) continue;
+    for (const { originalIndex, revisedIndex } of copies) {
+      alignedShapeCopies.set(revisedIndex, originalIndex);
+    }
+    if (!copies.some(({ change }) => change.visible)) continue;
+    const shown = copies.find(({ revisedIndex }) =>
+      renderedCopies.has(revisedTextBoxes[revisedIndex]!)) ?? copies[0]!;
+    const name = copies.map(({ change }) => change.name).find((candidate) => candidate !== undefined);
+    drawingChanges.push({
+      scope: 'drawing',
+      kind: 'changed',
+      sectionIndex: sectionIndexOf(shown.change.revisedContainer),
+      drawing: {
+        story: 'body',
+        partPath: 'word/document.xml',
+        index: visualIndex,
+        element: shown.change.element,
+        ...(name !== undefined ? { name } : {}),
+      },
+    });
+  }
+  drawingChanges.sort((left, right) => left.drawing!.index - right.drawing!.index);
+  /**
+   * Put the revised drawing around `originalIndex`'s current story. The
+   * replaced container's boxes are replaced too, so every raw position is
+   * rebound to the copy now in the document.
+   */
+  const alignShape = (originalIndex: number, revisedIndex: number): void => {
+    const originalContainer = drawingContainer(originalTextBoxes[originalIndex]!);
+    const revisedContainer = drawingContainer(revisedTextBoxes[revisedIndex]!);
+    if (!originalContainer || !revisedContainer) return;
+    const aligned = originalStoriesInRevisedDrawing(originalContainer, revisedContainer);
+    if (!aligned) return;
+    const before = Array.from(originalContainer.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'));
+    const after = Array.from(aligned.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'));
+    originalContainer.parentNode!.replaceChild(aligned, originalContainer);
+    for (const [offset, textBox] of before.entries()) {
+      const rawIndex = originalTextBoxes.indexOf(textBox);
+      if (rawIndex >= 0 && after[offset]) originalTextBoxes[rawIndex] = after[offset]!;
+    }
+  };
+
   // Stories are cut innermost first (#1380). A changed box nested in another
   // changed box is replaced by its placeholder before the enclosing box's
   // story is taken, so the enclosing story carries one unchanged placeholder
@@ -2374,12 +2760,22 @@ export async function prepareTextBoxStoryComparison(
   // story of its own. Raw positions are document order, which visits an
   // enclosing box before the boxes inside it, so descending raw position is
   // innermost first. Splicing runs outermost first: the nested placeholder
-  // only exists in the output once the enclosing story is in place.
+  // only exists in the output once the enclosing story is in place. A
+  // drawing moved across (#1382) moves at its own position in that order, so
+  // an enclosing story is cut with its nested drawings already aligned.
   const bodyStories: TextBoxStoryInput[] = [];
-  const innermostFirst = [...changedCopies].sort(
-    (left, right) => right.revisedIndex - left.revisedIndex,
-  );
+  const changedRevisedIndexes = new Set(changedCopies.map(({ revisedIndex }) => revisedIndex));
+  const innermostFirst = [
+    ...changedCopies,
+    ...[...alignedShapeCopies]
+      .filter(([revisedIndex]) => !changedRevisedIndexes.has(revisedIndex))
+      .map(([revisedIndex, originalIndex]) => ({ originalIndex, revisedIndex })),
+  ].sort((left, right) => right.revisedIndex - left.revisedIndex);
   for (const { originalIndex, revisedIndex: index } of innermostFirst) {
+    if (!changedRevisedIndexes.has(index)) {
+      alignShape(originalIndex, index);
+      continue;
+    }
     const storyOriginalArchive = await originalArchive.clone();
     const storyRevisedArchive = await revisedArchive.clone();
     storyOriginalArchive.setDocumentXml(
@@ -2403,15 +2799,27 @@ export async function prepareTextBoxStoryComparison(
     // one unchanged placeholder and the splice finds it by that token.
     createPlaceholder(originalTextBoxes[originalIndex]!, index);
     createPlaceholder(revisedTextBoxes[index]!, index);
+    if (alignedShapeCopies.has(index)) alignShape(originalIndex, index);
   }
   const stories: TextBoxStoryInput[] = [...ancillary.stories, ...bodyStories];
+  const allDrawingChanges = [...ancillary.drawingChanges, ...drawingChanges];
 
   if (
     stories.length === 0 &&
     !ancillary.validateProjection &&
-    !unpairedTextBoxes
+    !unpairedTextBoxes &&
+    allDrawingChanges.length === 0
   ) {
     return undefined;
+  }
+
+  let ancillaryProjectionOriginal: Buffer | undefined;
+  if (ancillary.drawingAlignedOriginalParts.size > 0) {
+    const projectionArchive = await originalArchive.clone();
+    for (const [partPath, xml] of ancillary.drawingAlignedOriginalParts) {
+      projectionArchive.setFile(partPath, xml);
+    }
+    ancillaryProjectionOriginal = await projectionArchive.save();
   }
 
   const outerOriginalArchive = await originalArchive.clone();
@@ -2429,6 +2837,9 @@ export async function prepareTextBoxStoryComparison(
     hasAncillaryTextBoxStories: ancillary.hasTextBoxStories,
     hasUnpairedTextBoxes: unpairedTextBoxes,
     representedAncillaryChanges: ancillary.representedChanges,
+    drawingChanges: allDrawingChanges,
+    drawingAccountedPartPaths: ancillary.drawingAccountedPartPaths,
+    ...(ancillaryProjectionOriginal ? { ancillaryProjectionOriginal } : {}),
   };
 }
 

@@ -594,7 +594,7 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     });
   });
 
-  test('fails closed when the VML shape scaffold changes', async ({
+  test('tracks the story and lists the drawing when the VML shape scaffold changes', async ({
     given,
     when,
     then,
@@ -607,8 +607,11 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
       ),
     );
     // The same shape (same id) resized: a scaffold change on a paired box.
-    // A changed shape *id* is a different box, tracked as deleted and
-    // inserted (#1031), so it no longer exercises this guard.
+    // Until #1382 this refused the comparison. Drawing geometry has no
+    // revision markup, so the story is tracked, the revised shape carried and
+    // the drawing listed; pipeline-text-box-drawing-shape.test.ts covers the
+    // representation in detail. A changed shape *id* is a different box,
+    // tracked as deleted and inserted (#1031).
     const revised = await given('a resized shape scaffold and changed story', () =>
       buildDocxFromBodyXml(
         paragraphWithTextBox('Revised', { shapeId: 'shape1' }).replace(
@@ -619,28 +622,21 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
     );
-    let failure: unknown;
 
-    await when('comparison classifies the changed topology', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
-    });
+    const result = await when('comparison pairs the resized box', () =>
+      compareDocumentsAtomizer(original, revised, {}),
+    );
+    const outputXml = await documentXml(result.document);
 
-    await then('the typed diagnostic identifies scaffold mismatch', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            index: 0,
-            partPath: 'word/document.xml',
-            reason: expect.stringContaining('scaffold'),
-          }),
-        ],
-      });
+    await then('the story is redlined and the drawing is listed once', () => {
+      expect(textBoxText(acceptAllChanges(outputXml))).toBe('Revised');
+      expect(textBoxText(rejectAllChanges(outputXml))).toBe('Original');
+      expect(result.unrepresentedChanges).toEqual([
+        expect.objectContaining({
+          scope: 'drawing',
+          drawing: expect.objectContaining({ partPath: 'word/document.xml', index: 0, name: 'shape1' }),
+        }),
+      ]);
     });
   });
 
@@ -1525,7 +1521,7 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
         expect.objectContaining({
           index: 1,
           partPath: 'word/document.xml',
-          reason: 'the containing VML shape scaffold changed or could not be paired',
+          reason: 'the containing VML shape scaffold could not be paired',
         }),
       ]);
       expect((failure as Error).message).toContain('#w:txbxContent[1]');
@@ -1593,7 +1589,7 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
         expect.objectContaining({
           index: 0,
           partPath: 'word/document.xml',
-          reason: 'the containing VML shape scaffold changed or could not be paired',
+          reason: 'the containing VML shape scaffold could not be paired',
         }),
       ]);
     });

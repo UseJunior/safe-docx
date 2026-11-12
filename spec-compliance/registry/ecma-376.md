@@ -104,7 +104,7 @@ part: 4
 section: "14.9.1.1"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent
-verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 ```
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
@@ -157,8 +157,23 @@ fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`
 which aborts the whole comparison rather than emitting a partial redline. The
 claim likewise does not cover a text-box story with a relationship reference
 that resolves to nothing in its owning part — that check runs ahead of the twin
-carve-out and applies to twinned and untwinned boxes alike — nor a change to the
-containing scaffold of an untwinned box.
+carve-out and applies to twinned and untwinned boxes alike.
+
+**A changed drawing around a changed story is inside the subset, as a listed
+change.** A box's size, position and wrap live in its drawing (the `w:drawing`,
+`w:pict` or `w:object` around the story: a DrawingML `wp:extent`,
+`wp:positionH`/`wp:positionV` or `wp:wrap*`, a VML `style` or `w10:wrap`), and
+Part 1 §17.13.5 defines no revision element for any of it. When the story text
+and the drawing both changed, safe-docx tracks the text inside the box, carries
+the revised drawing, and lists the box once in `unrepresentedChanges` with the
+`drawing` scope: Accept All shows the revised text and drawing, Reject All the
+original text in the revised drawing. Every stored copy of a twinned box moves
+together. A drawing whose relationship ids mean something else in the original,
+or which hosts a different number of stories, is instead left to the main-story
+comparison, which tracks the whole box as replaced; so is a main-story box whose
+drawing alone changed. In a header or footer, where a replaced box cannot be
+tracked, a changed drawing is listed whether or not its text changed, and a
+drawing that names another anchor identity there is still refused.
 
 **Inserted and deleted main-document text boxes are inside the subset.** Boxes
 pair across the two documents by anchor identity — the VML shape `id` and the
@@ -201,7 +216,7 @@ part: 1
 section: "20.4.2.38"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent
-verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 ```
 
 Part 1 §20.4.2.38 defines `w:txbxContent` inside a DrawingML text box
@@ -220,7 +235,7 @@ part: 4
 section: "19.1.2.22"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox
-verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 ```
 
 Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. Throughout the
@@ -234,14 +249,16 @@ belongs to `EG_ShapeElements`, which `CT_Shape` shares with `CT_Rect`,
 of the nearest `v:textbox` as the host, and accepts `v:shape`, `v:rect`,
 `v:roundrect` and `v:oval` alike.
 
-Where a story's host is untwinned VML, safe-docx fingerprints that scaffold with
-the story emptied out and refuses the comparison unless both sides present the
-same scaffold. **That requirement is deliberately not enforced for a text box
-stored inside `mc:AlternateContent`.** The DrawingML copy of a Word twin has no
-VML host of its own, and failing closed on the missing fingerprint would refuse
-the commonest text box Word produces. Which branch of a twin governs the scaffold
-is the `mc:AlternateContent`-aware story walk's question and is not settled here,
-so this claim asserts no stable-scaffold guarantee for a twinned box.
+Where a story's host is untwinned VML, safe-docx requires both sides to present a
+VML scaffold it can fingerprint, and refuses the comparison otherwise. **That
+requirement is deliberately not enforced for a text box stored inside
+`mc:AlternateContent`.** The DrawingML copy of a Word twin has no VML host of its
+own, and failing closed on the missing fingerprint would refuse the commonest
+text box Word produces. A scaffold that differs between the two sides — a resized,
+moved or rewrapped shape — is paired rather than refused: no revision element
+can carry the shape's `style` or `w10:wrap`, so a changed story is tracked inside
+the revised shape and the shape is listed in `unrepresentedChanges` with the
+`drawing` scope (see ECMA-PART4-14-9-1-1).
 
 ## [ECMA-PART1-17-13-5-14] Deleted run content
 
@@ -301,7 +318,7 @@ part: 1
 section: "17.13.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange
-verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts; packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 ```
 
 Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,

@@ -64,6 +64,7 @@
       "UnrepresentedChangeKind",
       "UnrepresentedChangeScope",
       "UnrepresentedContentControlChange",
+      "UnrepresentedDrawingChange",
       "UnrepresentedPictureChange",
       "UnsupportedBlockContainerRevisionError",
       "UnsupportedTableTopologyComparisonError",

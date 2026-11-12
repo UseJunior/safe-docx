@@ -24,6 +24,16 @@ function describeScope(change: UnrepresentedChange): string {
     return `picture${name} (w:${picture.element} #${picture.index + 1}, relationship ${picture.relationshipId}${target}) ` +
       `in ${story}`;
   }
+  if (change.scope === 'drawing') {
+    const drawing = change.drawing;
+    const shape = 'drawing (text box or picture size, position or wrap)';
+    if (!drawing) return shape;
+    const story = drawing.story === 'body'
+      ? 'the main story'
+      : `the ${change.role ? `${change.role} ` : ''}${drawing.story} (${drawing.partPath})`;
+    const name = drawing.name !== undefined ? ` "${drawing.name}"` : '';
+    return `${shape}${name} (w:${drawing.element}, text box #${drawing.index + 1}) in ${story}`;
+  }
   return change.role ? `${change.role} ${change.scope}` : change.scope;
 }
 
@@ -44,7 +54,9 @@ export function formatUnrepresentedChangeWarnings(
   return changes.map((change) =>
     `Unrepresented change: ${change.kind} ${describeScope(change)} in section ${change.sectionIndex + 1} ` +
     `(sectionIndex ${change.sectionIndex}) has no tracked-change markup in the redline; ` +
-    'the output carries the revised state for it without a revision. Review that part manually.',
+    (change.scope === 'drawing'
+      ? 'the redline shows the revised shape, which Reject All keeps. Review that part manually.'
+      : 'the output carries the revised state for it without a revision. Review that part manually.'),
   );
 }
 
