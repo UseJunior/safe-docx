@@ -203,9 +203,14 @@ async function mixedNoteDocx(revised: boolean): Promise<Buffer> {
     const run = referenceRun.cloneNode(true) as Element;
     run.getElementsByTagNameNS(W, 'footnoteReference')[0]!.setAttributeNS(W, 'w:id', id);
     paragraph.appendChild(run);
-    notes.documentElement.appendChild(notes.importNode(parseXml(
+    const definition = notes.importNode(parseXml(
       `<w:footnote xmlns:w="${W}" w:id="${id}">${texts.map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('')}</w:footnote>`,
-    ).documentElement, true));
+    ).documentElement, true);
+    // Keep definitions in anchor order: LibreOffice binds notes by position.
+    const later = paragraph === bodyParagraphs[0]
+      ? Array.from(notes.getElementsByTagNameNS(W, 'footnote')).find(n => n.getAttributeNS(W, 'id') === '1') ?? null
+      : null;
+    notes.documentElement.insertBefore(definition, later);
   };
   if (revised) addNote('2', bodyParagraphs[1]!, ['Added note C.', 'Second paragraph of C.']);
   else addNote('2', bodyParagraphs[0]!, ['Removed note A.']);
