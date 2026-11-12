@@ -926,10 +926,36 @@ async function storyFormattingEnvironment(
     // bound to its target (a swap of two same-type targets changes it).
     digest.update(`\n${relsPath}\n${relationships.map((relationship) => `${relationship.id}=${bindingLine(relationship)}`).sort().join('\n')}`);
   }
+  // A part's content type decides how it is read (an altChunk's HTML or
+  // plain text), so every part's resolved content type counts, even though
+  // the content-type index itself is left out (Codex round 25).
+  const contentTypesXml = await archive.getFile('[Content_Types].xml');
+  let contentTypes: Document | undefined;
+  try {
+    contentTypes = contentTypesXml === null ? undefined : parseXml(contentTypesXml);
+  } catch {
+    return `unparseable:[Content_Types].xml:${Math.random()}`;
+  }
+  const overrides = new Map<string, string>();
+  const defaults = new Map<string, string>();
+  for (const element of contentTypes ? Array.from(contentTypes.getElementsByTagName('*')) : []) {
+    const name = localName(element);
+    if (name === 'Override') {
+      overrides.set((element.getAttribute('PartName') ?? '').replace(/^\/+/u, '').toLowerCase(), element.getAttribute('ContentType') ?? '');
+    } else if (name === 'Default') {
+      defaults.set((element.getAttribute('Extension') ?? '').toLowerCase(), element.getAttribute('ContentType') ?? '');
+    }
+  }
+  const contentTypeOf = (path: string): string =>
+    overrides.get(path.toLowerCase()) ?? defaults.get(path.replace(/^.*\./u, '').toLowerCase()) ?? '';
   const paths = archive.listFiles()
     .filter((path) => !path.endsWith('/'))
     .filter((path) => !excluded(path))
     .sort();
+  // Only the parts compared here: story parts may move to another part name
+  // (their slots are compared instead), and parts left out of the
+  // environment (comments, notes) are not counted by their type either.
+  digest.update(`\ncontent-types\n${paths.map((path) => `${path}=${contentTypeOf(path)}`).join('\n')}`);
   for (const path of paths) {
     const bytes = await archive.getFileBuffer(path);
     if (bytes === null) return `unreadable:${path}:${Math.random()}`;

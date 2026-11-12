@@ -1163,6 +1163,34 @@ describe('changes the redline still does not carry stay listed', () => {
     });
   }
 
+  test('a header altChunk whose target content type changes stays listed when only its reference allocation differs', async () => {
+    // The content-type index is not compared as a part, but each part's
+    // resolved content type is: it decides whether Word imports the chunk as
+    // HTML or as plain text (Codex round 25).
+    const withChunk = async (buffer: Buffer, contentType: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      const headerXml = (await archive.getFile('word/header1.xml'))!;
+      archive.setFile('word/header1.xml', headerXml.replace('<w:hdr ', `<w:hdr xmlns:r="${R_NS}" `));
+      archive.setFile('word/chunk1.html', Buffer.from('<html><body><b>Brand</b></body></html>'));
+      archive.setFile('word/_rels/header1.xml.rels',
+        `<Relationships xmlns="${PKG_NS}"><Relationship Id="rIdChunk" Type="${R_NS}/aFChunk" Target="chunk1.html"/></Relationships>`);
+      const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+      archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
+        `<Override PartName="/word/chunk1.html" ContentType="${contentType}"/></Types>`));
+      return archive.save();
+    };
+    const header: Part = { id: 'rIdH', kind: 'header', target: 'header1.xml', contentXml: '<w:altChunk r:id="rIdChunk"/><w:p/>' };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withChunk(await packageWith(body, LAYOUT, [header]), 'text/html');
+    const revised = await withChunk(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'text/plain');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any
