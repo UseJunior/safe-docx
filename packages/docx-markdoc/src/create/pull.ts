@@ -1084,7 +1084,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
         unmapped('a table cell cannot be deleted on its own; create a table without it', [report]);
         continue;
       }
-      if (!sp.ownLines || !['list-item', 'quote', 'centered', 'legend'].includes(sp.kind)) {
+      if (!sp.ownLines || !['list-item', 'quote', 'centered', 'legend', 'laid-out'].includes(sp.kind)) {
         unmapped('it cannot be deleted without the rest of its block', [report]);
         continue;
       }

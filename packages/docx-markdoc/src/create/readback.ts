@@ -12,6 +12,8 @@ export type CreationReadback = {
   paragraphs: string[];
   /** Parallel to `paragraphs`: whether each paragraph sits in a table cell. */
   inTableCell: boolean[];
+  /** Parallel to `paragraphs`: each paragraph's direct `w:jc` and `w:ind` as a token ({@link paragraphLayoutReadback}), or null without either. */
+  layouts: Array<string | null>;
   /** Per section: the default footer's paragraph texts, or null without a footer reference. */
   footers: FooterProjection[];
   /** Per section: the default header's paragraph texts, or null without a header reference. */
@@ -151,6 +153,38 @@ export function paragraphReadbackText(
   return text;
 }
 
+/** `w:ind` attributes in the order the token lists them; any other attribute follows, sorted. */
+const IND_ATTRIBUTE_ORDER = ['left', 'start', 'right', 'end', 'firstLine', 'hanging'];
+
+/**
+ * A paragraph's direct alignment and indents, read from its own `w:pPr`
+ * (style formatting is not included): `jc=<val>`, then `ind.<attribute>=<value>`
+ * for every attribute of `w:ind`, such as `jc=left ind.left=720 ind.hanging=720`.
+ * Null when the paragraph has neither.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.13
+ */
+export function paragraphLayoutReadback(paragraph: Element): string | null {
+  const pPr = elementChildren(paragraph).find((child) => isW(child, 'pPr'));
+  if (!pPr) return null;
+  const parts: string[] = [];
+  const jc = elementChildren(pPr).find((child) => isW(child, 'jc'));
+  if (jc) parts.push(`jc=${jc.getAttributeNS(W, 'val') || jc.getAttribute('w:val') || ''}`);
+  const ind = elementChildren(pPr).find((child) => isW(child, 'ind'));
+  if (ind) {
+    const attributes = Array.from(ind.attributes)
+      .filter((attribute) => attribute.namespaceURI === W)
+      .map((attribute) => [attribute.localName, attribute.value] as const)
+      .sort(([a], [b]) => {
+        const rank = (name: string) => (IND_ATTRIBUTE_ORDER.includes(name) ? IND_ATTRIBUTE_ORDER.indexOf(name) : IND_ATTRIBUTE_ORDER.length);
+        return rank(a) - rank(b) || a.localeCompare(b);
+      });
+    for (const [name, value] of attributes) parts.push(`ind.${name}=${value}`);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 type FootnoteReferenceSite = FootnoteReferencePosition & { id: string };
 
 function blockParagraphs(
@@ -161,6 +195,7 @@ function blockParagraphs(
   references: FootnoteReferenceSite[] = [],
   crossReferences: CrossReferenceSite[] = [],
   bookmarks: BookmarkSite[] = [],
+  layouts: Array<string | null> = [],
 ): void {
   for (const child of elementChildren(container)) {
     if (isW(child, 'p')) {
@@ -185,9 +220,10 @@ function blockParagraphs(
       for (const { site, start, end } of closed) site.text = text.slice(start, end);
       out.push(text);
       cells.push(inCell);
+      layouts.push(paragraphLayoutReadback(child));
     } else if (isW(child, 'tbl')) {
       for (const row of elementChildren(child).filter((node) => isW(node, 'tr'))) {
-        for (const cell of elementChildren(row).filter((node) => isW(node, 'tc'))) blockParagraphs(cell, out, cells, true, references, crossReferences, bookmarks);
+        for (const cell of elementChildren(row).filter((node) => isW(node, 'tc'))) blockParagraphs(cell, out, cells, true, references, crossReferences, bookmarks, layouts);
       }
     }
   }
@@ -233,7 +269,8 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   const references: FootnoteReferenceSite[] = [];
   const crossReferences: CrossReferenceSite[] = [];
   const bookmarks: BookmarkSite[] = [];
-  blockParagraphs(body, paragraphs, inTableCell, false, references, crossReferences, bookmarks);
+  const layouts: Array<string | null> = [];
+  blockParagraphs(body, paragraphs, inTableCell, false, references, crossReferences, bookmarks, layouts);
   const footnoteCrossReferences: Array<CrossReferenceSite & { note: number }> = [];
   const footnotes = await readFootnotes(read, zip.file('word/footnotes.xml') !== null, references, footnoteCrossReferences);
 
@@ -267,6 +304,7 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   return {
     paragraphs,
     inTableCell,
+    layouts,
     footers,
     headers,
     firstPage,

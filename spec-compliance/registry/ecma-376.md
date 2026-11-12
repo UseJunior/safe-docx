@@ -934,6 +934,25 @@ property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
 
+## [ECMA-PART1-17-3-1-12] w:ind paragraph indentation
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.12"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind
+verifiedBy: packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/readback.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts
+```
+
+`w:ind` sets a paragraph's indentation. A `docx-markdoc create`
+`{% paragraph-layout %}` paragraph carries `w:left` and `w:hanging` in twips
+(`w:hanging` never larger than `w:left`, so the first line stays inside the
+text area). The read-back reads every attribute of a body paragraph's direct
+`w:ind`, and the build compares it with the source. Style-level indents,
+`w:start`/`w:end`, the character-unit attributes and `w:firstLine` are not
+written by `create`.
+
 ## [ECMA-PART1-17-3-1-13] w:jc paragraph alignment
 
 ```yaml
@@ -1369,6 +1388,25 @@ Generation emits one custom compatibility setting under `w:compat`, carrying
 the required name, URI, and value attributes in the settings sequence. ECMA-376
 defines this extensibility structure; MS-DOCX §2.3.5, not ECMA-376, defines
 the Microsoft `compatibilityMode` values and assigns the semantics of value 15.
+
+## [ECMA-PART1-17-15-3-5] w:doNotExpandShiftReturn compatibility setting
+
+```yaml
+edition: 5
+part: 1
+section: "17.15.3.5"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn
+verifiedBy: packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-compatibility-settings.test.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts
+```
+
+When `w:doNotExpandShiftReturn` is on, a line of a fully justified paragraph
+(`w:jc` `both`) that ends in a soft line break is not justified. Generation
+writes the empty element inside `w:compat`, before the `compatibilityMode`
+custom setting as the `CT_Compat` sequence requires, only when
+`DocumentSpec.compatibility.doNotExpandShiftReturn` is true; `docx-markdoc
+create` sets it on every document it builds. This entry covers emission and
+order, not how a renderer lays out the line.
 
 ## [ECMA-PART1-17-10-1] w:evenAndOddHeaders setting
 

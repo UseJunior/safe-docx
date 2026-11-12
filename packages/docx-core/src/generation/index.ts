@@ -25,6 +25,7 @@ export type {
   CrossReferenceNumber,
   CrossReferenceShow,
   CrossReferenceSpec,
+  DocumentCompatibilitySpec,
   DocumentDefaultsSpec,
   DocumentMetaSpec,
   DocumentSpec,

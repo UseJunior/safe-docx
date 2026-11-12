@@ -59,10 +59,41 @@ export const FIRST_PAGE_NONE = 'none';
 export const FILL_IN_MODES = ['markup', 'brackets'] as const;
 export type FillInMode = (typeof FILL_IN_MODES)[number];
 
+/**
+ * `{% paragraph-layout align="…" %}` values: the paragraph's own alignment, in place of
+ * the profile's body alignment (justified by default).
+ */
+export const PARAGRAPH_LAYOUT_ALIGNMENTS = ['left', 'center', 'right', 'justify'] as const;
+export type ParagraphLayoutAlignment = (typeof PARAGRAPH_LAYOUT_ALIGNMENTS)[number];
+/**
+ * `{% paragraph-layout indent-left="…" %}` values, in inches from the left margin: where
+ * every line of the paragraph starts (with `indent-hanging`, every line but
+ * the first).
+ */
+export const PARAGRAPH_LAYOUT_LEFT_INDENTS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '1.75', '2'] as const;
+/**
+ * `{% paragraph-layout indent-hanging="…" %}` values, in inches: how far the first line
+ * starts to the left of the others. It needs an `indent-left` at least as
+ * large, so the first line never starts in the margin.
+ */
+export const PARAGRAPH_LAYOUT_HANGING_INDENTS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '1.75', '2'] as const;
+/** The attributes of `{% paragraph-layout %}`, each taking a value from its closed list above. */
+export const PARAGRAPH_LAYOUT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
+  align: PARAGRAPH_LAYOUT_ALIGNMENTS,
+  'indent-left': PARAGRAPH_LAYOUT_LEFT_INDENTS,
+  'indent-hanging': PARAGRAPH_LAYOUT_HANGING_INDENTS,
+};
+/** A `{% paragraph-layout %}` attribute value as written: a number (`indent-left=0.5`) reads as its decimal text. */
+export function paragraphLayoutValue(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return typeof value === 'string' ? value : undefined;
+}
+
 /** Block tags and the attributes each admits. */
 export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   center: new Set(),
   legend: new Set(),
+  'paragraph-layout': new Set(Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES)),
   signer: new Set(['name', 'date']),
   'page-break': new Set(),
   section: new Set(RUNNING_TEXT_KEYS),
@@ -509,18 +540,15 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
   checkAttributes(node, allowed);
   if (TOP_LEVEL_ONLY.has(node.tag!) && !topLevel) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% ${node.tag} /%} must stand at the top level.`, node, line);
   switch (node.tag) {
-    case 'center':
-    case 'legend': {
-      const paragraphs = node.children.filter((child) => child.type === 'paragraph');
-      if (paragraphs.length > 0) {
-        const other = node.children.find((child) => child.type !== 'paragraph');
-        if (other) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% ${node.tag} %} may contain only paragraphs, not '${other.type}'.`, other);
-        for (const paragraph of paragraphs) checkInline(paragraph.children, lineOf(paragraph), node.tag === 'center');
-      } else {
-        checkInline(node.children, line, node.tag === 'center');
-      }
+    case 'paragraph-layout':
+      checkParagraphLayoutAttributes(node, line);
+      if (node.children.length === 0) creationError('INVALID_PARAGRAPH_LAYOUT', '{% paragraph-layout %} needs text, such as {% paragraph-layout align="left" %}Notice address{% /paragraph-layout %}.', node, line);
+      checkTextBlockContent(node, line);
       return;
-    }
+    case 'center':
+    case 'legend':
+      checkTextBlockContent(node, line);
+      return;
     case 'signer': {
       // The name is either name="…" (plain text) or the tag's inline content, which may hold {% fill %}.
       const { name, date } = node.attributes;
@@ -585,6 +613,46 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
     case 'footnote':
       checkFootnoteBlock(node, line);
       return;
+  }
+}
+
+/**
+ * The content of a `center`, `legend` or `paragraph-layout` block: one line of inline
+ * text, or paragraphs of it and nothing else. A legend is never highlighted.
+ */
+function checkTextBlockContent(node: MarkdocNode, line: number | undefined): void {
+  const highlight = node.tag !== 'legend';
+  const paragraphs = node.children.filter((child) => child.type === 'paragraph');
+  if (paragraphs.length === 0) {
+    checkInline(node.children, line, highlight);
+    return;
+  }
+  const other = node.children.find((child) => child.type !== 'paragraph');
+  if (other) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% ${node.tag} %} may contain only paragraphs, not '${other.type}'.`, other);
+  for (const paragraph of paragraphs) checkInline(paragraph.children, lineOf(paragraph), highlight);
+}
+
+/**
+ * `{% paragraph-layout %}` attributes: at least one, each from its closed list
+ * (`PARAGRAPH_LAYOUT_ATTRIBUTES`), and an `indent-hanging` no larger than its
+ * `indent-left`, so the first line never starts in the left margin.
+ */
+function checkParagraphLayoutAttributes(node: MarkdocNode, line: number | undefined): void {
+  const given = Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES).filter((key) => node.attributes[key] !== undefined);
+  if (given.length === 0) creationError('INVALID_PARAGRAPH_LAYOUT', `{% paragraph-layout %} needs at least one of ${orList(Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES))}.`, node, line);
+  for (const key of given) {
+    const allowed = PARAGRAPH_LAYOUT_ATTRIBUTES[key]!;
+    const value = paragraphLayoutValue(node.attributes[key]);
+    if (value === undefined || !allowed.includes(value)) {
+      creationError('INVALID_PARAGRAPH_LAYOUT', `paragraph-layout ${key} must be ${orList(allowed.map((word) => `"${word}"`))}, got ${JSON.stringify(node.attributes[key])}.`, node, line);
+    }
+  }
+  const hanging = paragraphLayoutValue(node.attributes['indent-hanging']);
+  if (hanging !== undefined) {
+    const left = paragraphLayoutValue(node.attributes['indent-left']);
+    if (left === undefined || Number(left) < Number(hanging)) {
+      creationError('INVALID_PARAGRAPH_LAYOUT', `paragraph-layout indent-hanging="${hanging}" needs an indent-left of at least "${hanging}", so the first line does not start in the margin.`, node, line);
+    }
   }
 }
 
