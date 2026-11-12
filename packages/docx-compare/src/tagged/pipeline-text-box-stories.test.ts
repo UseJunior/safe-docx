@@ -1599,14 +1599,18 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
       return { source, revised: readFileSync(REVISED) };
     });
 
+    let listed: unknown;
     await when('the pair is compared', async () => {
-      redlined = await documentXml(
-        (await compareDocumentsAtomizer(derived.source, derived.revised, {})).document,
-      );
+      const result = await compareDocumentsAtomizer(derived.source, derived.revised, {});
+      listed = result.unrepresentedChanges;
+      redlined = await documentXml(result.document);
     });
 
     await then('both stored copies of each box carry the tracked edit', () => {
       expect(sourceXml).not.toContain('<mc:AlternateContent');
+      // Word's DrawingML spelling draws what its VML spelling draws (to VML's
+      // rounding), so the added spelling is no drawing change.
+      expect(listed).toBeUndefined();
       expect(storedStoryTexts(redlined)).toHaveLength(4);
       expect(storedStoryTexts(acceptAllChanges(redlined))).toEqual(storedStoryTexts(revisedXml));
       expect(storedStoryTexts(rejectAllChanges(redlined))).toEqual(

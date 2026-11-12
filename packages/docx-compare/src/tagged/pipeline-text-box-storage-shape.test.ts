@@ -431,6 +431,116 @@ describe('text boxes stored as DrawingML only or differently in the two document
     });
   });
 
+  test('control: a twin whose two copies disagree is not re-stored, so Reject All keeps both', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // Word reads the mc:Choice and an older reader the mc:Fallback. When the
+    // two say different things, carrying one copy's story into the other
+    // spelling would change what one reader saw, so the box stays a native
+    // replacement in the body and is refused in a footer.
+    const disagreeing = '<w:r><mc:AlternateContent><mc:Choice Requires="wps">' + drawingMl('Notice to: Choice address') +
+      '</mc:Choice><mc:Fallback>' + vmlPict('Notice to: Fallback address') + '</mc:Fallback></mc:AlternateContent></w:r>';
+    const original = await given('a twin whose Choice and Fallback texts differ', () => bodyPackage(disagreeing));
+    const revised = await given('the box saved back as VML only, edited', () => bodyPackage(vmlOnly('Notice to: New address')));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    const footerFailure = await when('the same pair is compared in a footer', async () =>
+      compareDocumentsAtomizer(await footerPackage(disagreeing), await footerPackage(vmlOnly('Notice to: New address')), COMPARE_OPTIONS)
+        .then(() => undefined, (error: unknown) => error));
+
+    await then('the body box is replaced natively and Reject All restores both copies', async () => {
+      const output = await partXml(result.document, BODY);
+      expect(storageUntracked(output)).toBe(false);
+      const copies = (xml: string): string[] =>
+        Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'txbxContent')).map(textOf);
+      expect(copies(rejectAllChanges(output))).toEqual(['Notice to: Choice address', 'Notice to: Fallback address']);
+      expect(copies(acceptAllChanges(output))).toEqual(['Notice to: New address']);
+      await assertSchema(result.document);
+      expect(footerFailure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+    });
+  });
+
+  test('treats a twin whose DrawingML and VML spellings draw different sizes as a drawing change', async ({
+    given, when, then, and,
+  }: AllureBddContext) => {
+    // Word renders the 260pt mc:Choice; saved back as VML only, it renders
+    // the 200pt spelling. The VML both documents store is unchanged, but the
+    // drawing Word shows is not, so the change is never silent.
+    const lopsided = twinned('3302000', '200pt');
+    const sameText = await given('the twin saved back as VML only, text unchanged', async () => ({
+      original: await bodyPackage(lopsided('Notice to: Same address')),
+      revised: await bodyPackage(vmlOnly('Notice to: Same address')),
+    }));
+    const edited = await given('the twin saved back as VML only, text edited', async () => ({
+      original: await bodyPackage(lopsided('Notice to: Old address')),
+      revised: await bodyPackage(vmlOnly('Notice to: New address')),
+    }));
+    const sameResult = await when('the unedited pair is compared', () =>
+      compareDocumentsAtomizer(sameText.original, sameText.revised, COMPARE_OPTIONS));
+    const editedResult = await when('the edited pair is compared', () =>
+      compareDocumentsAtomizer(edited.original, edited.revised, COMPARE_OPTIONS));
+    const footerResult = await when('the edited pair is compared in a footer', async () => {
+      const original = await footerPackage(lopsided('Footer notice: Old'));
+      const revised = await footerPackage(vmlOnly('Footer notice: New'));
+      return { original, revised, result: await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS) };
+    });
+
+    await then('the unedited body box keeps its native replacement, which Reject All restores', async () => {
+      const output = await partXml(sameResult.document, BODY);
+      expect(storageUntracked(output)).toBe(false);
+      expect(sameResult.unrepresentedChanges).toBeUndefined();
+      expect(readerView(rejectAllChanges(output))).toEqual(readerView(await partXml(sameText.original, BODY)));
+      expect(readerView(await docxCorePart(sameResult.document, 'reject', BODY)))
+        .toEqual(readerView(await partXml(sameText.original, BODY)));
+    });
+    await and('the edited box is tracked in place and its drawing listed, in the body and in a footer', async () => {
+      expect(trackedCopyText(await partXml(editedResult.document, BODY))).toEqual([{ deleted: 'Old', inserted: 'New' }]);
+      expect(editedResult.unrepresentedChanges).toEqual([{
+        scope: 'drawing',
+        kind: 'changed',
+        sectionIndex: 0,
+        drawing: { story: 'body', partPath: BODY, index: 0, element: 'pict', name: 'box1' },
+      }]);
+      await assertProjections(edited.original, edited.revised, editedResult.document, BODY);
+      expect(footerResult.result.unrepresentedChanges?.map((change) => change.scope)).toEqual(['drawing']);
+      await assertProjections(footerResult.original, footerResult.revised, footerResult.result.document, FOOTER);
+    });
+  });
+
+  test('control: a box whose drawing defines a template another box names is not re-stored', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The original's first box defines the v:shapetype both boxes name. The
+    // revised document twins the first box and moves the definition into the
+    // second box's drawing. Carrying the first box's revised storage would
+    // leave Reject All with no definition for the second box, so the first box
+    // stays a native replacement.
+    const template = '<v:shapetype id="shared" coordsize="21600,21600" path="m,l,21600r21600,l21600,xe"/>';
+    const box = (text: string, id: string, withTemplate: boolean): string =>
+      vmlPict(text).replace('<v:shape ', `${withTemplate ? template : ''}<v:shape `)
+        .replace('id="box1"', `id="${id}"`).replace('type="#_x0000_t202"', 'type="#shared"');
+    const original = await given('two VML boxes, the first defining their shared template', () =>
+      bodyPackage(`<w:r>${box('Notice to: Old address', 'box1', true)}</w:r><w:r>${box('Second box', 'box2', false)}</w:r>`));
+    const revised = await given('the first box twinned and edited, the template moved to the second', () =>
+      bodyPackage(
+        `<w:r><mc:AlternateContent><mc:Choice Requires="wps">${drawingMl('Notice to: New address').replace('id="1" name="Text Box 1"', 'id="1" name="box1"')}</mc:Choice>` +
+          `<mc:Fallback>${box('Notice to: New address', 'box1', false)}</mc:Fallback></mc:AlternateContent></w:r>` +
+          `<w:r>${box('Second box', 'box2', true)}</w:r>`,
+      ));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('Reject All keeps the template definition the second box names', async () => {
+      const rejected = parseXml(rejectAllChanges(await partXml(result.document, BODY)));
+      expect(Array.from(rejected.getElementsByTagNameNS(NAMESPACES.v, 'shapetype'))
+        .map((element) => element.getAttribute('id'))).toEqual(['shared']);
+      const coreRejected = parseXml(await docxCorePart(result.document, 'reject', BODY));
+      expect(coreRejected.getElementsByTagNameNS(NAMESPACES.v, 'shapetype')).toHaveLength(1);
+      expect(readerView(rejectAllChanges(await partXml(result.document, BODY))).boxes)
+        .toEqual(['Notice to: Old address', 'Second box']);
+    });
+  });
+
   test('tracks the text of a DrawingML-only footer box inside the box', async ({
     given, when, then,
   }: AllureBddContext) => {

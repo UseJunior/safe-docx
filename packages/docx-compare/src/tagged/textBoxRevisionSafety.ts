@@ -54,6 +54,7 @@ const RELATIONSHIPS_NS =
 const PACKAGE_RELATIONSHIPS_NS =
   'http://schemas.openxmlformats.org/package/2006/relationships';
 const OFFICE_VML_NS = 'urn:schemas-microsoft-com:office:office';
+const WORD_VML_NS = 'urn:schemas-microsoft-com:office:word';
 const WORDPROCESSING_DRAWING_NS =
   'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
 const serializer = new XMLSerializer();
@@ -707,11 +708,120 @@ function storageTemplatesCarry(originalRoot: Element, revisedRoot: Element): boo
       .filter((template) => !originalTemplates.includes(template))
       .map((template) => template.getAttribute('id') ?? ''),
   );
+  const revisedById = new Map(revisedTemplates.map((template) => [template.getAttribute('id') ?? '', canonicalNode(template)]));
+  // A template the original drawing defines and the revised one drops must
+  // not be named by any shape outside the drawing, which would lose its
+  // geometry once the drawing is replaced.
+  const namedOutside = new Set(
+    Array.from(originalRoot.ownerDocument!.getElementsByTagName('*'))
+      .filter((element) => !isWithinElement(element, originalRoot))
+      .map((element) => element.getAttribute('type') ?? '')
+      .filter((type) => type.startsWith('#'))
+      .map((type) => type.slice(1)),
+  );
   return revisedTemplates.every((template) => {
     const id = template.getAttribute('id') ?? '';
     const shared = originalById.get(id);
     return shared !== undefined ? shared === canonicalNode(template) : !elsewhere.has(id);
-  });
+  }) && [...originalById].every(([id, template]) =>
+    revisedById.get(id) === template || !namedOutside.has(id));
+}
+
+function isWithinElement(element: Element, container: Element): boolean {
+  for (let node: Node | null = element; node; node = node.parentNode) {
+    if (node === container) return true;
+  }
+  return false;
+}
+
+const EMU_PER_UNIT: Record<string, number> = { pt: 12700, in: 914400, cm: 360000, mm: 36000, px: 9525 };
+/** VML writes lengths rounded to a few hundredths of a point. */
+const TWIN_LENGTH_TOLERANCE_EMU = 1270;
+
+/** A VML CSS length in EMU, or `undefined` when it is not one this check reads. */
+function vmlLengthEmu(value: string | undefined): number | undefined {
+  if (value === undefined) return 0;
+  const match = /^(-?(?:\d+\.?\d*|\.\d+))(pt|in|cm|mm|px)?$/u.exec(value.trim());
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  if (!match[2]) return amount === 0 ? 0 : undefined;
+  return amount * EMU_PER_UNIT[match[2]]!;
+}
+
+const HORIZONTAL_FRAMES: Record<string, string> = {
+  column: 'text', margin: 'margin', page: 'page', character: 'char',
+  leftMargin: 'left-margin-area', rightMargin: 'right-margin-area',
+  insideMargin: 'inner-margin-area', outsideMargin: 'outer-margin-area',
+};
+const VERTICAL_FRAMES: Record<string, string> = {
+  paragraph: 'text', margin: 'margin', page: 'page', line: 'line',
+  topMargin: 'top-margin-area', bottomMargin: 'bottom-margin-area',
+  insideMargin: 'inner-margin-area', outsideMargin: 'outer-margin-area',
+};
+const WRAP_TYPES: Record<string, string> = {
+  wrapSquare: 'square', wrapTight: 'tight', wrapThrough: 'through', wrapTopAndBottom: 'topAndBottom', wrapNone: 'none',
+};
+
+/**
+ * Do the DrawingML and VML spellings of one twinned box draw it the same
+ * size, at the same place, with the same wrap? Word writes both from one
+ * shape, so they agree to within VML's rounding; spellings that disagree, or
+ * use a placement this check cannot read, are not taken as the same drawing.
+ */
+function twinSpellingsAgree(drawingCopy: Element, vmlCopy: Element): boolean {
+  const drawing = drawingContainer(drawingCopy);
+  const shape = nearestShape(vmlCopy);
+  if (!drawing || !shape) return false;
+  const placement = directChildElements(drawing)[0];
+  if (!placement || placement.namespaceURI !== WORDPROCESSING_DRAWING_NS) return false;
+  const child = (parent: Element, name: string): Element | undefined =>
+    directChildElements(parent).find((element) =>
+      element.namespaceURI === WORDPROCESSING_DRAWING_NS && element.localName === name);
+  const style = new Map((shape.getAttribute('style') ?? '').split(';')
+    .map((declaration) => declaration.split(':').map((part) => part.trim()))
+    .filter((pair): pair is [string, string] => pair.length === 2 && pair[0] !== '')
+    .map(([key, value]) => [key, value]));
+  const near = (emu: number | undefined, value: string | undefined): boolean => {
+    const vml = vmlLengthEmu(value);
+    return emu !== undefined && Number.isFinite(emu) && vml !== undefined &&
+      Math.abs(emu - vml) <= TWIN_LENGTH_TOLERANCE_EMU;
+  };
+  const extent = child(placement, 'extent');
+  if (!extent ||
+    !near(Number(extent.getAttribute('cx')), style.get('width')) ||
+    !near(Number(extent.getAttribute('cy')), style.get('height'))) return false;
+  const absolute = style.get('position') === 'absolute';
+  if (placement.localName === 'inline') return !absolute;
+  if (placement.localName !== 'anchor' || !absolute) return false;
+  const axisAgrees = (axis: 'H' | 'V'): boolean => {
+    const position = child(placement, `position${axis}`);
+    if (!position) return false;
+    const frames = axis === 'H' ? HORIZONTAL_FRAMES : VERTICAL_FRAMES;
+    const word = axis === 'H' ? 'horizontal' : 'vertical';
+    if (frames[position.getAttribute('relativeFrom') ?? ''] !== (style.get(`mso-position-${word}-relative`) ?? 'text')) {
+      return false;
+    }
+    const offset = child(position, 'posOffset');
+    if (offset) {
+      return (style.get(`mso-position-${word}`) ?? 'absolute') === 'absolute' &&
+        near(Number(offset.textContent), style.get(axis === 'H' ? 'margin-left' : 'margin-top'));
+    }
+    const align = child(position, 'align');
+    return align !== undefined && style.get(`mso-position-${word}`) === align.textContent?.trim();
+  };
+  if (!axisAgrees('H') || !axisAgrees('V')) return false;
+  const wrap = directChildElements(placement).find((element) =>
+    element.namespaceURI === WORDPROCESSING_DRAWING_NS && element.localName in WRAP_TYPES);
+  const vmlWrap = directChildElements(shape).find((element) =>
+    element.namespaceURI === WORD_VML_NS && element.localName === 'wrap')?.getAttribute('type') ?? 'none';
+  return wrap !== undefined && WRAP_TYPES[wrap.localName] === vmlWrap;
+}
+
+/** Every twinned side's DrawingML and VML spellings draw the same box. */
+function storedSpellingsAgree(copies: readonly Element[]): boolean {
+  const drawing = copies.find((copy) => storageVocabulary(copy) === 'drawing');
+  const vml = copies.find((copy) => storageVocabulary(copy) === 'pict');
+  return !drawing || !vml || twinSpellingsAgree(drawing, vml);
 }
 
 interface TextBoxStorageAlignment {
@@ -744,8 +854,12 @@ interface TextBoxStorageAlignment {
  * the outer comparison sees one unchanged anchor and every stored copy of the
  * box is compared with the original text: Word and an older reader show the
  * same tracked text. The storage moves only when it stores this box alone,
- * names relationships that mean the same in the original, and brings no VML
- * template that would reshape another box.
+ * names relationships that mean the same in the original, neither brings nor
+ * takes away a VML template another box relies on, and every stored copy on
+ * each side says the same thing. A drawing change is `visible` when the
+ * spelling both sides store changed, or when a twin's two spellings draw
+ * different sizes, places or wraps (`twinSpellingsAgree`), since the reader
+ * of the added or dropped spelling then sees a different drawing.
  *
  * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
  * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
@@ -763,6 +877,12 @@ function textBoxStorageAlignment(
   if (!originalRoot || !revisedRoot) return undefined;
   if (!drawingRelationshipsAgree(revisedRoot, originalTargets, revisedTargets)) return undefined;
   if (!storageTemplatesCarry(originalRoot, revisedRoot)) return undefined;
+  // Copies of one box that say different things are different boxes to
+  // different readers; carrying one copy's story into the other spelling
+  // would change what one of them showed.
+  const consistent = (copies: readonly Element[]): boolean =>
+    new Set(copies.map((copy) => canonicalNode(copy))).size === 1;
+  if (!consistent(originalCopies) || !consistent(revisedCopies)) return undefined;
   const sameVocabulary = (revisedCopy: Element): Element | undefined =>
     originalCopies.find((copy) => storageVocabulary(copy) === storageVocabulary(revisedCopy));
   if (!revisedCopies.some((copy) => sameVocabulary(copy) !== undefined)) return undefined;
@@ -772,12 +892,17 @@ function textBoxStorageAlignment(
     canonicalNode(copy) === canonicalNode(source(copy)) &&
     relationshipClosureFingerprint(copy, revisedTargets) ===
       relationshipClosureFingerprint(source(copy), originalTargets));
-  const visible = revisedCopies.some((copy) => {
-    const original = sameVocabulary(copy);
-    return original !== undefined &&
-      drawingShapeFingerprint(drawingContainer(original)!, { withoutEditingSessionIds: true }) !==
-        drawingShapeFingerprint(drawingContainer(copy)!, { withoutEditingSessionIds: true });
-  });
+  // The spelling both sides store is compared directly. The spelling only
+  // one side stores is compared to its own twin: when the two spellings of a
+  // twin disagree, the reader that renders the added or dropped one sees a
+  // different drawing, and that is a change too.
+  const visible = !storedSpellingsAgree(originalCopies) || !storedSpellingsAgree(revisedCopies) ||
+    revisedCopies.some((copy) => {
+      const original = sameVocabulary(copy);
+      return original !== undefined &&
+        drawingShapeFingerprint(drawingContainer(original)!, { withoutEditingSessionIds: true }) !==
+          drawingShapeFingerprint(drawingContainer(copy)!, { withoutEditingSessionIds: true });
+    });
   const renderedContainer = drawingContainer(renderedRevisedCopy)!;
   const name = drawingName(renderedRevisedCopy, renderedContainer) ??
     revisedCopies.map((copy) => drawingName(copy, drawingContainer(copy)!)).find((candidate) => candidate);

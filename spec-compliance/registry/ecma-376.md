@@ -158,13 +158,16 @@ the revised storage around its own story, so every stored copy is compared with
 the original text and carries identical tracked text: Word, which reads the
 `mc:Choice`, and an older reader, which reads the `mc:Fallback`, show the same
 redline. A box whose storage alone changed (a re-save) carries no revision and
-is not listed; Reject All keeps the revised storage around the original text. A
-visible drawing change in a spelling both documents store is listed with the
-`drawing` scope, below. In the main story, a box whose storage cannot be carried
-(it stores more than the box, names relationships that mean something else in
-the original, or brings a VML template that would reshape another box), or whose
-drawing alone changed, is tracked as replaced instead; in a header or footer it
-is refused.
+is not listed; Reject All keeps the revised storage around the original text.
+The drawing counts as changed — listed with the `drawing` scope, below — when
+the spelling both documents store changed, or when a twin's DrawingML and VML
+spellings draw a different size, position or wrap, because the reader of the
+added or dropped spelling then sees a different drawing. In the main story, a
+box whose storage cannot be carried (it stores more than the box, names
+relationships that mean something else in the original, brings or takes away a
+VML template another box relies on, or holds copies that say different things),
+or whose drawing alone changed, is tracked as replaced instead; in a header or
+footer it is refused.
 
 The claim covers main-document stories and stories in relationship-selected
 header and footer parts, including a **standalone** DrawingML text box — a
