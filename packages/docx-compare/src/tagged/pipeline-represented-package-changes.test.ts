@@ -417,8 +417,12 @@ describe('changes the redline still does not carry stay listed', () => {
       const headerXml = (await (await DocxArchive.load(result.document)).getFile('word/header1.xml'))!;
 
       expect(rejectAllChanges(headerXml)).toContain(after);
+      // Listed as the drawing it is (#1438), which accounts for the header.
       expect(result.unrepresentedChanges).toEqual([
-        { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' },
+        expect.objectContaining({
+          scope: 'drawing', kind: 'changed', sectionIndex: 0, role: 'default',
+          drawing: expect.objectContaining({ story: 'header', partPath: 'word/header1.xml' }),
+        }),
       ]);
     });
   }
