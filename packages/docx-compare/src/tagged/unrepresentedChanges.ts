@@ -735,6 +735,9 @@ async function storyFieldsReadOtherStories(archive: DocxArchive, storyParts: Ite
     for (const element of Array.from(document.getElementsByTagNameNS(W_NS, '*'))) {
       const name = localName(element);
       if (name === 'fldSimple') {
+        // Nested in an open instruction, a simple field computes part of it
+        // too (Codex round 24).
+        if (open[open.length - 1]?.collecting) return true;
         if (unsafe(element.getAttributeNS(W_NS, 'instr') ?? '')) return true;
       } else if (name === 'fldChar') {
         const type = element.getAttributeNS(W_NS, 'fldCharType');
