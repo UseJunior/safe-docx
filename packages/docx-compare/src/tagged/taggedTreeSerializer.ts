@@ -280,19 +280,92 @@ function markComparisonRevision(revision: WmlElement): void {
   revision.setAttribute(COMPARISON_REVISION_ATTRIBUTE, '1');
 }
 
-function wrapRevision(
-  node: WmlElement,
+function createRevisionWrapper(
+  owner: WmlElement,
   kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
   revision: ComparisonRevision,
-  operationIds: readonly string[] = [],
+  operationIds: readonly string[],
 ): WmlElement {
-  const wrapper = node.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+  const wrapper = owner.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
   wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
   markComparisonRevision(wrapper);
   markOperationProvenance(wrapper, operationIds);
+  return wrapper;
+}
+
+function isHyperlink(node: Node): boolean {
+  return node.nodeType === 1 &&
+    (node as WmlElement).namespaceURI === W_NS &&
+    (node as WmlElement).localName === 'hyperlink';
+}
+
+/**
+ * Track the content of a side-only `w:hyperlink` in place. A tracked run
+ * wrapper cannot contain `w:hyperlink` (CT_RunTrackChange admits run content
+ * only), but a hyperlink's EG_PContent admits the wrapper, so the
+ * relationship-bearing container stays in the paragraph and each stretch of
+ * its run content is wrapped, as Word writes an inserted or deleted link. A
+ * hyperlink nested in it is kept the same way, recursively; each further
+ * wrapper takes its own revision id.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/1381
+ */
+function trackHyperlinkContent(
+  hyperlink: WmlElement,
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+  nextRevision: () => ComparisonRevision,
+  operationIds: readonly string[],
+): void {
+  const children = Array.from(hyperlink.childNodes);
+  for (const child of children) hyperlink.removeChild(child);
+  let wrapper: WmlElement | undefined;
+  for (const child of children) {
+    if (isHyperlink(child)) {
+      wrapper = undefined;
+      trackHyperlinkContent(child as WmlElement, kind, nextRevision, operationIds);
+      hyperlink.appendChild(child);
+      continue;
+    }
+    if (child.nodeType !== 1) {
+      (wrapper ?? hyperlink).appendChild(child);
+      continue;
+    }
+    if (!wrapper) {
+      wrapper = createRevisionWrapper(hyperlink, kind, nextRevision(), operationIds);
+      hyperlink.appendChild(wrapper);
+    }
+    wrapper.appendChild(child);
+  }
+}
+
+function wrapRevision(
+  node: WmlElement,
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+  revision: ComparisonRevision,
+  operationIds: readonly string[] = [],
+  allocateRevision?: () => ComparisonRevision,
+): WmlElement {
   if (kind === 'del') node = convertDeletedText(node);
+  if (isHyperlink(node)) {
+    // The first wrapper keeps the caller's revision; a nested hyperlink
+    // splits the content into further wrappers, which need fresh ids.
+    let first = true;
+    trackHyperlinkContent(node, kind, () => {
+      if (first) {
+        first = false;
+        return revision;
+      }
+      if (!allocateRevision) {
+        throw new Error('a nested side-only hyperlink needs a revision allocator');
+      }
+      return allocateRevision();
+    }, operationIds);
+    return node;
+  }
+  const wrapper = createRevisionWrapper(node, kind, revision, operationIds);
   // Move sources retain ordinary text. Controlled Word 16.112.2 probes reject
   // delText in both run-level and whole-paragraph sources (issue-941 evidence).
   wrapper.appendChild(node);
@@ -2616,6 +2689,7 @@ function emitNode(
       relation ? 'moveFrom' : 'del',
       revision,
       operationProvenance(node),
+      allocateRevision,
     ), entry.originalStack);
   }
   if (node.tag === 'revised') {
@@ -2650,6 +2724,7 @@ function emitNode(
       relation ? 'moveTo' : 'ins',
       revision,
       operationProvenance(node),
+      allocateRevision,
     ), entry.revisedStack);
   }
   const stack = entry.revisedStack.length > 0 ? entry.revisedStack : entry.originalStack;
