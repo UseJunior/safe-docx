@@ -151,7 +151,9 @@ function canonicalElement(element: Element): string {
   for (let index = 0; index < element.attributes.length; index++) {
     const attr = element.attributes.item(index);
     if (!attr || attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
-    if (attr.localName?.startsWith('rsid')) continue;
+    // Only WordprocessingML editing-session ids; an attribute of another
+    // namespace that happens to start with rsid is data (Codex round 12).
+    if (attr.namespaceURI === W_NS && attr.localName?.startsWith('rsid')) continue;
     attrs.push(`${attr.namespaceURI ?? ''}|${attr.localName ?? attr.name}=${attr.value}`);
   }
   attrs.sort();
@@ -281,7 +283,24 @@ function sectionPropertySignature(section: Element): string {
     const name = localName(child);
     if (name === 'headerReference' || name === 'footerReference') clone.removeChild(child);
   }
-  return canonicalElement(clone);
+  // A detached clone loses the namespace declarations of its ancestors, so
+  // markup-compatibility prefixes are resolved on the live element (Codex
+  // round 16).
+  const compatibility = [section, ...Array.from(section.getElementsByTagName('*'))]
+    .filter((element) => !hasAncestorElement(element, section, (ancestor) =>
+      ancestor.namespaceURI === W_NS && (localName(ancestor) === 'headerReference' || localName(ancestor) === 'footerReference')))
+    .flatMap((element) => Array.from(element.attributes)
+      .filter((attribute) => isPrefixListAttribute(element, attribute))
+      .map((attribute) => `${localName(element)}@${attribute.localName ?? attribute.name}=${resolvedMarkupCompatibilityValue(element, attribute.value)}`));
+  return `${canonicalElement(clone)}${compatibility.length > 0 ? `|mc:${compatibility.join(';')}` : ''}`;
+}
+
+/** Whether `element` has an ancestor matching `test` below `root`. */
+function hasAncestorElement(element: Element, root: Element, test: (ancestor: Element) => boolean): boolean {
+  for (let parent = element.parentNode; parent && parent !== root; parent = parent.parentNode) {
+    if (parent.nodeType === 1 && test(parent as Element)) return true;
+  }
+  return false;
 }
 
 /**

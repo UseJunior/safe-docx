@@ -977,6 +977,30 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  test('a section whose mc:Choice required prefix is rebound on the document element stays listed beside a tracked page-size change', async () => {
+    // The w:sectPrChange snapshot restores the page size, but the prefix the
+    // section's mc:Choice requires is declared on w:document, outside the
+    // snapshot: Reject All keeps the revised binding and the revised margin
+    // (Codex round 16).
+    const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+    const margin = (top: number): string =>
+      `<w:pgMar w:top="${top}" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>`;
+    const build = async (width: number, uri: string): Promise<Buffer> => {
+      const choice = `<mc:AlternateContent xmlns:mc="${MC}"><mc:Choice Requires="req">${margin(1440)}</mc:Choice>` +
+        `<mc:Fallback>${margin(5000)}</mc:Fallback></mc:AlternateContent>`;
+      const archive = await DocxArchive.load(await packageWith(
+        sectionEnd('One', `<w:pgSz w:w="${width}" w:h="15840"/>${choice}`) + paragraph('Two'), LAYOUT, []));
+      archive.setDocumentXml((await archive.getDocumentXml()).replace('<w:document ', `<w:document xmlns:req="${uri}" `));
+      return archive.save();
+    };
+    const original = await build(12240, 'http://schemas.microsoft.com/office/word/2010/wordml');
+    const revised = await build(11906, 'urn:review:unsupported');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([{ scope: 'section', kind: 'changed', sectionIndex: 0 }]));
+  });
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any
