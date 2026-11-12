@@ -412,6 +412,23 @@ function ownTextBoxes(container: Element): Element[] {
     });
 }
 
+const DRAWING_GROUP_NAMES = new Set(['group', 'wgp', 'grpSp', 'wpc', 'lockedCanvas']);
+
+/**
+ * Is the text box's shape the only shape its drawing draws? A VML group, a
+ * DrawingML group or canvas, or another VML shape beside the host (a
+ * `v:shapetype` template aside) means the drawing holds geometry a note
+ * naming this box would not describe.
+ */
+function isSoleDrawingShape(textBox: Element, container: Element): boolean {
+  for (let node = textBox.parentNode; node && node !== container; node = node.parentNode) {
+    if (node.nodeType === 1 && DRAWING_GROUP_NAMES.has((node as Element).localName)) return false;
+  }
+  const host = nearestShape(textBox);
+  return directChildElements(container).every((child) =>
+    child.namespaceURI !== VML_NS || child === host || child.localName === 'shapetype');
+}
+
 const WORDPROCESSING_DRAWING_2010_NS =
   'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing';
 
@@ -1887,8 +1904,12 @@ async function ancillaryStoryInputs(
         drawingAlignedOriginalParts.set(pair.original.targetPath, alignedXml);
         // The part's entry is represented when its stories and drawings are
         // all it changed: the stories are tracked (and projection-checked),
-        // the drawings listed.
+        // the drawings listed. A drawing that draws more than its box (a
+        // group, another shape beside it) keeps the part's own entry too.
         if (
+          shapedBoxes.every(({ index, change }) =>
+            isSoleDrawingShape(pair.original.textBoxes[index]!, change.originalContainer) &&
+            isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer)) &&
           canonicalNode(
             parseXml(partXmlWithRevisedTextBoxes(alignedXml, pair.revised.xml)).documentElement,
           ) === pair.revised.canonical
@@ -2690,9 +2711,10 @@ export async function prepareTextBoxStoryComparison(
   // whole box, and the note would describe a shape the redline does track.
   // A drawing whose text did not change stays in the outer comparison, which
   // tracks it as a replaced atomic leaf; so does a box whose drawing cannot
-  // move across: a drawing hosting more than one box (a VML group, whose
-  // other boxes' geometry the note would not name), or a relationship id
-  // that resolves elsewhere in the original document.
+  // move across: a drawing that draws more than the box (a VML or DrawingML
+  // group or canvas, or another shape beside it, whose geometry the note
+  // would not name), or a relationship id that resolves elsewhere in the
+  // original document.
   const changedVisualBoxes = new Set(
     changedCopies.map(({ revisedIndex }) => visualOrdinals[revisedIndex] ?? revisedIndex),
   );
@@ -2708,9 +2730,11 @@ export async function prepareTextBoxStoryComparison(
   const drawingChanges: UnrepresentedChange[] = [];
   const renderedCopies = new Set(textBoxGroups(revisedDocument).map((group) => group.selected));
   for (const [visualIndex, copies] of shapeChangesByBox) {
-    const movable = copies.every(({ change }) =>
+    const movable = copies.every(({ originalIndex, revisedIndex, change }) =>
       ownTextBoxes(change.originalContainer).length === 1 &&
       ownTextBoxes(change.revisedContainer).length === 1 &&
+      isSoleDrawingShape(originalTextBoxes[originalIndex]!, change.originalContainer) &&
+      isSoleDrawingShape(revisedTextBoxes[revisedIndex]!, change.revisedContainer) &&
       drawingRelationshipsAgree(
         change.revisedContainer,
         originalRelationshipTargets,

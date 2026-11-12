@@ -472,24 +472,32 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
       `<v:shape id="${id}" style="width:${width};height:50pt"><v:textbox>${story(text)}</v:textbox></v:shape>`;
     const group = (a: string, b: string): string =>
       `<w:r><w:pict><v:group id="group1" style="width:400pt;height:100pt" coordsize="400,100">${a}${b}</v:group></w:pict></w:r>`;
-    const original = await given('a group of two boxes', () =>
-      bodyPackage(group(member('a', 'Old A', '200pt'), member('b', 'Same B', '200pt'))));
-    const revised = await given('box A edited and widened, box B only widened', () =>
-      bodyPackage(group(member('a', 'New A', '260pt'), member('b', 'Same B', '300pt'))));
-    const result = await when('the documents are compared', () =>
-      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    const rectangle = (width: string): string => `<v:rect id="b" style="width:${width};height:50pt"/>`;
+    for (const [originalGroup, revisedGroup] of [
+      // Box B resized only, beside edited and widened box A.
+      [group(member('a', 'Old A', '200pt'), member('b', 'Same B', '200pt')),
+        group(member('a', 'New A', '260pt'), member('b', 'Same B', '300pt'))],
+      // A plain rectangle resized beside a box whose text alone changed.
+      [group(member('a', 'Old A', '200pt'), rectangle('100pt')),
+        group(member('a', 'New A', '200pt'), rectangle('180pt'))],
+    ]) {
+      const original = await given('a group holding a box and another shape', () => bodyPackage(originalGroup!));
+      const revised = await given('the box edited and the other shape resized', () => bodyPackage(revisedGroup!));
+      const result = await when('the documents are compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
 
-    await then('the group is tracked as replaced and Reject All restores both boxes', async () => {
-      const output = await partXml(result.document, 'word/document.xml');
-      expect(result.unrepresentedChanges).toBeUndefined();
-      expect(drawingsUntracked(output)).toBe(false);
-      const originalView = readerView(await partXml(original, 'word/document.xml'));
-      const revisedView = readerView(await partXml(revised, 'word/document.xml'));
-      expect(readerView(acceptAllChanges(output))).toEqual(revisedView);
-      expect(readerView(rejectAllChanges(output))).toEqual(originalView);
-      expect(readerView(await docxCorePart(result.document, 'reject', 'word/document.xml'))).toEqual(originalView);
-      await assertSchema(result.document);
-    });
+      await then('the group is tracked as replaced and Reject All restores every shape', async () => {
+        const output = await partXml(result.document, 'word/document.xml');
+        expect(result.unrepresentedChanges).toBeUndefined();
+        expect(drawingsUntracked(output)).toBe(false);
+        const originalView = readerView(await partXml(original, 'word/document.xml'));
+        const revisedView = readerView(await partXml(revised, 'word/document.xml'));
+        expect(readerView(acceptAllChanges(output))).toEqual(revisedView);
+        expect(readerView(rejectAllChanges(output))).toEqual(originalView);
+        expect(readerView(await docxCorePart(result.document, 'reject', 'word/document.xml'))).toEqual(originalView);
+        await assertSchema(result.document);
+      });
+    }
   });
 
   test('tracks a nested box whose drawing and text change inside an edited box', async ({
@@ -604,6 +612,29 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
         }),
       ]));
       expect(result.unrepresentedChanges).toHaveLength(2);
+    });
+  });
+
+  test('keeps the footer entry when a footer group resizes a shape beside its edited box', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The drawing entry names the box; the resized rectangle beside it is
+    // geometry that entry does not describe, so the footer stays listed too.
+    const group = (text: string, rectWidth: string): string =>
+      `<w:r><w:pict><v:group id="group1" style="width:400pt;height:100pt" coordsize="400,100">` +
+      `<v:shape id="a" style="width:200pt;height:50pt"><v:textbox>${story(text)}</v:textbox></v:shape>` +
+      `<v:rect id="b" style="width:${rectWidth};height:50pt"/></v:group></w:pict></w:r>`;
+    const original = await given('a footer group of a box and a rectangle', () =>
+      footerPackage(group('Footer notice: Old', '100pt')));
+    const revised = await given('the box edited and the rectangle resized', () =>
+      footerPackage(group('Footer notice: New', '180pt')));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the drawing and the footer are both listed, and the edit is tracked', async () => {
+      expect(result.unrepresentedChanges?.map((change) => change.scope).sort()).toEqual(['drawing', 'footer']);
+      expect(trackedBoxText(await partXml(result.document, 'word/footer1.xml')))
+        .toEqual([{ deleted: 'Old', inserted: 'New' }]);
     });
   });
 
