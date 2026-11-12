@@ -510,59 +510,96 @@ async function packageProjectionView(
   };
 }
 
-const THEME_RELATIONSHIP = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme';
+const PACKAGE_RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const STORY_RELATIONSHIP_TYPES = new Set([
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header',
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer',
+]);
+/** Parts that describe or annotate the package, not how a header or footer looks. */
+const ENVIRONMENT_EXCLUDED = [
+  /^\[Content_Types\]\.xml$/u,
+  /^_rels\//u,
+  /^docProps\//u,
+  /^word\/document\.xml$/u,
+  /(^|\/)_rels\//u,
+  /^word\/(people|comments[A-Za-z]*|footnotes|endnotes)\.xml$/u,
+];
+/**
+ * Elements that record editing sessions or view state, not appearance, and
+ * `w:evenAndOddHeaders`, whose effect the page-by-page slot check already
+ * judges through the effective story bindings.
+ */
+const ENVIRONMENT_NOISE = new Set(['rsid', 'rsids', 'latentStyles', 'proofState', 'zoom', 'trackRevisions', 'evenAndOddHeaders']);
 
 /**
- * The package parts every header/footer story's appearance depends on beyond
- * its own XML: style and list definitions (`styles.xml`, `numbering.xml`,
- * projected through Accept/Reject All like the story), the theme (theme
- * colours and fonts) and the font table. The redline tracks none of them, so
- * two identical story parts look the same only where all of these match too.
- * They are compared whole rather than by the definitions a story reaches:
- * a story reaches them through style links, list styles, theme references
- * and font fallbacks, and missing one of those paths would let a reference
- * allocation difference hide a definition change (Codex rounds 5 and 6).
+ * Everything outside its own part that a header/footer story's appearance
+ * may depend on, as one comparable digest: every package part except the
+ * main story, the header/footer parts themselves (compared slot by slot),
+ * notes and comments, relationship parts and package metadata. That covers
+ * styles, numbering, settings (default tab stop, compatibility options), the
+ * theme, the font table, custom XML and anything else, wherever the package
+ * stores it. XML parts are projected through Accept/Reject All like the
+ * story and compared without editing-session ids and view state; other parts
+ * by their bytes. The redline tracks none of these, so two identical story
+ * parts look the same only where the rest of the package matches too
+ * (Codex rounds 5 to 7). A part that cannot be read or parsed makes the
+ * digest unique, so nothing is filtered.
  */
 async function storyFormattingEnvironment(
   archive: DocxArchive,
   project: (xml: string) => string,
 ): Promise<string> {
-  const canonical = (xml: string | null, projected: boolean): string => {
-    if (xml === null) return 'absent';
-    let text = xml;
-    if (projected) {
+  const storyParts = new Set<string>();
+  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
+  if (relationshipsXml) {
+    for (const relationship of Array.from(parseXml(relationshipsXml).getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship'))) {
+      if (!STORY_RELATIONSHIP_TYPES.has(relationship.getAttribute('Type') ?? '')) continue;
+      if (relationship.getAttribute('TargetMode') === 'External') continue;
+      const target = relationship.getAttribute('Target') ?? '';
+      const resolved = target.startsWith('/')
+        ? target.replace(/^\/+/u, '')
+        : ['word', ...target.split('/')].reduce<string[]>((parts, segment) => {
+          if (segment === '..') parts.pop();
+          else if (segment !== '.' && segment !== '') parts.push(segment);
+          return parts;
+        }, []).join('/');
+      storyParts.add(resolved);
+    }
+  }
+  const digest = createHash('sha256');
+  const paths = archive.listFiles()
+    .filter((path) => !path.endsWith('/'))
+    .filter((path) => !storyParts.has(path) && !ENVIRONMENT_EXCLUDED.some((pattern) => pattern.test(path)))
+    .sort();
+  for (const path of paths) {
+    const bytes = await archive.getFileBuffer(path);
+    if (bytes === null) return `unreadable:${path}:${Math.random()}`;
+    let entry: string;
+    if (/\.(xml|rels|vml)$/iu.test(path)) {
+      const xml = bytes.toString('utf8');
+      let text = xml;
       try {
         text = project(xml);
       } catch {
-        return `unprojectable:${createHash('sha256').update(xml).digest('hex')}`;
+        text = xml;
       }
-    }
-    const root = parseXml(text).documentElement;
-    // Latent-style entries (UI availability) and revision-session ids do not
-    // change how anything looks.
-    for (const element of Array.from(root.getElementsByTagNameNS(W_NS, '*'))) {
-      const name = localName(element);
-      if (name === 'latentStyles' || name === 'rsid') element.parentNode?.removeChild(element);
-    }
-    return canonicalElement(root);
-  };
-  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
-  let themePath = 'word/theme/theme1.xml';
-  if (relationshipsXml) {
-    for (const relationship of Array.from(parseXml(relationshipsXml).getElementsByTagName('Relationship'))) {
-      if (relationship.getAttribute('Type') === THEME_RELATIONSHIP) {
-        const target = relationship.getAttribute('Target') ?? '';
-        themePath = target.startsWith('/') ? target.slice(1) : `word/${target}`;
+      try {
+        const root = parseXml(text).documentElement;
+        for (const element of Array.from(root.getElementsByTagName('*'))) {
+          if (ENVIRONMENT_NOISE.has(localName(element)) && element.namespaceURI === W_NS) {
+            element.parentNode?.removeChild(element);
+          }
+        }
+        entry = canonicalElement(root);
+      } catch {
+        entry = `bytes:${createHash('sha256').update(bytes).digest('hex')}`;
       }
+    } else {
+      entry = `bytes:${createHash('sha256').update(bytes).digest('hex')}`;
     }
+    digest.update(`\n${path}\n${entry}`);
   }
-  const parts = [
-    `styles:${canonical(await archive.getStylesXml(), true)}`,
-    `numbering:${canonical(await archive.getNumberingXml(), true)}`,
-    `theme:${canonical(await archive.getFile(themePath), false)}`,
-    `fontTable:${canonical(await archive.getFile('word/fontTable.xml'), false)}`,
-  ];
-  return createHash('sha256').update(parts.join('\n')).digest('hex');
+  return digest.digest('hex');
 }
 
 /** Whether `actual` shows what `expected` shows for one section, kind and role. */

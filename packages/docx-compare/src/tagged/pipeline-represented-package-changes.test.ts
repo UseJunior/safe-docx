@@ -523,6 +523,14 @@ describe('changes the redline still does not carry stay listed', () => {
         `<a:themeElements><a:clrScheme name="C"><a:accent1><a:srgbClr val="${color}"/></a:accent1></a:clrScheme></a:themeElements></a:theme>`,
     },
     {
+      label: 'theme colour, with the theme reached through a dot-relative target',
+      path: 'word/theme/brand.xml', target: './theme/brand.xml', relationship: 'theme', contentType: 'theme+xml',
+      contentTypePrefix: 'application/vnd.openxmlformats-officedocument.',
+      runProperties: '<w:color w:val="000000" w:themeColor="accent1"/>',
+      part: (color: string) => '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T">' +
+        `<a:themeElements><a:clrScheme name="C"><a:accent1><a:srgbClr val="${color}"/></a:accent1></a:clrScheme></a:themeElements></a:theme>`,
+    },
+    {
       label: 'font table entry',
       path: 'word/fontTable.xml', target: 'fontTable.xml', relationship: 'fontTable', contentType: 'fontTable+xml',
       runProperties: '<w:rFonts w:ascii="Brand" w:hAnsi="Brand"/>',
@@ -567,6 +575,25 @@ describe('changes the redline still does not carry stay listed', () => {
       ]));
     });
   }
+
+  test('a header whose default tab stop changes in settings stays listed when only its reference allocation differs', async () => {
+    // w:defaultTabStop sets where an automatic tab lands; settings.xml has no
+    // revision markup, so the compared package keeps the revised value
+    // (Codex round 7).
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<w:p><w:r><w:t>A</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>B</w:t></w:r></w:p>',
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await packageWith(body, LAYOUT, [header], '<w:defaultTabStop w:val="720"/>');
+    const revised = await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header], '<w:defaultTabStop w:val="2880"/>');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
 
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
