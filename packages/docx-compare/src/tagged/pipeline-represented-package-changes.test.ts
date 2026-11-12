@@ -662,6 +662,44 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  test('a header DOCPROPERTY field whose custom property changes stays listed when only its reference allocation differs', async () => {
+    // docProps/custom.xml has no revision markup; the compared package keeps
+    // the revised property value the field shows once updated (Codex round 9).
+    const withProperty = async (buffer: Buffer, value: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('docProps/custom.xml',
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" ' +
+        'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
+        `<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Brand"><vt:lpwstr>${value}</vt:lpwstr></property></Properties>`);
+      const rootRels = await archive.getFile('_rels/.rels');
+      if (rootRels && !rootRels.includes('custom-properties')) {
+        archive.setFile('_rels/.rels', rootRels.replace('</Relationships>',
+          `<Relationship Id="rIdCustom" Type="${R_NS}/custom-properties" Target="docProps/custom.xml"/></Relationships>`));
+      }
+      const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+      if (!contentTypes.includes('/docProps/custom.xml')) {
+        archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
+          '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>'));
+      }
+      return archive.save();
+    };
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> DOCPROPERTY Brand </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Original brand</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withProperty(await packageWith(body, LAYOUT, [header]), 'Original brand');
+    const revised = await withProperty(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Revised brand');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
     // snapshot without w:titlePg leaves the revised title page in place on

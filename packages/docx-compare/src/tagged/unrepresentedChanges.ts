@@ -565,12 +565,23 @@ const STORY_RELATIONSHIP_TYPES = new Set([
 /** Parts that describe or annotate the package, not how a header or footer looks. */
 const ENVIRONMENT_EXCLUDED = [
   /^\[Content_Types\]\.xml$/u,
-  /^_rels\//u,
-  /^docProps\//u,
   /^word\/document\.xml$/u,
   /(^|\/)_rels\//u,
   /^word\/(people|comments[A-Za-z]*|footnotes|endnotes)\.xml$/u,
 ];
+/**
+ * Document-property entries every save rewrites (save time, revision count,
+ * editing time, statistics, the application that saved): none can be shown
+ * by a DOCPROPERTY field in a way the redline would need to carry, while the
+ * properties a field can show (title, author, company, custom properties)
+ * stay in the digest.
+ */
+const VOLATILE_DOCUMENT_PROPERTIES = new Set([
+  'modified', 'revision', 'lastModifiedBy', 'lastPrinted',
+  'TotalTime', 'Pages', 'Words', 'Characters', 'CharactersWithSpaces', 'Lines', 'Paragraphs',
+  'Application', 'AppVersion', 'DocSecurity', 'ScaleCrop', 'LinksUpToDate', 'SharedDoc', 'HyperlinksChanged',
+  'HeadingPairs', 'TitlesOfParts',
+]);
 /**
  * Elements that record editing sessions or view state, not appearance.
  * (`w:evenAndOddHeaders` is also left out, but only from the settings part
@@ -582,7 +593,8 @@ const ENVIRONMENT_NOISE = new Set(['rsid', 'rsids', 'latentStyles', 'proofState'
  * Everything outside its own part that a header/footer story's appearance
  * may depend on, as one comparable digest: every package part except the
  * main story, the header/footer parts themselves (compared slot by slot),
- * notes and comments and package metadata, plus which part each
+ * notes and comments (document properties count, minus what every save
+ * rewrites), plus which part each
  * relationship binds (by type and resolved target, ids left out). That covers
  * styles, numbering, settings (default tab stop, compatibility options), the
  * theme, the font table, custom XML and anything else, wherever the package
@@ -624,9 +636,10 @@ async function storyFormattingEnvironment(
   for (const relsPath of archive.listFiles().filter((path) => /(^|\/)_rels\/[^/]+\.rels$/u.test(path)).sort()) {
     const ownerFolder = relsPath.replace(/(^|\/)_rels\/[^/]+$/u, '');
     const ownerPath = `${ownerFolder ? `${ownerFolder}/` : ''}${relsPath.replace(/^.*\/_rels\/|^_rels\//u, '').replace(/\.rels$/u, '')}`;
-    // The package root and the main story are covered above or by the
-    // section bindings; a story part's relationships by the story resolver.
-    if (ownerPath === '' || ownerPath === 'word/document.xml' || excluded(ownerPath)) continue;
+    // The main story's relationships are covered above and by the section
+    // bindings; a story part's relationships by the story resolver. The
+    // package root's (which part holds the document properties) count.
+    if (ownerPath === 'word/document.xml' || (ownerPath !== '' && excluded(ownerPath))) continue;
     const relationships = await relationshipList(archive, relsPath, ownerFolder);
     if (!relationships) return `unparseable:${relsPath}:${Math.random()}`;
     digest.update(`\n${relsPath}\n${relationships.map(bindingLine).sort().join('\n')}`);
@@ -656,6 +669,11 @@ async function storyFormattingEnvironment(
           // from the settings part the document's relationship names.
           if (ENVIRONMENT_NOISE.has(name) || (name === 'evenAndOddHeaders' && path === settingsPath)) {
             element.parentNode?.removeChild(element);
+          }
+        }
+        if (path.startsWith('docProps/')) {
+          for (const element of Array.from(root.getElementsByTagName('*'))) {
+            if (VOLATILE_DOCUMENT_PROPERTIES.has(localName(element))) element.parentNode?.removeChild(element);
           }
         }
         entry = canonicalElement(root);
