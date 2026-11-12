@@ -7,7 +7,7 @@ import { compareDocuments_tool } from './compare_documents.js';
 import { replaceText } from './replace_text.js';
 import { MCP_TOOLS } from '../server.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { makeMinimalDocxWithFooter, makeMinimalDocxWithPageWidth } from '../testing/docx_test_utils.js';
+import { makeMinimalDocxWithFooter, makeMinimalDocxWithTitlePage } from '../testing/docx_test_utils.js';
 import {
   assertSuccess,
   assertFailure,
@@ -273,9 +273,9 @@ describe('compare_documents tool', () => {
       const dir = await createTrackedTempDir();
       const originalPath = path.join(dir, 'page-original.docx');
       const revisedPath = path.join(dir, 'page-revised.docx');
-      await given('an original on US Letter and a revision on A4', async () => {
-        await fs.writeFile(originalPath, new Uint8Array(await makeMinimalDocxWithPageWidth(['Body text'], 12240)));
-        await fs.writeFile(revisedPath, new Uint8Array(await makeMinimalDocxWithPageWidth(['Body text, revised'], 11906)));
+      await given('an original without a distinct first page and a revision with one', async () => {
+        await fs.writeFile(originalPath, new Uint8Array(await makeMinimalDocxWithTitlePage(['Body text'], false)));
+        await fs.writeFile(revisedPath, new Uint8Array(await makeMinimalDocxWithTitlePage(['Body text, revised'], true)));
       });
       const outputPath = path.join(dir, 'page-redline.docx');
 
