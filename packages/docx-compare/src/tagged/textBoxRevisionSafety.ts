@@ -41,7 +41,7 @@ import {
   wrapRunWithTrackChange,
 } from './revisionMarkup.js';
 import { importRelationshipTarget } from './relationshipIdCollision.js';
-import { PayloadFingerprints } from './picturePayload.js';
+import { PayloadFingerprints, resolvePartPath } from './picturePayload.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const VML_NS = 'urn:schemas-microsoft-com:vml';
@@ -558,13 +558,19 @@ async function remapComparedStoryRelationshipIds(
           reason: 'the compared text-box story relationship closure could not be rebound to its owner',
         }]);
       }
-      const payload = await storyPayloads.payloadOf('word/document.xml', attribute.value);
+      // The story's relationship table is its owner's (or, for a body story,
+      // the main document's), promoted to word/document.xml unchanged, so an
+      // internal target still resolves against the owner's directory: a
+      // footer stored at word/headers/footer.xml names ../media/logo.png.
+      const payload = entry.targetMode === 'External'
+        ? `${entry.type}|External|${entry.target}`
+        : `${entry.type}||${await storyPayloads.closureOf(resolvePartPath(ownerPartPath, entry.target))}`;
       let ownerId = await findOwnerId(entry, payload);
       if (!ownerId) {
         const { type, targetMode } = entry;
         const ownerTarget = await importRelationshipTarget(
           storyArchive,
-          'word/document.xml',
+          ownerPartPath,
           { target: entry.target, targetMode: targetMode || null },
           outerArchive,
           ownerPartPath,
