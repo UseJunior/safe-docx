@@ -534,39 +534,47 @@ describe('Hyperlinks added or retargeted inside a text box (#1381)', { timeout: 
     });
   });
 
-  test('keeps an unchanged picture bound in a footer stored outside the main document directory', async ({
-    given, when, then,
-  }: AllureBddContext) => {
-    // The story's relationships are the footer's, so an internal target
-    // resolves against word/headers/, not word/ (round-2 review).
-    const nestedFooter = async (text: string): Promise<Buffer> => {
-      const archive = await DocxArchive.load(await buildPackage({
-        body: plainBody,
-        footer: textBoxParagraph('Page', run(text) + relidPicture('rIdImage')),
-        footerImage: { target: 'media/logo1.png', bytes: PNG },
-      }));
-      archive.setFile('word/headers/footer.xml', (await archive.getFile('word/footer1.xml'))!);
-      archive.setFile('word/headers/_rels/footer.xml.rels', (await archive.getFile('word/_rels/footer1.xml.rels'))!
-        .replace('Target="media/logo1.png"', 'Target="../media/logo1.png"'));
-      for (const path of ['word/_rels/document.xml.rels', '[Content_Types].xml']) {
-        archive.setFile(path, (await archive.getFile(path))!.replaceAll('footer1.xml', 'headers/footer.xml'));
-      }
-      return archive.save();
-    };
-    const original = await given('a footer at word/headers/footer.xml whose box holds a picture', () => nestedFooter('Box old'));
-    const revised = await given('the same footer with only the box text edited', () => nestedFooter('Box new'));
-    const result = await when('the documents are compared', () =>
-      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
-    await then('both projections keep the picture bound to its image', async () => {
-      const part = 'word/headers/footer.xml';
-      expect((await storyView(original, part)).at(-1)).toMatch(/^image:[0-9a-f]{12}$/);
-      expect(await storyView(result.document, part, acceptAllChanges)).toEqual(await storyView(revised, part));
-      expect(await storyView(result.document, part, rejectAllChanges)).toEqual(await storyView(original, part));
-      expect(await storyView(await docxCoreProjection(result.document, 'accept'), part)).toEqual(await storyView(revised, part));
-      expect(await storyView(await docxCoreProjection(result.document, 'reject'), part)).toEqual(await storyView(original, part));
-      await assertUniqueRelationshipIds(result.document, part);
+  for (const [label, revisedImage] of [
+    ['an unchanged picture', { target: 'media/logo1.png', bytes: PNG }],
+    ['a picture whose o:relid now names another image', { target: 'media/logo2.png', bytes: OTHER_PNG }],
+  ] as const) {
+    test(`keeps ${label} bound in a footer stored outside the main document directory`, async ({
+      given, when, then,
+    }: AllureBddContext) => {
+      // The footer's targets are relative to word/headers/, so they are
+      // rebased onto word/ when the story is promoted for comparison and back
+      // onto the footer when it is spliced (round-2 and round-3 review).
+      const nestedFooter = async (text: string, image: { target: string; bytes: Buffer }): Promise<Buffer> => {
+        const archive = await DocxArchive.load(await buildPackage({
+          body: plainBody,
+          footer: textBoxParagraph('Page', run(text) + relidPicture('rIdImage')),
+          footerImage: image,
+        }));
+        archive.setFile('word/headers/footer.xml', (await archive.getFile('word/footer1.xml'))!);
+        archive.setFile('word/headers/_rels/footer.xml.rels', (await archive.getFile('word/_rels/footer1.xml.rels'))!
+          .replace(`Target="${image.target}"`, `Target="../${image.target}"`));
+        for (const path of ['word/_rels/document.xml.rels', '[Content_Types].xml']) {
+          archive.setFile(path, (await archive.getFile(path))!.replaceAll('footer1.xml', 'headers/footer.xml'));
+        }
+        return archive.save();
+      };
+      const original = await given('a footer at word/headers/footer.xml whose box holds a picture', () =>
+        nestedFooter('Box old', { target: 'media/logo1.png', bytes: PNG }));
+      const revised = await given('the same footer with the box text edited', () => nestedFooter('Box new', revisedImage));
+      const result = await when('the documents are compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('each projection binds the picture to its own image', async () => {
+        const part = 'word/headers/footer.xml';
+        expect((await storyView(original, part)).at(-1)).toMatch(/^image:[0-9a-f]{12}$/);
+        expect(await storyView(result.document, part, acceptAllChanges)).toEqual(await storyView(revised, part));
+        expect(await storyView(result.document, part, rejectAllChanges)).toEqual(await storyView(original, part));
+        expect(await storyView(await docxCoreProjection(result.document, 'accept'), part)).toEqual(await storyView(revised, part));
+        expect(await storyView(await docxCoreProjection(result.document, 'reject'), part)).toEqual(await storyView(original, part));
+        expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'picture')).toEqual([]);
+        await assertUniqueRelationshipIds(result.document, part);
+      });
     });
-  });
+  }
 
   test('tracks a footer text-box picture whose o:relid now names another image, beside a box edit', async ({
     given, when, then, and,

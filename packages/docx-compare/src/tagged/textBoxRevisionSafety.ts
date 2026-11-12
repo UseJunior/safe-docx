@@ -558,19 +558,15 @@ async function remapComparedStoryRelationshipIds(
           reason: 'the compared text-box story relationship closure could not be rebound to its owner',
         }]);
       }
-      // The story's relationship table is its owner's (or, for a body story,
-      // the main document's), promoted to word/document.xml unchanged, so an
-      // internal target still resolves against the owner's directory: a
-      // footer stored at word/headers/footer.xml names ../media/logo.png.
-      const payload = entry.targetMode === 'External'
-        ? `${entry.type}|External|${entry.target}`
-        : `${entry.type}||${await storyPayloads.closureOf(resolvePartPath(ownerPartPath, entry.target))}`;
+      // The story's relationship table was promoted to word/document.xml with
+      // its internal targets rebased onto word/ (`promotedStoryRelationshipsXml`).
+      const payload = await storyPayloads.payloadOf('word/document.xml', attribute.value);
       let ownerId = await findOwnerId(entry, payload);
       if (!ownerId) {
         const { type, targetMode } = entry;
         const ownerTarget = await importRelationshipTarget(
           storyArchive,
-          ownerPartPath,
+          'word/document.xml',
           { target: entry.target, targetMode: targetMode || null },
           outerArchive,
           ownerPartPath,
@@ -685,6 +681,41 @@ function owningRelationshipsPath(partPath: string): string {
   const directory = slash >= 0 ? partPath.slice(0, slash) : '';
   const filename = slash >= 0 ? partPath.slice(slash + 1) : partPath;
   return `${directory ? `${directory}/` : ''}_rels/${filename}.rels`;
+}
+
+/**
+ * `ownerPartPath`'s relationship table as the main document part's, for a
+ * story promoted to `word/document.xml` for comparison. Relationship targets
+ * are relative to the part that owns them (Part 2 §6.5.3.4), so an internal
+ * target of a part stored outside `word/` (`word/headers/footer.xml` naming
+ * `../media/logo.png`) is rebased onto `word/` to keep naming the same part
+ * inside the story package; parts in `word/` are carried as they are.
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1381
+ */
+function promotedStoryRelationshipsXml(
+  relationshipsXml: string | null,
+  ownerPartPath: string,
+): string {
+  if (!relationshipsXml) return `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`;
+  if (posix.dirname(ownerPartPath) === 'word') return relationshipsXml;
+  const document = parseXml(relationshipsXml);
+  for (const relationship of Array.from(
+    document.getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship'),
+  )) {
+    if (relationship.getAttribute('TargetMode') === 'External') continue;
+    const target = relationship.getAttribute('Target');
+    if (!target) continue;
+    relationship.setAttribute(
+      'Target',
+      posix.relative('word', resolvePartPath(ownerPartPath, target))
+        .split('/')
+        .map((segment) => (segment === '..' ? segment : encodeURIComponent(segment)))
+        .join('/'),
+    );
+  }
+  return serializer.serializeToString(document);
 }
 
 interface SelectedAncillaryStory {
@@ -1468,13 +1499,11 @@ async function ancillaryStoryInputs(
         ));
         storyOriginalArchive.setFile(
           'word/_rels/document.xml.rels',
-          pair.original.relationshipsXml
-            ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+          promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
         );
         storyRevisedArchive.setFile(
           'word/_rels/document.xml.rels',
-          pair.revised.relationshipsXml
-            ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+          promotedStoryRelationshipsXml(pair.revised.relationshipsXml, pair.revised.targetPath),
         );
         stories.push({
           index: 0,
@@ -1590,13 +1619,11 @@ async function ancillaryStoryInputs(
       );
       storyOriginalArchive.setFile(
         'word/_rels/document.xml.rels',
-        pair.original.relationshipsXml ??
-          `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+        promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
       );
       storyRevisedArchive.setFile(
         'word/_rels/document.xml.rels',
-        pair.revised.relationshipsXml ??
-          `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+        promotedStoryRelationshipsXml(pair.revised.relationshipsXml, pair.revised.targetPath),
       );
       stories.push({
         index,
@@ -1624,8 +1651,7 @@ async function ancillaryStoryInputs(
     );
     storyRevisedArchive.setFile(
       'word/_rels/document.xml.rels',
-      story.relationshipsXml ??
-        `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(story.relationshipsXml, story.targetPath),
     );
     stories.push({
       index: 0,
@@ -1649,8 +1675,7 @@ async function ancillaryStoryInputs(
     );
     storyOriginalArchive.setFile(
       'word/_rels/document.xml.rels',
-      story.relationshipsXml ??
-        `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(story.relationshipsXml, story.targetPath),
     );
     storyRevisedArchive.setFile(
       'word/_rels/document.xml.rels',
@@ -1994,11 +2019,11 @@ export async function sectionAlignedOrdinaryStoryInputs(
     storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(revisedDocumentXml, revisedStory.xml));
     storyOriginalArchive.setFile(
       'word/_rels/document.xml.rels',
-      originalStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(originalStory.relationshipsXml, originalPath),
     );
     storyRevisedArchive.setFile(
       'word/_rels/document.xml.rels',
-      revisedStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(revisedStory.relationshipsXml, comparedPath),
     );
     stories.push({
       index: 0,
