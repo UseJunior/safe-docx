@@ -687,10 +687,13 @@ const VOLATILE_PROPERTY_FIELDS = /(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIM
  * digest or the page check covers. Any other field (REF, PAGEREF, NOTEREF,
  * STYLEREF, SEQ, a formula, a bare bookmark name, ...) can show content from
  * another story, where an untracked change such as a moved bookmark would not
- * be compared (Codex round 14).
+ * be compared (Codex round 14). Page totals (NUMPAGES, SECTIONPAGES) are
+ * left out too: they depend on the layout of every page, including notes and
+ * drawings this check does not compare, while PAGE shows each page's own
+ * number (Codex round 21).
  */
 const SELF_CONTAINED_FIELDS = new Set([
-  'PAGE', 'NUMPAGES', 'SECTIONPAGES', 'SECTION', 'DATE', 'TIME', 'PRINTDATE', 'SAVEDATE', 'CREATEDATE',
+  'PAGE', 'SECTION', 'DATE', 'TIME', 'PRINTDATE', 'SAVEDATE', 'CREATEDATE',
   'EDITTIME', 'LASTSAVEDBY', 'REVNUM', 'NUMWORDS', 'NUMCHARS', 'AUTHOR', 'TITLE', 'SUBJECT', 'KEYWORDS',
   'COMMENTS', 'DOCPROPERTY', 'INFO', 'FILENAME', 'TEMPLATE', 'DOCVARIABLE',
 ]);

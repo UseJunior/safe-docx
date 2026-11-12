@@ -1102,6 +1102,28 @@ describe('changes the redline still does not carry stay listed', () => {
     expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([{ scope: 'section', kind: 'changed', sectionIndex: 0 }]));
   });
 
+  for (const keyword of ['NUMPAGES', 'SECTIONPAGES']) {
+    test(`a header ${keyword} field keeps an allocation-only header entry listed`, async () => {
+      // A page total depends on the layout of every page, including notes and
+      // drawings this check does not compare (an untracked footnote shape
+      // resize changes it), so the entry is not filtered (Codex round 21).
+      const header: Part = {
+        id: 'rIdH', kind: 'header', target: 'header1.xml',
+        contentXml: `<w:p><w:r><w:t xml:space="preserve">of </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ${keyword} </w:instrText></w:r>` +
+          '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+      };
+      const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+      const original = await packageWith(body, LAYOUT, [header]);
+      const revised = await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]);
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+      ]));
+    });
+  }
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any
