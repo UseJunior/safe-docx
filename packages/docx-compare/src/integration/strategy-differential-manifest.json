@@ -792,6 +792,18 @@
             "role": "first"
           },
           {
+            "scope": "header",
+            "kind": "changed",
+            "sectionIndex": 1,
+            "role": "default"
+          },
+          {
+            "scope": "header",
+            "kind": "changed",
+            "sectionIndex": 1,
+            "role": "first"
+          },
+          {
             "scope": "footer",
             "kind": "changed",
             "sectionIndex": 2,
@@ -804,7 +816,25 @@
             "role": "first"
           },
           {
+            "scope": "header",
+            "kind": "changed",
+            "sectionIndex": 2,
+            "role": "default"
+          },
+          {
+            "scope": "header",
+            "kind": "changed",
+            "sectionIndex": 2,
+            "role": "first"
+          },
+          {
             "scope": "footer",
+            "kind": "changed",
+            "sectionIndex": 3,
+            "role": "first"
+          },
+          {
+            "scope": "header",
             "kind": "changed",
             "sectionIndex": 3,
             "role": "first"
@@ -822,6 +852,12 @@
             "role": "first"
           },
           {
+            "scope": "header",
+            "kind": "changed",
+            "sectionIndex": 4,
+            "role": "first"
+          },
+          {
             "scope": "footer",
             "kind": "changed",
             "sectionIndex": 5,
@@ -829,6 +865,12 @@
           },
           {
             "scope": "footer",
+            "kind": "changed",
+            "sectionIndex": 5,
+            "role": "first"
+          },
+          {
+            "scope": "header",
             "kind": "changed",
             "sectionIndex": 5,
             "role": "first"

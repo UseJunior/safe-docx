@@ -506,40 +506,67 @@ describe('changes the redline still does not carry stay listed', () => {
     expect(reported).toEqual([entry]);
   });
 
-  test('a header whose character style definition changes stays listed when only its reference allocation differs', async () => {
-    // The header part is the same on both sides, but the style it names
-    // turns red in styles.xml, which the redline does not track. Story
-    // identity includes the style and list definitions a story depends on
-    // (Codex round 5).
-    const withStyle = async (buffer: Buffer, color: string): Promise<Buffer> => {
-      const archive = await DocxArchive.load(buffer);
-      archive.setFile('word/styles.xml',
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W_NS}">` +
-        `<w:style w:type="character" w:styleId="Logo"><w:name w:val="Logo"/><w:rPr><w:color w:val="${color}"/></w:rPr></w:style></w:styles>`);
-      const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
-      archive.setFile('word/_rels/document.xml.rels', rels.replace('</Relationships>',
-        `<Relationship Id="rIdStyles" Type="${R_NS}/styles" Target="styles.xml"/></Relationships>`));
-      const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
-      if (!contentTypes.includes('/word/styles.xml')) {
-        archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
-          '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>'));
-      }
-      return archive.save();
-    };
-    const header: Part = {
-      id: 'rIdH', kind: 'header', target: 'header1.xml',
-      contentXml: '<w:p><w:r><w:rPr><w:rStyle w:val="Logo"/></w:rPr><w:t>Logo</w:t></w:r></w:p>',
-    };
-    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
-    const original = await withStyle(await packageWith(body, LAYOUT, [header]), '000000');
-    const revised = await withStyle(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'FF0000');
+  const FORMATTING_PARTS = [
+    {
+      label: 'character style definition',
+      path: 'word/styles.xml', target: 'styles.xml', relationship: 'styles', contentType: 'styles+xml',
+      runProperties: '<w:rStyle w:val="Logo"/>',
+      part: (color: string) => `<w:styles xmlns:w="${W_NS}"><w:style w:type="character" w:styleId="Logo">` +
+        `<w:name w:val="Logo"/><w:rPr><w:color w:val="${color}"/></w:rPr></w:style></w:styles>`,
+    },
+    {
+      label: 'theme colour',
+      path: 'word/theme/theme1.xml', target: 'theme/theme1.xml', relationship: 'theme', contentType: 'theme+xml',
+      contentTypePrefix: 'application/vnd.openxmlformats-officedocument.',
+      runProperties: '<w:color w:val="000000" w:themeColor="accent1"/>',
+      part: (color: string) => '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T">' +
+        `<a:themeElements><a:clrScheme name="C"><a:accent1><a:srgbClr val="${color}"/></a:accent1></a:clrScheme></a:themeElements></a:theme>`,
+    },
+    {
+      label: 'font table entry',
+      path: 'word/fontTable.xml', target: 'fontTable.xml', relationship: 'fontTable', contentType: 'fontTable+xml',
+      runProperties: '<w:rFonts w:ascii="Brand" w:hAnsi="Brand"/>',
+      part: (color: string) => `<w:fonts xmlns:w="${W_NS}"><w:font w:name="Brand">` +
+        `<w:altName w:val="${color === '000000' ? 'Arial' : 'Courier New'}"/></w:font></w:fonts>`,
+    },
+  ] as const;
+  for (const formatting of FORMATTING_PARTS) {
+    test(`a header whose ${formatting.label} changes stays listed when only its reference allocation differs`, async () => {
+      // The header part is the same on both sides, but a definition it
+      // depends on changes in a part the redline does not track. Story
+      // identity includes those parts (Codex rounds 5 and 6).
+      const withPart = async (buffer: Buffer, color: string): Promise<Buffer> => {
+        const archive = await DocxArchive.load(buffer);
+        archive.setFile(formatting.path,
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${formatting.part(color)}`);
+        const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
+        archive.setFile('word/_rels/document.xml.rels', rels.replace('</Relationships>',
+          `<Relationship Id="rIdFormatting" Type="${R_NS}/${formatting.relationship}" Target="${formatting.target}"/></Relationships>`));
+        const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+        if (!contentTypes.includes(`/${formatting.path}`)) {
+          const prefix = 'contentTypePrefix' in formatting
+            ? formatting.contentTypePrefix
+            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.';
+          archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
+            `<Override PartName="/${formatting.path}" ContentType="${prefix}${formatting.contentType}"/></Types>`));
+        }
+        return archive.save();
+      };
+      const header: Part = {
+        id: 'rIdH', kind: 'header', target: 'header1.xml',
+        contentXml: `<w:p><w:r><w:rPr>${formatting.runProperties}</w:rPr><w:t>Logo</w:t></w:r></w:p>`,
+      };
+      const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+      const original = await withPart(await packageWith(body, LAYOUT, [header]), '000000');
+      const revised = await withPart(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'FF0000');
 
-    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
 
-    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
-    ]));
-  });
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+      ]));
+    });
+  }
 
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
