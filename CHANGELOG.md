@@ -24,11 +24,13 @@
     paragraph whose text matches the old symbol-less text.
 
   A range that covers a symbol deletes it as part of the tracked change, as
-  before (#1044). A replacement that keeps a removed symbol's character, such
-  as a formatting-only edit over a checkbox, writes it back as the same
-  `w:sym` with its font, not as literal text. The `replace_text` warning about removing a symbol "not
-  shown in the paragraph text" is retired, because the symbol is now shown
-  there. (#1046, #1045, #797)
+  before (#1044). A formatting-only edit over a checkbox keeps it as the same
+  `w:sym` with its font, and literal text beside it stays text. More
+  generally, a symbol in the unchanged leading or trailing part of a
+  replacement is written back as a `w:sym`. A symbol character typed in the
+  changed part is written as text. The `replace_text` warning about removing
+  a symbol "not shown in the paragraph text" is retired, because the symbol
+  is now shown there. (#1046, #1045, #797)
 
 - A header or footer change the redline cannot carry (a resized logo or
   shape, listed in `unrepresentedChanges`) no longer makes `compareDocuments`

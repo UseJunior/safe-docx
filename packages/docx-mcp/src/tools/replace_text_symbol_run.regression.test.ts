@@ -29,6 +29,7 @@ import { save } from './save.js';
 import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
 import { grep } from './grep.js';
+import { batchEdit } from './batch_edit.js';
 
 const test = testAllure.epic('Document Editing').withLabels({ feature: 'Tracked Change Emission' });
 
@@ -322,6 +323,75 @@ describe('replace_text — formatting a w:sym keeps the symbol and its font (#10
         }
       });
     }
+  }
+});
+
+/**
+ * Literal text can equal a symbol's character: a Latin A beside a symbol with
+ * `w:char="0041"`, or a private-use character typed as text beside the
+ * checkbox. A formatting-only edit must keep each position in its own form,
+ * so the symbol stays a `w:sym` and the literal stays text (issue #1046
+ * review, round 2).
+ */
+const MIXED_DOCUMENT_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+  ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+  '<w:body>' +
+  '<w:p><w:r><w:t xml:space="preserve">Literal text beside equal symbol characters:</w:t></w:r></w:p>' +
+  `<w:p><w:r><w:t>A</w:t><w:sym w:font="Wingdings" w:char="0041"/><w:t>\uF0A8</w:t>${CHECKBOX}</w:r></w:p>` +
+  '</w:body></w:document>';
+
+function contentKinds(p: Element): string[] {
+  return Array.from(p.getElementsByTagNameNS(W_NS, 'r'))
+    .filter((run) => !insideDeletion(run))
+    .flatMap((run) => Array.from(run.childNodes)
+      .filter((c): c is Element => c.nodeType === 1 && (c as Element).localName !== 'rPr')
+      .map((el) => el.localName === 'sym' ? `sym:${el.getAttribute('w:char')}` : `${el.localName}:${el.textContent ?? ''}`));
+}
+
+describe('replace_text — formatting literal text that equals a symbol character keeps both forms (#1046)', () => {
+  registerCleanup();
+
+  const modes = [
+    { name: 'tracked replace_text', tracked: true, batch: false },
+    { name: 'untracked replace_text', tracked: false, batch: false },
+    { name: 'tracked batch_edit', tracked: true, batch: true },
+  ];
+
+  for (const mode of modes) {
+    test(`${mode.name}: bolding "A<sym 0041><literal U+F0A8><checkbox>" keeps literal, symbol, literal, symbol`, async ({ given, when, then }: AllureBddContext) => {
+      const mgr = createTestSessionManager({ defaultAiAuthor: mode.tracked ? 'SafeDocX' : null });
+      const session = await given('a run alternating literal characters and symbols with the same characters', () =>
+        openSession([], { mgr, xml: MIXED_DOCUMENT_XML }),
+      );
+      const paraId = session.paraIds[1]!;
+      const text = 'AA\uF0A8\uF0A8';
+      const outPath = path.join(session.tmpDir, 'out-mixed.docx');
+
+      await when('the whole run is bolded with identical text and saved', async () => {
+        const step = {
+          target_paragraph_id: paraId,
+          old_string: text,
+          new_string: `<b>${text}</b>`,
+          instruction: 'bold the run',
+          normalize_first: true,
+        };
+        const result = mode.batch
+          ? await batchEdit(mgr, { file_path: session.inputPath, steps: [{ step_id: 'bold', operation: 'replace_text', ...step }] })
+          : await replaceText(mgr, { file_path: session.inputPath, ...step });
+        assertSuccess(result, mode.batch ? 'batch_edit' : 'replace_text');
+        assertSuccess(await save(mgr, { file_path: session.inputPath, save_to_local_path: outPath, save_format: mode.tracked ? 'tracked' : 'clean' }), 'save');
+      });
+
+      await then('after accept-all the run holds A, the 0041 symbol, the literal glyph, the checkbox symbol, in that order', async () => {
+        const doc = await loadDocumentXml(outPath);
+        if (mode.tracked) acceptChanges(doc);
+        const p = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))[1]!;
+        expect(contentKinds(p)).toEqual(['t:A', 'sym:0041', 't:\uF0A8', 'sym:F0A8']);
+        expect(liveSymbolsIn(p).every((sym) => isBoldRun(sym.parentNode as Element))).toBe(true);
+      });
+    });
   }
 });
 

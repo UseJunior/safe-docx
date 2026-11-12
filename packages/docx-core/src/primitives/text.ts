@@ -9,7 +9,7 @@ import {
 import { buildParagraphIndex } from './paragraph-index.js';
 import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 import { runContentVisibleLength } from './run_content_visible_text.js';
-import { SYM_LOCAL_NAME, symbolRunCoordinateCharacter } from './symbol_run_content.js';
+import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -123,44 +123,70 @@ function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
 }
 
 /**
- * The `w:sym` elements a replacement range removes, by the character each one
- * contributes to the paragraph text.
+ * The source `w:sym` for each character of a replacement, or `null` where the
+ * character is written as ordinary text.
  *
  * A symbol's glyph depends on its own `w:font` attribute, which the run
- * properties need not repeat. The replacement text is plain characters, so a
- * text-identical rebuild (a formatting-only edit) or a replacement that keeps
- * a removed symbol's character would otherwise write that character as literal
- * `w:t` text in the template run's font, losing the glyph. Writing it back as
- * a copy of the removed `w:sym` keeps the symbol and its font (issue #1046).
- * Repeated characters reuse the removed symbols in document order, then the
- * last one.
+ * properties need not repeat. The replacement is plain characters, so without
+ * this a formatting-only edit over a checkbox would write the private-use
+ * character as literal `w:t` text in the template run's font and lose the
+ * glyph (issue #1046).
+ *
+ * A symbol is kept only where position establishes that the replacement
+ * character is that symbol: inside the common prefix or the common suffix of
+ * the replaced text and the replacement text. A text-identical rebuild is all
+ * prefix, so every symbol and every literal character keeps its own form.
+ * Matching on the character alone is not enough: a literal character can
+ * equal a symbol's character (a literal `A` beside `w:char="0041"`, or a
+ * private-use character typed as text), and it must stay text. A character in
+ * the changed middle is new text and is written literally.
  */
-type RemovedSymbols = Map<string, { elements: Element[]; next: number }>;
-
-function collectRemovedSymbols(first: Element, last: Element): RemovedSymbols {
-  const removed: RemovedSymbols = new Map();
-  for (let node: Node | null = first; node; node = node.nextSibling) {
-    if (node.nodeType === 1 && isW(node as Element, W.r)) {
-      for (const el of getDirectContentElements(node as Element)) {
-        if (!isW(el, SYM_LOCAL_NAME)) continue;
-        const ch = symbolRunCoordinateCharacter(el);
-        if (ch === undefined) continue;
-        const entry = removed.get(ch) ?? { elements: [], next: 0 };
-        entry.elements.push(el.cloneNode(true) as Element);
-        removed.set(ch, entry);
+function replacementSymbolSources(
+  runs: TextRun[],
+  start: number,
+  end: number,
+  replacementText: string,
+): Array<Element | null> | undefined {
+  const rangeSymbols: Array<Element | null> = new Array(end - start).fill(null);
+  let found = false;
+  let runStart = 0;
+  for (const run of runs) {
+    const runEnd = runStart + run.text.length;
+    if (runEnd > start && runStart < end) {
+      const elements = getDirectContentElements(run.r);
+      const lengths = elements.map((el) => runContentVisibleLength(el));
+      // Only a run whose content elements account for its text exactly can
+      // be mapped element by element; anything else stays text.
+      if (lengths.reduce((sum, length) => sum + length, 0) === run.text.length) {
+        let offset = runStart;
+        elements.forEach((el, index) => {
+          if (isW(el, SYM_LOCAL_NAME) && lengths[index] === 1 && offset >= start && offset < end) {
+            rangeSymbols[offset - start] = el.cloneNode(true) as Element;
+            found = true;
+          }
+          offset += lengths[index]!;
+        });
       }
     }
-    if (node === last) break;
+    runStart = runEnd;
   }
-  return removed;
-}
+  if (!found) return undefined;
 
-function takeRemovedSymbol(removed: RemovedSymbols | undefined, ch: string): Element | null {
-  const entry = removed?.get(ch);
-  if (!entry) return null;
-  const source = entry.elements[Math.min(entry.next, entry.elements.length - 1)]!;
-  entry.next += 1;
-  return source.cloneNode(true) as Element;
+  const oldText = runs.map((run) => run.text).join('').slice(start, end);
+  const newLength = replacementText.length;
+  let prefix = 0;
+  while (prefix < oldText.length && prefix < newLength && oldText[prefix] === replacementText[prefix]) prefix++;
+  let suffix = 0;
+  const maxSuffix = Math.min(oldText.length, newLength) - prefix;
+  while (
+    suffix < maxSuffix
+    && oldText[oldText.length - 1 - suffix] === replacementText[newLength - 1 - suffix]
+  ) suffix++;
+
+  const sources: Array<Element | null> = new Array(newLength).fill(null);
+  for (let i = 0; i < prefix; i++) sources[i] = rangeSymbols[i]!;
+  for (let k = 1; k <= suffix; k++) sources[newLength - k] = rangeSymbols[oldText.length - k]!;
+  return sources;
 }
 
 function appendTextToRun(
@@ -168,10 +194,10 @@ function appendTextToRun(
   run: Element,
   text: string,
   preserveXmlSpace = false,
-  removedSymbols?: RemovedSymbols,
+  symbolAt?: (index: number) => Element | null,
 ): void {
-  // Convert \t and \n to OOXML equivalents where possible, and a removed
-  // symbol's character back to that w:sym.
+  // Convert \t and \n to OOXML equivalents where possible, and a character
+  // that keeps a replaced symbol's position back to a copy of that w:sym.
   let buf = '';
   const flush = () => {
     if (!buf) return;
@@ -198,10 +224,10 @@ function appendTextToRun(
       run.appendChild(doc.createElementNS(OOXML.W_NS, 'w:br'));
       continue;
     }
-    const symbol = takeRemovedSymbol(removedSymbols, ch);
+    const symbol = symbolAt?.(i);
     if (symbol) {
       flush();
-      run.appendChild(symbol);
+      run.appendChild(symbol.cloneNode(true));
       continue;
     }
     buf += ch;
@@ -1174,6 +1200,7 @@ export function replaceParagraphTextRange(
   }
 
   const parts: ReplacementPart[] = typeof replacement === 'string' ? [{ text: replacement }] : replacement;
+  const symbolSources = replacementSymbolSources(runs, start, end, parts.map((part) => part.text).join(''));
 
   // Split boundary runs so we can remove whole runs cleanly.
   //
@@ -1218,7 +1245,6 @@ export function replaceParagraphTextRange(
   }
 
   const insertBeforeNode = rangeEndRunEl.nextSibling;
-  const removedSymbols = collectRemovedSymbols(rangeStartRunEl, rangeEndRunEl);
 
   // Remove runs in [rangeStartRunEl, rangeEndRunEl] inclusive (only w:r elements).
   //
@@ -1338,6 +1364,7 @@ export function replaceParagraphTextRange(
 
   // Build replacement runs using the same formatting/template logic as the legacy path.
   const replacementRuns: Element[] = [];
+  let replacementOffset = 0;
   for (const part of parts) {
     const tmpl = part.templateRun ?? templateRun;
     const sourceRPr = getDirectChild(tmpl, W.rPr);
@@ -1349,7 +1376,15 @@ export function replaceParagraphTextRange(
     if (ctx && hasExplicitFormattingMutation && rPrComparableSignature(newRPr) !== sourceRPrSignature) {
       ensureRPr(doc, newRun).appendChild(buildRPrChangeElement(getSnapshotRPr(doc, sourceRPr), ctx));
     }
-    appendTextToRun(doc, newRun, part.text, part.preserveXmlSpace, removedSymbols);
+    const partOffset = replacementOffset;
+    replacementOffset += part.text.length;
+    appendTextToRun(
+      doc,
+      newRun,
+      part.text,
+      part.preserveXmlSpace,
+      symbolSources && ((index) => symbolSources[partOffset + index] ?? null),
+    );
     if (getRunVisibleLength(newRun) > 0) {
       replacementRuns.push(newRun);
     }

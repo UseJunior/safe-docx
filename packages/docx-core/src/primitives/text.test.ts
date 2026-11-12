@@ -2707,28 +2707,60 @@ describe('w:sym symbol characters in the paragraph text (#1046)', () => {
     });
   });
 
-  symbolTest('a replacement that keeps the character of a removed symbol writes the w:sym back, in order, with its font', async ({ given, when, then }: AllureBddContext) => {
+  const contentKinds = (p: Element): string[] =>
+    Array.from(p.getElementsByTagNameNS(W_NS, W.r)).flatMap((run) => getDirectContentElements(run).map((el) =>
+      el.localName === 'sym' ? `sym:${el.getAttribute('w:font')}:${el.getAttribute('w:char') ?? '-'}` : `${el.localName}:${el.textContent ?? ''}`));
+
+  symbolTest('a formatting-only rebuild keeps every symbol and every literal character in its own form', async ({ given, when, then }: AllureBddContext) => {
     let doc!: Document;
     let p!: Element;
-    await given('two fontless-run symbols with the same character but different fonts, and text', () => {
-      doc = makeDoc('<w:p><w:r><w:t>a</w:t><w:sym w:font="Wingdings" w:char="F0A8"/><w:t>b</w:t><w:sym w:font="Webdings" w:char="F0A8"/></w:r></w:p>');
+    await given('literal text equal to each symbol character beside the symbol: Latin A, a private-use glyph, U+FFFD', () => {
+      doc = makeDoc(
+        '<w:p><w:r><w:t>A</w:t><w:sym w:font="Wingdings" w:char="0041"/>'
+        + '<w:t>\uF0A8</w:t><w:sym w:font="Wingdings" w:char="F0A8"/>'
+        + '<w:t>\uFFFD</w:t><w:sym w:font="Wingdings"/></w:r></w:p>',
+      );
       p = firstParagraph(doc);
     });
-    await when('the whole paragraph is rebuilt bold, with the text changed but both glyphs kept', () => {
-      replaceParagraphTextRange(p, 0, 4, [{ text: 'A\uF0A8B\uF0A8', addRunProps: { bold: true } }], trackedCtx());
+    await when('the whole paragraph is rebuilt bold with identical text, tracked', () => {
+      replaceParagraphTextRange(p, 0, 6, [{ text: 'AA\uF0A8\uF0A8\uFFFD\uFFFD', addRunProps: { bold: true } }], trackedCtx());
     });
-    await then('accept-all leaves both symbols, in order, with their own fonts, in a bold run, and no literal glyph text', () => {
+    await then('accept-all keeps literal, symbol, literal, symbol, literal, symbol in a bold run; reject-all restores the original', () => {
       const accepted = doc.cloneNode(true) as Document;
       acceptChanges(accepted);
       const ap = firstParagraph(accepted);
-      expect(getParagraphText(ap)).toBe('A\uF0A8B\uF0A8');
-      expect(symbolsIn(ap).map((sym) => sym.getAttribute('w:font'))).toEqual(['Wingdings', 'Webdings']);
-      expect(Array.from(ap.getElementsByTagNameNS(W_NS, W.t)).map((t) => t.textContent).join('')).toBe('AB');
+      expect(contentKinds(ap)).toEqual([
+        't:A', 'sym:Wingdings:0041', 't:\uF0A8', 'sym:Wingdings:F0A8', 't:\uFFFD', 'sym:Wingdings:-',
+      ]);
       expect(serialize(ap)).toContain('<w:b w:val="1"/>');
       const rejected = doc.cloneNode(true) as Document;
       rejectChanges(rejected);
-      expect(getParagraphText(firstParagraph(rejected))).toBe('a\uF0A8b\uF0A8');
-      expect(serialize(firstParagraph(rejected))).not.toContain('<w:b');
+      expect(contentKinds(firstParagraph(rejected))).toEqual([
+        't:A', 'sym:Wingdings:0041', 't:\uF0A8', 'sym:Wingdings:F0A8', 't:\uFFFD', 'sym:Wingdings:-',
+      ]);
+    });
+  });
+
+  symbolTest('a symbol in the unchanged prefix or suffix of a text change keeps its w:sym; one in the changed middle becomes text', async ({ given, when, then }: AllureBddContext) => {
+    let suffixCase!: Element;
+    let prefixCase!: Element;
+    let middleCase!: Element;
+    await given('three copies of "a<checkbox>b" with the font only on the w:sym', () => {
+      const xml = '<w:p><w:r><w:t>a</w:t><w:sym w:font="Wingdings" w:char="F0A8"/><w:t>b</w:t></w:r></w:p>';
+      suffixCase = firstParagraph(makeDoc(xml));
+      prefixCase = firstParagraph(makeDoc(xml));
+      middleCase = firstParagraph(makeDoc(xml));
+    });
+    await when('the text before, after, and on both sides of the symbol changes, untracked', () => {
+      replaceParagraphTextRange(suffixCase, 0, 3, 'X\uF0A8b');
+      replaceParagraphTextRange(prefixCase, 0, 3, 'a\uF0A8Y');
+      replaceParagraphTextRange(middleCase, 0, 3, 'X\uF0A8Y');
+    });
+    await then('the prefix and suffix cases keep the w:sym; the middle case writes the character as text', () => {
+      expect(contentKinds(suffixCase)).toEqual(['t:X', 'sym:Wingdings:F0A8', 't:b']);
+      expect(contentKinds(prefixCase)).toEqual(['t:a', 'sym:Wingdings:F0A8', 't:Y']);
+      expect(symbolsIn(middleCase)).toHaveLength(0);
+      expect(getParagraphText(middleCase)).toBe('X\uF0A8Y');
     });
   });
 });
