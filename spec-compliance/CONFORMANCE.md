@@ -18,10 +18,10 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-25` | w:r run content model excludes revision wrappers | 5 | 1 | 17.3.2.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
-| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts |
+| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts |
 | `ECMA-PART4-19-1-2-11` | VML image data relationship (v:imagedata) | 5 | 4 | 19.1.2.11 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts |
-| `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts |
-| `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts |
+| `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts |
+| `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts |
 | `ECMA-PART1-17-13-5-14` | Deleted run content | 5 | 1 | 17.13.5.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-13-5-18` | Inserted run content | 5 | 1 | 17.13.5.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-16-13` | w:delInstrText containment in tracked deletions | 5 | 1 | 17.16.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts |
@@ -244,7 +244,7 @@ bodies and re-emits them across comment and footnote projections.
 - **Part / Section:** Part 4 § 14.9.1.1
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
 WordprocessingML-content container inside a drawing object. It prohibits
@@ -283,20 +283,34 @@ one modern text box twice within a single `mc:AlternateContent` — an `mc:Choic
 holding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`
 holding the VML spelling (`v:textbox`) — and renders exactly one of them.
 safe-docx groups the two stored copies as the one visual box a reader sees,
-numbers diagnostics by that visual ordinal, compares each stored copy as its own
-story, and fails closed when the two sides' storage shapes do not correspond.
-Accepting every revision in the result reproduces the revised story text and
-rejecting every revision reproduces the original, in both stored branches.
+numbers diagnostics by that visual ordinal, and compares each stored copy as its
+own story. Accepting every revision in the result reproduces the revised story
+text and rejecting every revision reproduces the original, in both stored
+branches.
+
+**A box stored differently in the two documents is inside the subset.** A box
+saved VML-only by an older writer and twinned by a newer Word, a twinned box
+saved back as VML only, or a standalone DrawingML box that gained a VML
+fallback is one box when the spelling both documents store keeps its identifier
+(the VML shape `id` or the DrawingML `wp:docPr/@id`). The original side takes
+the revised storage around its own story, so every stored copy is compared with
+the original text and carries identical tracked text: Word, which reads the
+`mc:Choice`, and an older reader, which reads the `mc:Fallback`, show the same
+redline. A box whose storage alone changed (a re-save) carries no revision and
+is not listed; Reject All keeps the revised storage around the original text. A
+visible drawing change in a spelling both documents store is listed with the
+`drawing` scope, below. In the main story, a box whose storage cannot be carried
+(it stores more than the box, names relationships that mean something else in
+the original, or brings a VML template that would reshape another box), or whose
+drawing alone changed, is tracked as replaced instead; in a header or footer it
+is refused.
 
 The claim covers main-document stories and stories in relationship-selected
-header and footer parts. It does not cover a **standalone** DrawingML text box —
-a `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host
-anywhere above it. Such a box has no drawing scaffold this implementation can
-fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,
-which aborts the whole comparison rather than emitting a partial redline. The
-claim likewise does not cover a text-box story with a relationship reference
-that resolves to nothing in its owning part — that check runs ahead of the twin
-carve-out and applies to twinned and untwinned boxes alike.
+header and footer parts, including a **standalone** DrawingML text box — a
+`wps:txbx` with no `mc:AlternateContent` twin — whose `wps:wsp` host is
+fingerprinted as the scaffold. It does not cover a text-box story with a
+relationship reference that resolves to nothing in its owning part; that check
+applies to twinned and untwinned boxes alike.
 
 **A changed drawing around a changed story is inside the subset, as a listed
 change.** A box's size, position and wrap live in its drawing (the `w:drawing`,
@@ -323,8 +337,9 @@ which tracks its anchor run as inserted or deleted, and every paragraph and text
 run of its story is marked with the same revision kind, in every stored copy.
 An inserted or deleted box whose story holds a prohibited reference is
 refused, as a changed one is; a picture, an object or a nested box in it is
-carried and marked with the box. Anonymous boxes whose storage shapes disagree
-are still refused.
+carried and marked with the box. Anonymous boxes paired by position whose
+storage shapes disagree are tracked as replaced; where their counts differ as
+well, so that position cannot pair them, they are still refused.
 
 ### ECMA-PART4-19-1-2-11 — VML image data relationship (v:imagedata)
 
@@ -350,7 +365,7 @@ image and a swapped image is redlined in the main story or listed in
 - **Part / Section:** Part 1 § 20.4.2.38
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts
 
 Part 1 §20.4.2.38 defines `w:txbxContent` inside a DrawingML text box
 (`wps:txbx`) and, like Part 4 §14.9.1.1 for VML, calls a story non-conformant
@@ -358,7 +373,10 @@ when it holds references to the comment, footnote or endnote stories or another
 `w:txbxContent`. safe-docx compares the DrawingML copy of a Word text box under
 the same rules as its VML twin: a picture in the story is an atomic leaf, a
 nested box in a main-document story is compared as its own story, and story
-references stay refused.
+references stay refused. A DrawingML box written with no VML fallback is
+compared the same way, its `wps:wsp` host standing in for the VML scaffold, and
+a box stored as DrawingML in one document and twinned in the other has its
+compared text written into every stored copy (see ECMA-PART4-14-9-1-1).
 
 ### ECMA-PART4-19-1-2-22 — VML text-box host (v:textbox)
 
@@ -366,7 +384,7 @@ references stay refused.
 - **Part / Section:** Part 4 § 19.1.2.22
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts
 
 Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. Throughout the
 accepted comparison subset, safe-docx places tracked changes only in the hosted
@@ -379,12 +397,11 @@ belongs to `EG_ShapeElements`, which `CT_Shape` shares with `CT_Rect`,
 of the nearest `v:textbox` as the host, and accepts `v:shape`, `v:rect`,
 `v:roundrect` and `v:oval` alike.
 
-Where a story's host is untwinned VML, safe-docx requires both sides to present a
-VML scaffold it can fingerprint, and refuses the comparison otherwise. **That
-requirement is deliberately not enforced for a text box stored inside
-`mc:AlternateContent`.** The DrawingML copy of a Word twin has no VML host of its
-own, and failing closed on the missing fingerprint would refuse the commonest
-text box Word produces. A scaffold that differs between the two sides — a resized,
+Where a story's host is untwinned, safe-docx requires both sides to present a
+scaffold it can fingerprint — the VML host, or the DrawingML `wps:wsp` of a box
+with no VML fallback — and refuses the comparison otherwise. **That requirement
+is deliberately not enforced for a text box stored inside
+`mc:AlternateContent`**, whose two copies are grouped as one box. A scaffold that differs between the two sides — a resized,
 moved or rewrapped shape — is paired rather than refused: no revision element
 can carry the shape's `style` or `w10:wrap`, so a changed story is tracked inside
 the revised shape and the shape is listed in `unrepresentedChanges` with the

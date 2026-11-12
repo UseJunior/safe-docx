@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A text box stored only as DrawingML (`wps:txbx` with no VML fallback) no
+  longer makes `compareDocuments` fail with `UnsupportedTextBoxRevisionError`
+  ("the containing VML shape scaffold could not be paired"), in the main
+  document or a header/footer: its `wps:wsp` host is now fingerprinted and
+  the edit is tracked inside the box. A box stored one way in the original
+  and another in the revised document (VML only, DrawingML only, or twinned
+  in `mc:AlternateContent` by a newer Word) pairs on the identifier of the
+  spelling both store; the original takes the revised storage around its own
+  story, so every stored copy carries identical tracked text and Word and
+  older readers show the same redline. Previously the main story tracked such
+  a box as deleted and reinserted, and a header/footer refused it. A pure
+  re-save (storage changed, text and drawing unchanged) shows no revision; a
+  visible drawing change is listed with the `drawing` scope. (#1383)
+
 - A header or footer change the redline cannot carry (a resized logo or
   shape, listed in `unrepresentedChanges`) no longer makes `compareDocuments`
   fail with `UnsupportedTextBoxRevisionError` ("package projection

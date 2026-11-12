@@ -14,6 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import JSZip from 'jszip';
+import { XMLSerializer } from '@xmldom/xmldom';
 import { describe, expect } from 'vitest';
 import { DocxArchive, OOXML, parseXml } from '@usejunior/docx-core';
 import {
@@ -640,15 +641,14 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     });
   });
 
-  test('fails closed when a DrawingML text box has no VML scaffold to pair', async ({
+  test('tracks a story edit in a DrawingML text box with no VML fallback', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
-    // The scaffolds here are byte-identical on both sides. The refusal must
-    // therefore come from the scaffold being *unpairable* (no v:shape to
-    // fingerprint), not from the scaffold having changed — the distinction
-    // `undefined !== undefined` could not draw. See issue #795.
+    // The scaffolds are byte-identical on both sides. Until #1383 the box was
+    // refused because no v:shape was there to fingerprint (#795); its
+    // wps:wsp host is now fingerprinted instead, so the story is redlined.
     const originalBody = paragraphWithDrawingMlTextBox('Original');
     const revisedBody = paragraphWithDrawingMlTextBox('Revised');
     const scaffoldOf = (body: string): string =>
@@ -664,35 +664,23 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
         namespaces: DRAWINGML_NAMESPACES,
       }),
     );
-    let failure: unknown;
 
-    await when('comparison classifies the unpairable scaffold', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
-    });
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, {}),
+    );
+    const outputXml = await documentXml(result.document);
 
-    await then('the box is refused, and not because the scaffold differed', () => {
+    await then('the story is redlined in place and exactly reversible', () => {
       expect(scaffoldOf(revisedBody)).toBe(scaffoldOf(originalBody));
       expect(originalBody).not.toContain('<v:shape');
-      expect(revisedBody).not.toContain('<v:shape');
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            index: 0,
-            partPath: 'word/document.xml',
-            reason: expect.stringContaining('scaffold'),
-          }),
-        ],
-      });
+      expect(result.engine).toBe('tagged-tree');
+      expect(textBoxText(acceptAllChanges(outputXml))).toBe('Revised');
+      expect(textBoxText(rejectAllChanges(outputXml))).toBe('Original');
+      expect(result.unrepresentedChanges).toBeUndefined();
     });
   });
 
-  test('fails closed when an ancillary DrawingML text box has no VML scaffold to pair', async ({
+  test('tracks a story edit in a header DrawingML text box with no VML fallback', async ({
     given,
     when,
     then,
@@ -710,28 +698,16 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     const revised = await given('the same header scaffold, edited story', () =>
       withDrawingMlHeader('Revised header'),
     );
-    let failure: unknown;
 
-    await when('comparison classifies the ancillary scaffold', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
-    });
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, {}),
+    );
+    const headerXml = (await (await DocxArchive.load(result.document)).getFile('word/header1.xml'))!;
 
-    await then('the ancillary box is refused with a scaffold diagnostic', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            index: 0,
-            partPath: 'word/header1.xml',
-            reason: expect.stringContaining('scaffold'),
-          }),
-        ],
-      });
+    await then('the header story is redlined in place and exactly reversible', () => {
+      expect(textBoxText(acceptAllChanges(headerXml))).toBe('Revised header');
+      expect(textBoxText(rejectAllChanges(headerXml))).toBe('Original header');
+      expect(result.unrepresentedChanges).toBeUndefined();
     });
   });
 
@@ -1295,6 +1271,33 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
     );
   }
 
+  /** Each standalone `w:drawing`, with its story emptied, read through the DOM. */
+  function drawingMlBoxScaffolds(xml: string): string[] {
+    return Array.from(parseXml(xml).getElementsByTagNameNS(OOXML.W_NS, 'drawing')).map((drawing) => {
+      const clone = drawing.cloneNode(true) as Element;
+      for (const story of Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))) {
+        while (story.firstChild) story.removeChild(story.firstChild);
+      }
+      return new XMLSerializer().serializeToString(clone);
+    });
+  }
+
+  /** The text each stored copy deletes and inserts, read through the DOM. */
+  function trackedCopyTexts(xml: string): string[] {
+    return Array.from(parseXml(xml).getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')).map((story) => {
+      const within = (element: Element, name: string): boolean => {
+        for (let node = element.parentNode; node && node !== story; node = node.parentNode) {
+          if ((node as Element).localName === name) return true;
+        }
+        return false;
+      };
+      const texts = Array.from(story.getElementsByTagName('*'))
+        .filter((element) => element.namespaceURI === OOXML.W_NS && ['t', 'delText'].includes(element.localName));
+      return texts.map((text) =>
+        `${text.localName === 'delText' ? '-' : within(text, 'ins') ? '+' : '='}${text.textContent}`).join('|');
+    });
+  }
+
   /** The DrawingML scaffold of each box, with its story blanked out. */
   function drawingMlScaffolds(xml: string): string[] {
     return [
@@ -1484,21 +1487,30 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
   }: AllureBddContext) => {
     // #803 separated the storage address from the ordinal a reader can act on.
     // Strip the twin from the *second* authored box only, leaving the first as
-    // Word wrote it. The refusal must name box `[1]` — the second visual box —
-    // where a walk counting stored copies would say `[2]`, the second copy of
-    // the *first* box, and send a reader somewhere that does not exist.
+    // Word wrote it, and give the revised second box a comment reference a
+    // text-box story may not hold. The refusal must name box `[1]` — the
+    // second visual box — where a walk counting stored copies would say `[2]`,
+    // the second copy of the *first* box, and send a reader somewhere that
+    // does not exist.
     let failure: unknown;
     let sourceXml = '';
 
     const derived = await given('the twin removed from the second box only', async () => {
       const secondOnly = keepBranch('Choice', 1);
+      const withCommentInThirdCopy = (xml: string): string => {
+        let seen = -1;
+        return secondOnly(xml).replace(/<\/w:p><\/w:txbxContent>/g, (whole: string): string => {
+          seen += 1;
+          return seen === 2 ? `<w:r><w:commentReference w:id="9"/></w:r>${whole}` : whole;
+        });
+      };
       const source = await rewriteDocumentXml(SOURCE, secondOnly);
-      const revised = await rewriteDocumentXml(REVISED, secondOnly);
+      const revised = await rewriteDocumentXml(REVISED, withCommentInThirdCopy);
       sourceXml = await documentXml(source);
       return { source, revised };
     });
 
-    await when('comparison refuses the now-standalone second box', async () => {
+    await when('comparison refuses the second box', async () => {
       try {
         await compareDocumentsAtomizer(derived.source, derived.revised, {
         });
@@ -1521,77 +1533,89 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
         expect.objectContaining({
           index: 1,
           partPath: 'word/document.xml',
-          reason: 'the containing VML shape scaffold could not be paired',
+          reason: 'nested w:commentReference is not supported in this story slice',
         }),
       ]);
       expect((failure as Error).message).toContain('#w:txbxContent[1]');
     });
   });
 
-  test('refuses a standalone DrawingML box derived from the same document', async ({
+  test('tracks a standalone DrawingML box derived from the same document', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
-    // The case `spec-compliance/CONFORMANCE.md` (ECMA-PART4-14-9-1-1)
-    // excludes. Keeping only Word's `mc:Choice` leaves a DrawingML box with no
-    // VML twin to borrow a scaffold from.
-    //
-    // The DrawingML scaffolds are byte-identical on both sides, so the refusal
-    // is provably caused by the scaffold being *unpairable*, not by its having
-    // changed — the distinction `undefined !== undefined` could not draw.
-    let failure: unknown;
+    // Keeping only Word's `mc:Choice` leaves a DrawingML box with no VML twin.
+    // Until #1383 it was refused for want of a VML scaffold; its `wps:wsp`
+    // host is the scaffold now, so the edit is redlined and reversible.
+    let redlined = '';
     let sourceXml = '';
     let revisedXml = '';
-    let authoredScaffolds: [string[], string[]] = [[], []];
 
     const derived = await given('only the DrawingML branch Word wrote', async () => {
       const source = await rewriteDocumentXml(SOURCE, keepBranch('Choice'));
       const revised = await rewriteDocumentXml(REVISED, keepBranch('Choice'));
       sourceXml = await documentXml(source);
       revisedXml = await documentXml(revised);
-      authoredScaffolds = [
-        drawingMlScaffolds(await documentXml(readFileSync(SOURCE))),
-        drawingMlScaffolds(await documentXml(readFileSync(REVISED))),
-      ];
       return { source, revised };
     });
 
-    await when('comparison classifies the unpairable scaffold', async () => {
-      try {
-        await compareDocumentsAtomizer(derived.source, derived.revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
+    await when('the pair is compared', async () => {
+      redlined = await documentXml(
+        (await compareDocumentsAtomizer(derived.source, derived.revised, {})).document,
+      );
     });
 
-    await then('the box is refused, and not because the scaffold differed', () => {
-      // The derivation produced what it claims to: DrawingML, no VML, no twin.
+    await then('each box is redlined in place and exactly reversible', () => {
       for (const xml of [sourceXml, revisedXml]) {
         expect(xml).not.toContain('<v:shape');
         expect(xml).not.toContain('<mc:AlternateContent');
         expect(xml).toContain('<wps:txbx');
-        expect(
-          parseXml(xml).getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length,
-        ).toBe(2);
       }
-      // Both boxes' DrawingML scaffolds are byte-identical across the pair, so
-      // "the scaffold changed" cannot be what refused them.
-      expect(authoredScaffolds[1]).toEqual(authoredScaffolds[0]);
-      expect(authoredScaffolds[0]).toHaveLength(2);
+      expect(storedStoryTexts(redlined)).toHaveLength(2);
+      expect(storedStoryTexts(rejectAllChanges(redlined))).toEqual(storedStoryTexts(sourceXml));
+      expect(storedStoryTexts(acceptAllChanges(redlined))).toEqual(storedStoryTexts(revisedXml));
+      expect(drawingMlBoxScaffolds(rejectAllChanges(redlined))).toEqual(drawingMlBoxScaffolds(sourceXml));
+    });
+  });
 
-      // Pin the exact classification, not merely that something mentioning
-      // "scaffold" threw: the relationship-closure and unsupported-story
-      // guards sit next to this one and would refuse for different reasons.
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect((failure as UnsupportedTextBoxRevisionError).changes).toEqual([
-        expect.objectContaining({
-          index: 0,
-          partPath: 'word/document.xml',
-          reason: 'the containing VML shape scaffold could not be paired',
-        }),
-      ]);
+  test('tracks Word boxes saved VML-only against the twinned boxes Word wrote', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    // The original keeps only Word's `mc:Fallback` VML, as a pre-2010 writer
+    // stores a box; the revised document is Word's own twinned markup. The
+    // VML spelling both sides store keeps its shape id, so each box pairs and
+    // its edit is tracked in both stored copies (#1383).
+    let redlined = '';
+    let sourceXml = '';
+    let revisedXml = '';
+
+    const derived = await given('a VML-only original against Word\'s twinned revision', async () => {
+      const source = await rewriteDocumentXml(SOURCE, keepBranch('Fallback'));
+      sourceXml = await documentXml(source);
+      revisedXml = await documentXml(readFileSync(REVISED));
+      return { source, revised: readFileSync(REVISED) };
+    });
+
+    await when('the pair is compared', async () => {
+      redlined = await documentXml(
+        (await compareDocumentsAtomizer(derived.source, derived.revised, {})).document,
+      );
+    });
+
+    await then('both stored copies of each box carry the tracked edit', () => {
+      expect(sourceXml).not.toContain('<mc:AlternateContent');
+      expect(storedStoryTexts(redlined)).toHaveLength(4);
+      expect(storedStoryTexts(acceptAllChanges(redlined))).toEqual(storedStoryTexts(revisedXml));
+      expect(storedStoryTexts(rejectAllChanges(redlined))).toEqual(
+        storedStoryTexts(sourceXml).flatMap((text) => [text, text]),
+      );
+      const [choice1, fallback1, choice2, fallback2] = trackedCopyTexts(redlined);
+      expect(choice1).toMatch(/[-+]/);
+      expect(choice1).toBe(fallback1);
+      expect(choice2).toBe(fallback2);
     });
   });
 
