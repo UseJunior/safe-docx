@@ -1079,6 +1079,29 @@ describe('changes the redline still does not carry stay listed', () => {
     expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([{ scope: 'section', kind: 'changed', sectionIndex: 0 }]));
   });
 
+  test('a section whose mc:ProcessContent on the document element is removed stays listed beside a tracked page-size change', async () => {
+    // ProcessContent declared on w:document decides whether the section's
+    // wrapped w:pgMar applies; the w:sectPrChange snapshot cannot restore an
+    // ancestor's attribute (Codex round 20).
+    const build = async (width: number, processContent: boolean): Promise<Buffer> => {
+      const wrapped = '<x:wrapper><w:pgMar w:top="5000" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></x:wrapper>';
+      const archive = await DocxArchive.load(await packageWith(
+        sectionEnd('One', `<w:pgSz w:w="${width}" w:h="15840"/>${wrapped}`) + paragraph('Two'), LAYOUT, []));
+      const documentXml = (await archive.getDocumentXml())
+        .replace('<w:document ', `<w:document xmlns:x="urn:review:ignored" ${processContent ? 'mc:ProcessContent="x:wrapper" ' : ''}`)
+        .replace('mc:Ignorable="w14"', 'mc:Ignorable="w14 x"');
+      expect(documentXml).toContain('mc:Ignorable="w14 x"');
+      archive.setDocumentXml(documentXml);
+      return archive.save();
+    };
+    const original = await build(12240, true);
+    const revised = await build(11906, false);
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([{ scope: 'section', kind: 'changed', sectionIndex: 0 }]));
+  });
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any

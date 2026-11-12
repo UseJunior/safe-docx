@@ -292,6 +292,16 @@ function sectionPropertySignature(section: Element): string {
     .flatMap((element) => Array.from(element.attributes)
       .filter((attribute) => isPrefixListAttribute(element, attribute))
       .map((attribute) => `${localName(element)}@${attribute.localName ?? attribute.name}=${resolvedMarkupCompatibilityValue(element, attribute.value)}`));
+  // Ignorable, ProcessContent and MustUnderstand declared on an ancestor
+  // (w:document, w:body) govern how the section's markup is processed too
+  // (Codex round 20).
+  for (let ancestor = section.parentNode; ancestor && ancestor.nodeType === 1; ancestor = ancestor.parentNode) {
+    const element = ancestor as Element;
+    for (const attribute of Array.from(element.attributes)) {
+      if (!isPrefixListAttribute(element, attribute)) continue;
+      compatibility.push(`^${localName(element)}@${attribute.localName ?? attribute.name}=${resolvedMarkupCompatibilityValue(element, attribute.value)}`);
+    }
+  }
   return `${canonicalElement(clone)}${compatibility.length > 0 ? `|mc:${compatibility.join(';')}` : ''}`;
 }
 
