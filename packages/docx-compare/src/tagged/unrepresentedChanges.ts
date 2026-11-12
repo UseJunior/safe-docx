@@ -874,7 +874,16 @@ async function storyFormattingEnvironment(
     const bytes = await archive.getFileBuffer(path);
     if (bytes === null) return `unreadable:${path}:${Math.random()}`;
     let entry: string;
-    if (/\.(xml|rels|vml)$/iu.test(path)) {
+    // Only parts whose role needs normalizing (settings, styles, numbering
+    // and the other WordprocessingML parts that carry session ids, and the
+    // document properties while no header/footer shows a save-rewritten one)
+    // are compared in canonical form. Every other part, custom XML above all,
+    // is compared by its stored bytes: a data binding's XPath can observe
+    // prefixes, comments and anything else a canonical form drops (Codex
+    // round 18).
+    const normalized = revisionParts.has(path) || sessionIdParts.has(path) || stylesParts.has(path) ||
+      path === settingsPath || (propertyParts.has(path) && !keepVolatileProperties);
+    if (normalized) {
       const xml = bytes.toString('utf8');
       let text = xml;
       // Accept/Reject All applies only where WordprocessingML revisions

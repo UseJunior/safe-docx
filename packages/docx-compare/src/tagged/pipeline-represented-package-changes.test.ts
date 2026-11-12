@@ -807,6 +807,35 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  for (const [label, xpath, prefixMappings, store] of [
+    ['a comment', "/b:brand[1]/b:value[comment()='selected']", "xmlns:b='urn:review:brand'",
+      (selected: 'Alice' | 'Bob'): string => `<b:brand xmlns:b="urn:review:brand">${(['Alice', 'Bob'] as const)
+        .map((name) => `<b:value>${name === selected ? '<!--selected-->' : ''}${name}</b:value>`).join('')}</b:brand>`],
+    ['an element prefix', "/b:brand[1]/*[name()='a:value']", "xmlns:b='urn:review:brand'",
+      (selected: 'Alice' | 'Bob'): string => `<b:brand xmlns:b="urn:review:brand" xmlns:a="urn:review:brand">${(['Alice', 'Bob'] as const)
+        .map((name) => (name === selected ? `<a:value>${name}</a:value>` : `<b:value>${name}</b:value>`)).join('')}</b:brand>`],
+  ] as const) {
+    test(`a header content control whose XPath selects custom XML by ${label} stays listed when the selection moves and only its reference allocation differs`, async () => {
+      // A binding's XPath can observe what a canonical form drops, so custom
+      // XML is compared by its stored bytes (Codex round 18).
+      const withStore = async (buffer: Buffer, selected: 'Alice' | 'Bob'): Promise<Buffer> => {
+        const archive = await DocxArchive.load(buffer);
+        archive.setFile('customXml/item1.xml', store(selected));
+        return archive.save();
+      };
+      const header = boundHeader(xpath, prefixMappings, 'Alice');
+      const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+      const original = await withStore(await packageWith(body, LAYOUT, [header]), 'Alice');
+      const revised = await withStore(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+      ]));
+    });
+  }
+
   test('a header content control bound to a w:ins element inside custom XML stays listed when its value changes and only its reference allocation differs', async () => {
     // Accept/Reject All resolves revisions only in the parts that hold them;
     // a w:ins element inside a custom XML store is data (Codex round 17).
