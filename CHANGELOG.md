@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A header or footer change the redline cannot carry (a resized logo or
+  shape, listed in `unrepresentedChanges`) no longer makes `compareDocuments`
+  fail with `UnsupportedTextBoxRevisionError` ("package projection
+  validation") when another header, footer or header/footer text box is
+  edited. The edited slot is tracked and keeps exact Accept All / Reject All
+  parity; the listed slot is carried as the revised part, stays listed, and
+  the projection check holds it to the revised part's own Reject All. A
+  listed slot is excluded from the original-side check only while it stays
+  listed and no story comparison wrote it. (#1391)
+
 - Resizing, moving or rewrapping a text box whose text was also edited no
   longer fails `compareDocuments` with `UnsupportedTextBoxRevisionError`
   ("scaffold changed"). WordprocessingML has no revision markup for drawing
