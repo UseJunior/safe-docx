@@ -3292,9 +3292,10 @@ async function markLifecycleAncillaryStoryParagraphs(
  * story that page uses after inheritance, with the bound part projected the
  * same way. Keying by page rather than by reference type means a display
  * switch (`w:titlePg`, `w:evenAndOddHeaders`) that moves a page onto another
- * story changes the inventory. Blank parts are left out, so a page showing a
- * story whose content was entirely a tracked insertion (rejected) or deletion
- * (accepted) reads the same as a page with no story at all.
+ * story changes the inventory. A blank part's pages carry `null` content and
+ * are left out of the comparison, so a page showing a story whose content was
+ * entirely a tracked insertion (rejected) or deletion (accepted) reads the
+ * same as a page with no story at all.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
@@ -3343,12 +3344,11 @@ async function displayedStoryProjectionInventory(
     { key: 'sections', content: String(bindings.sectionCount) },
   ];
   for (const { page, slot } of pageStorySlots(bindings)) {
-    const content = slot.targetPath === undefined ? null : shown(slot.targetPath);
-    if (content === null) continue;
+    if (slot.targetPath === undefined) continue;
     inventory.push({
       key: [slot.sectionOrdinal, slot.kind, page].join('|'),
       targetPath: slot.targetPath,
-      content,
+      content: shown(slot.targetPath),
     });
   }
   return inventory;
@@ -3360,7 +3360,8 @@ interface DisplayedStoryPage {
   key: string;
   /** The part the page shows, after inheritance. */
   targetPath?: string;
-  content: string;
+  /** What the part shows, or `null` when it shows nothing (a blank page reads as no story). */
+  content: string | null;
 }
 
 /** A projected story part's content, or `null` when it shows nothing. */
@@ -3500,18 +3501,22 @@ export async function assertAncillaryTextBoxStoryProjection(
       unrepresented,
     )
     : new Set<string>();
+  // Blank pages stay in the inventory until here, so a listed part that
+  // shows nothing still replaces the original's expectation for its pages.
   const expectedRejected = new Map(expectedOriginal.map((page) => [page.key, page.content]));
   for (const page of rejectedCompared) {
     if (page.targetPath === undefined || !excludedPartPaths.has(page.targetPath)) continue;
     const revisedPartXml = await revisedArchive.getFile(page.targetPath);
-    const revisedContent = revisedPartXml === null
-      ? null
-      : projectedStoryContent(revisedPartXml, 'reject');
-    if (revisedContent === null) expectedRejected.delete(page.key);
-    else expectedRejected.set(page.key, revisedContent);
+    expectedRejected.set(
+      page.key,
+      revisedPartXml === null ? null : projectedStoryContent(revisedPartXml, 'reject'),
+    );
   }
-  const listed = (pages: Iterable<[string, string]>): string[] =>
-    [...pages].map(([key, content]) => `${key}|${content}`).sort();
+  const listed = (pages: Iterable<[string, string | null]>): string[] =>
+    [...pages]
+      .filter((entry): entry is [string, string] => entry[1] !== null)
+      .map(([key, content]) => `${key}|${content}`)
+      .sort();
   const expectedRejectedPages = listed(expectedRejected);
   const rejectedComparedPages = listed(rejectedCompared.map((page) => [page.key, page.content]));
   const expectedRevisedPages = listed(expectedRevised.map((page) => [page.key, page.content]));

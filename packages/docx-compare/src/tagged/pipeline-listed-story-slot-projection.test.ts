@@ -268,6 +268,33 @@ describe('a listed header/footer slot beside a tracked one (#1391)', { timeout: 
       assertProjections(original, revised, result.document, { represented: [HEADER], listed: [FOOTER] }));
   });
 
+  test('tracks a header edit beside a listed footer whose logo was removed, leaving it blank', async ({
+    given, when, then, and,
+  }: AllureBddContext) => {
+    // The revised footer still has its reference, but its only paragraph
+    // shows nothing, so the listed slot's pages read as blank in the output.
+    const original = await given('a header reading "Draft" and a footer logo', () =>
+      storyPackage({ header: paragraph(run('Draft')), footer: paragraph(logo()) }));
+    const revised = await given('the header edited to "Final" and the footer left with a spaced empty paragraph', () =>
+      storyPackage({
+        header: paragraph(run('Final')),
+        footer: '<w:p><w:pPr><w:spacing w:after="400"/></w:pPr></w:p>',
+      }));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the header edit is tracked', async () => {
+      expect(trackedText(await partXml(result.document, HEADER))).toEqual({ deleted: 'Draft', inserted: 'Final' });
+    });
+    await and('the footer stays listed', () => {
+      expect(result.unrepresentedChanges).toEqual([
+        { scope: 'footer', kind: 'changed', sectionIndex: 0, role: 'default' },
+      ]);
+    });
+    await and('the header keeps exact parity and the footer reads as revised', () =>
+      assertProjections(original, revised, result.document, { represented: [HEADER], listed: [FOOTER] }));
+  });
+
   test('tracks a header edit beside a footer whose logo image was replaced under the same markup', async ({
     given, when, then, and,
   }: AllureBddContext) => {
