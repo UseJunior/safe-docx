@@ -14,6 +14,7 @@ import {
   computeContentFingerprint,
   getParagraphBookmarkId,
   getParagraphText,
+  runContentVisibleLength,
   type Comment,
   type DocumentViewComment,
   type DocumentViewNode,
@@ -80,11 +81,7 @@ function getParagraphRunVisibleLengths(paragraphEl: Element, traversal: FieldTra
 
       if (traversal.isInsideFieldCode()) continue;
 
-      if (el.localName === W.t) {
-        visibleLength += (el.textContent ?? '').length;
-      } else if (el.localName === W.tab || el.localName === W.br) {
-        visibleLength += 1;
-      }
+      visibleLength += runContentVisibleLength(el);
     }
 
     runLengths.push(visibleLength);

@@ -1,5 +1,6 @@
 import { OOXML, W } from './namespaces.js';
 import { getAttributeSafe } from './xml-helpers.js';
+import { runContentVisibleText } from './run_content_visible_text.js';
 
 export type ParagraphNodeKind =
   | 'run'
@@ -179,27 +180,26 @@ export function buildParagraphIndex(paragraph: Element, options: BuildParagraphI
         }
       } else {
         const instructionFrame = [...fieldStack].reverse().find((frame) => frame.phase === 'instruction');
+        // What an element contributes is the shared run-content definition;
+        // whether it counts here is this walker's context rule: inside a run,
+        // outside a field instruction, and — for anything but w:t — not inside
+        // a tracked deletion.
+        const contribution = activeRun && !instructionFrame ? runContentVisibleText(element) : null;
         if (instructionFrame && (element.localName === W.instrText || element.localName === 'delInstrText')) {
           instructionFrame.instruction += element.textContent ?? '';
-        } else if (
-          activeRun &&
-          !instructionFrame &&
-          (node.kind === 'text' || (!nextInDeletion && (node.kind === 'tab' || node.kind === 'break')))
-        ) {
-          const text = node.kind === 'text' ? (element.textContent ?? '') : node.kind === 'tab' ? '\t' : '\n';
+        } else if (activeRun && contribution !== null && (node.kind === 'text' || !nextInDeletion)) {
+          const text = contribution;
           const resultId = currentResultId();
           node.visibleText = text;
           node.visibleEnd += text.length;
           node.isFieldResult = resultId !== null;
           node.fieldResultId = resultId;
           visibleOffset += text.length;
-          if (activeRun) {
-            activeRun.visibleText += text;
-            activeRun.visibleEnd = visibleOffset;
-            activeRun.isFieldResult ||= resultId !== null;
-            if (activeRun.visibleText.length === text.length) activeRun.fieldResultId = resultId;
-            else if (activeRun.fieldResultId !== resultId) activeRun.fieldResultId = null;
-          }
+          activeRun.visibleText += text;
+          activeRun.visibleEnd = visibleOffset;
+          activeRun.isFieldResult ||= resultId !== null;
+          if (activeRun.visibleText.length === text.length) activeRun.fieldResultId = resultId;
+          else if (activeRun.fieldResultId !== resultId) activeRun.fieldResultId = null;
         }
       }
     }
