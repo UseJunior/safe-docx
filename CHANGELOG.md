@@ -12,6 +12,19 @@
   listed slot is excluded from the original-side check only while it stays
   listed and no story comparison wrote it. (#1391)
 
+- A part whose start tag repeats a namespace declaration, such as
+  `<w:document xmlns:w="…/main" xmlns:w="…/main">`, no longer makes
+  `DocxDocument.load()`, `compareDocuments()` or the MCP open path throw a raw
+  xmldom `ParseError: Attribute xmlns:w redefined`. A repeated attribute is not
+  well-formed XML (XML 1.0 §3.1, "Unique Att Spec"), but an exact repeat binds
+  the prefix to the same URI either way, so it is dropped and the part loads;
+  re-serialized parts declare it once, while parts passed through untouched
+  keep their source bytes. A repeat with a different URI is ambiguous and fails
+  with `XmlPartParseError` naming the part (and original/revised side), caused
+  by the new `XmlNamespaceRedeclarationError`. The repair runs only after that
+  specific parse error, so ordinary parts are parsed exactly as before. An
+  external benchmark hit this on 7 of 803 public pairs. (#1032)
+
 - `docx-markdoc create` admits a `{% paragraph-layout %}…{% /paragraph-layout %}` block tag that
   gives body paragraphs their own layout from a closed vocabulary: `align`
   (`left`, `center`, `right`, `justify`), `indent-left` and `indent-hanging`
