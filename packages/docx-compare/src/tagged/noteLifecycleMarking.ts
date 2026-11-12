@@ -46,8 +46,9 @@ function referenceLifecycle(reference: Element): ReferenceLifecycle {
 /**
  * Mark the body of every footnote and endnote whose anchors are all tracked
  * insertions as inserted, and of every note whose anchors are all tracked
- * deletions as deleted: each paragraph mark gets `w:ins`/`w:del` and each run
- * is wrapped (`w:t` becomes `w:delText` on the deletion side), so an added
+ * deletions as deleted: each run is wrapped in `w:ins`/`w:del` (`w:t` becomes
+ * `w:delText` on the deletion side) and each paragraph mark but the note's
+ * final one, which ends the note story, carries the same marker, so an added
  * note's text no longer reads as if it had always been there and a removed
  * note's text visibly goes with its anchor. A definition still referenced by
  * an unmarked or moved anchor, or by anchors of both kinds, stays as it is.
@@ -143,10 +144,18 @@ export async function markLifecycleNoteBodies(options: {
   let deletedNotes = 0;
   for (const target of targets) {
     for (const [entry, markerTag] of target.entries) {
-      // Nested text-box paragraphs are marked as paragraphs in their own right;
-      // markLifecycleParagraph leaves their runs to them.
+      // The note's last paragraph mark ends the note story and stays
+      // unmarked: readers resolve the note with its anchor, and LibreOffice
+      // merges the anchor's body paragraph into the next one when that mark
+      // carries the revision. Nested text-box paragraphs are marked as
+      // paragraphs in their own right; markLifecycleParagraph leaves their
+      // runs to them.
+      let finalParagraph: Element | null = null;
+      for (let child = entry.lastChild; child && !finalParagraph; child = child.previousSibling) {
+        if (isW(child, 'p')) finalParagraph = child;
+      }
       for (const paragraph of Array.from(entry.getElementsByTagNameNS(OOXML.W_NS, 'p'))) {
-        markLifecycleParagraph(paragraph, markerTag, options.author, dateString, state);
+        markLifecycleParagraph(paragraph, markerTag, options.author, dateString, state, paragraph !== finalParagraph);
       }
       if (markerTag === 'w:ins') insertedNotes += 1;
       else deletedNotes += 1;

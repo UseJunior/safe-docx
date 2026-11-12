@@ -147,13 +147,15 @@ async function packageNoteBindings(kind: NoteKind, docx: Buffer): Promise<string
   const archive = await DocxArchive.load(docx);
   return noteBindings(kind, await archive.getDocumentXml(), (await archive.getFile(`word/${kind}s.xml`)) ?? `<w:${kind}s xmlns:w="${W}"/>`);
 }
-/** Text of the definitions whose every paragraph mark carries a lifecycle marker, by marker. */
+/** Text of the definitions whose every run is inside one lifecycle marker, by marker. */
 function lifecycleMarkedDefinitions(notesXml: string, kind: NoteKind): { ins: string[]; del: string[] } {
   const marked = { ins: [] as string[], del: [] as string[] };
   for (const note of Array.from(parseXml(notesXml).getElementsByTagNameNS(W, kind))) {
-    const marks = Array.from(note.getElementsByTagNameNS(W, 'p')).map(p => {
-      const rPr = Array.from(p.getElementsByTagNameNS(W, 'rPr')).find(r => (r.parentNode as Element).localName === 'pPr');
-      return rPr?.getElementsByTagNameNS(W, 'ins').length ? 'ins' : rPr?.getElementsByTagNameNS(W, 'del').length ? 'del' : null;
+    const marks = Array.from(note.getElementsByTagNameNS(W, 'r')).map(run => {
+      for (let node = run.parentNode; node && node !== note; node = node.parentNode) {
+        if ((node as Element).namespaceURI === W && ['ins', 'del'].includes((node as Element).localName)) return (node as Element).localName as 'ins' | 'del';
+      }
+      return null;
     });
     const marker = marks[0];
     if (marker && marks.every(m => m === marker)) marked[marker].push(note.textContent ?? '');

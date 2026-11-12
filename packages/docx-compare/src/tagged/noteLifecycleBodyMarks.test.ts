@@ -69,15 +69,20 @@ function hasAncestor(element: Element, stop: Element, localName: string): boolea
   return false;
 }
 
-/** Every run sits inside the marker wrapper and every paragraph mark carries the marker. */
+/**
+ * Every run sits inside the marker wrapper and every paragraph mark but the
+ * note's final one carries the marker; the final mark ends the note story.
+ */
 function expectEntryMarked(entry: Element, marker: 'ins' | 'del'): void {
   const paragraphs = Array.from(entry.getElementsByTagNameNS(W, 'p'));
   expect(paragraphs.length).toBeGreaterThan(0);
-  for (const paragraph of paragraphs) {
+  paragraphs.forEach((paragraph, index) => {
     const markRunProperties = Array.from(paragraph.getElementsByTagNameNS(W, 'rPr'))
       .find(rPr => (rPr.parentNode as Element).localName === 'pPr');
-    expect(markRunProperties?.getElementsByTagNameNS(W, marker).length, `paragraph mark ${marker}`).toBe(1);
-  }
+    const marks = ['ins', 'del'].map(name => markRunProperties?.getElementsByTagNameNS(W, name).length ?? 0);
+    const final = index === paragraphs.length - 1;
+    expect(marks, `paragraph ${index} mark`).toEqual(final ? [0, 0] : marker === 'ins' ? [1, 0] : [0, 1]);
+  });
   const runs = Array.from(entry.getElementsByTagNameNS(W, 'r'));
   expect(runs.length).toBeGreaterThan(0);
   for (const run of runs) expect(hasAncestor(run, entry, marker), `run inside w:${marker}`).toBe(true);
@@ -355,9 +360,11 @@ reader('LibreOffice binds added and removed note bodies on both projections', ()
         .map(n => ({ kind: n.getAttributeNS(T, 'note-class'), body: n.getElementsByTagNameNS(T, 'note-body')[0]!.textContent }));
       const pairs: Array<[Buffer, Buffer]> = [];
       for (const kind of ['footnote', 'endnote'] as const) {
-        const plain = await buildSyntheticDocx({ paragraphs: BODY });
-        const noted = await notedDocx(kind, 'multi');
-        pairs.push([plain, noted], [noted, plain]);
+        for (const size of ['single', 'multi'] as const) {
+          const plain = await buildSyntheticDocx({ paragraphs: BODY });
+          const noted = await notedDocx(kind, size);
+          pairs.push([plain, noted], [noted, plain]);
+        }
       }
       const jobs = [];
       for (const [original, revised] of pairs) {
