@@ -600,6 +600,66 @@ const VOLATILE_DOCUMENT_PROPERTIES = new Set([
 /** Fields that show a save-rewritten property (LASTSAVEDBY, REVNUM, SAVEDATE, statistics, DOCPROPERTY, INFO). */
 const VOLATILE_PROPERTY_FIELDS = /(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIME|NUMWORDS|NUMCHARS|DOCPROPERTY|INFO)/iu;
 
+/**
+ * Field keywords whose result depends only on the page, section, clock,
+ * document properties or document variables, all of which the environment
+ * digest or the page check covers. Any other field (REF, PAGEREF, NOTEREF,
+ * STYLEREF, SEQ, a formula, a bare bookmark name, ...) can show content from
+ * another story, where an untracked change such as a moved bookmark would not
+ * be compared (Codex round 14).
+ */
+const SELF_CONTAINED_FIELDS = new Set([
+  'PAGE', 'NUMPAGES', 'SECTIONPAGES', 'SECTION', 'DATE', 'TIME', 'PRINTDATE', 'SAVEDATE', 'CREATEDATE',
+  'EDITTIME', 'LASTSAVEDBY', 'REVNUM', 'NUMWORDS', 'NUMCHARS', 'AUTHOR', 'TITLE', 'SUBJECT', 'KEYWORDS',
+  'COMMENTS', 'DOCPROPERTY', 'INFO', 'FILENAME', 'FILESIZE', 'TEMPLATE', 'DOCVARIABLE',
+]);
+
+/**
+ * Whether any field in the given story parts may show content from another
+ * story: a field whose keyword is not self-contained, or field markup that
+ * does not nest cleanly (read as unsafe).
+ */
+async function storyFieldsReadOtherStories(archive: DocxArchive, storyParts: Iterable<string>): Promise<boolean> {
+  const unsafe = (instruction: string): boolean => {
+    const keyword = instruction.trim().split(/\s+/u)[0] ?? '';
+    return keyword !== '' && !SELF_CONTAINED_FIELDS.has(keyword.toUpperCase());
+  };
+  for (const path of storyParts) {
+    const xml = await archive.getFile(path);
+    if (xml === null) continue;
+    let document: Document;
+    try {
+      document = parseXml(xml);
+    } catch {
+      return true;
+    }
+    const open: { instruction: string; collecting: boolean }[] = [];
+    for (const element of Array.from(document.getElementsByTagNameNS(W_NS, '*'))) {
+      const name = localName(element);
+      if (name === 'fldSimple') {
+        if (unsafe(element.getAttributeNS(W_NS, 'instr') ?? '')) return true;
+      } else if (name === 'fldChar') {
+        const type = element.getAttributeNS(W_NS, 'fldCharType');
+        if (type === 'begin') open.push({ instruction: '', collecting: true });
+        else if (type === 'separate') {
+          const field = open[open.length - 1];
+          if (!field) return true;
+          field.collecting = false;
+        } else if (type === 'end') {
+          const field = open.pop();
+          if (!field || unsafe(field.instruction)) return true;
+        }
+      } else if (name === 'instrText' || name === 'delInstrText') {
+        const field = open[open.length - 1];
+        if (!field) return true;
+        if (field.collecting) field.instruction += element.textContent ?? '';
+      }
+    }
+    if (open.length > 0) return true;
+  }
+  return false;
+}
+
 /** Whether any field in the given story parts may show a save-rewritten document property. */
 async function storyFieldsShowVolatileProperties(archive: DocxArchive, storyParts: Iterable<string>): Promise<boolean> {
   for (const path of storyParts) {
@@ -685,6 +745,9 @@ async function storyFormattingEnvironment(
     .filter((relationship) => !relationship.external && STORY_RELATIONSHIP_TYPES.has(relationship.type))
     .map((relationship) => relationship.path));
   const keepVolatileProperties = await storyFieldsShowVolatileProperties(archive, storyParts);
+  // A header/footer field that reads another story makes this package's
+  // environment unique, so no header/footer entry is filtered.
+  if (await storyFieldsReadOtherStories(archive, storyParts)) return `cross-story-fields:${Math.random()}`;
   const digest = createHash('sha256');
   // Which part plays which role (styles, theme, settings, ...) is itself part
   // of how a story looks: the document's implicit relationships (those its

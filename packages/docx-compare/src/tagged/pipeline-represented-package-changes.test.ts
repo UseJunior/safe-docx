@@ -213,6 +213,29 @@ describe('index-shifted section and header/footer entries the redline represents
     expect(result.unrepresentedChanges).toBeUndefined();
   });
 
+  test('a deleted last section break whose footers show a PAGE field, plus a body edit, reports nothing', async () => {
+    // A page-number field reads no other story, so its footers are still
+    // compared slot by slot.
+    const pageFooter = (id: string, target: string, label: string): Part => ({
+      id, kind: 'footer', target,
+      contentXml: `<w:p><w:r><w:t xml:space="preserve">${label} page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        '<w:r><w:instrText xml:space="preserve"> PAGE \\* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+        '<w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+    });
+    const parts = THREE_SECTION_PARTS.map((part) => (part.kind === 'footer' ? pageFooter(part.id, part.target, part.id) : part));
+    const body = (firstLine: string, keepBreak: boolean): string =>
+      sectionEnd(firstLine, sectionRefs('A') + LAYOUT) +
+      (keepBreak ? sectionEnd('Second section.', sectionRefs('B') + LAYOUT) : paragraph('Second section.')) +
+      paragraph('Third section.');
+    const original = await packageWith(body('First section.', true), sectionRefs('C') + LAYOUT, parts);
+    const revised = await packageWith(body('First section, amended.', false), sectionRefs('C') + LAYOUT, parts);
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    await expectFaithfulProjections(original, revised, result.document);
+    expect(result.unrepresentedChanges).toBeUndefined();
+  });
+
   test('a deleted middle section with its own stories reports none of the later sections', async () => {
     const body = (keepMiddle: boolean): string =>
       sectionEnd('Section A.', sectionRefs('A') + LAYOUT) +
@@ -826,6 +849,38 @@ describe('changes the redline still does not carry stay listed', () => {
       { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
     ]));
   });
+
+  for (const [label, instruction] of [
+    ['REF', ' REF Brand '],
+    ['bare bookmark', ' Brand '],
+  ] as const) {
+    test(`a header ${label} field whose bookmark moves without a tracked change stays listed when only its reference allocation differs`, async () => {
+      // The field shows text from the body, where a bookmark move is not a
+      // revision; a header field that reads another story keeps every
+      // header/footer entry listed (Codex round 14).
+      const brandBody = (bookmarked: 'Alice' | 'Bob'): string => {
+        const mark = (text: string): string => (text === bookmarked
+          ? `<w:bookmarkStart w:id="7" w:name="Brand"/><w:r><w:t>${text}</w:t></w:r><w:bookmarkEnd w:id="7"/>`
+          : `<w:r><w:t>${text}</w:t></w:r>`);
+        return `<w:p>${mark('Alice')}<w:r><w:t xml:space="preserve"> </w:t></w:r>${mark('Bob')}</w:p>`;
+      };
+      const header: Part = {
+        id: 'rIdH', kind: 'header', target: 'header1.xml',
+        contentXml: `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">${instruction}</w:instrText></w:r>` +
+          '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Alice</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+      };
+      const body = (bookmarked: 'Alice' | 'Bob'): string =>
+        brandBody(bookmarked) + sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+      const original = await packageWith(body('Alice'), LAYOUT, [header]);
+      const revised = await packageWith(body('Bob'), ref('header', 'rIdH') + LAYOUT, [header]);
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+      ]));
+    });
+  }
 
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
