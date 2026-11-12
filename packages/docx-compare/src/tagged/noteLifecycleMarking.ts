@@ -1,8 +1,8 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { DocxArchive, OOXML, parseXml } from '@usejunior/docx-core';
-import { canonicalNoteId } from './ancillaryFieldSafety.js';
-import { createRevisionIdState, formatDate } from './revisionMarkup.js';
-import { markLifecycleParagraph } from './textBoxRevisionSafety.js';
+import { AncillaryStorySafetyError, canonicalNoteId } from './ancillaryFieldSafety.js';
+import { separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
+import { createRevisionIdState, formatDate, wrapRunWithTrackChange } from './revisionMarkup.js';
 
 const serializer = new XMLSerializer();
 const RESERVED_NOTE_TYPES = new Set(['separator', 'continuationSeparator', 'continuationNotice']);
@@ -73,6 +73,99 @@ export function noteKindsWithLifecycleAnchors(documentXml: string): Set<'footnot
     if ([...lifecycles.values()].some(seen => seen.size === 1 && !seen.has('live'))) kinds.add(kind);
   }
   return kinds;
+}
+
+/**
+ * Run the repeated-note separation with the kinds that hold an added or
+ * removed note also renumbered in anchor order (see
+ * {@link noteKindsWithLifecycleAnchors}). That renumbering is a reader
+ * workaround, so it must never cost the comparison: when the separation
+ * declines it (for example a note reference outside the main story), the note
+ * parts and source-identifier maps are restored and the separation runs as it
+ * would without lifecycle notes. The bodies are still marked; only the
+ * LibreOffice ordering workaround is skipped.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1388
+ */
+export async function separateNoteReferencesInLifecycleOrder(
+  archive: DocxArchive,
+  documentXml: string,
+  sourceIds: Map<'footnote' | 'endnote', Map<string, string>>,
+  stabilizedKinds: ReadonlySet<'footnote' | 'endnote'>,
+): Promise<string> {
+  const lifecycleKinds = [...noteKindsWithLifecycleAnchors(documentXml)].filter(kind => !stabilizedKinds.has(kind));
+  if (lifecycleKinds.length === 0) {
+    return separateRepeatedNoteReferences(archive, documentXml, sourceIds, stabilizedKinds);
+  }
+  const parts = ['word/footnotes.xml', 'word/endnotes.xml'] as const;
+  const savedParts = await Promise.all(parts.map(part => archive.getFile(part)));
+  const savedSourceIds = new Map(sourceIds);
+  try {
+    return await separateRepeatedNoteReferences(archive, documentXml, sourceIds, new Set([...stabilizedKinds, ...lifecycleKinds]));
+  } catch (error) {
+    if (!(error instanceof AncillaryStorySafetyError)) throw error;
+    parts.forEach((part, index) => {
+      const saved = savedParts[index];
+      if (saved !== null && saved !== undefined) archive.setFile(part, saved);
+    });
+    sourceIds.clear();
+    for (const [kind, mapping] of savedSourceIds) sourceIds.set(kind, mapping);
+    return separateRepeatedNoteReferences(archive, documentXml, sourceIds, stabilizedKinds);
+  }
+}
+
+const INSERTION_WRAPPERS = new Set(['ins', 'moveTo']);
+
+/**
+ * Wrap every run of a note entry so the whole body follows its anchor's
+ * lifecycle, without paragraph-mark revisions to fall back on:
+ *
+ * - drawing/VML carrier runs are wrapped like any other run, and runs of a
+ *   nested text box resolve with their carrier run;
+ * - a run an earlier reviewer already inserted or deleted keeps that
+ *   revision and gains the new one around or inside it, in the
+ *   inserted-then-deleted nesting Word writes (`w:ins` > `w:del` > `w:r`):
+ *   an added note wraps an earlier `w:del`/`w:moveFrom` in `w:ins`, a removed
+ *   note wraps a run inside an earlier `w:ins`/`w:moveTo` in `w:del`;
+ * - a run that already leaves the projection where the note disappears (an
+ *   earlier insertion in an added note, an earlier deletion in a removed one)
+ *   is left as it is.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @see https://github.com/UseJunior/safe-docx/issues/1388
+ */
+function markLifecycleNoteRuns(
+  entry: Element,
+  markerTag: 'w:ins' | 'w:del',
+  author: string,
+  dateString: string,
+  state: ReturnType<typeof createRevisionIdState>,
+): void {
+  // Document order visits a carrier run before the runs of its text box, so
+  // those runs already sit inside the carrier's new wrapper when visited.
+  for (const run of Array.from(entry.getElementsByTagNameNS(OOXML.W_NS, 'r'))) {
+    let resolvedWithNote = false;
+    let outermostEarlierDeletion: Element | null = null;
+    for (let node = run.parentNode; node && node !== entry; node = node.parentNode) {
+      if (node.nodeType !== 1 || (node as Element).namespaceURI !== OOXML.W_NS) continue;
+      const name = (node as Element).localName;
+      if (markerTag === 'w:ins' && INSERTION_WRAPPERS.has(name)) resolvedWithNote = true;
+      else if (markerTag === 'w:ins' && (name === 'del' || name === 'moveFrom')) outermostEarlierDeletion = node as Element;
+      else if (markerTag === 'w:del' && (name === 'del' || name === 'moveFrom')) resolvedWithNote = true;
+    }
+    if (resolvedWithNote) continue;
+    // A removed note's run under an earlier insertion is wrapped in place,
+    // inside that insertion; an added note's earlier deletion is wrapped whole.
+    wrapRunWithTrackChange({
+      run: outermostEarlierDeletion ?? run,
+      tagName: markerTag,
+      author,
+      dateStr: dateString,
+      state,
+      convertTextToDelText: markerTag === 'w:del',
+    });
+  }
 }
 
 /**
@@ -185,11 +278,8 @@ export async function markLifecycleNoteBodies(options: {
       // anchor (Word removes the whole note with it, docx-core prunes an
       // orphaned footnote), and LibreOffice merges the anchor's body paragraph
       // into the next one on Accept/Reject when a styled note paragraph's mark
-      // carries the revision. Runs of nested text-box paragraphs are marked
-      // with those paragraphs.
-      for (const paragraph of Array.from(entry.getElementsByTagNameNS(OOXML.W_NS, 'p'))) {
-        markLifecycleParagraph(paragraph, markerTag, options.author, dateString, state, false);
-      }
+      // carries the revision. So every run must carry the lifecycle itself.
+      markLifecycleNoteRuns(entry, markerTag, options.author, dateString, state);
       marked.set(id, markerTag === 'w:ins' ? 'inserted' : 'deleted');
     }
     options.archive.setFile(target.part, serializer.serializeToString(target.notes));

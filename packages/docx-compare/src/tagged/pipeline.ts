@@ -99,9 +99,9 @@ import {
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { coalesceProjectionEquivalentBookmarkSplits } from './bookmarkSplitCoalescing.js';
-import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
+import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds } from './noteReferenceIdentity.js';
 import { alignedInlineNoteAnchorPair } from './inlineFootnoteAnchorPair.js';
-import { markLifecycleNoteBodies, noteKindsWithLifecycleAnchors } from './noteLifecycleMarking.js';
+import { markLifecycleNoteBodies, separateNoteReferencesInLifecycleOrder } from './noteLifecycleMarking.js';
 import {
   collectBookmarkReferenceNamesInXml,
   collectWordPartBookmarkNames,
@@ -547,8 +547,7 @@ export async function buildStandaloneTaggedPackage(
     }
   }
   const noteReferenceSourceIds = new Map<'footnote' | 'endnote', Map<string, string>>();
-  for (const kind of noteKindsWithLifecycleAnchors(taggedXml)) stabilizedNoteKinds.add(kind);
-  taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
+  taggedXml = await separateNoteReferencesInLifecycleOrder(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
   resultArchive.setDocumentXml(taggedXml);
   const noteLifecycleMarks = await markLifecycleNoteBodies({
     archive: resultArchive,

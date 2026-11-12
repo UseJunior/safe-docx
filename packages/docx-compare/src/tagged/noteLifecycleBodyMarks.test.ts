@@ -57,6 +57,47 @@ async function notedDocx(kind: NoteKind, size: 'single' | 'multi', paragraphs = 
   );
 }
 
+const V = 'urn:schemas-microsoft-com:vml';
+const EARLIER = 'w:author="Earlier reviewer" w:date="2024-06-01T00:00:00Z"';
+
+/**
+ * Note bodies whose runs the plain run wrapper would skip: a drawing/VML
+ * carrier run that also holds text, a VML text box, and text already inside
+ * an earlier reviewer's insertion or deletion.
+ */
+const SPECIAL_NOTE_RUNS: Record<string, { runs: string; text: string }> = {
+  'a VML carrier run with text': {
+    runs: `<w:r><w:t xml:space="preserve">VISIBLE NOTE TEXT</w:t><w:pict xmlns:v="${V}"><v:rect style="width:10pt;height:10pt"/></w:pict></w:r>`,
+    text: 'VISIBLE NOTE TEXT',
+  },
+  'a VML text box': {
+    runs: `<w:r><w:t xml:space="preserve">Shown with a box.</w:t></w:r><w:r><w:pict xmlns:v="${V}"><v:shape style="width:60pt;height:20pt"><v:textbox><w:txbxContent><w:p><w:r><w:t>BOX TEXT</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r>`,
+    text: 'BOX TEXT',
+  },
+  'an earlier insertion': {
+    runs: `<w:r><w:t xml:space="preserve">Kept, </w:t></w:r><w:ins w:id="901" ${EARLIER}><w:r><w:t>PRIOR_INSERTION</w:t></w:r></w:ins>`,
+    text: 'PRIOR_INSERTION',
+  },
+  'an earlier deletion': {
+    runs: `<w:r><w:t xml:space="preserve">Kept, </w:t></w:r><w:del w:id="902" ${EARLIER}><w:r><w:delText>PRIOR_DELETION</w:delText></w:r></w:del>`,
+    text: 'PRIOR_DELETION',
+  },
+};
+
+/** A one-paragraph note whose text runs are the given markup. */
+async function notedDocxWithRuns(kind: NoteKind, runs: string): Promise<Buffer> {
+  const archive = await DocxArchive.load(await notedDocx(kind, 'single'));
+  const part = `word/${kind}s.xml`;
+  const notes = parseXml((await archive.getFile(part))!);
+  const entry = Array.from(notes.getElementsByTagNameNS(W, kind)).find(n => n.getAttributeNS(W, 'id') === '1')!;
+  const paragraph = entry.getElementsByTagNameNS(W, 'p')[0]!;
+  paragraph.removeChild(paragraph.lastChild!);
+  const fragment = parseXml(`<w:root xmlns:w="${W}">${runs}</w:root>`).documentElement;
+  for (const child of Array.from(fragment.childNodes)) paragraph.appendChild(notes.importNode(child, true));
+  archive.setFile(part, serialize(notes));
+  return archive.save();
+}
+
 function userEntries(notesXml: string, kind: NoteKind): Element[] {
   return Array.from(parseXml(notesXml).getElementsByTagNameNS(W, kind))
     .filter(entry => !['separator', 'continuationSeparator', 'continuationNotice'].includes(entry.getAttributeNS(W, 'type') ?? ''));
@@ -122,26 +163,27 @@ async function nativeProjection(docx: Buffer, operation: 'acceptChanges' | 'reje
 
 /**
  * Accept All binds every anchor to the revised body and Reject All to the
- * original body, through the comparison acceptor and docx-core, and no
- * superseded note text survives in an unreferenced definition.
+ * original body, each as that acceptor projects the source (a source's own
+ * tracked changes resolve with it), through the comparison acceptor and
+ * docx-core, and no superseded note text survives in an unreferenced
+ * definition.
  */
 async function expectProjectionsBind(kind: NoteKind, original: Buffer, revised: Buffer, compared: Buffer): Promise<void> {
-  const expected = {
-    accept: (await packageState(kind, revised)).bindings,
-    reject: (await packageState(kind, original)).bindings,
-  };
-  const archive = await DocxArchive.load(compared);
-  const documentXml = await archive.getDocumentXml();
-  const notesXml = await archive.getFile(`word/${kind}s.xml`);
-  for (const [operation, project] of [['accept', acceptAllChanges], ['reject', rejectAllChanges]] as const) {
-    const projectedDocument = project(documentXml);
+  const astState = async (docx: Buffer, project: (xml: string) => string) => {
+    const archive = await DocxArchive.load(docx);
+    const documentXml = project(await archive.getDocumentXml());
+    const notesXml = await archive.getFile(`word/${kind}s.xml`);
     const projectedNotes = notesXml === null ? null : project(notesXml);
-    expect(noteBindings(kind, projectedDocument, projectedNotes), `AST ${operation}`).toEqual(expected[operation]);
-    expect(orphanNoteText(kind, projectedDocument, projectedNotes), `AST ${operation} orphan text`).toBe('');
+    return { bindings: noteBindings(kind, documentXml, projectedNotes), orphanText: orphanNoteText(kind, documentXml, projectedNotes) };
+  };
+  for (const [operation, project, source] of [['accept', acceptAllChanges, revised], ['reject', rejectAllChanges, original]] as const) {
+    const state = await astState(compared, project);
+    expect(state.bindings, `AST ${operation}`).toEqual((await astState(source, project)).bindings);
+    expect(state.orphanText, `AST ${operation} orphan text`).toBe('');
   }
-  for (const [operation, native] of [['accept', 'acceptChanges'], ['reject', 'rejectChanges']] as const) {
+  for (const [operation, native, source] of [['accept', 'acceptChanges', revised], ['reject', 'rejectChanges', original]] as const) {
     const state = await packageState(kind, await nativeProjection(compared, native));
-    expect(state.bindings, `docx-core ${operation}`).toEqual(expected[operation]);
+    expect(state.bindings, `docx-core ${operation}`).toEqual((await packageState(kind, await nativeProjection(source, native))).bindings);
     expect(state.orphanText, `docx-core ${operation} orphan text`).toBe('');
   }
 }
@@ -429,3 +471,63 @@ function hasOdfNoteAncestor(element: Element, T: string): boolean {
   }
   return false;
 }
+
+describe('a lifecycle-marked note leaves no run outside its lifecycle', () => {
+  for (const kind of ['footnote', 'endnote'] as const) {
+    for (const [label, { runs, text }] of Object.entries(SPECIAL_NOTE_RUNS)) {
+      for (const lifecycle of ['added', 'removed'] as const) {
+        test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: lifecycle === 'added' ? '17.13.5.18' : '17.13.5.14' })(
+          `tracks ${label} in a ${lifecycle} ${kind}`,
+          async () => {
+            const plain = await buildSyntheticDocx({ paragraphs: BODY });
+            const noted = await notedDocxWithRuns(kind, runs);
+            const [original, revised] = lifecycle === 'added' ? [plain, noted] : [noted, plain];
+            const result = await compareDocuments(original, revised, { author: AUTHOR, date: DATE });
+            const archive = await DocxArchive.load(result.document);
+            const entries = userEntries((await archive.getFile(`word/${kind}s.xml`))!, kind);
+            expect(entries).toHaveLength(1);
+            expect(entries[0]!.textContent).toContain(text);
+            // The earlier reviewer's revision survives inside the new lifecycle.
+            for (const id of ['901', '902']) {
+              if (runs.includes(`w:id="${id}"`)) {
+                expect(Array.from(entries[0]!.getElementsByTagName('*')).some(e => e.getAttributeNS(W, 'id') === id && e.getAttributeNS(W, 'author') === 'Earlier reviewer')).toBe(true);
+              }
+            }
+            expectEntryMarked(entries[0]!, lifecycle === 'added' ? 'ins' : 'del');
+            await expectProjectionsBind(kind, original, revised, result.document);
+            await expectSchemaValid(result.document, [kind]);
+            await expectUniqueRevisionIds(result.document);
+          },
+        );
+      }
+    }
+  }
+});
+
+describe('note lifecycle ordering never turns a comparison into an abort', () => {
+  /** A glossary (building-block) story holding its own footnote reference. */
+  async function withGlossaryFootnoteReference(docx: Buffer): Promise<Buffer> {
+    const archive = await DocxArchive.load(docx);
+    archive.setFile('word/glossary/document.xml',
+      `<w:glossaryDocument xmlns:w="${W}"><w:docParts><w:docPart><w:docPartPr><w:name w:val="Block"/></w:docPartPr>` +
+      `<w:docPartBody><w:p><w:r><w:t>Block</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p></w:docPartBody></w:docPart></w:docParts></w:glossaryDocument>`);
+    return archive.save();
+  }
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })(
+    'marks added and removed notes when a reference outside the main story keeps note identifiers fixed',
+    async () => {
+      const original = await withGlossaryFootnoteReference(await mixedNoteDocx(false));
+      const revised = await withGlossaryFootnoteReference(await mixedNoteDocx(true));
+      const result = await compareDocuments(original, revised, { author: AUTHOR, date: DATE });
+      const archive = await DocxArchive.load(result.document);
+      const entries = userEntries((await archive.getFile('word/footnotes.xml'))!, 'footnote');
+      const byText = (text: string) => entries.find(entry => (entry.textContent ?? '').includes(text))!;
+      expectEntryMarked(byText('Removed note A.'), 'del');
+      expectEntryMarked(byText('Added note C.'), 'ins');
+      expect(byText('Unchanged note B.').getElementsByTagNameNS(W, 'ins')).toHaveLength(0);
+      expect(byText('Unchanged note B.').getElementsByTagNameNS(W, 'del')).toHaveLength(0);
+      await expectProjectionsBind('footnote', original, revised, result.document);
+    },
+  );
+});

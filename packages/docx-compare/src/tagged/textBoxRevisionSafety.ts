@@ -3120,33 +3120,29 @@ function hasRevisionWrapperAncestor(element: Element, stopAt: Element): boolean 
 
 /**
  * Mark one paragraph of a story whose whole lifecycle is an insertion or a
- * deletion: a paragraph-mark revision (unless the caller leaves a story's
- * final paragraph mark alone), plus a run-level wrapper on every run that is
- * not a drawing/VML carrier, does not belong to a nested text box, and is not
- * already inside a revision wrapper.
+ * deletion: a paragraph-mark revision, plus a run-level wrapper on every run
+ * that is not a drawing/VML carrier, does not belong to a nested text box, and
+ * is not already inside a revision wrapper.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  */
-export function markLifecycleParagraph(
+function markLifecycleParagraph(
   paragraph: Element,
   markerTag: 'w:ins' | 'w:del',
   author: string,
   dateString: string,
   state: ReturnType<typeof createRevisionIdState>,
-  markParagraphMark = true,
 ): void {
-  if (markParagraphMark) {
-    addParagraphMarkRevisionMarker(
-      paragraph,
-      markerTag,
-      author,
-      dateString,
-      state,
-    );
-  }
+  addParagraphMarkRevisionMarker(
+    paragraph,
+    markerTag,
+    author,
+    dateString,
+    state,
+  );
   for (const run of Array.from(
     paragraph.getElementsByTagNameNS(OOXML.W_NS, 'r'),
   ).filter(
