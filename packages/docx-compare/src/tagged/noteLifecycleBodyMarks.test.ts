@@ -208,12 +208,21 @@ async function mixedNoteDocx(revised: boolean): Promise<Buffer> {
     ).documentElement, true);
     // Keep definitions in anchor order: LibreOffice binds notes by position.
     const later = paragraph === bodyParagraphs[0]
-      ? Array.from(notes.getElementsByTagNameNS(W, 'footnote')).find(n => n.getAttributeNS(W, 'id') === '1') ?? null
+      ? Array.from(notes.getElementsByTagNameNS(W, 'footnote')).find(n => n.getAttributeNS(W, 'id') === '2') ?? null
       : null;
     notes.documentElement.insertBefore(definition, later);
   };
-  if (revised) addNote('2', bodyParagraphs[1]!, ['Added note C.', 'Second paragraph of C.']);
-  else addNote('2', bodyParagraphs[0]!, ['Removed note A.']);
+  // B keeps identifier 2 on both sides; identifiers ascend in anchor order
+  // (original A = 1, B = 2; revised B = 2, C = 3) because LibreOffice binds
+  // note bodies in ascending identifier order, even in a source package.
+  for (const element of [
+    ...Array.from(document.getElementsByTagNameNS(W, 'footnoteReference')),
+    ...Array.from(notes.getElementsByTagNameNS(W, 'footnote')),
+  ]) {
+    if (element.getAttributeNS(W, 'id') === '1') element.setAttributeNS(W, 'w:id', '2');
+  }
+  if (revised) addNote('3', bodyParagraphs[1]!, ['Added note C.', 'Second paragraph of C.']);
+  else addNote('1', bodyParagraphs[0]!, ['Removed note A.']);
   archive.setDocumentXml(serialize(document));
   archive.setFile('word/footnotes.xml', serialize(notes));
   return archive.save();
