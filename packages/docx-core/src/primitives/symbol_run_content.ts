@@ -81,3 +81,39 @@ export function projectSymbolRun(element: Element): string | undefined {
   if (raw === null || !SHORT_HEX_NUMBER.test(raw)) return UNRESOLVED_SYMBOL_IDENTITY;
   return String.fromCharCode(Number.parseInt(raw, 16));
 }
+
+/**
+ * Stand-in for a `w:sym` whose glyph has no usable character in the paragraph
+ * raw-offset coordinate space: `@w:char` absent or outside `ST_ShortHexNumber`,
+ * a UTF-16 surrogate code unit (not a character on its own), or a C0 control
+ * (it would read as a tab, a line break or a NUL in the paragraph text).
+ */
+export const UNRESOLVED_SYMBOL_CHARACTER = '\uFFFD';
+
+/**
+ * The single character a `<w:sym>` occupies in the paragraph raw-offset
+ * coordinate space (`getParagraphText`, the offsets edits, comment anchors and
+ * footnote references are expressed in), or `undefined` when `element` is not
+ * a `w:sym`.
+ *
+ * A resolvable glyph is the character {@link projectSymbolRun} gives it — for
+ * a symbol font, usually a private-use codepoint such as U+F0A8. Anything else
+ * is {@link UNRESOLVED_SYMBOL_CHARACTER}. The coordinate space needs exactly
+ * one character per element, because a run is only ever split between run
+ * content elements: the framed comparison identity `projectSymbolRun` returns
+ * for an unresolvable symbol would let an offset land inside the element. The
+ * collision with authored U+FFFD that rules the replacement character out as a
+ * comparison identity is harmless here, where text is matched and addressed,
+ * not compared for equality.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
+ * @see https://github.com/UseJunior/safe-docx/issues/1046
+ */
+export function symbolRunCoordinateCharacter(element: Element): string | undefined {
+  const projected = projectSymbolRun(element);
+  if (projected === undefined) return undefined;
+  if (projected.length !== 1) return UNRESOLVED_SYMBOL_CHARACTER;
+  const code = projected.charCodeAt(0);
+  if (code < 0x20 || (code >= 0xd800 && code <= 0xdfff)) return UNRESOLVED_SYMBOL_CHARACTER;
+  return projected;
+}

@@ -2,16 +2,16 @@
  * Regression test for issue #1044: a tracked replace_text whose range spans a
  * run holding only a `w:sym` (a Wingdings checkbox, as in legal forms) used to
  * detach that run without a `w:del`, so the tracked save silently lost the
- * symbol and reject-all could not bring it back. The symbol contributes
- * nothing to the paragraph text the caller matched, so the caller never saw
- * it either.
+ * symbol and reject-all could not bring it back. Since issue #1046 the symbol
+ * is one character of the paragraph text (U+F0A8 here), so the caller sees it
+ * in the text it matches and its range names it explicitly.
  *
  * Exercises the full package path — open → replace_text → save — in the
  * default tracked mode and with tracked emission disabled, and asserts the
  * issue's acceptance criteria: the tracked save carries the symbol inside
- * `w:del` (a package-level reject-all restores it), the clean save yields the
- * intended text, and in both modes the tool response says the range removed a
- * symbol the caller could not see.
+ * `w:del` (a package-level reject-all restores it) and the clean save yields
+ * the intended text. The symbol is visible, so the response carries no
+ * warning about it.
  */
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -27,6 +27,8 @@ import {
 import { replaceText } from './replace_text.js';
 import { save } from './save.js';
 import { openDocument } from './open_document.js';
+import { readFile } from './read_file.js';
+import { grep } from './grep.js';
 
 const test = testAllure.epic('Document Editing').withLabels({ feature: 'Tracked Change Emission' });
 
@@ -73,30 +75,30 @@ function textOf(p: Element, local: 't' | 'delText'): string {
 describe('replace_text — a range spanning a w:sym-only run (#1044)', () => {
   registerCleanup();
 
-  test('tracked mode: the symbol is deleted inside w:del, reject-all restores it, and the response reports it', async ({ given, when, then }: AllureBddContext) => {
+  test('tracked mode: the symbol is deleted inside w:del and reject-all restores it', async ({ given, when, then }: AllureBddContext) => {
     const mgr = createTestSessionManager({ defaultAiAuthor: 'SafeDocX' });
 
     const session = await given('a form paragraph whose checkbox sits in a sym-only run between two text runs', () =>
       openSession([], { mgr, xml: DOCUMENT_XML }),
     );
     const paraId = session.paraIds[1]!;
-    // The symbol is invisible to the paragraph text the caller matches against.
-    expect(session.content).toContain('Alpha  Bravo');
+    // The symbol is part of the paragraph text the caller matches against (#1046).
+    expect(session.content).toContain('Alpha \uF0A8 Bravo');
 
     const trackedPath = path.join(session.tmpDir, 'out-tracked.docx');
     const cleanPath = path.join(session.tmpDir, 'out-clean.docx');
-    await when('replace_text replaces "a  B" (which spans the checkbox) with "X" and the session is saved tracked and clean', async () => {
+    await when('replace_text replaces "a <checkbox> B" with "X" and the session is saved tracked and clean', async () => {
       const replaced = await replaceText(mgr, {
         file_path: session.inputPath,
         target_paragraph_id: paraId,
-        old_string: 'a  B',
+        old_string: 'a \uF0A8 B',
         new_string: 'X',
         instruction: 'collapse the election',
       });
       assertSuccess(replaced, 'replace_text');
       expect(replaced.after_text).toBe('AlphXravo');
       const warnings = (replaced as { warnings?: string[] }).warnings ?? [];
-      expect(warnings.some((w) => /1 symbol character \(w:sym/u.test(w) && /tracked change/u.test(w))).toBe(true);
+      expect(warnings.filter((w) => w.includes('w:sym'))).toHaveLength(0);
       assertSuccess(await save(mgr, { file_path: session.inputPath, save_to_local_path: trackedPath, save_format: 'tracked' }), 'save tracked');
       assertSuccess(await save(mgr, { file_path: session.inputPath, save_to_local_path: cleanPath, save_format: 'clean' }), 'save clean');
     });
@@ -107,7 +109,7 @@ describe('replace_text — a range spanning a w:sym-only run (#1044)', () => {
       expect(insideDeletion(symbols(doc)[0]!)).toBe(true);
       const p = symbols(doc)[0]!.parentNode!.parentNode!.parentNode as Element;
       expect(p.localName).toBe('p');
-      expect(textOf(p, 'delText')).toBe('a  B');
+      expect(textOf(p, 'delText')).toBe('a  B'); // the symbol is the w:sym between the two spaces
       expect(textOf(p, 't')).toBe('AlphXravo');
       expect(symbols(doc)[0]!.getAttribute('w:char')).toBe('F0A8');
       expect(symbols(doc)[0]!.getAttribute('w:font')).toBe('Wingdings');
@@ -140,7 +142,7 @@ describe('replace_text — a range spanning a w:sym-only run (#1044)', () => {
     });
   });
 
-  test('untracked mode: the clean replace removes the symbol with the range and the response says so', async ({ given, when, then }: AllureBddContext) => {
+  test('untracked mode: the clean replace removes the symbol with the range', async ({ given, when, then }: AllureBddContext) => {
     const mgr = createTestSessionManager({ defaultAiAuthor: null });
 
     const session = await given('the same form paragraph, opened with tracked emission disabled', () =>
@@ -153,15 +155,14 @@ describe('replace_text — a range spanning a w:sym-only run (#1044)', () => {
       const replaced = await replaceText(mgr, {
         file_path: session.inputPath,
         target_paragraph_id: paraId,
-        old_string: 'a  B',
+        old_string: 'a \uF0A8 B',
         new_string: 'X',
         instruction: 'collapse the election',
       });
       assertSuccess(replaced, 'replace_text');
       expect(replaced.after_text).toBe('AlphXravo');
       const warnings = (replaced as { warnings?: string[] }).warnings ?? [];
-      expect(warnings).toHaveLength(1);
-      expect(warnings[0]).toMatch(/1 symbol character \(w:sym, such as a checkbox or bullet\) not shown in the paragraph text; it was removed with the replaced text\./u);
+      expect(warnings).toHaveLength(0);
       assertSuccess(await save(mgr, { file_path: session.inputPath, save_to_local_path: outPath, save_format: 'clean' }), 'save clean');
     });
 
@@ -171,6 +172,29 @@ describe('replace_text — a range spanning a w:sym-only run (#1044)', () => {
       expect(textOf(Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))[1]!, 't')).toBe('AlphXravo');
       const reopened = await openDocument(createTestSessionManager(), { file_path: outPath });
       assertSuccess(reopened, 'reopen');
+    });
+  });
+
+  test('read_file shows the checkbox glyph and grep finds it (#1046)', async ({ given, when, then }: AllureBddContext) => {
+    const mgr = createTestSessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const session = await given('the same form paragraph', () => openSession([], { mgr, xml: DOCUMENT_XML }));
+
+    let json: Array<{ id: string; clean_text: string }> = [];
+    let grepContent = '';
+    await when('read_file (JSON) and grep for the glyph run', async () => {
+      const read = await readFile(mgr, { file_path: session.inputPath, format: 'json' });
+      assertSuccess(read, 'read_file');
+      json = JSON.parse(String(read.content)) as typeof json;
+      const found = await grep(mgr, { file_path: session.inputPath, patterns: ['\uF0A8'] });
+      assertSuccess(found, 'grep');
+      grepContent = JSON.stringify(found);
+    });
+
+    await then('the paragraph text carries U+F0A8 between the two words, and grep matches that paragraph only', () => {
+      expect(json[1]!.clean_text).toBe('Alpha \uF0A8 Bravo');
+      expect(grepContent).toContain(session.paraIds[1]!);
+      expect(grepContent).not.toContain(session.paraIds[0]!);
+      expect(grepContent).not.toContain(session.paraIds[2]!);
     });
   });
 

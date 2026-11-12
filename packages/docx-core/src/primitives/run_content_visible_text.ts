@@ -15,22 +15,27 @@
  * paragraph raw offsets (comment and footnote body text, the run-in heading
  * detector's header text) keep their own `w:t` walks.
  *
- * A `w:sym` symbol character contributes nothing here yet: it is zero-width
- * run content in the coordinate space, like a field marker or a proofing mark.
+ * A `w:sym` symbol character (a Wingdings checkbox, a bullet) occupies one
+ * character: the glyph's character as `symbolRunCoordinateCharacter` resolves
+ * it. Word renders it as a character, so it is visible in the paragraph text,
+ * searchable, and addressable by an edit like any other character.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.3.30
  * @see https://github.com/UseJunior/safe-docx/issues/1045
+ * @see https://github.com/UseJunior/safe-docx/issues/1046
  * @see https://github.com/UseJunior/safe-docx/issues/797
  */
 
 import { OOXML, W } from './namespaces.js';
+import { SYM_LOCAL_NAME, symbolRunCoordinateCharacter } from './symbol_run_content.js';
 
 /**
  * The text a run content element contributes to the paragraph's raw-offset
  * coordinate space: the element's text for `w:t`, `\t` for `w:tab`, `\n` for
- * `w:br`. Returns `null` for an element that contributes no characters (run
- * properties, field markers, note and comment references, drawings, symbol
- * characters, and anything outside the WordprocessingML namespace).
+ * `w:br`, the glyph's character for `w:sym`. Returns `null` for an element
+ * that contributes no characters (run properties, field markers, note and
+ * comment references, drawings, and anything outside the WordprocessingML
+ * namespace).
  *
  * An empty `w:t` returns `''`, not `null`: it is a text-carrying element with
  * no characters, which walkers that track field-result provenance still treat
@@ -45,6 +50,8 @@ export function runContentVisibleText(element: Element): string | null {
       return '\t';
     case W.br:
       return '\n';
+    case SYM_LOCAL_NAME:
+      return symbolRunCoordinateCharacter(element) ?? null;
     default:
       return null;
   }

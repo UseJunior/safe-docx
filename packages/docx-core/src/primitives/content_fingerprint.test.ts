@@ -45,6 +45,14 @@ describe('computeContentFingerprint', () => {
     expect(computeContentFingerprint('\nSection 5\n')).toBe(baseline);
   });
 
+  test('a symbol-font private-use character survives NFKC and changes the fingerprint (#1046)', ({}) => {
+    // A w:sym glyph (Wingdings checkbox U+F0A8) is part of the paragraph text,
+    // so a symbol-bearing paragraph hashes differently from its text without it.
+    expect('Alpha \uF0A8 Bravo'.normalize('NFKC')).toBe('Alpha \uF0A8 Bravo');
+    expect(computeContentFingerprint('Alpha \uF0A8 Bravo')).not.toBe(computeContentFingerprint('Alpha  Bravo'));
+    expect(computeContentFingerprint('Alpha \uF0A8 Bravo')).not.toBe(computeContentFingerprint('Alpha \uF0FE Bravo'));
+  });
+
   test('case is preserved: Section 5 differs from section 5', ({}) => {
     const upper = computeContentFingerprint('Section 5');
     const lower = computeContentFingerprint('section 5');

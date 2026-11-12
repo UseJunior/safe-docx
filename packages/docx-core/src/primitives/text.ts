@@ -8,7 +8,6 @@ import {
 } from './track-changes-emitter.js';
 import { buildParagraphIndex } from './paragraph-index.js';
 import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
-import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 import { runContentVisibleLength } from './run_content_visible_text.js';
 
 export type TextRun = {
@@ -251,7 +250,7 @@ export function splitRunAtVisibleOffset(
       if (!leftText) lEl.parentNode?.removeChild(lEl);
       if (!rightText) rEl.parentNode?.removeChild(rEl);
     } else {
-      // tab/br are length 1 and should not be split; move to the right by default.
+      // tab/br/sym are length 1 and should not be split; move to the right by default.
       lEl.parentNode?.removeChild(lEl);
     }
     pos += len;
@@ -298,10 +297,10 @@ function runEndsWithZeroLengthContent(run: Element): boolean {
 
 /**
  * Zero-visible-length run content that a replaced range deletes with the
- * surrounding text: a `w:sym` symbol character (issue #1044), the
- * `w:fldChar` / `w:instrText` markers of a complex field whose markers sit
- * inside the range (issue #1082: a result-less field such as an `XE` index
- * entry or a `TC` entry — begin, instruction, end, no `separate`), and a
+ * surrounding text: the `w:fldChar` / `w:instrText` markers of a complex
+ * field whose markers sit inside the range (issue #1082: a result-less field
+ * such as an `XE` index entry or a `TC` entry — begin, instruction, end, no
+ * `separate`), and a
  * footnote or endnote reference mark (issue #1094). A field whose cached
  * result is empty (begin, instruction, separate, end) is also zero-length and
  * is handled the same way. A field with a non-empty cached result never
@@ -315,7 +314,6 @@ function runEndsWithZeroLengthContent(run: Element): boolean {
  * caller replacing the text around it has covered it.
  */
 const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
-  SYM_LOCAL_NAME,
   W.fldChar,
   W.instrText,
   W.footnoteReference,
@@ -326,10 +324,10 @@ const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
  * True when a run removed from a replaced range must be kept for `w:del`
  * wrapping. Visible text qualifies, and so does zero-length content the range
  * deletes with the text. A `w:sym` symbol character (a Wingdings checkbox, a
- * bullet) is run content that Word renders as a character, but it contributes
- * no visible length in the paragraph text coordinate space, so the length test
- * alone let a sym-only run be detached and never recorded — an untracked
- * deletion inside a tracked edit (issue #1044). Complex field markers
+ * bullet) is visible text: it occupies one character of the paragraph text
+ * (issue #1046). Before it did, the length test alone let a sym-only run be
+ * detached and never recorded — an untracked deletion inside a tracked edit
+ * (issue #1044). Complex field markers
  * (`w:fldChar`, `w:instrText`) had the same defect (issue #1082): a run
  * holding only a marker was dropped, so reject-all could not restore the
  * field. Recording the run puts it in the same `w:del` as the surrounding
@@ -344,6 +342,7 @@ const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @see https://github.com/UseJunior/safe-docx/issues/1044
+ * @see https://github.com/UseJunior/safe-docx/issues/1046
  * @see https://github.com/UseJunior/safe-docx/issues/1082
  * @see https://github.com/UseJunior/safe-docx/issues/1094
  */

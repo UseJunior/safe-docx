@@ -265,3 +265,47 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 });
+
+/**
+ * A `w:sym` glyph is one character of the paragraph text since issue #1046.
+ * Footnote insertion resolves `after_text` in that text and splits the run
+ * with the shared splitter, and the document view places the `[^N]` marker
+ * with the same per-element lengths, so a reference anchored after a symbol
+ * that sits mid-run lands right after the glyph.
+ */
+describe('add_footnote — symbol characters in the anchor text (#1046)', () => {
+  registerCleanup();
+
+  const DOCUMENT_XML =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    '<w:p><w:r><w:t xml:space="preserve">Alpha </w:t><w:sym w:font="Wingdings" w:char="F0A8"/>' +
+    '<w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>' +
+    '</w:body></w:document>';
+
+  test('a footnote anchored after a mid-run symbol lands right after the glyph', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('one run "Alpha <checkbox> Bravo" with the checkbox mid-run', () =>
+      openSession([], { xml: DOCUMENT_XML }),
+    );
+    expect(opened.content).toContain('Alpha \uF0A8 Bravo');
+
+    await when('add_footnote anchors a note after "Alpha <checkbox>"', async () => {
+      const added = await addFootnote(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.paraIds[0]!,
+        after_text: 'Alpha \uF0A8',
+        text: 'About the checkbox',
+      });
+      assertSuccess(added, 'add_footnote');
+    });
+
+    await then('read_file shows the marker between the glyph and " Bravo", and the raw paragraph text is unchanged', async () => {
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath, format: 'json' });
+      assertSuccess(read, 'read_file');
+      const [node] = JSON.parse(String(read.content)) as Array<{ raw_text: string; text: string; tagged_text: string }>;
+      expect(node!.raw_text).toBe('Alpha \uF0A8 Bravo');
+      expect(node!.text).toBe('Alpha \uF0A8[^1] Bravo');
+      expect(node!.tagged_text).toBe('Alpha \uF0A8[^1] Bravo');
+    });
+  });
+});

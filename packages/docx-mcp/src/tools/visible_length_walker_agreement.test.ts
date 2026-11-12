@@ -35,30 +35,58 @@ const test = testAllure.epic('Document Reading').withLabels({ feature: 'Paragrap
  * (run 3, 0) + "\tmma\n" (run 4, 5) + comment ref (run 5, 0) + "Tail" (run 6, 4).
  * Run 1 holds nothing visible (an empty run between the comment start and
  * the text), so read_file's run list and the paragraph index both count it.
+ *
+ * The symbol variant adds a w:sym mid-run (after "ta") and a sym-only run
+ * (after the footnote reference): each is one character (issue #1046).
  */
-const PARAGRAPH_XML =
-  '<w:p><w:bookmarkStart w:id="9" w:name="_bk_agree"/>' +
-  '<w:r><w:t>Alpha</w:t><w:tab/><w:t>Be</w:t></w:r>' +
-  '<w:commentRangeStart w:id="0"/>' +
-  '<w:r><w:rPr><w:b/></w:rPr></w:r>' +
-  '<w:r><w:t>ta</w:t><w:br/><w:t>Ga</w:t></w:r>' +
-  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="7"/></w:r>' +
-  '<w:r><w:tab/><w:t>mma</w:t><w:br/></w:r>' +
-  '<w:commentRangeEnd w:id="0"/>' +
-  '<w:r><w:commentReference w:id="0"/></w:r>' +
-  '<w:r><w:t>Tail</w:t></w:r>' +
-  '<w:bookmarkEnd w:id="9"/></w:p>';
+type AgreementFixture = {
+  name: string;
+  paragraphXml: string;
+  text: string;
+  runLengths: number[];
+};
 
-const EXPECTED_TEXT = 'Alpha\tBeta\nGa\tmma\nTail';
+const SYM = '<w:sym w:font="Wingdings" w:char="F0A8"/>';
+const GLYPH = '\uF0A8';
+
+function paragraphXml(midRunSymbol: string, symbolRun: string): string {
+  return '<w:p><w:bookmarkStart w:id="9" w:name="_bk_agree"/>' +
+    '<w:r><w:t>Alpha</w:t><w:tab/><w:t>Be</w:t></w:r>' +
+    '<w:commentRangeStart w:id="0"/>' +
+    '<w:r><w:rPr><w:b/></w:rPr></w:r>' +
+    `<w:r><w:t>ta</w:t>${midRunSymbol}<w:br/><w:t>Ga</w:t></w:r>` +
+    '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="7"/></w:r>' +
+    symbolRun +
+    '<w:r><w:tab/><w:t>mma</w:t><w:br/></w:r>' +
+    '<w:commentRangeEnd w:id="0"/>' +
+    '<w:r><w:commentReference w:id="0"/></w:r>' +
+    '<w:r><w:t>Tail</w:t></w:r>' +
+    '<w:bookmarkEnd w:id="9"/></w:p>';
+}
+
+const FIXTURES: AgreementFixture[] = [
+  {
+    name: 'w:t, w:tab and w:br',
+    paragraphXml: paragraphXml('', ''),
+    text: 'Alpha\tBeta\nGa\tmma\nTail',
+    runLengths: [8, 0, 5, 0, 5, 0, 4],
+  },
+  {
+    name: 'w:t, w:tab, w:br and w:sym (mid-run and in its own run)',
+    paragraphXml: paragraphXml(SYM, `<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr>${SYM}</w:r>`),
+    text: `Alpha\tBeta${GLYPH}\nGa${GLYPH}\tmma\nTail`,
+    runLengths: [8, 0, 6, 0, 1, 5, 0, 4],
+  },
+];
 
 const COMMENTS_XML =
   `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${OOXML.W_NS}">` +
   '<w:comment w:id="0" w:author="Alice" w:date="2026-01-01T00:00:00Z"><w:p><w:r><w:t>Note</w:t></w:r></w:p></w:comment>' +
   '</w:comments>';
 
-async function openFixture(): Promise<{ zip: DocxZip; documentXml: Document; paragraph: Element }> {
+async function openFixture(fixture: AgreementFixture): Promise<{ zip: DocxZip; documentXml: Document; paragraph: Element }> {
   const zip = await DocxZip.load(await buildDocxFromBodyXml(
-    `<w:tbl><w:tr><w:tc>${PARAGRAPH_XML}</w:tc></w:tr></w:tbl><w:p/>`,
+    `<w:tbl><w:tr><w:tc>${fixture.paragraphXml}</w:tc></w:tr></w:tbl><w:p/>`,
   ));
   zip.writeText('word/comments.xml', COMMENTS_XML);
   const documentXml = parseXml(await zip.readText('word/document.xml'));
@@ -70,54 +98,56 @@ function sum(values: readonly number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
-test('paragraph text, run lengths, comment, footnote and table offsets agree on w:t, w:tab and w:br', async () => {
-  const { zip, documentXml, paragraph } = await openFixture();
+for (const fixture of FIXTURES) {
+  test(`paragraph text, run lengths, comment, footnote and table offsets agree on ${fixture.name}`, async () => {
+    const { zip, documentXml, paragraph } = await openFixture(fixture);
 
-  // The coordinate space itself.
-  const text = getParagraphText(paragraph);
-  expect(text).toBe(EXPECTED_TEXT);
-  expect(getParagraphRuns(paragraph).map((run) => run.text).join('')).toBe(text);
+    // The coordinate space itself.
+    const text = getParagraphText(paragraph);
+    expect(text).toBe(fixture.text);
+    expect(getParagraphRuns(paragraph).map((run) => run.text).join('')).toBe(text);
 
-  // read_file's per-run lengths (comment marker coordinates) match the
-  // paragraph index run for run, and per-element lengths, and sum to the text.
-  const readFileLengths = buildParagraphRunLengths([paragraph]).get('_bk_agree');
-  const indexRuns = buildParagraphIndex(paragraph).runs;
-  expect(readFileLengths).toEqual([8, 0, 5, 0, 5, 0, 4]);
-  expect(indexRuns.map((run) => run.visibleText.length)).toEqual(readFileLengths);
-  expect(indexRuns.map((run) =>
-    sum(getDirectContentElements(run.element).map((el) => visibleLengthForEl(el))))).toEqual(readFileLengths);
-  expect(sum(readFileLengths!)).toBe(text.length);
+    // read_file's per-run lengths (comment marker coordinates) match the
+    // paragraph index run for run, and per-element lengths, and sum to the text.
+    const readFileLengths = buildParagraphRunLengths([paragraph]).get('_bk_agree');
+    const indexRuns = buildParagraphIndex(paragraph).runs;
+    expect(readFileLengths).toEqual(fixture.runLengths);
+    expect(indexRuns.map((run) => run.visibleText.length)).toEqual(readFileLengths);
+    expect(indexRuns.map((run) =>
+      sum(getDirectContentElements(run.element).map((el) => visibleLengthForEl(el))))).toEqual(readFileLengths);
+    expect(sum(readFileLengths!)).toBe(text.length);
 
-  // Comment range metadata: the text offset and the (run, char) pair resolved
-  // through read_file's run lengths address the same characters.
-  const [comment] = await getComments(zip, documentXml);
-  expect(comment!.startTextOffset).toBe(text.indexOf('ta\nGa'));
-  expect(comment!.endTextOffset).toBe(text.indexOf('Tail'));
-  const resolve = (runIndex: number | undefined, charOffset: number | undefined): number =>
-    sum(readFileLengths!.slice(0, runIndex!)) + charOffset!;
-  expect(resolve(comment!.startRunIndex, comment!.startCharOffset)).toBe(comment!.startTextOffset);
-  expect(resolve(comment!.endRunIndex, comment!.endCharOffset)).toBe(comment!.endTextOffset);
+    // Comment range metadata: the text offset and the (run, char) pair resolved
+    // through read_file's run lengths address the same characters.
+    const [comment] = await getComments(zip, documentXml);
+    expect(comment!.startTextOffset).toBe(text.indexOf('ta'));
+    expect(comment!.endTextOffset).toBe(text.indexOf('Tail'));
+    const resolve = (runIndex: number | undefined, charOffset: number | undefined): number =>
+      sum(readFileLengths!.slice(0, runIndex!)) + charOffset!;
+    expect(resolve(comment!.startRunIndex, comment!.startCharOffset)).toBe(comment!.startTextOffset);
+    expect(resolve(comment!.endRunIndex, comment!.endCharOffset)).toBe(comment!.endTextOffset);
 
-  // The document view's footnote marker sits right after "Ga".
-  expect(getFootnoteMarkersForParagraph(paragraph, new Map([[7, 1]]))).toEqual([
-    { offset: text.indexOf('\tmma'), id: 7, display: 1 },
-  ]);
+    // The document view's footnote marker sits right after "Ga".
+    expect(getFootnoteMarkersForParagraph(paragraph, new Map([[7, 1]]))).toEqual([
+      { offset: text.indexOf('Ga') + 2, id: 7, display: 1 },
+    ]);
 
-  // Table cell text is the paragraph text.
-  const [table] = extractTables(documentXml, { rejectMergedCells: false, trimCellText: false }).tables;
-  expect(table!.rawRows[0]!.cells[0]!.paragraphs[0]).toBe(text);
-});
+    // Table cell text is the paragraph text.
+    const [table] = extractTables(documentXml, { rejectMergedCells: false, trimCellText: false }).tables;
+    expect(table!.rawRows[0]!.cells[0]!.paragraphs[0]).toBe(text);
+  });
 
-test('a footnote inserted at a raw offset after a tab and a break lands at that offset', async () => {
-  const { zip, documentXml, paragraph } = await openFixture();
-  await bootstrapFootnoteParts(zip);
-  const offset = EXPECTED_TEXT.indexOf('Ga'); // inside run 2, after "ta" and its w:br
-  const { noteId } = await addFootnote(documentXml, zip, { paragraphEl: paragraph, visibleOffset: offset, text: 'Inserted' });
+  test(`a footnote inserted at a raw offset after a break lands at that offset (${fixture.name})`, async () => {
+    const { zip, documentXml, paragraph } = await openFixture(fixture);
+    await bootstrapFootnoteParts(zip);
+    const offset = fixture.text.indexOf('Ga'); // inside run 2, after its w:br (and its w:sym)
+    const { noteId } = await addFootnote(documentXml, zip, { paragraphEl: paragraph, visibleOffset: offset, text: 'Inserted' });
 
-  expect(getParagraphText(paragraph)).toBe(EXPECTED_TEXT);
-  const markers = getFootnoteMarkersForParagraph(paragraph, new Map([[7, 2], [noteId, 1]]));
-  expect(markers).toEqual([
-    { offset, id: noteId, display: 1 },
-    { offset: EXPECTED_TEXT.indexOf('\tmma'), id: 7, display: 2 },
-  ]);
-});
+    expect(getParagraphText(paragraph)).toBe(fixture.text);
+    const markers = getFootnoteMarkersForParagraph(paragraph, new Map([[7, 2], [noteId, 1]]));
+    expect(markers).toEqual([
+      { offset, id: noteId, display: 1 },
+      { offset: fixture.text.indexOf('Ga') + 2, id: 7, display: 2 },
+    ]);
+  });
+}
