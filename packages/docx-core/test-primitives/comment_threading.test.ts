@@ -442,4 +442,28 @@ describe('comment threading keeps replies whose parent link cannot be followed (
       });
     });
   }
+  for (const [deletedId, expectedAfter] of [[1, ['0->root', '2->root']], [2, ['0->root']]] as const) {
+    test(`deleting comment ${deletedId} does not hand a shared paragraph ID's parent link to the surviving comment`, async ({ given, when, then }: AllureBddContext) => {
+      let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+      await given('an independent root that shares its paragraph ID with a reply to comment 2', async () => {
+        fixture = await loadFixture([
+          { id: 0, paragraphs: ['Independent root.'] },
+          { id: 1, paragraphs: ['Reply to C.'], parentId: 2 },
+          { id: 2, paragraphs: ['C.'] },
+        ]);
+        const part = 'word/comments.xml';
+        fixture.zip.writeText(part, (await fixture.zip.readText(part)).replace('w14:paraId="10000000"', 'w14:paraId="10000001"'));
+        expect(edges(await getComments(fixture.zip, fixture.doc))).toEqual(['0->root', '2->root', '1->2']);
+      });
+      await when(`comment ${deletedId} is deleted`, async () => {
+        await deleteComment(fixture.doc, fixture.zip, { commentId: deletedId });
+      });
+      await then('the surviving comment stays an unflagged root and keeps its commentEx row', async () => {
+        const comments = await getComments(fixture.zip, fixture.doc);
+        expect(edges(comments)).toEqual(expectedAfter);
+        expect(unresolvedParents(comments)).toEqual([]);
+        expect((await extensionRows(fixture.zip)).map((row) => row.getAttributeNS(OOXML.W15_NS, 'paraId'))).toContain('10000001');
+      });
+    });
+  }
 });

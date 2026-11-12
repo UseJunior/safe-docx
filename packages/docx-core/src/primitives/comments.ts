@@ -1328,14 +1328,19 @@ export async function deleteComment(
   }
 
   // A deleted comment's commentEx row goes with it, unless a surviving comment
-  // still carries the same paragraph ID.
+  // still carries the same paragraph ID. In that case the row's parent link
+  // belonged to the deleted owner (the last element carrying the ID, as in
+  // getComments), so it is dropped rather than handed to the survivor.
   const survivingParaIds = new Set<string>();
   const paraIdsToDelete = new Set<string>();
+  const paraIdsToUnparent = new Set<string>();
   for (const { id, paraId } of identities.elements) {
     if (paraId && !idsToDelete.has(id)) survivingParaIds.add(paraId);
   }
   for (const { id, paraId } of identities.elements) {
-    if (paraId && idsToDelete.has(id) && !survivingParaIds.has(paraId)) paraIdsToDelete.add(paraId);
+    if (!paraId || !idsToDelete.has(id)) continue;
+    if (!survivingParaIds.has(paraId)) paraIdsToDelete.add(paraId);
+    else if (idsToDelete.has(identities.ownerByParaId.get(paraId)!)) paraIdsToUnparent.add(paraId);
   }
 
   // Rows that describe no comment at all but hang (transitively) off a deleted
@@ -1378,6 +1383,7 @@ export async function deleteComment(
       const ex = exEls.item(i) as Element;
       const pid = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
       if (pid && paraIdsToDelete.has(pid)) exToRemove.push(ex);
+      else if (pid && paraIdsToUnparent.has(pid)) ex.removeAttributeNS(OOXML.W15_NS, 'paraIdParent');
     }
     for (const ex of exToRemove) {
       ex.parentNode?.removeChild(ex);
