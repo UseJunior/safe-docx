@@ -17,6 +17,36 @@
   spelling only one side stores is listed with the `drawing` scope, since it
   may draw the box differently. (#1383)
 
+- A `w:sym` symbol character (a Wingdings checkbox or bullet, common in legal
+  forms) is now part of the paragraph text. `read_file` and `grep` show it,
+  and `replace_text`, `add_comment` and `add_footnote` can address it.
+  Previously the symbol was invisible, and every offset after it in the
+  paragraph was short by one. It counts as the character it stands for: the
+  symbol font's codepoint, usually a private-use character such as U+F0A8.
+  A symbol whose `w:char` is missing or unusable counts as U+FFFD. Every
+  walker that measures paragraph text shares one definition, so edits,
+  comment anchors, footnote references, the document view and table cell
+  text address the same characters, including a symbol in the middle of a
+  run. Two published identities change for symbol-bearing paragraphs:
+  - The `_bk_*` paragraph anchor names that safe-docx generates change
+    for the paragraph and its previous and next paragraphs, because they
+    are seeded from that text. This applies only to paragraphs without
+    `w14:paraId`, in a document that does not already carry `_bk_*`
+    bookmarks.
+  - `content_fingerprint` and `portable_paragraph_ref` values change for
+    those paragraphs, so values stored before this release must be
+    refreshed. A stale value can fail to resolve, or can resolve to another
+    paragraph whose text matches the old symbol-less text.
+
+  A range that covers a symbol deletes it as part of the tracked change, as
+  before (#1044). A formatting-only edit over a checkbox keeps it as the same
+  `w:sym` with its font, and literal text beside it stays text. More
+  generally, a symbol in the unchanged leading or trailing part of a
+  replacement is written back as a `w:sym`. A symbol character typed in the
+  changed part is written as text. The `replace_text` warning about removing
+  a symbol "not shown in the paragraph text" is retired, because the symbol
+  is now shown there. (#1046, #1045, #797)
+
 - A header or footer change the redline cannot carry (a resized logo or
   shape, listed in `unrepresentedChanges`) no longer makes `compareDocuments`
   fail with `UnsupportedTextBoxRevisionError` ("package projection

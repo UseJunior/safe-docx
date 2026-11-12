@@ -8,8 +8,8 @@ import {
 } from './track-changes-emitter.js';
 import { buildParagraphIndex } from './paragraph-index.js';
 import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
-import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 import { runContentVisibleLength } from './run_content_visible_text.js';
+import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -122,8 +122,82 @@ function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
   return clone;
 }
 
-function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlSpace = false): void {
-  // Convert \t and \n to OOXML equivalents where possible.
+/**
+ * The source `w:sym` for each character of a replacement, or `null` where the
+ * character is written as ordinary text.
+ *
+ * A symbol's glyph depends on its own `w:font` attribute, which the run
+ * properties need not repeat. The replacement is plain characters, so without
+ * this a formatting-only edit over a checkbox would write the private-use
+ * character as literal `w:t` text in the template run's font and lose the
+ * glyph (issue #1046).
+ *
+ * A symbol is kept only where position establishes that the replacement
+ * character is that symbol: inside the common prefix or the common suffix of
+ * the replaced text and the replacement text. A text-identical rebuild is all
+ * prefix, so every symbol and every literal character keeps its own form.
+ * Matching on the character alone is not enough: a literal character can
+ * equal a symbol's character (a literal `A` beside `w:char="0041"`, or a
+ * private-use character typed as text), and it must stay text. A character in
+ * the changed middle is new text and is written literally.
+ */
+function replacementSymbolSources(
+  runs: TextRun[],
+  start: number,
+  end: number,
+  replacementText: string,
+): Array<Element | null> | undefined {
+  const rangeSymbols: Array<Element | null> = new Array(end - start).fill(null);
+  let found = false;
+  let runStart = 0;
+  for (const run of runs) {
+    const runEnd = runStart + run.text.length;
+    if (runEnd > start && runStart < end) {
+      const elements = getDirectContentElements(run.r);
+      const lengths = elements.map((el) => runContentVisibleLength(el));
+      // Only a run whose content elements account for its text exactly can
+      // be mapped element by element; anything else stays text.
+      if (lengths.reduce((sum, length) => sum + length, 0) === run.text.length) {
+        let offset = runStart;
+        elements.forEach((el, index) => {
+          if (isW(el, SYM_LOCAL_NAME) && lengths[index] === 1 && offset >= start && offset < end) {
+            rangeSymbols[offset - start] = el.cloneNode(true) as Element;
+            found = true;
+          }
+          offset += lengths[index]!;
+        });
+      }
+    }
+    runStart = runEnd;
+  }
+  if (!found) return undefined;
+
+  const oldText = runs.map((run) => run.text).join('').slice(start, end);
+  const newLength = replacementText.length;
+  let prefix = 0;
+  while (prefix < oldText.length && prefix < newLength && oldText[prefix] === replacementText[prefix]) prefix++;
+  let suffix = 0;
+  const maxSuffix = Math.min(oldText.length, newLength) - prefix;
+  while (
+    suffix < maxSuffix
+    && oldText[oldText.length - 1 - suffix] === replacementText[newLength - 1 - suffix]
+  ) suffix++;
+
+  const sources: Array<Element | null> = new Array(newLength).fill(null);
+  for (let i = 0; i < prefix; i++) sources[i] = rangeSymbols[i]!;
+  for (let k = 1; k <= suffix; k++) sources[newLength - k] = rangeSymbols[oldText.length - k]!;
+  return sources;
+}
+
+function appendTextToRun(
+  doc: Document,
+  run: Element,
+  text: string,
+  preserveXmlSpace = false,
+  symbolAt?: (index: number) => Element | null,
+): void {
+  // Convert \t and \n to OOXML equivalents where possible, and a character
+  // that keeps a replaced symbol's position back to a copy of that w:sym.
   let buf = '';
   const flush = () => {
     if (!buf) return;
@@ -148,6 +222,12 @@ function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlS
     if (ch === '\n') {
       flush();
       run.appendChild(doc.createElementNS(OOXML.W_NS, 'w:br'));
+      continue;
+    }
+    const symbol = symbolAt?.(i);
+    if (symbol) {
+      flush();
+      run.appendChild(symbol.cloneNode(true));
       continue;
     }
     buf += ch;
@@ -251,7 +331,7 @@ export function splitRunAtVisibleOffset(
       if (!leftText) lEl.parentNode?.removeChild(lEl);
       if (!rightText) rEl.parentNode?.removeChild(rEl);
     } else {
-      // tab/br are length 1 and should not be split; move to the right by default.
+      // tab/br/sym are length 1 and should not be split; move to the right by default.
       lEl.parentNode?.removeChild(lEl);
     }
     pos += len;
@@ -298,10 +378,10 @@ function runEndsWithZeroLengthContent(run: Element): boolean {
 
 /**
  * Zero-visible-length run content that a replaced range deletes with the
- * surrounding text: a `w:sym` symbol character (issue #1044), the
- * `w:fldChar` / `w:instrText` markers of a complex field whose markers sit
- * inside the range (issue #1082: a result-less field such as an `XE` index
- * entry or a `TC` entry — begin, instruction, end, no `separate`), and a
+ * surrounding text: the `w:fldChar` / `w:instrText` markers of a complex
+ * field whose markers sit inside the range (issue #1082: a result-less field
+ * such as an `XE` index entry or a `TC` entry — begin, instruction, end, no
+ * `separate`), and a
  * footnote or endnote reference mark (issue #1094). A field whose cached
  * result is empty (begin, instruction, separate, end) is also zero-length and
  * is handled the same way. A field with a non-empty cached result never
@@ -315,7 +395,6 @@ function runEndsWithZeroLengthContent(run: Element): boolean {
  * caller replacing the text around it has covered it.
  */
 const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
-  SYM_LOCAL_NAME,
   W.fldChar,
   W.instrText,
   W.footnoteReference,
@@ -326,10 +405,10 @@ const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
  * True when a run removed from a replaced range must be kept for `w:del`
  * wrapping. Visible text qualifies, and so does zero-length content the range
  * deletes with the text. A `w:sym` symbol character (a Wingdings checkbox, a
- * bullet) is run content that Word renders as a character, but it contributes
- * no visible length in the paragraph text coordinate space, so the length test
- * alone let a sym-only run be detached and never recorded — an untracked
- * deletion inside a tracked edit (issue #1044). Complex field markers
+ * bullet) is visible text: it occupies one character of the paragraph text
+ * (issue #1046). Before it did, the length test alone let a sym-only run be
+ * detached and never recorded — an untracked deletion inside a tracked edit
+ * (issue #1044). Complex field markers
  * (`w:fldChar`, `w:instrText`) had the same defect (issue #1082): a run
  * holding only a marker was dropped, so reject-all could not restore the
  * field. Recording the run puts it in the same `w:del` as the surrounding
@@ -344,6 +423,7 @@ const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @see https://github.com/UseJunior/safe-docx/issues/1044
+ * @see https://github.com/UseJunior/safe-docx/issues/1046
  * @see https://github.com/UseJunior/safe-docx/issues/1082
  * @see https://github.com/UseJunior/safe-docx/issues/1094
  */
@@ -1120,6 +1200,7 @@ export function replaceParagraphTextRange(
   }
 
   const parts: ReplacementPart[] = typeof replacement === 'string' ? [{ text: replacement }] : replacement;
+  const symbolSources = replacementSymbolSources(runs, start, end, parts.map((part) => part.text).join(''));
 
   // Split boundary runs so we can remove whole runs cleanly.
   //
@@ -1283,6 +1364,7 @@ export function replaceParagraphTextRange(
 
   // Build replacement runs using the same formatting/template logic as the legacy path.
   const replacementRuns: Element[] = [];
+  let replacementOffset = 0;
   for (const part of parts) {
     const tmpl = part.templateRun ?? templateRun;
     const sourceRPr = getDirectChild(tmpl, W.rPr);
@@ -1294,7 +1376,15 @@ export function replaceParagraphTextRange(
     if (ctx && hasExplicitFormattingMutation && rPrComparableSignature(newRPr) !== sourceRPrSignature) {
       ensureRPr(doc, newRun).appendChild(buildRPrChangeElement(getSnapshotRPr(doc, sourceRPr), ctx));
     }
-    appendTextToRun(doc, newRun, part.text, part.preserveXmlSpace);
+    const partOffset = replacementOffset;
+    replacementOffset += part.text.length;
+    appendTextToRun(
+      doc,
+      newRun,
+      part.text,
+      part.preserveXmlSpace,
+      symbolSources && ((index) => symbolSources[partOffset + index] ?? null),
+    );
     if (getRunVisibleLength(newRun) > 0) {
       replacementRuns.push(newRun);
     }

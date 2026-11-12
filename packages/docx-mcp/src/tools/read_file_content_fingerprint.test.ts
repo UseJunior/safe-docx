@@ -529,3 +529,49 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
     );
   });
 });
+
+/**
+ * A `w:sym` glyph is one character of the paragraph text since issue #1046,
+ * so the fingerprint of a symbol-bearing paragraph hashes the glyph's
+ * character. A private-use codepoint survives NFKC, so the fingerprint differs
+ * from the one computed while the glyph was invisible, and a stored
+ * `content_fingerprint` / `portable_paragraph_ref` for such a paragraph must
+ * be refreshed.
+ */
+describe('document-paragraph-id-stability-and-fingerprint — fingerprints of symbol-bearing paragraphs', () => {
+  const test = testAllure.epic('Document Reading').withLabels({ feature: TEST_FEATURE });
+
+  registerCleanup();
+
+  const DOCUMENT_XML =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    '<w:p><w:r><w:t xml:space="preserve">Alpha </w:t></w:r>' +
+    '<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr><w:sym w:font="Wingdings" w:char="F0A8"/></w:r>' +
+    '<w:r><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>' +
+    '</w:body></w:document>';
+
+  test('the fingerprint hashes the glyph character', async ({ given, when, then }: AllureBddContext) => {
+    const mgr = createTestSessionManager();
+    const opened = await given('a paragraph with a checkbox between two words', () =>
+      openSession([], { mgr, xml: DOCUMENT_XML }),
+    );
+    const node = await when('read_file is called with fingerprints', async () => {
+      const result = await readFile(mgr, {
+        file_path: opened.filePath,
+        format: 'json',
+        include_fingerprint: true,
+        include_fingerprint_ordinal: true,
+        limit: 100,
+      });
+      assertSuccess(result, 'read');
+      return (JSON.parse(String(result.content)) as Array<Record<string, unknown>>)[0]!;
+    });
+    await then('it equals the fingerprint of the text with U+F0A8, not of the text without it', async () => {
+      const { computeContentFingerprint } = await import('@usejunior/docx-core');
+      expect(node.content_fingerprint).toBe(computeContentFingerprint('Alpha \uF0A8 Bravo'));
+      expect(node.content_fingerprint).not.toBe(computeContentFingerprint('Alpha  Bravo'));
+      expect(node.portable_paragraph_ref).toBe(`${computeContentFingerprint('Alpha \uF0A8 Bravo')}#1`);
+    });
+  });
+});

@@ -1,12 +1,14 @@
 import { OOXML, W } from './namespaces.js';
 import { getAttributeSafe } from './xml-helpers.js';
 import { runContentVisibleText } from './run_content_visible_text.js';
+import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 
 export type ParagraphNodeKind =
   | 'run'
   | 'text'
   | 'tab'
   | 'break'
+  | 'symbol'
   | 'comment-range-start'
   | 'comment-range-end'
   | 'comment-reference'
@@ -75,6 +77,7 @@ function kindOf(element: Element): ParagraphNodeKind {
     case W.t: return 'text';
     case W.tab: return 'tab';
     case W.br: return 'break';
+    case SYM_LOCAL_NAME: return 'symbol';
     case W.commentRangeStart: return 'comment-range-start';
     case W.commentRangeEnd: return 'comment-range-end';
     case W.commentReference: return 'comment-reference';

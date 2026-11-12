@@ -16,6 +16,7 @@ import {
 } from './comments.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { DocxDocument } from './document.js';
+import { getParagraphText } from './text.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Comments' });
 
@@ -2298,4 +2299,77 @@ describe('comments — edge cases and branch coverage', () => {
       });
     });
   });
+});
+
+/**
+ * A `w:sym` glyph (a Wingdings checkbox) is one character of the paragraph
+ * text since issue #1046. Comment anchoring splits runs at that text's offsets
+ * and comment range metadata reads the same paragraph index, so a comment
+ * placed after, or exactly on, a symbol covers the characters the caller
+ * named, whether the symbol has its own run or sits mid-run.
+ */
+describe('comments — symbol characters in the anchored text (#1046)', () => {
+  const symbolTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.3.30' });
+  const CHECKBOX = '<w:sym w:font="Wingdings" w:char="F0A8"/>';
+  const OWN_RUN = `<w:p><w:r><w:t xml:space="preserve">Alpha </w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr>${CHECKBOX}</w:r><w:r><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>`;
+  const MID_RUN = `<w:p><w:r><w:t xml:space="preserve">Alpha </w:t>${CHECKBOX}<w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>`;
+  const TEXT = 'Alpha \uF0A8 Bravo';
+
+  /** The paragraph text between the comment's range markers, and whether a w:sym lies between them. */
+  const anchored = (p: Element): { text: string; symbols: number } => {
+    let inside = false;
+    let text = '';
+    let symbols = 0;
+    const walk = (node: Node): void => {
+      if (node.nodeType !== 1) return;
+      const el = node as Element;
+      if (el.localName === 'commentRangeStart') inside = true;
+      else if (el.localName === 'commentRangeEnd') inside = false;
+      else if (inside && el.localName === 't') text += el.textContent ?? '';
+      else if (inside && el.localName === 'sym') { text += '\uF0A8'; symbols += 1; }
+      for (const child of Array.from(el.childNodes)) walk(child);
+    };
+    walk(p);
+    return { text, symbols };
+  };
+
+  for (const [layout, bodyXml] of [['its own run', OWN_RUN], ['mid-run', MID_RUN]] as const) {
+    symbolTest(`a comment on the word after a symbol in ${layout} covers that word only`, async ({ given, when, then }: AllureBddContext) => {
+      let zip!: DocxZip;
+      let doc!: Document;
+      let p!: Element;
+      await given(`"Alpha <checkbox> Bravo" with the checkbox in ${layout}`, async () => {
+        ({ zip, doc, p } = await setupWithComment(bodyXml));
+      });
+      await when('a comment is added on "Bravo" (offsets 8-13)', async () => {
+        await addComment(doc, zip, { paragraphEl: p, start: 8, end: 13, author: 'Test', text: 'Check this' });
+      });
+      await then('the range holds "Bravo" without the checkbox, and the range metadata reports offsets 8-13', async () => {
+        expect(anchored(p)).toEqual({ text: 'Bravo', symbols: 0 });
+        expect(p.getElementsByTagNameNS(W_NS, 'sym')).toHaveLength(1);
+        const [comment] = await getComments(zip, doc);
+        expect(comment!.startTextOffset).toBe(8);
+        expect(comment!.endTextOffset).toBe(13);
+      });
+    });
+
+    symbolTest(`a comment on the symbol alone in ${layout} covers exactly the glyph`, async ({ given, when, then }: AllureBddContext) => {
+      let zip!: DocxZip;
+      let doc!: Document;
+      let p!: Element;
+      await given(`"Alpha <checkbox> Bravo" with the checkbox in ${layout}`, async () => {
+        ({ zip, doc, p } = await setupWithComment(bodyXml));
+      });
+      await when('a comment is added on offsets 6-7', async () => {
+        await addComment(doc, zip, { paragraphEl: p, start: 6, end: 7, author: 'Test', text: 'Tick this box' });
+      });
+      await then('the range holds only the checkbox and the paragraph text is unchanged', async () => {
+        expect(anchored(p)).toEqual({ text: '\uF0A8', symbols: 1 });
+        expect(getParagraphText(p)).toBe(TEXT);
+        const [comment] = await getComments(zip, doc);
+        expect(comment!.startTextOffset).toBe(6);
+        expect(comment!.endTextOffset).toBe(7);
+      });
+    });
+  }
 });

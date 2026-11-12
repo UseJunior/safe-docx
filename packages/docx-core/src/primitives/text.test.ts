@@ -2289,7 +2289,8 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
 
   const CHECKBOX = '<w:sym w:font="Wingdings" w:char="F0A8"/>';
   const CHECKBOX_RUN = `<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr>${CHECKBOX}</w:r>`;
-  /** The issue's paragraph: text, a sym-only checkbox run, text. Visible text is "Alpha  Bravo" (the sym contributes nothing). */
+  /** The issue's paragraph: text, a sym-only checkbox run, text. The checkbox is one character of the paragraph text (U+F0A8, issue #1046). */
+  const ISSUE_TEXT = 'Alpha \uF0A8 Bravo';
   const ISSUE_PARAGRAPH =
     '<w:p>' +
       '<w:r><w:t xml:space="preserve">Alpha </w:t></w:r>' +
@@ -2332,11 +2333,11 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     await given('the issue\'s paragraph with a checkbox run between two text runs', () => {
       doc = makeDoc(ISSUE_PARAGRAPH);
       p = firstParagraph(doc);
-      expect(getParagraphText(p)).toBe('Alpha  Bravo');
+      expect(getParagraphText(p)).toBe(ISSUE_TEXT);
     });
 
-    await when('the range "a  B" (offsets 4-8, spanning the checkbox) is replaced with "X" under tracked changes', () => {
-      replaceParagraphTextRange(p, 4, 8, 'X', trackedCtx());
+    await when('the range "a \uF0A8 B" (offsets 4-9, spanning the checkbox) is replaced with "X" under tracked changes', () => {
+      replaceParagraphTextRange(p, 4, 9, 'X', trackedCtx());
     });
 
     await then('the checkbox is inside the single top-level w:del, in its original position between the deleted text', () => {
@@ -2352,7 +2353,7 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
 
     await then('reject-all yields the original paragraph with the w:sym element back in place', () => {
       rejectChanges(doc);
-      expect(getParagraphText(p)).toBe('Alpha  Bravo');
+      expect(getParagraphText(p)).toBe(ISSUE_TEXT);
       expect(symbolsIn(p)).toHaveLength(1);
       expect(isInsideRevisionWrapper(symbolsIn(p)[0]!, p)).toBe(false);
       expect(serialize(p)).toContain(CHECKBOX);
@@ -2370,7 +2371,7 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
 
     await when('the range spanning the checkbox is replaced under tracked changes and every change is accepted', () => {
-      replaceParagraphTextRange(p, 4, 8, 'X', trackedCtx());
+      replaceParagraphTextRange(p, 4, 9, 'X', trackedCtx());
       acceptChanges(doc);
     });
 
@@ -2382,7 +2383,7 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
   });
 
-  symbolTest('clean: the same replace removes the symbol with the range (the tool response reports it)', async ({ given, when, then }: AllureBddContext) => {
+  symbolTest('clean: the same replace removes the symbol with the range', async ({ given, when, then }: AllureBddContext) => {
     let p: Element;
 
     await given('the issue\'s paragraph', () => {
@@ -2390,7 +2391,7 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
 
     await when('the range spanning the checkbox is replaced untracked', () => {
-      replaceParagraphTextRange(p, 4, 8, 'X');
+      replaceParagraphTextRange(p, 4, 9, 'X');
     });
 
     await then('the result equals the accept-all form of the tracked edit', () => {
@@ -2408,8 +2409,8 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
       p = firstParagraph(doc);
     });
 
-    await when('the range " B" (offsets 6-8), which begins right after the checkbox run, is replaced under tracked changes', () => {
-      replaceParagraphTextRange(p, 6, 8, 'X', trackedCtx());
+    await when('the range " B" (offsets 7-9), which begins right after the checkbox run, is replaced under tracked changes', () => {
+      replaceParagraphTextRange(p, 7, 9, 'X', trackedCtx());
     });
 
     await then('the checkbox is untouched and the deletion holds only the text', () => {
@@ -2452,8 +2453,9 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
       p = firstParagraph(doc);
     });
 
-    await when('offsets 4-8 are replaced under tracked changes', () => {
-      replaceParagraphTextRange(p, 4, 8, 'X', trackedCtx());
+    await when('offsets 4-9 are replaced under tracked changes', () => {
+      expect(getParagraphText(p)).toBe(ISSUE_TEXT);
+      replaceParagraphTextRange(p, 4, 9, 'X', trackedCtx());
     });
 
     await then('the checkbox travels inside w:del and reject-all restores it', () => {
@@ -2483,7 +2485,8 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
 
     await when('the whole visible text is replaced under tracked changes', () => {
-      replaceParagraphTextRange(p, 0, 'aaabbb'.length, 'ccc', trackedCtx());
+      expect(getParagraphText(p)).toBe('aaa\uF0A8bbb');
+      replaceParagraphTextRange(p, 0, 'aaa\uF0A8bbb'.length, 'ccc', trackedCtx());
     });
 
     await then('the symbol sits in the deletion segment before the drawing; the drawing is live; reject-all restores the order', () => {
@@ -2517,7 +2520,8 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
 
     await when('the whole visible text is replaced under tracked changes', () => {
-      replaceParagraphTextRange(p, 0, 'aaabbb'.length, 'ccc', trackedCtx());
+      expect(getParagraphText(p)).toBe('aaa\uF0A8bbb');
+      replaceParagraphTextRange(p, 0, 'aaa\uF0A8bbb'.length, 'ccc', trackedCtx());
     });
 
     await then('the symbol is inside w:del in its own run, the drawing is a live run, and reject-all restores both in order', () => {
@@ -2544,7 +2548,7 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
     });
 
     await when('the whole visible text of the checkbox item is deleted under tracked changes', () => {
-      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 'Alpha  Bravo'.length, '', trackedCtx());
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, ISSUE_TEXT.length, '', trackedCtx());
     });
 
     await then('the symbol is in w:del, the paragraph mark is deleted, and accept-all leaves two paragraphs without the symbol', () => {
@@ -2556,6 +2560,207 @@ describe('replaceParagraphTextRange — symbol runs inside a replaced range (#10
       const paragraphs = Array.from(doc.getElementsByTagNameNS(W_NS, W.p));
       expect(paragraphs).toHaveLength(2);
       expect(doc.getElementsByTagNameNS(W_NS, 'sym')).toHaveLength(0);
+    });
+  });
+});
+
+// ── w:sym in the paragraph raw-offset coordinate space (#1046) ──
+
+describe('w:sym symbol characters in the paragraph text (#1046)', () => {
+  const symbolTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.3.30' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  );
+  const CHECKBOX = '<w:sym w:font="Wingdings" w:char="F0A8"/>';
+  const CHECKBOX_RUN = `<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr>${CHECKBOX}</w:r>`;
+  const symbolsIn = (p: Element): Element[] => Array.from(p.getElementsByTagNameNS(W_NS, 'sym'));
+  const trackedCtx = () => createRevisionContext({ author: 'Tester', date: '2026-01-01T00:00:00Z' });
+
+  symbolTest('getParagraphRuns returns a sym-only run and getParagraphText includes its character', async ({ given, then }: AllureBddContext) => {
+    let p!: Element;
+    await given('text, a sym-only checkbox run, text', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:r><w:t xml:space="preserve">Alpha </w:t></w:r>${CHECKBOX_RUN}<w:r><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>`));
+    });
+    await then('the run list has three runs and the glyph is the projected character', () => {
+      const runs = getParagraphRuns(p);
+      expect(runs.map((run) => run.text)).toEqual(['Alpha ', '\uF0A8', ' Bravo']);
+      expect(runs[1]!.r.getElementsByTagNameNS(W_NS, 'sym')).toHaveLength(1);
+      expect(getParagraphText(p)).toBe('Alpha \uF0A8 Bravo');
+    });
+  });
+
+  symbolTest('a symbol counts one character to every per-element length and splits like a tab', async ({ given, then }: AllureBddContext) => {
+    let p!: Element;
+    await given('one run holding text, a checkbox and text', () => {
+      p = firstParagraph(makeDoc(`<w:p><w:r><w:t>ab</w:t>${CHECKBOX}<w:t>cd</w:t></w:r></w:p>`));
+    });
+    await then('the per-element lengths sum to the paragraph text, and a split after the glyph keeps it on the left', () => {
+      const run = p.getElementsByTagNameNS(W_NS, W.r).item(0) as Element;
+      expect(getDirectContentElements(run).map((el) => visibleLengthForEl(el))).toEqual([2, 1, 2]);
+      expect(getParagraphText(p)).toBe('ab\uF0A8cd');
+      const { left, right } = splitRunAtVisibleOffset(run, 3);
+      expect(left.getElementsByTagNameNS(W_NS, 'sym')).toHaveLength(1);
+      expect(right.getElementsByTagNameNS(W_NS, 'sym')).toHaveLength(0);
+      expect(getParagraphRuns(p).map((r) => r.text)).toEqual(['ab\uF0A8', 'cd']);
+    });
+  });
+
+  symbolTest('a symbol without a usable character takes one replacement character', async ({ given, then }: AllureBddContext) => {
+    let p!: Element;
+    await given('symbols with no w:char, a malformed w:char, a surrogate and a control character', () => {
+      p = firstParagraph(makeDoc(
+        '<w:p><w:r><w:t>[</w:t><w:sym w:font="Wingdings"/><w:sym w:char="ABC"/>' +
+        '<w:sym w:char="D83D"/><w:sym w:char="0009"/><w:t>]</w:t></w:r></w:p>',
+      ));
+    });
+    await then('each contributes U+FFFD, one character per element', () => {
+      expect(getParagraphText(p)).toBe('[\uFFFD\uFFFD\uFFFD\uFFFD]');
+    });
+  });
+
+  symbolTest('a symbol inside a tracked deletion or a field instruction is not paragraph text', async ({ given, then }: AllureBddContext) => {
+    let p!: Element;
+    await given('a deleted checkbox run and a checkbox inside a field instruction', () => {
+      p = firstParagraph(makeDoc(
+        '<w:p><w:r><w:t>a</w:t></w:r>' +
+        `<w:del w:id="1" w:author="x" w:date="2026-01-01T00:00:00Z">${CHECKBOX_RUN}</w:del>` +
+        fldChar('begin') + `<w:r>${CHECKBOX}</w:r>` + instrText(' SYMBOL ') + fldChar('separate') +
+        resultText('b') + fldChar('end') + '</w:p>',
+      ));
+    });
+    await then('the paragraph text holds only the live result text', () => {
+      expect(getParagraphText(p)).toBe('ab');
+    });
+  });
+
+  symbolTest('tracked: an edit after a symbol mid-run lands at the right character and leaves the symbol live', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let p!: Element;
+    await given('one run "Alpha <checkbox> Bravo" with the checkbox mid-run', () => {
+      doc = makeDoc(`<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Alpha </w:t>${CHECKBOX}<w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>`);
+      p = firstParagraph(doc);
+      expect(getParagraphText(p)).toBe('Alpha \uF0A8 Bravo');
+    });
+    await when('"Bravo" (offsets 8-13, after the checkbox) is replaced with "Charlie" under tracked changes', () => {
+      replaceParagraphTextRange(p, 8, 13, 'Charlie', trackedCtx());
+    });
+    await then('only "Bravo" is deleted; the checkbox and the text before it are live; accept and reject both project correctly', () => {
+      expect(symbolsIn(p)).toHaveLength(1);
+      expect(isInsideRevisionWrapper(symbolsIn(p)[0]!, p)).toBe(false);
+      const deleted = Array.from(p.getElementsByTagNameNS(W_NS, 'delText')).map((t) => t.textContent).join('');
+      expect(deleted).toBe('Bravo');
+      expect(getParagraphText(p)).toBe('Alpha \uF0A8 Charlie');
+      const rejected = doc.cloneNode(true) as Document;
+      rejectChanges(rejected);
+      expect(getParagraphText(firstParagraph(rejected))).toBe('Alpha \uF0A8 Bravo');
+      acceptChanges(doc);
+      expect(getParagraphText(p)).toBe('Alpha \uF0A8 Charlie');
+      expect(symbolsIn(p)).toHaveLength(1);
+    });
+  });
+
+  symbolTest('tracked: a deletion spanning a mid-run symbol wraps it in w:del and reject-all restores it', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let p!: Element;
+    await given('one run "Alpha <checkbox> Bravo"', () => {
+      doc = makeDoc(`<w:p><w:r><w:t xml:space="preserve">Alpha </w:t>${CHECKBOX}<w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>`);
+      p = firstParagraph(doc);
+    });
+    await when('" <checkbox> " (offsets 5-8) is deleted under tracked changes', () => {
+      replaceParagraphTextRange(p, 5, 8, '', trackedCtx());
+    });
+    await then('the checkbox is inside w:del, accept-all drops it, reject-all restores it in place', () => {
+      expect(symbolsIn(p)).toHaveLength(1);
+      expect(isInsideRevisionWrapper(symbolsIn(p)[0]!, p)).toBe(true);
+      expect(getParagraphText(p)).toBe('AlphaBravo');
+      const rejected = doc.cloneNode(true) as Document;
+      rejectChanges(rejected);
+      expect(getParagraphText(firstParagraph(rejected))).toBe('Alpha \uF0A8 Bravo');
+      expect(symbolsIn(firstParagraph(rejected))).toHaveLength(1);
+      acceptChanges(doc);
+      expect(getParagraphText(p)).toBe('AlphaBravo');
+      expect(symbolsIn(p)).toHaveLength(0);
+    });
+  });
+
+  symbolTest('tracked: replacing one symbol character with another keeps the rest of the paragraph live', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let p!: Element;
+    await given('"Yes <checkbox>" with the checkbox in its own symbol-font run', () => {
+      doc = makeDoc(`<w:p><w:r><w:t xml:space="preserve">Yes </w:t></w:r>${CHECKBOX_RUN}</w:p>`);
+      p = firstParagraph(doc);
+    });
+    await when('the checkbox character is replaced with the checked-box character', () => {
+      replaceParagraphTextRange(p, 4, 5, '\uF0FE', trackedCtx());
+    });
+    await then('the old symbol is deleted, the new character is inserted in the symbol font, and reject-all restores the original', () => {
+      expect(isInsideRevisionWrapper(symbolsIn(p)[0]!, p)).toBe(true);
+      expect(getParagraphText(p)).toBe('Yes \uF0FE');
+      const inserted = Array.from(p.getElementsByTagNameNS(W_NS, 'ins'))
+        .flatMap((ins) => Array.from(ins.getElementsByTagNameNS(W_NS, W.r)));
+      expect(inserted).toHaveLength(1);
+      expect(serialize(inserted[0]!)).toContain('Wingdings');
+      const rejected = doc.cloneNode(true) as Document;
+      rejectChanges(rejected);
+      expect(symbolsIn(firstParagraph(rejected)).map((sym) => sym.getAttribute('w:char'))).toEqual(['F0A8']);
+      expect(getParagraphText(firstParagraph(rejected))).toBe('Yes \uF0A8');
+    });
+  });
+
+  const contentKinds = (p: Element): string[] =>
+    Array.from(p.getElementsByTagNameNS(W_NS, W.r)).flatMap((run) => getDirectContentElements(run).map((el) =>
+      el.localName === 'sym' ? `sym:${el.getAttribute('w:font')}:${el.getAttribute('w:char') ?? '-'}` : `${el.localName}:${el.textContent ?? ''}`));
+
+  symbolTest('a formatting-only rebuild keeps every symbol and every literal character in its own form', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let p!: Element;
+    await given('literal text equal to each symbol character beside the symbol: Latin A, a private-use glyph, U+FFFD', () => {
+      doc = makeDoc(
+        '<w:p><w:r><w:t>A</w:t><w:sym w:font="Wingdings" w:char="0041"/>'
+        + '<w:t>\uF0A8</w:t><w:sym w:font="Wingdings" w:char="F0A8"/>'
+        + '<w:t>\uFFFD</w:t><w:sym w:font="Wingdings"/></w:r></w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+    await when('the whole paragraph is rebuilt bold with identical text, tracked', () => {
+      replaceParagraphTextRange(p, 0, 6, [{ text: 'AA\uF0A8\uF0A8\uFFFD\uFFFD', addRunProps: { bold: true } }], trackedCtx());
+    });
+    await then('accept-all keeps literal, symbol, literal, symbol, literal, symbol in a bold run; reject-all restores the original', () => {
+      const accepted = doc.cloneNode(true) as Document;
+      acceptChanges(accepted);
+      const ap = firstParagraph(accepted);
+      expect(contentKinds(ap)).toEqual([
+        't:A', 'sym:Wingdings:0041', 't:\uF0A8', 'sym:Wingdings:F0A8', 't:\uFFFD', 'sym:Wingdings:-',
+      ]);
+      expect(serialize(ap)).toContain('<w:b w:val="1"/>');
+      const rejected = doc.cloneNode(true) as Document;
+      rejectChanges(rejected);
+      expect(contentKinds(firstParagraph(rejected))).toEqual([
+        't:A', 'sym:Wingdings:0041', 't:\uF0A8', 'sym:Wingdings:F0A8', 't:\uFFFD', 'sym:Wingdings:-',
+      ]);
+    });
+  });
+
+  symbolTest('a symbol in the unchanged prefix or suffix of a text change keeps its w:sym; one in the changed middle becomes text', async ({ given, when, then }: AllureBddContext) => {
+    let suffixCase!: Element;
+    let prefixCase!: Element;
+    let middleCase!: Element;
+    await given('three copies of "a<checkbox>b" with the font only on the w:sym', () => {
+      const xml = '<w:p><w:r><w:t>a</w:t><w:sym w:font="Wingdings" w:char="F0A8"/><w:t>b</w:t></w:r></w:p>';
+      suffixCase = firstParagraph(makeDoc(xml));
+      prefixCase = firstParagraph(makeDoc(xml));
+      middleCase = firstParagraph(makeDoc(xml));
+    });
+    await when('the text before, after, and on both sides of the symbol changes, untracked', () => {
+      replaceParagraphTextRange(suffixCase, 0, 3, 'X\uF0A8b');
+      replaceParagraphTextRange(prefixCase, 0, 3, 'a\uF0A8Y');
+      replaceParagraphTextRange(middleCase, 0, 3, 'X\uF0A8Y');
+    });
+    await then('the prefix and suffix cases keep the w:sym; the middle case writes the character as text', () => {
+      expect(contentKinds(suffixCase)).toEqual(['t:X', 'sym:Wingdings:F0A8', 't:b']);
+      expect(contentKinds(prefixCase)).toEqual(['t:a', 'sym:Wingdings:F0A8', 't:Y']);
+      expect(symbolsIn(middleCase)).toHaveLength(0);
+      expect(getParagraphText(middleCase)).toBe('X\uF0A8Y');
     });
   });
 });
