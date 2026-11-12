@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- A hyperlink added to, removed from or pointed at another target inside a
+  text box, in the main document or in a header or footer, is now tracked by
+  `compareDocuments` instead of failing with `UnsupportedTextBoxRevisionError`
+  ("relationship closure changed"). A link retargeted under its old
+  relationship id, whose box markup is otherwise identical, was carried with
+  the revised target and no revision at all; it is now tracked too. The old
+  link is a tracked deletion bound to the original target and the new one a
+  tracked insertion bound to the revised target; each relationship the redline
+  needs is imported, under an id unique there, into the relationship part of
+  the part that owns the box, so a footer box's link lands in the footer's own
+  `.rels` (ECMA-376 Part 2 §6.5.3.4). The same import carries a text-box
+  picture that now names another image part, which is redlined instead of
+  refused. A link that exists on one side only is now emitted as
+  `w:hyperlink` holding the `w:ins`/`w:del`, in body text as well as text
+  boxes; the reverse nesting failed schema validation (Part 1 §17.16.22).
+  (#1381)
+
 - A picture or embedded object whose markup is unchanged but whose payload
   changed (image bytes replaced at the same `media/` path, the relationship
   pointed at a new part, an OLE binary or a chart's embedded workbook

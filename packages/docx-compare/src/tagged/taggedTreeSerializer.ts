@@ -252,6 +252,18 @@ function wrapRevision(
   markComparisonRevision(wrapper);
   markOperationProvenance(wrapper, operationIds);
   if (kind === 'del') node = convertDeletedText(node);
+  // A tracked run wrapper cannot contain w:hyperlink (CT_RunTrackChange admits
+  // run content only), but a hyperlink's EG_PContent admits the wrapper. A
+  // side-only link keeps its relationship-bearing container in the paragraph
+  // and tracks the runs inside it, as Word writes an inserted or deleted link.
+  //
+  // @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+  // @see https://github.com/UseJunior/safe-docx/issues/1381
+  if (node.namespaceURI === W_NS && node.localName === 'hyperlink') {
+    while (node.firstChild) wrapper.appendChild(node.firstChild);
+    node.appendChild(wrapper);
+    return node;
+  }
   // Move sources retain ordinary text. Controlled Word 16.112.2 probes reject
   // delText in both run-level and whole-paragraph sources (issue-941 evidence).
   wrapper.appendChild(node);

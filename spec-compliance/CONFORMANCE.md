@@ -18,7 +18,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-25` | w:r run content model excludes revision wrappers | 5 | 1 | 17.3.2.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
-| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
+| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts |
 | `ECMA-PART4-19-1-2-11` | VML image data relationship (v:imagedata) | 5 | 4 | 19.1.2.11 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts |
 | `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts |
 | `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
@@ -43,7 +43,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-2` | w:bCs complex script bold in imported annotation bodies | 5 | 1 | 17.3.2.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bCs` | packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts |
 | `ECMA-PART1-17-3-2-17` | w:iCs complex script italics in imported annotation bodies | 5 | 1 | 17.3.2.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:iCs` | packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/create/footnotes.test.ts |
 | `ECMA-PART1-17-3-2-39` | w:szCs complex script font size in imported annotation bodies | 5 | 1 | 17.3.2.39 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:szCs` | packages/docx-markdoc/src/import.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
-| `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts |
+| `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts |
 | `ECMA-PART2-6-5-2-3` | part Relationships part ownership and naming | 5 | 2 | 6.5.2.3 | `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships` | packages/docx-core/src/primitives/relationships.ts; packages/docx-markdoc/src/import.ts |
 | `ECMA-PART2-6-5-3-4` | relationship identity, type, target, and target mode | 5 | 2 | 6.5.3.4 | `spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#type:CT_Relationship` | packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/import.ts |
 | `ECMA-PART1-17-5-2-29` | w:sdt block-level structured document tag | 5 | 1 | 17.5.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
@@ -242,7 +242,7 @@ bodies and re-emits them across comment and footnote projections.
 - **Part / Section:** Part 4 § 14.9.1.1
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
 WordprocessingML-content container inside a drawing object. It prohibits
@@ -258,10 +258,17 @@ VML picture (`w:pict`), a DrawingML picture (`w:drawing`) or an embedded object
 unchanged one passes through without revision markup, and one whose markup
 changed is a tracked deletion of the old run plus a tracked insertion of the new
 one. A change to the relationship closure the story reaches through `r:*` or
-`o:relid` attributes is still refused, and the closure includes the content of
-every internal target part, so a picture or object that now names another part,
-or whose part was replaced under the same relationship, is never carried
-silently. A main-document story holding a nested box —
+`o:relid` attributes — a hyperlink added, removed or pointed at another target,
+or a picture that now names another image part — is compared like any other
+story change: the old reference is a tracked deletion bound to the original
+target and the new one a tracked insertion bound to the revised target, and
+every relationship either side needs is imported, under an id unique there,
+into the relationship part of the part that owns the box (the footer's own
+`.rels` for a footer box), with an internal target's part copied in alongside
+(Part 2 §6.5.3.4). Identical box markup whose relationship ids now resolve
+elsewhere counts as a change. A part replaced under the same relationship is
+carried by the story comparison and listed by the picture payload audit, so it
+is never carried silently. A main-document story holding a nested box —
 non-conformant under this clause, but present in documents a comparison
 receives — is compared too: the nested box is compared as a story of its own,
 cut before its enclosing story and spliced back after it, and a nested box whose
@@ -285,10 +292,10 @@ a `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host
 anywhere above it. Such a box has no drawing scaffold this implementation can
 fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,
 which aborts the whole comparison rather than emitting a partial redline. The
-claim likewise does not cover a change to the relationship closure of any
-text-box story — that check runs ahead of the twin carve-out and applies to
-twinned and untwinned boxes alike — nor a change to the containing scaffold of
-an untwinned box.
+claim likewise does not cover a text-box story with a relationship reference
+that resolves to nothing in its owning part — that check runs ahead of the twin
+carve-out and applies to twinned and untwinned boxes alike — nor a change to the
+containing scaffold of an untwinned box.
 
 **Inserted and deleted main-document text boxes are inside the subset.** Boxes
 pair across the two documents by anchor identity — the VML shape `id` and the
@@ -689,7 +696,7 @@ nothing.
 - **Part / Section:** Part 1 § 17.16.22
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink`
-- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts
+- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts
 
 `w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose
 `r:id` attribute carries the relationship reference to the link target.
@@ -699,7 +706,10 @@ tracked edits to link text nest as `<w:hyperlink><w:ins>…` /
 CT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit
 `w:hyperlink`. safe-docx's comparison engine preserves the wrapper and
 its attributes when serializing tagged paragraphs that contain hyperlinks,
-and never merges text atoms across a hyperlink boundary. The enforcement
+and never merges text atoms across a hyperlink boundary. A link that exists
+on one side only — added, removed, or the old and new halves of a retargeted
+link — keeps its `w:hyperlink` container in the paragraph and tracks the runs
+inside it, in body text and in text-box stories alike. The enforcement
 lives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`
 (`nearestHyperlinkAncestor`) and
 `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`
