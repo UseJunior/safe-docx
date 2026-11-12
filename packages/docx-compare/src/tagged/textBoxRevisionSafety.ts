@@ -413,20 +413,38 @@ function ownTextBoxes(container: Element): Element[] {
 }
 
 const DRAWING_GROUP_NAMES = new Set(['group', 'wgp', 'grpSp', 'wpc', 'lockedCanvas']);
+const DRAWINGML_MAIN_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 
 /**
- * Is the text box's shape the only shape its drawing draws? A VML group, a
- * DrawingML group or canvas, or another VML shape beside the host (a
- * `v:shapetype` template aside) means the drawing holds geometry a note
- * naming this box would not describe.
+ * Is the text box's shape the only shape its drawing draws? Anything else
+ * the drawing holds — a VML or DrawingML group or canvas, another VML shape
+ * beside the host (a `v:shapetype` template aside), a second `wp:anchor` or
+ * `wp:inline`, or a second graphic object — is geometry a note naming this
+ * box would not describe. Shapes inside the box's own story are its story's
+ * business and do not count.
  */
 function isSoleDrawingShape(textBox: Element, container: Element): boolean {
   for (let node = textBox.parentNode; node && node !== container; node = node.parentNode) {
     if (node.nodeType === 1 && DRAWING_GROUP_NAMES.has((node as Element).localName)) return false;
   }
-  const host = nearestShape(textBox);
-  return directChildElements(container).every((child) =>
-    child.namespaceURI !== VML_NS || child === host || child.localName === 'shapetype');
+  const children = directChildElements(container);
+  if (container.localName === 'pict') {
+    const host = nearestShape(textBox);
+    return host !== undefined && host.parentNode === container &&
+      children.every((child) =>
+        child === host || (child.namespaceURI === VML_NS && child.localName === 'shapetype'));
+  }
+  if (container.localName !== 'drawing' || children.length !== 1) return false;
+  const outsideStories = (element: Element): boolean => {
+    for (let node = element.parentNode; node && node !== container; node = node.parentNode) {
+      const ancestor = node as Element;
+      if (ancestor.namespaceURI === OOXML.W_NS && ancestor.localName === 'txbxContent') return false;
+    }
+    return true;
+  };
+  const graphicData = Array.from(container.getElementsByTagNameNS(DRAWINGML_MAIN_NS, 'graphicData'))
+    .filter(outsideStories);
+  return graphicData.length === 1 && directChildElements(graphicData[0]!).length === 1;
 }
 
 const WORDPROCESSING_DRAWING_2010_NS =

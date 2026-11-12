@@ -129,6 +129,22 @@ function twinBox(
 const paragraph = (text: string): string => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 const anchored = (box: string): string => `<w:p>${box}<w:r><w:t xml:space="preserve">Notice block</w:t></w:r></w:p>`;
 
+/**
+ * One w:drawing holding the text box's wp:anchor and a second wp:anchor with
+ * a plain rectangle, inside a Word twin whose VML fallback has the box only.
+ */
+function twoAnchors(text: string, rectangleWidth: string): string {
+  const box = drawingMlBox(text);
+  const rectangle = drawingMlBox('', { width: rectangleWidth })
+    .replace(/<wps:txbx>[\s\S]*?<\/wps:txbx>/u, '')
+    .replace('<wps:cNvSpPr txBox="1"/>', '<wps:cNvSpPr/>')
+    .replace('id="1" name="Text Box 1"', 'id="2" name="Rectangle 2"');
+  const drawing = box.replace('</w:drawing>', rectangle.slice('<w:drawing>'.length));
+  const fallback = vmlBox(text).slice('<w:r>'.length, -'</w:r>'.length);
+  return `<w:r><mc:AlternateContent><mc:Choice Requires="wps">${drawing}</mc:Choice>` +
+    `<mc:Fallback>${fallback}</mc:Fallback></mc:AlternateContent></w:r>`;
+}
+
 function bodyPackage(box: string, bodyText = 'The parties agree as follows.'): Promise<Buffer> {
   return buildDocxFromBodyXml(paragraph(bodyText) + anchored(box), [], {
     namespaces: NAMESPACES,
@@ -500,6 +516,29 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
     }
   });
 
+  test('control: a DrawingML drawing with a second anchored shape keeps its native replacement', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // Only the rectangle in the drawing's second wp:anchor is resized.
+    // Carrying the revised drawing would hide that resize behind a note
+    // naming the box.
+    const original = await given('a drawing with a text box and a rectangle', () =>
+      bodyPackage(twoAnchors('Notice to: Old address', '1270000')));
+    const revised = await given('the box edited and the rectangle resized', () =>
+      bodyPackage(twoAnchors('Notice to: New address', '2540000')));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the drawing is tracked as replaced and Reject All restores the rectangle', async () => {
+      const output = await partXml(result.document, 'word/document.xml');
+      expect(result.unrepresentedChanges).toBeUndefined();
+      const originalView = readerView(await partXml(original, 'word/document.xml'));
+      expect(readerView(rejectAllChanges(output))).toEqual(originalView);
+      expect(readerView(await docxCorePart(result.document, 'reject', 'word/document.xml'))).toEqual(originalView);
+      expect(readerView(acceptAllChanges(output))).toEqual(readerView(await partXml(revised, 'word/document.xml')));
+    });
+  });
+
   test('tracks a nested box whose drawing and text change inside an edited box', async ({
     given, when, then,
   }: AllureBddContext) => {
@@ -635,6 +674,21 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
       expect(result.unrepresentedChanges?.map((change) => change.scope).sort()).toEqual(['drawing', 'footer']);
       expect(trackedBoxText(await partXml(result.document, 'word/footer1.xml')))
         .toEqual([{ deleted: 'Old', inserted: 'New' }]);
+    });
+  });
+
+  test('keeps the footer entry when a footer drawing resizes a second anchored shape', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const original = await given('a footer drawing with a text box and a rectangle', () =>
+      footerPackage(twoAnchors('Footer notice: Old', '1270000')));
+    const revised = await given('the box edited and the rectangle resized', () =>
+      footerPackage(twoAnchors('Footer notice: New', '2540000')));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the footer stays listed', () => {
+      expect(result.unrepresentedChanges?.map((change) => change.scope)).toContain('footer');
     });
   });
 
