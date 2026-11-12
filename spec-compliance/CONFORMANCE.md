@@ -159,9 +159,9 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-30` | Paragraph-mark run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-31` | Run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/test-primitives/text.test.ts; packages/docx-markdoc/src/retained-format.test.ts |
 | `ECMA-PART1-17-13-5-32` | Section-property revisions (w:sectPrChange) | 5 | 1 | 17.13.5.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
-| `ECMA-PART1-17-13-5-33` | Table-grid revisions (w:tblGridChange) | 5 | 1 | 17.13.5.33 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange` | packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts |
-| `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts |
-| `ECMA-PART1-17-13-5-35` | Table-property-exception revisions (w:tblPrExChange) | 5 | 1 | 17.13.5.35 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange` | packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts |
+| `ECMA-PART1-17-13-5-33` | Table-grid revisions (w:tblGridChange) | 5 | 1 | 17.13.5.33 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange` | packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts |
+| `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts |
+| `ECMA-PART1-17-13-5-35` | Table-property-exception revisions (w:tblPrExChange) | 5 | 1 | 17.13.5.35 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange` | packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts |
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-3-3-30` | Symbol character run content (w:sym) | 5 | 1 | 17.3.3.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Sym` | packages/docx-core/src/primitives/symbol_run_content.ts; packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/symbol_run_content.test.ts; packages/docx-compare/src/symbolCharacterProjection.test.ts |
@@ -2346,12 +2346,15 @@ This claim is bounded to the runtime and test evidence listed above.
 - **Part / Section:** Part 1 § 17.13.5.33
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange`
-- **Verified by:** packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 
 The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
 `@usejunior/docx-compare`) resolves `w:tblGridChange`: accept keeps the live
-grid, reject restores the snapshot's `w:gridCol` list. docx-core's native
-accept/reject do not yet resolve it, and comparison does not emit it.
+grid, reject restores the snapshot's `w:gridCol` list. Comparison never
+diffs `w:tblGrid` child by child: it keeps a pending `w:tblGridChange` that
+only the original carries and drops one only the revised document carries.
+It does not emit a new `w:tblGridChange` (grid changes are still refused),
+and docx-core's native accept/reject do not yet resolve it.
 
 ### ECMA-PART1-17-13-5-34 — Table-property revisions (w:tblPrChange)
 
@@ -2359,8 +2362,11 @@ accept/reject do not yet resolve it, and comparison does not emit it.
 - **Part / Section:** Part 1 § 17.13.5.34
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange`
-- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 
+Comparison emits `w:tblPrChange` for a changed `w:tblPr` (for example
+`w:tblStyle` or `w:tblBorders`), with the original properties as its
+snapshot, and never places `w:ins`/`w:del` among the children of `w:tblPr`.
 This claim is bounded to the runtime and test evidence listed above.
 
 ### ECMA-PART1-17-13-5-35 — Table-property-exception revisions (w:tblPrExChange)
@@ -2369,12 +2375,15 @@ This claim is bounded to the runtime and test evidence listed above.
 - **Part / Section:** Part 1 § 17.13.5.35
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange`
-- **Verified by:** packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 
 The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
 `@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live
-exceptions, reject restores the snapshot's `w:tblPrEx` content. docx-core's
-native accept/reject do not yet resolve it, and comparison does not emit it.
+exceptions, reject restores the snapshot's `w:tblPrEx` content. Comparison
+emits `w:tblPrExChange` for a changed row `w:tblPrEx`, and on every row of a
+table whose published `w:tblPr` gains a `w:tblPrChange` (Word shows a
+table-property revision only through a row-level `w:tblPrExChange`).
+docx-core's native accept/reject do not yet resolve it.
 
 Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
 safe-docx validates its documented API-supported enum and safe-integer subset,

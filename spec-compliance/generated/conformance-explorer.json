@@ -1261,7 +1261,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange",
-      "claimRationale": "The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in\n`@usejunior/docx-compare`) resolves `w:tblGridChange`: accept keeps the live\ngrid, reject restores the snapshot's `w:gridCol` list. docx-core's native\naccept/reject do not yet resolve it, and comparison does not emit it.",
+      "claimRationale": "The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in\n`@usejunior/docx-compare`) resolves `w:tblGridChange`: accept keeps the live\ngrid, reject restores the snapshot's `w:gridCol` list. Comparison never\ndiffs `w:tblGrid` child by child: it keeps a pending `w:tblGridChange` that\nonly the original carries and drops one only the revised document carries.\nIt does not emit a new `w:tblGridChange` (grid changes are still refused),\nand docx-core's native accept/reject do not yet resolve it.",
       "evidence": [
         {
           "kind": "source",
@@ -1274,6 +1274,14 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableLevelProperties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts"
         }
       ]
     },
@@ -1289,7 +1297,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange",
-      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
+      "claimRationale": "Comparison emits `w:tblPrChange` for a changed `w:tblPr` (for example\n`w:tblStyle` or `w:tblBorders`), with the original properties as its\nsnapshot, and never places `w:ins`/`w:del` among the children of `w:tblPr`.\nThis claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1310,6 +1318,14 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableLevelProperties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts"
         }
       ]
     },
@@ -1325,7 +1341,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange",
-      "claimRationale": "The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in\n`@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live\nexceptions, reject restores the snapshot's `w:tblPrEx` content. docx-core's\nnative accept/reject do not yet resolve it, and comparison does not emit it.\n\nAcross the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,\nsafe-docx validates its documented API-supported enum and safe-integer subset,\nduplicate declarations, table-grid arithmetic, and style/numbering references\nbefore emission, then preserves the authored parts through package load/save.\nThe XML Schema integer domains can exceed JavaScript's exact-number range;\nnumeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and\n`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated\nby this surface, the full lexical domain is pinned to the vendored transitional\nXSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,\n`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run\ncolor, and table/numbering style types, are reported as unsupported API\nfeatures rather than schema-invalid XML. Values absent from the applicable XSD\ndomain are reported as invalid. These\nclaims do not cover Word's\ntable layout algorithm or pagination, numbering rendering or complete\noverride/counter behavior, style cascade or latent-style semantics,\ntheme/font resolution, rendering, or tracked table-topology and\nproperty-revision records. Preservation does not imply semantic\ninterpretation of unknown third-party markup.",
+      "claimRationale": "The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in\n`@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live\nexceptions, reject restores the snapshot's `w:tblPrEx` content. Comparison\nemits `w:tblPrExChange` for a changed row `w:tblPrEx`, and on every row of a\ntable whose published `w:tblPr` gains a `w:tblPrChange` (Word shows a\ntable-property revision only through a row-level `w:tblPrExChange`).\ndocx-core's native accept/reject do not yet resolve it.\n\nAcross the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,\nsafe-docx validates its documented API-supported enum and safe-integer subset,\nduplicate declarations, table-grid arithmetic, and style/numbering references\nbefore emission, then preserves the authored parts through package load/save.\nThe XML Schema integer domains can exceed JavaScript's exact-number range;\nnumeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and\n`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated\nby this surface, the full lexical domain is pinned to the vendored transitional\nXSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,\n`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run\ncolor, and table/numbering style types, are reported as unsupported API\nfeatures rather than schema-invalid XML. Values absent from the applicable XSD\ndomain are reported as invalid. These\nclaims do not cover Word's\ntable layout algorithm or pagination, numbering rendering or complete\noverride/counter behavior, style cascade or latent-style semantics,\ntheme/font resolution, rendering, or tracked table-topology and\nproperty-revision records. Preservation does not imply semantic\ninterpretation of unknown third-party markup.",
       "evidence": [
         {
           "kind": "source",
@@ -1334,6 +1350,14 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableLevelProperties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts"
         }
       ]
     },

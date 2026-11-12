@@ -23,3 +23,10 @@
 - [x] 4.3 Accept/reject parity with both acceptors on text and `bodyTableFootprint`, schema gate, crossing bookmarks, and the comment anchors pinned at their pre-existing shape.
 - [x] 4.4 LibreOffice accept/reject reproduce the revised and original tables, including row spans.
 - [ ] 4.5 Real NVCA smoke after merge; Word reader evidence deferred.
+
+## 5. Table properties (#1399)
+
+- [x] 5.1 Reproduce (RED) `w:ins`/`w:del` emitted inside `w:tblPr` for a `w:tblStyle` change and added borders, inside `w:tblPrEx` for a row exception change, and around a one-sided pending `w:tblPrChange`/`w:tblGridChange`.
+- [x] 5.2 Publish `w:tblPr`, `w:tblGrid` and `w:tblPrEx` whole with their own revision record; add row-level `w:tblPrExChange` companions to every row of a table that gets a comparison `w:tblPrChange`.
+- [x] 5.3 Accept/reject parity with the comparison acceptor on every table-level property and with docx-core on text, footprint and `w:tblPr`; schema gate (SDX-COMPTABLE-11).
+- [ ] 5.4 Real NVCA smoke after merge; Word reader evidence deferred (staged fixtures listed in the PR).
