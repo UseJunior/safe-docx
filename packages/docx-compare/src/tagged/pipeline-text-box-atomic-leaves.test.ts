@@ -438,13 +438,16 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
     // story comparison now tracks the old picture as deleted (bound to the
     // original image, imported into the owning part) and the new one as
     // inserted.
-    const fixture = await given('a box whose text changes and whose o:relid picture now names another image', () =>
-      compare(
-        bodyWithBox(run('Box old') + vmlPicture({ relid: true })),
+    const fixture = await given('a box whose text changes and whose o:relid picture now names another image', async () => ({
+      original: await packageWith(bodyWithBox(run('Box old') + vmlPicture({ relid: true }))),
+      revised: await packageWith(
         bodyWithBox(run('Box new') + vmlPicture({ relid: true })),
         'media/image2.png',
-      ));
-    const result = await when('the documents are compared', fixture.compare);
+        { image: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([0])]) },
+      ),
+    }));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(fixture.original, fixture.revised, COMPARE_OPTIONS));
     const document = await documentXmlOf(result.document);
 
     await then('the old picture is a tracked deletion and the new one a tracked insertion', () => {

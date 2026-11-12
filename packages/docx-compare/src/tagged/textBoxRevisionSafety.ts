@@ -41,6 +41,7 @@ import {
   wrapRunWithTrackChange,
 } from './revisionMarkup.js';
 import { importRelationshipTarget } from './relationshipIdCollision.js';
+import { PayloadFingerprints } from './picturePayload.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const VML_NS = 'urn:schemas-microsoft-com:vml';
@@ -486,8 +487,12 @@ function relationshipClosureFingerprint(
  * Relationship identifiers are local to their owning OPC part. Nested story
  * comparison temporarily promotes a header/footer text box to document.xml,
  * whose tagged publication may canonicalize an equivalent hyperlink to a
- * different id. Translate those temporary ids back through relationship
- * semantics before splicing the story into its real owner.
+ * different id. Translate those temporary ids back through what each
+ * relationship reaches before splicing the story into its real owner: its
+ * type and external target, or for an internal target its payload (the part's
+ * bytes and everything its own relationships reach), so a target path that
+ * names different bytes in the owner's package is not mistaken for the same
+ * picture.
  *
  * A relationship the owner does not yet declare is imported into the owner's
  * own relationship part under an id free there: the original target of a
@@ -517,15 +522,28 @@ async function remapComparedStoryRelationshipIds(
     outerArchive.getFile(ownerRelationshipsPath),
   ]);
   const temporaryEntries = relationshipEntries(temporaryRelationships);
-  const ownerTargets = relationshipTargets(ownerRelationships);
-  const ownerIdByTarget = new Map(
-    [...ownerTargets].map(([id, target]) => [target, id]),
-  );
+  const ownerEntries = relationshipEntries(ownerRelationships);
+  const storyPayloads = new PayloadFingerprints(storyArchive);
+  const ownerPayloads = new PayloadFingerprints(outerArchive);
+  // Payload key -> owner id, for ids already resolved or imported here.
+  const ownerIdByPayload = new Map<string, string>();
+  const findOwnerId = async (entry: RelationshipEntry, payload: string): Promise<string | undefined> => {
+    const known = ownerIdByPayload.get(payload);
+    if (known) return known;
+    for (const [id, candidate] of ownerEntries) {
+      if (candidate.type !== entry.type) continue;
+      if ((candidate.targetMode === 'External') !== (entry.targetMode === 'External')) continue;
+      if (await ownerPayloads.payloadOf(ownerPartPath, id) !== payload) continue;
+      ownerIdByPayload.set(payload, id);
+      return id;
+    }
+    return undefined;
+  };
   let ownerDocument: Document | undefined;
   let nextOrdinal = 1;
   const allocateOwnerId = (): string => {
     let candidate = `rId${nextOrdinal++}`;
-    while (ownerTargets.has(candidate)) candidate = `rId${nextOrdinal++}`;
+    while (ownerEntries.has(candidate)) candidate = `rId${nextOrdinal++}`;
     return candidate;
   };
 
@@ -540,8 +558,8 @@ async function remapComparedStoryRelationshipIds(
           reason: 'the compared text-box story relationship closure could not be rebound to its owner',
         }]);
       }
-      const semantics = relationshipSemantics(entry);
-      let ownerId = ownerIdByTarget.get(semantics);
+      const payload = await storyPayloads.payloadOf('word/document.xml', attribute.value);
+      let ownerId = await findOwnerId(entry, payload);
       if (!ownerId) {
         const { type, targetMode } = entry;
         const ownerTarget = await importRelationshipTarget(
@@ -564,8 +582,8 @@ async function remapComparedStoryRelationshipIds(
         relationship.setAttribute('Target', ownerTarget);
         if (targetMode) relationship.setAttribute('TargetMode', targetMode);
         ownerDocument.documentElement.appendChild(relationship);
-        ownerTargets.set(ownerId, relationshipSemantics({ type, target: ownerTarget, targetMode }));
-        ownerIdByTarget.set(semantics, ownerId);
+        ownerEntries.set(ownerId, { type, target: ownerTarget, targetMode });
+        ownerIdByPayload.set(payload, ownerId);
       }
       attribute.value = ownerId;
     }

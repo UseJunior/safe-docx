@@ -463,6 +463,77 @@ describe('Hyperlinks added or retargeted inside a text box (#1381)', { timeout: 
     });
   }
 
+  test('keeps each nested side-only hyperlink outside its revision wrapper', async ({
+    given, when, then, and,
+  }: AllureBddContext) => {
+    // CT_Hyperlink admits a hyperlink, so an inserted link may hold another
+    // one; neither may sit inside w:ins (round-1 review).
+    const nestedCase = await given('a text-box link that holds another link, added in the revised document', () => ({
+      label: 'nested link added',
+      original: { body: textBoxParagraph('Intro', run('See terms')) },
+      revised: {
+        body: textBoxParagraph('Intro', `${run('See ')}<w:hyperlink r:id="rIdOuter">${run('the ')}${link('rIdInner', 'terms')}</w:hyperlink>`),
+        bodyLinks: [['rIdOuter', 'https://example.com/outer'], ['rIdInner', 'https://example.com/inner']] as Links,
+      },
+      partPath: BODY,
+    }));
+    const compared = await when('the documents are compared', () => compareCase(nestedCase));
+    await then('no revision wrapper holds a hyperlink and revision ids stay unique', async () => {
+      const document = parseXml(await (await DocxArchive.load(compared.result.document)).getDocumentXml());
+      const wrapped = Array.from(document.getElementsByTagNameNS(W_NS, 'hyperlink')).filter((hyperlink) =>
+        hyperlink.parentNode?.nodeType === 1 &&
+        ['ins', 'del'].includes((hyperlink.parentNode as Element).localName));
+      expect(wrapped).toEqual([]);
+      const ids = ['ins', 'del'].flatMap((localName) => Array.from(document.getElementsByTagNameNS(W_NS, localName)))
+        .map((revision) => revision.getAttributeNS(W_NS, 'id'));
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+    await and('accept and reject reproduce each side', () =>
+      assertFaithfulRedline(compared.original, compared.revised, compared.result.document, BODY));
+  });
+
+  test('binds a relocated box to its original image when the revised package reuses that image path for other bytes', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The relocated anchor is tracked as moved, so each copy receives its own
+    // side's story; the original story's image target names a path the
+    // revised package holds with different bytes (round-1 review).
+    const notice = 'All notices under this agreement shall be delivered in writing to the address shown in the box';
+    const box = textBoxParagraph(notice, link('rIdLink', 'terms') + relidPicture('rIdImage'));
+    const others = `<w:p>${run('Second paragraph stays here with plenty of words.')}</w:p>` +
+      `<w:p>${run('Third paragraph also stays put with words.')}</w:p>`;
+    const make = async (side: 'old' | 'new'): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await buildPackage({
+        body: side === 'old' ? box + others : others + box,
+        bodyLinks: [['rIdLink', `https://example.com/${side}`]],
+      }));
+      const relationships = [
+        `<Relationship Id="rIdImage" Type="${R_NS}/image" Target="media/logo${side === 'old' ? 1 : 2}.png"/>`,
+        ...(side === 'new' ? [`<Relationship Id="rIdUnused" Type="${R_NS}/image" Target="media/logo1.png"/>`] : []),
+      ];
+      archive.setFile(`word/media/logo${side === 'old' ? 1 : 2}.png`, side === 'old' ? PNG : OTHER_PNG);
+      if (side === 'new') archive.setFile('word/media/logo1.png', OTHER_PNG);
+      archive.setFile('word/_rels/document.xml.rels', (await archive.getFile('word/_rels/document.xml.rels'))!
+        .replace('</Relationships>', `${relationships.join('')}</Relationships>`));
+      archive.setFile('[Content_Types].xml', (await archive.getFile('[Content_Types].xml'))!
+        .replace('<Default Extension="xml"', '<Default Extension="png" ContentType="image/png"/><Default Extension="xml"'));
+      return archive.save();
+    };
+    const original = await given('the box first, its picture at media/logo1.png', () => make('old'));
+    const revised = await given('the box moved last, its link retargeted, media/logo1.png holding other bytes', () => make('new'));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('Reject All shows the original image and link, Accept All the revised ones, with nothing listed', async () => {
+      expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'picture')).toEqual([]);
+      expect(await storyView(result.document, BODY, rejectAllChanges)).toEqual(await storyView(original, BODY));
+      expect(await storyView(result.document, BODY, acceptAllChanges)).toEqual(await storyView(revised, BODY));
+      expect(await storyView(await docxCoreProjection(result.document, 'reject'), BODY)).toEqual(await storyView(original, BODY));
+      expect(await storyView(await docxCoreProjection(result.document, 'accept'), BODY)).toEqual(await storyView(revised, BODY));
+      await assertUniqueRelationshipIds(result.document, BODY);
+      await assertSchema(result.document);
+    });
+  });
+
   test('tracks a footer text-box picture whose o:relid now names another image, beside a box edit', async ({
     given, when, then, and,
   }: AllureBddContext) => {

@@ -12,11 +12,15 @@
   tracked insertion bound to the revised target; each relationship the redline
   needs is imported, under an id unique there, into the relationship part of
   the part that owns the box, so a footer box's link lands in the footer's own
-  `.rels` (ECMA-376 Part 2 §6.5.3.4). The same import carries a text-box
+  `.rels` (ECMA-376 Part 2 §6.5.3.4). An internal target is matched by
+  its payload (bytes and everything it reaches), not its path, so a path the
+  owner's package holds with other bytes is imported aside rather than
+  reused. The same import carries a text-box
   picture that now names another image part, which is redlined instead of
   refused. A link that exists on one side only is now emitted as
-  `w:hyperlink` holding the `w:ins`/`w:del`, in body text as well as text
-  boxes; the reverse nesting failed schema validation (Part 1 §17.16.22).
+  `w:hyperlink` holding the `w:ins`/`w:del` (a link nested in it likewise),
+  in body text as well as text boxes; the reverse nesting failed schema
+  validation (Part 1 §17.16.22).
   (#1381)
 
 - A picture or embedded object whose markup is unchanged but whose payload
