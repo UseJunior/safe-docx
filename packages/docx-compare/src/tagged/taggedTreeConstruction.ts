@@ -19,6 +19,10 @@ import { computeNumberingIdentities, numberingListMembership } from './numbering
 import { detectParagraphJoins } from './paragraphJoinDetection.js';
 import { rowShape } from './tableTopologyGuard.js';
 import {
+  isTableLevelPropertyElement,
+  tableLevelPropertyOf,
+} from './tableLevelProperties.js';
+import {
   nextRevisionId,
   usedRevisionIds,
   PROPERTY_SCOPE_ELEMENT,
@@ -42,6 +46,9 @@ const PROPERTY_SCOPE_BY_CONTAINER: Readonly<Record<string, { child: string; scop
   tr: { child: 'trPr', scope: 'tableRow' },
   tc: { child: 'tcPr', scope: 'tableCell' },
   sectPr: { child: 'sectPr', scope: 'section' },
+  // A table's own properties are revised through w:tblPrChange (#1399); its
+  // rows' w:tblPrEx exceptions carry a separate delta, see rowExceptionsDelta.
+  tbl: { child: 'tblPr', scope: 'table' },
 };
 const RANGE_BOUNDARY_LOCALS = new Set([
   'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
@@ -238,6 +245,32 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
     original: originalProperty,
     revised: revisedProperty,
     changedProperties: getChangedPropertyNames(originalProperty, revisedProperty),
+  };
+}
+
+/**
+ * The `w:tblPrEx` difference of an aligned table row. Like every property
+ * delta it compares direct properties with prior revision records removed.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
+ * @see https://github.com/UseJunior/safe-docx/issues/1399
+ */
+function rowExceptionsDelta(original: WmlElement, revised: WmlElement): PropertyDelta | undefined {
+  if (original.localName !== 'tr' || revised.localName !== 'tr') return undefined;
+  const originalExceptions = tableLevelPropertyOf(original, 'tblPrEx');
+  const revisedExceptions = tableLevelPropertyOf(revised, 'tblPrEx');
+  const live = (exceptions: WmlElement | null): string => exceptions
+    ? childElements(exceptions)
+      .filter((child) => child.localName !== 'tblPrExChange')
+      .map((child) => subtreeSignature(child))
+      .join('\u0002')
+    : '';
+  if (live(originalExceptions) === live(revisedExceptions)) return undefined;
+  return {
+    scope: 'tableRowExceptions',
+    original: originalExceptions,
+    revised: revisedExceptions,
+    changedProperties: getChangedPropertyNames(originalExceptions, revisedExceptions),
   };
 }
 
@@ -934,8 +967,10 @@ function constructBoth(
       children.push({ tag: 'revised', node: right, children: [], opaque: true });
       return;
     }
-    if (isContentControlProperties(left)) {
-      // Never descend: a child-level diff would emit w:ins/w:del inside w:sdtPr.
+    if (isContentControlProperties(left) || isTableLevelPropertyElement(left)) {
+      // Never descend: a child-level diff would emit w:ins/w:del inside
+      // w:sdtPr, w:tblPr, w:tblGrid or w:tblPrEx. Table-level properties are
+      // published whole with their own revision record (#1399).
       children.push({ tag: 'both', original: left, revised: right, children: [], opaque: true });
       return;
     }
@@ -954,8 +989,9 @@ function constructBoth(
     while (oi < originalEnd && ri < revisedEnd) {
       const left = originalChildren[oi]!;
       const right = revisedChildren[ri]!;
-      if (!isContentControlProperties(left) || left.localName !== right.localName ||
-          left.namespaceURI !== right.namespaceURI) break;
+      if (!(isContentControlProperties(left) || isTableLevelPropertyElement(left)) ||
+          left.localName !== right.localName || left.namespaceURI !== right.namespaceURI ||
+          isTableLevelPropertyElement(left) !== isTableLevelPropertyElement(right)) break;
       emitAlignedPair(left, right);
       oi++;
       ri++;
@@ -1129,12 +1165,14 @@ function constructBoth(
     emitAlignedPair(originalChildren[oi++]!, revisedChildren[ri++]!);
   }
   emitGap(originalChildren.length, revisedChildren.length);
+  const exceptionsDelta = options.detectFormatChanges ? rowExceptionsDelta(original, revised) : undefined;
   return {
     tag: 'both',
     original,
     revised,
     children,
     propertyDelta: options.detectFormatChanges ? propertyDelta(original, revised) : undefined,
+    ...(exceptionsDelta ? { rowExceptionsDelta: exceptionsDelta } : {}),
   };
 }
 
@@ -1252,6 +1290,9 @@ function collectSideOnly(
   node.children.forEach((child) => {
     const element = child.tag === 'both' ? child.original : child.node;
     if (propertyTag && element.tagName === propertyTag) return;
+    // Table-level properties are never moved: they publish through their own
+    // revision records (#1399).
+    if (isTableLevelPropertyElement(element)) return;
     const fieldCharacters = Array.from(element.getElementsByTagNameNS(
       'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar',
     ));

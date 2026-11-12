@@ -13,6 +13,14 @@ import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
 import {
+  addRowExceptionRevisionCompanions,
+  isTableLevelPropertyElement,
+  resolveTableLevelProperty,
+  tableLevelPropertyOf,
+  type TableLevelProperty,
+  type TableLevelRecordFactory,
+} from './tableLevelProperties.js';
+import {
   nextRevisionId,
   paragraphJoinParts,
   PROPERTY_SCOPE_ELEMENT,
@@ -172,6 +180,39 @@ function propertyInsertionPoint(container: WmlElement): Node | null {
   if (container.localName !== 'tr') return container.firstChild;
   const exceptions = childElements(container).find((child) => child.namespaceURI === W_NS && child.localName === 'tblPrEx');
   return exceptions ? exceptions.nextSibling : container.firstChild;
+}
+
+const TABLE_LEADING_RANGE_MARKUP = new Set([
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+  'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+  'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+  'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+]);
+
+/**
+ * `emitted` children of a table in `CT_Tbl` order: only bare range markup may
+ * precede `w:tblPr`, and `w:tblGrid` follows it directly (§ 17.4.37). A
+ * side-only boundary emitted ahead of the table properties (inside a
+ * `w:ins`/`w:del`, which only row content admits) moves after `w:tblGrid`,
+ * where it still opens or closes at the table's start (#1399).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.37
+ */
+function tableChildrenInSchemaOrder(container: WmlElement, emitted: WmlElement[]): WmlElement[] {
+  if (container.namespaceURI !== W_NS || container.localName !== 'tbl') return emitted;
+  const isProperty = (child: WmlElement, name: string) => child.namespaceURI === W_NS && child.localName === name;
+  const properties = emitted.find((child) => isProperty(child, 'tblPr'));
+  const grid = emitted.find((child) => isProperty(child, 'tblGrid'));
+  const rest = emitted.filter((child) => child !== properties && child !== grid);
+  let leading = 0;
+  while (leading < rest.length && rest[leading]!.namespaceURI === W_NS &&
+    TABLE_LEADING_RANGE_MARKUP.has(rest[leading]!.localName)) leading++;
+  return [
+    ...rest.slice(0, leading),
+    ...(properties ? [properties] : []),
+    ...(grid ? [grid] : []),
+    ...rest.slice(leading),
+  ];
 }
 
 /** `emitted` children of a table row with `w:tblPrEx` moved ahead of `w:trPr` (§ 17.4.78). */
@@ -1272,6 +1313,8 @@ const CHANGE_ELEMENT_BY_SCOPE = {
   tableRow: 'w:trPrChange',
   tableCell: 'w:tcPrChange',
   section: 'w:sectPrChange',
+  table: 'w:tblPrChange',
+  tableRowExceptions: 'w:tblPrExChange',
 } as const;
 
 /**
@@ -1290,6 +1333,9 @@ function applyPropertyDelta(
 ): void {
   if (tagged.tag !== 'both' || !tagged.propertyDelta) return;
   const delta = tagged.propertyDelta;
+  // Table properties publish inline with the table's children, through
+  // resolveTableLevelProperty (#1399).
+  if (delta.scope === 'table' || delta.scope === 'tableRowExceptions') return;
   if (delta.scope === 'paragraph') {
     applyParagraphPropertyDelta(node, delta.original, delta.revised, revision, allocateRevision);
     return;
@@ -2390,9 +2436,41 @@ function emitNode(
     const propertyTag = node.tag === 'both' && node.propertyDelta
       ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
       : directPropertyTag;
+    const tableLevelRecords: TableLevelRecordFactory = {
+      comparison: (localName, document) => {
+        const change = document.createElementNS(W_NS, `w:${localName}`) as WmlElement;
+        appendChangeMetadata(change, allocateRevision());
+        return change;
+      },
+      freshId: () => allocateRevision().id,
+    };
+    const publishedTableLevel = new Set<string>();
+    let tablePropertiesRecord: 'none' | 'unchanged' | 'preserved' | 'comparison' = 'none';
     for (let index = 0; index < node.children.length; index++) {
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
+      if (node.tag === 'both' && isTableLevelPropertyElement(childElement)) {
+        // w:tblPr, w:tblGrid and w:tblPrEx take no w:ins/w:del among their
+        // children. Publish each once, at its first position, from the two
+        // sides' elements, with its own revision record when needed (#1399).
+        const localName = childElement!.localName as TableLevelProperty;
+        if (publishedTableLevel.has(localName)) continue;
+        publishedTableLevel.add(localName);
+        const allowComparisonRecord = localName === 'tblPr'
+          ? node.propertyDelta?.scope === 'table'
+          : localName === 'tblPrEx' && !!node.rowExceptionsDelta;
+        const resolution = resolveTableLevelProperty(
+          tableLevelPropertyOf(node.original, localName),
+          tableLevelPropertyOf(node.revised, localName),
+          localName,
+          base.ownerDocument!,
+          tableLevelRecords,
+          allowComparisonRecord,
+        );
+        if (localName === 'tblPr') tablePropertiesRecord = resolution.record;
+        if (resolution.element) emitted.push(resolution.element);
+        continue;
+      }
       if (propertyTag && childElement?.tagName === propertyTag) {
         continue;
       }
@@ -2546,7 +2624,10 @@ function emitNode(
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End', plan.comparison));
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
-    replaceElementChildren(base, rowChildrenInSchemaOrder(base, emitted));
+    replaceElementChildren(base, tableChildrenInSchemaOrder(base, rowChildrenInSchemaOrder(base, emitted)));
+    if (tablePropertiesRecord === 'comparison' || tablePropertiesRecord === 'preserved') {
+      addRowExceptionRevisionCompanions(base, tableLevelRecords);
+    }
   }
   if (node.tag === 'both') {
     splitSharedBookmarkBoundaries(
