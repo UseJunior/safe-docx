@@ -690,11 +690,14 @@ const VOLATILE_PROPERTY_FIELDS = /(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIM
  * be compared (Codex round 14). Page totals (NUMPAGES, SECTIONPAGES) are
  * left out too: they depend on the layout of every page, including notes and
  * drawings this check does not compare, while PAGE shows each page's own
- * number (Codex round 21).
+ * number (Codex round 21). Content statistics (NUMWORDS, NUMCHARS) are left
+ * out for the same reason.
  */
+/** Document properties a DOCPROPERTY field can show that depend on layout, content statistics or the saved file. */
+const LAYOUT_OR_FILE_PROPERTIES = /^(bytes|pages|lines|paragraphs|characters|characterswithspaces|words|filesize|numpages|numwords|numchars|sectionpages)$/iu;
 const SELF_CONTAINED_FIELDS = new Set([
   'PAGE', 'SECTION', 'DATE', 'TIME', 'PRINTDATE', 'SAVEDATE', 'CREATEDATE',
-  'EDITTIME', 'LASTSAVEDBY', 'REVNUM', 'NUMWORDS', 'NUMCHARS', 'AUTHOR', 'TITLE', 'SUBJECT', 'KEYWORDS',
+  'EDITTIME', 'LASTSAVEDBY', 'REVNUM', 'AUTHOR', 'TITLE', 'SUBJECT', 'KEYWORDS',
   'COMMENTS', 'DOCPROPERTY', 'INFO', 'FILENAME', 'TEMPLATE', 'DOCVARIABLE',
 ]);
 
@@ -705,8 +708,19 @@ const SELF_CONTAINED_FIELDS = new Set([
  */
 async function storyFieldsReadOtherStories(archive: DocxArchive, storyParts: Iterable<string>): Promise<boolean> {
   const unsafe = (instruction: string): boolean => {
-    const keyword = instruction.trim().split(/\s+/u)[0] ?? '';
-    return keyword !== '' && !SELF_CONTAINED_FIELDS.has(keyword.toUpperCase());
+    const tokens = instruction.trim().split(/\s+/u).filter(Boolean);
+    const keyword = (tokens[0] ?? '').toUpperCase();
+    if (keyword === '') return false;
+    if (!SELF_CONTAINED_FIELDS.has(keyword)) return true;
+    // INFO wraps another document-information field; DOCPROPERTY can name a
+    // statistic or file property (Pages, Bytes, ...) that depends on layout
+    // or on the saved file (Codex round 22).
+    if (keyword === 'INFO') return tokens.length < 2 || unsafe(tokens.slice(1).join(' '));
+    if (keyword === 'DOCPROPERTY') {
+      const name = (tokens[1] ?? '').replace(/^["']|["']$/gu, '');
+      return name === '' || LAYOUT_OR_FILE_PROPERTIES.test(name);
+    }
+    return false;
   };
   for (const path of storyParts) {
     const xml = await archive.getFile(path);

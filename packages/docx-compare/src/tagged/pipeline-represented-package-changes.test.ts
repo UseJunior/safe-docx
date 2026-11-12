@@ -1102,7 +1102,9 @@ describe('changes the redline still does not carry stay listed', () => {
     expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([{ scope: 'section', kind: 'changed', sectionIndex: 0 }]));
   });
 
-  for (const keyword of ['NUMPAGES', 'SECTIONPAGES']) {
+  // INFO and DOCPROPERTY aliases of the same values are classified by their
+  // argument (Codex round 22).
+  for (const keyword of ['NUMPAGES', 'SECTIONPAGES', 'NUMWORDS', 'INFO FILESIZE', 'INFO NUMPAGES', 'DOCPROPERTY Bytes', 'DOCPROPERTY Pages']) {
     test(`a header ${keyword} field keeps an allocation-only header entry listed`, async () => {
       // A page total depends on the layout of every page, including notes and
       // drawings this check does not compare (an untracked footnote shape
