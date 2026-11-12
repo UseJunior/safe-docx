@@ -595,6 +595,73 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  test('a header whose theme changes only by which theme part the document relationship names stays listed', async () => {
+    // Both packages hold the same two theme parts; only the relationship
+    // target moves from black to red (Codex round 8).
+    const theme = (color: string): string =>
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T">' +
+      `<a:themeElements><a:clrScheme name="C"><a:accent1><a:srgbClr val="${color}"/></a:accent1></a:clrScheme></a:themeElements></a:theme>`;
+    const withThemes = async (buffer: Buffer, selected: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('word/theme/black.xml', theme('000000'));
+      archive.setFile('word/theme/red.xml', theme('FF0000'));
+      const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
+      archive.setFile('word/_rels/document.xml.rels', rels.replace('</Relationships>',
+        `<Relationship Id="rIdTheme" Type="${R_NS}/theme" Target="theme/${selected}.xml"/></Relationships>`));
+      const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+      archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
+        ['black', 'red'].map((name) =>
+          `<Override PartName="/word/theme/${name}.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`).join('') +
+        '</Types>'));
+      return archive.save();
+    };
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<w:p><w:r><w:rPr><w:color w:val="000000" w:themeColor="accent1"/></w:rPr><w:t>Logo</w:t></w:r></w:p>',
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withThemes(await packageWith(body, LAYOUT, [header]), 'black');
+    const revised = await withThemes(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'red');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
+  test('w:evenAndOddHeaders turned on in a settings part with a non-default name stays listed', async () => {
+    // The page check reads the settings part the document relationship
+    // names, not a fixed word/settings.xml (Codex round 8).
+    const moveSettings = async (buffer: Buffer): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('word/brand-settings.xml', (await archive.getFile('word/settings.xml'))!);
+      // A stale word/settings.xml stays behind, the same on both sides.
+      archive.setFile('word/settings.xml',
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="${W_NS}"/>`);
+      const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
+      archive.setFile('word/_rels/document.xml.rels', rels.replace('Target="settings.xml"', 'Target="brand-settings.xml"'));
+      const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+      archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
+        '<Override PartName="/word/brand-settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>'));
+      return archive.save();
+    };
+    const parts = [
+      story('rIdH', 'header', 'header1.xml', 'Header'),
+      story('rIdE', 'header', 'header2.xml', 'Even header'),
+    ];
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + ref('header', 'rIdE', 'even') + LAYOUT) + paragraph('Section two.');
+    const original = await moveSettings(await packageWith(body, LAYOUT, parts));
+    const revised = await moveSettings(await packageWith(body, ref('header', 'rIdH') + LAYOUT, parts, '<w:evenAndOddHeaders/>'));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges ?? []).not.toEqual([]);
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'header', sectionIndex: 1 }),
+    ]));
+  });
+
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
     // snapshot without w:titlePg leaves the revised title page in place on

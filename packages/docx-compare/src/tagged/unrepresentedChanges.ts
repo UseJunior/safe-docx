@@ -477,13 +477,16 @@ async function packageProjectionView(
   const projectedXml = project(rawXml);
   const rawDocument = parseXml(rawXml);
   const projectedDocument = parseXml(projectedXml);
+  const documentRelationships = await documentRelationshipList(source.archive);
+  const settingsPath = documentRelationships.find((relationship) => relationship.type === SETTINGS_RELATIONSHIP)?.path
+    ?? 'word/settings.xml';
   let bindings: EffectiveStoryBindings | undefined = resolveEffectiveStoryBindings({
     documentXml: projectedXml,
     relationshipsXml: await source.archive.getFile('word/_rels/document.xml.rels'),
-    settingsXml: await source.archive.getFile('word/settings.xml'),
+    settingsXml: await source.archive.getFile(settingsPath),
   });
   if (!bindings.ok) bindings = undefined;
-  const formatting = await storyFormattingEnvironment(source.archive, project);
+  const formatting = await storyFormattingEnvironment(source.archive, project, rawDocument, documentRelationships, settingsPath);
   const identities = new Map<string, Promise<StoryIdentity>>();
   return {
     rawSectionCount: liveSectionProperties(rawDocument).length,
@@ -511,6 +514,50 @@ async function packageProjectionView(
 }
 
 const PACKAGE_RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const OFFICE_RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const SETTINGS_RELATIONSHIP = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings';
+
+interface PartRelationship {
+  id: string;
+  type: string;
+  /** Resolved part name, or the raw target of an external relationship. */
+  path: string;
+  external: boolean;
+}
+
+/** A relationship target resolved against the folder of the part that owns it (OPC part names). */
+function resolveRelationshipTarget(ownerFolder: string, target: string): string {
+  const segments = target.startsWith('/') ? [] : ownerFolder.split('/').filter(Boolean);
+  for (const segment of target.replace(/^\/+/u, '').split('/')) {
+    if (segment === '..') segments.pop();
+    else if (segment !== '.' && segment !== '') segments.push(segment);
+  }
+  return segments.join('/');
+}
+
+/** The relationships of the part whose relationship part is `relsPath`, namespace-aware. */
+async function relationshipList(archive: DocxArchive, relsPath: string, ownerFolder: string): Promise<PartRelationship[] | undefined> {
+  const xml = await archive.getFile(relsPath);
+  if (xml === null) return [];
+  try {
+    return Array.from(parseXml(xml).getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship')).map((relationship) => {
+      const external = relationship.getAttribute('TargetMode') === 'External';
+      const target = relationship.getAttribute('Target') ?? '';
+      return {
+        id: relationship.getAttribute('Id') ?? '',
+        type: relationship.getAttribute('Type') ?? '',
+        path: external ? target : resolveRelationshipTarget(ownerFolder, target),
+        external,
+      };
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+async function documentRelationshipList(archive: DocxArchive): Promise<PartRelationship[]> {
+  return await relationshipList(archive, 'word/_rels/document.xml.rels', 'word') ?? [];
+}
 const STORY_RELATIONSHIP_TYPES = new Set([
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header',
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer',
@@ -525,51 +572,68 @@ const ENVIRONMENT_EXCLUDED = [
   /^word\/(people|comments[A-Za-z]*|footnotes|endnotes)\.xml$/u,
 ];
 /**
- * Elements that record editing sessions or view state, not appearance, and
- * `w:evenAndOddHeaders`, whose effect the page-by-page slot check already
- * judges through the effective story bindings.
+ * Elements that record editing sessions or view state, not appearance.
+ * (`w:evenAndOddHeaders` is also left out, but only from the settings part
+ * the page check reads it from.)
  */
-const ENVIRONMENT_NOISE = new Set(['rsid', 'rsids', 'latentStyles', 'proofState', 'zoom', 'trackRevisions', 'evenAndOddHeaders']);
+const ENVIRONMENT_NOISE = new Set(['rsid', 'rsids', 'latentStyles', 'proofState', 'zoom', 'trackRevisions']);
 
 /**
  * Everything outside its own part that a header/footer story's appearance
  * may depend on, as one comparable digest: every package part except the
  * main story, the header/footer parts themselves (compared slot by slot),
- * notes and comments, relationship parts and package metadata. That covers
+ * notes and comments and package metadata, plus which part each
+ * relationship binds (by type and resolved target, ids left out). That covers
  * styles, numbering, settings (default tab stop, compatibility options), the
  * theme, the font table, custom XML and anything else, wherever the package
  * stores it. XML parts are projected through Accept/Reject All like the
  * story and compared without editing-session ids and view state; other parts
  * by their bytes. The redline tracks none of these, so two identical story
  * parts look the same only where the rest of the package matches too
- * (Codex rounds 5 to 7). A part that cannot be read or parsed makes the
+ * (Codex rounds 5 to 8). A part that cannot be read or parsed makes the
  * digest unique, so nothing is filtered.
  */
 async function storyFormattingEnvironment(
   archive: DocxArchive,
   project: (xml: string) => string,
+  rawDocument: Document,
+  documentRelationships: readonly PartRelationship[],
+  settingsPath: string,
 ): Promise<string> {
-  const storyParts = new Set<string>();
-  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
-  if (relationshipsXml) {
-    for (const relationship of Array.from(parseXml(relationshipsXml).getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship'))) {
-      if (!STORY_RELATIONSHIP_TYPES.has(relationship.getAttribute('Type') ?? '')) continue;
-      if (relationship.getAttribute('TargetMode') === 'External') continue;
-      const target = relationship.getAttribute('Target') ?? '';
-      const resolved = target.startsWith('/')
-        ? target.replace(/^\/+/u, '')
-        : ['word', ...target.split('/')].reduce<string[]>((parts, segment) => {
-          if (segment === '..') parts.pop();
-          else if (segment !== '.' && segment !== '') parts.push(segment);
-          return parts;
-        }, []).join('/');
-      storyParts.add(resolved);
+  const storyParts = new Set(documentRelationships
+    .filter((relationship) => !relationship.external && STORY_RELATIONSHIP_TYPES.has(relationship.type))
+    .map((relationship) => relationship.path));
+  const digest = createHash('sha256');
+  // Which part plays which role (styles, theme, settings, ...) is itself part
+  // of how a story looks: the document's implicit relationships (those its
+  // markup does not name by r:id) are compared by type and resolved target,
+  // and so is every other non-story relationship part. Ids are allocation.
+  const referencedIds = new Set<string>();
+  for (const element of [rawDocument.documentElement, ...Array.from(rawDocument.getElementsByTagName('*'))]) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.namespaceURI === OFFICE_RELATIONSHIPS_NS) referencedIds.add(attribute.value);
     }
   }
-  const digest = createHash('sha256');
+  const bindingLine = (relationship: PartRelationship): string =>
+    `${relationship.type}|${relationship.external ? 'external:' : ''}${relationship.path}`;
+  digest.update(`document-relationships\n${documentRelationships
+    .filter((relationship) => !STORY_RELATIONSHIP_TYPES.has(relationship.type) && !referencedIds.has(relationship.id))
+    .map(bindingLine).sort().join('\n')}`);
+  const excluded = (path: string): boolean =>
+    storyParts.has(path) || ENVIRONMENT_EXCLUDED.some((pattern) => pattern.test(path));
+  for (const relsPath of archive.listFiles().filter((path) => /(^|\/)_rels\/[^/]+\.rels$/u.test(path)).sort()) {
+    const ownerFolder = relsPath.replace(/(^|\/)_rels\/[^/]+$/u, '');
+    const ownerPath = `${ownerFolder ? `${ownerFolder}/` : ''}${relsPath.replace(/^.*\/_rels\/|^_rels\//u, '').replace(/\.rels$/u, '')}`;
+    // The package root and the main story are covered above or by the
+    // section bindings; a story part's relationships by the story resolver.
+    if (ownerPath === '' || ownerPath === 'word/document.xml' || excluded(ownerPath)) continue;
+    const relationships = await relationshipList(archive, relsPath, ownerFolder);
+    if (!relationships) return `unparseable:${relsPath}:${Math.random()}`;
+    digest.update(`\n${relsPath}\n${relationships.map(bindingLine).sort().join('\n')}`);
+  }
   const paths = archive.listFiles()
     .filter((path) => !path.endsWith('/'))
-    .filter((path) => !storyParts.has(path) && !ENVIRONMENT_EXCLUDED.some((pattern) => pattern.test(path)))
+    .filter((path) => !excluded(path))
     .sort();
   for (const path of paths) {
     const bytes = await archive.getFileBuffer(path);
@@ -586,7 +650,11 @@ async function storyFormattingEnvironment(
       try {
         const root = parseXml(text).documentElement;
         for (const element of Array.from(root.getElementsByTagName('*'))) {
-          if (ENVIRONMENT_NOISE.has(localName(element)) && element.namespaceURI === W_NS) {
+          if (element.namespaceURI !== W_NS) continue;
+          const name = localName(element);
+          // w:evenAndOddHeaders is judged by the page check, which reads it
+          // from the settings part the document's relationship names.
+          if (ENVIRONMENT_NOISE.has(name) || (name === 'evenAndOddHeaders' && path === settingsPath)) {
             element.parentNode?.removeChild(element);
           }
         }
