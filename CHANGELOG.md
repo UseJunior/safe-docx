@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- `unrepresentedChanges` no longer lists section, header or footer changes
+  the redline already carries. Sections were compared by index, so after a
+  section break was added or removed every later section was reported as
+  changed, added or removed, along with its header and footer slots, even
+  when Accept All and Reject All showed every page correctly. An entry is
+  now dropped only where Reject All of the redline reproduces the original
+  and Accept All the revised document at that section, in that scope:
+  section properties, or the header/footer story each page shows after
+  inheritance. This covers a section break carried on a tracked paragraph
+  mark, a `w:sectPrChange` whose snapshot names every live property, and a
+  header/footer text-box edit redlined in its part. Entries stay listed when
+  the redline does not carry the change, including a `w:sectPrChange`
+  snapshot that omits a live property Word's Reject All would keep (a new
+  `w:titlePg`, or `w:orient` on a page turned landscape), a break change on
+  a paragraph mark that already carries a revision, a header/footer slot
+  dropped from a surviving section, a header/footer part with no text added
+  or removed (its empty paragraphs or text box still take up room),
+  `w:evenAndOddHeaders` turned off, a changed header/footer field, and every
+  header/footer entry while a header or footer holds a field that can show
+  another story's content (`REF`, `STYLEREF`, a formula and the like). The
+  publication gate reads the same list, so a section divergence is no longer
+  admitted on the strength of an index-shifted entry. (#1427, #1181, #1030)
+
 - Resizing, moving or rewrapping a text box whose text was also edited no
   longer fails `compareDocuments` with `UnsupportedTextBoxRevisionError`
   ("scaffold changed"). WordprocessingML has no revision markup for drawing
