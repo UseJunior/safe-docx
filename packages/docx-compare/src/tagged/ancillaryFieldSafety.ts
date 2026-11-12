@@ -70,6 +70,8 @@ export interface AncillaryFieldSafetyInput {
   noteMergeResults: ReadonlyMap<'footnote' | 'endnote', AncillaryNoteMergeResult>;
   /** Final note ID to its pre-normalization assembly ID. */
   noteReferenceSourceIds?: ReadonlyMap<'footnote' | 'endnote', ReadonlyMap<string, string>>;
+  /** Final note IDs whose bodies were marked as an inserted or deleted note. */
+  noteLifecycleMarks?: ReadonlyMap<'footnote' | 'endnote', ReadonlyMap<string, 'inserted' | 'deleted'>>;
 }
 
 interface InternalFieldRange {
@@ -605,14 +607,16 @@ async function evaluateAncillaryFieldSafetyUnsafe(
         });
         continue;
       }
-      // Compare the entry as its source side sees it. A note added or removed
-      // by the comparison carries lifecycle revision marks (#1388), and a
-      // reconciled note carries its definition history; projecting both the
-      // source and the final entry the same way keeps pre-existing source
-      // revisions out of the comparison.
-      const projectToSourceSide = sourceSide === 'original' ? rejectAllChanges : acceptAllChanges;
-      const sourceEntryXml = projectToSourceSide(serializer.serializeToString(sourceEntry));
-      const finalEntryXml = projectToSourceSide(serializer.serializeToString(entry.element));
+      // A note added or removed by the comparison carries lifecycle revision
+      // marks on every run (#1388). Compare it as the projection that keeps
+      // its anchor sees it: Accept for an inserted note, Reject for a deleted
+      // one. Every other entry is compared as emitted.
+      const lifecycle = input.noteLifecycleMarks?.get(note.storyKind)?.get(entry.id);
+      const project = lifecycle === 'inserted' ? acceptAllChanges
+        : lifecycle === 'deleted' ? rejectAllChanges
+          : (xml: string) => xml;
+      const sourceEntryXml = project(serializer.serializeToString(sourceEntry));
+      const finalEntryXml = project(serializer.serializeToString(entry.element));
       const comparison = compareInventories(
         inventoryEligibleFields(sourceEntryXml, note.path, entry.id, allowed),
         inventoryEligibleFields(finalEntryXml, note.path, entry.id, allowed),

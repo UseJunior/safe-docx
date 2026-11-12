@@ -549,7 +549,7 @@ export async function buildStandaloneTaggedPackage(
   const noteReferenceSourceIds = new Map<'footnote' | 'endnote', Map<string, string>>();
   taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
   resultArchive.setDocumentXml(taggedXml);
-  await markLifecycleNoteBodies({
+  const noteLifecycleMarks = await markLifecycleNoteBodies({
     archive: resultArchive,
     documentXml: taggedXml,
     revisedDocumentXml: await revisedArchive.getDocumentXml(),
@@ -577,6 +577,7 @@ export async function buildStandaloneTaggedPackage(
     mergeSourceSide: 'original',
     noteMergeResults,
     noteReferenceSourceIds,
+    noteLifecycleMarks,
   });
   const finalAuxiliarySidecars = {
     footnotesXmls: [await resultArchive.getFile('word/footnotes.xml')],

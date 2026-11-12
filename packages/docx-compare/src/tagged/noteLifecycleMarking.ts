@@ -9,6 +9,9 @@ const RESERVED_NOTE_TYPES = new Set(['separator', 'continuationSeparator', 'cont
 
 type ReferenceLifecycle = 'inserted' | 'deleted' | 'live';
 
+/** Final note IDs (canonical decimal) whose bodies were marked, per kind. */
+export type NoteLifecycleMarks = Map<'footnote' | 'endnote', Map<string, 'inserted' | 'deleted'>>;
+
 function isW(node: Node | null, localName: string): node is Element {
   return node !== null && node.nodeType === 1 &&
     (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === localName;
@@ -46,16 +49,22 @@ function referenceLifecycle(reference: Element): ReferenceLifecycle {
 /**
  * Mark the body of every footnote and endnote whose anchors are all tracked
  * insertions as inserted, and of every note whose anchors are all tracked
- * deletions as deleted: each run is wrapped in `w:ins`/`w:del` (`w:t` becomes
- * `w:delText` on the deletion side) and each paragraph mark but the note's
- * final one, which ends the note story, carries the same marker, so an added
- * note's text no longer reads as if it had always been there and a removed
- * note's text visibly goes with its anchor. A definition still referenced by
+ * deletions as deleted: each run, including the note's own reference mark,
+ * is wrapped in `w:ins`/`w:del` (`w:t` becomes `w:delText` and `w:instrText`
+ * becomes `w:delInstrText` on the deletion side), so an added note's text no
+ * longer reads as if it had always been there and a removed note's text
+ * visibly goes with its anchor. Paragraph marks are not marked; see below. A definition still referenced by
  * an unmarked or moved anchor, or by anchors of both kinds, stays as it is.
  * Runs already inside a revision wrapper keep their existing revision, and a
  * note whose source anchors already carry the same tracked lifecycle (a note
  * inserted or deleted with track changes on before the comparison) keeps the
  * body markup its source gave it.
+ *
+ * The note's paragraph marks are left alone because the note story is
+ * resolved with its anchor, and because LibreOffice, measured on Word-shaped
+ * notes (`w:pStyle` on every paragraph), joins the anchor's body paragraph to
+ * the next body paragraph on Accept or Reject whenever a note paragraph mark
+ * carries `w:ins`/`w:del`; run-only marks resolve correctly there.
  *
  * Runs after definitions are merged and repeated references separated, so
  * every definition in the result has its final ID and anchor set. Revision
@@ -66,8 +75,6 @@ function referenceLifecycle(reference: Element): ReferenceLifecycle {
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @see https://github.com/UseJunior/safe-docx/issues/1388
  */
 export async function markLifecycleNoteBodies(options: {
@@ -82,13 +89,14 @@ export async function markLifecycleNoteBodies(options: {
   author: string;
   date: Date;
   minimumRevisionId?: number;
-}): Promise<{ insertedNotes: number; deletedNotes: number }> {
+}): Promise<NoteLifecycleMarks> {
   const document = parseXml(options.documentXml);
   const sourceDocuments = {
     inserted: parseXml(options.revisedDocumentXml),
     deleted: parseXml(options.originalDocumentXml),
   };
-  const targets: Array<{ part: string; notes: Document; entries: Array<[Element, 'w:ins' | 'w:del']> }> = [];
+  const marks: NoteLifecycleMarks = new Map();
+  const targets: Array<{ kind: 'footnote' | 'endnote'; part: string; notes: Document; entries: Array<[Element, 'w:ins' | 'w:del', string]> }> = [];
   for (const kind of ['footnote', 'endnote'] as const) {
     const lifecycles = new Map<string, Set<ReferenceLifecycle>>();
     for (const reference of Array.from(document.getElementsByTagNameNS(OOXML.W_NS, `${kind}Reference`))) {
@@ -101,7 +109,7 @@ export async function markLifecycleNoteBodies(options: {
     const xml = lifecycles.size > 0 ? await options.archive.getFile(part) : null;
     if (!xml) continue;
     const notes = parseXml(xml);
-    const entries: Array<[Element, 'w:ins' | 'w:del']> = [];
+    const entries: Array<[Element, 'w:ins' | 'w:del', string]> = [];
     for (const entry of Array.from(notes.getElementsByTagNameNS(OOXML.W_NS, kind))) {
       if (RESERVED_NOTE_TYPES.has(entry.getAttributeNS(OOXML.W_NS, 'type') ?? '')) continue;
       const id = canonicalNoteId(entry.getAttributeNS(OOXML.W_NS, 'id') ?? '');
@@ -115,11 +123,11 @@ export async function markLifecycleNoteBodies(options: {
       const sourceReferences = Array.from(sourceDocuments[lifecycle!].getElementsByTagNameNS(OOXML.W_NS, `${kind}Reference`))
         .filter(reference => canonicalNoteId(reference.getAttributeNS(OOXML.W_NS, 'id') ?? '') === canonicalNoteId(sourceId));
       if (sourceReferences.length > 0 && sourceReferences.every(reference => referenceLifecycle(reference) === lifecycle)) continue;
-      entries.push([entry, lifecycle === 'inserted' ? 'w:ins' : 'w:del']);
+      entries.push([entry, lifecycle === 'inserted' ? 'w:ins' : 'w:del', id!]);
     }
-    if (entries.length > 0) targets.push({ part, notes, entries });
+    if (entries.length > 0) targets.push({ kind, part, notes, entries });
   }
-  if (targets.length === 0) return { insertedNotes: 0, deletedNotes: 0 };
+  if (targets.length === 0) return marks;
 
   const preservedRoots: Element[] = [document.documentElement];
   for (const path of options.archive.listFiles()) {
@@ -140,27 +148,22 @@ export async function markLifecycleNoteBodies(options: {
   const state = createRevisionIdState(preservedRoots);
   state.nextId = Math.max(state.nextId, options.minimumRevisionId ?? 0);
   const dateString = formatDate(options.date);
-  let insertedNotes = 0;
-  let deletedNotes = 0;
   for (const target of targets) {
-    for (const [entry, markerTag] of target.entries) {
-      // The note's last paragraph mark ends the note story and stays
-      // unmarked: readers resolve the note with its anchor, and LibreOffice
-      // merges the anchor's body paragraph into the next one when that mark
-      // carries the revision. Nested text-box paragraphs are marked as
-      // paragraphs in their own right; markLifecycleParagraph leaves their
-      // runs to them.
-      let finalParagraph: Element | null = null;
-      for (let child = entry.lastChild; child && !finalParagraph; child = child.previousSibling) {
-        if (isW(child, 'p')) finalParagraph = child;
-      }
+    const marked = new Map<string, 'inserted' | 'deleted'>();
+    marks.set(target.kind, marked);
+    for (const [entry, markerTag, id] of target.entries) {
+      // Paragraph marks stay unmarked: the note story is resolved with its
+      // anchor (Word removes the whole note with it, docx-core prunes an
+      // orphaned footnote), and LibreOffice merges the anchor's body paragraph
+      // into the next one on Accept/Reject when a styled note paragraph's mark
+      // carries the revision. Runs of nested text-box paragraphs are marked
+      // with those paragraphs.
       for (const paragraph of Array.from(entry.getElementsByTagNameNS(OOXML.W_NS, 'p'))) {
-        markLifecycleParagraph(paragraph, markerTag, options.author, dateString, state, paragraph !== finalParagraph);
+        markLifecycleParagraph(paragraph, markerTag, options.author, dateString, state, false);
       }
-      if (markerTag === 'w:ins') insertedNotes += 1;
-      else deletedNotes += 1;
+      marked.set(id, markerTag === 'w:ins' ? 'inserted' : 'deleted');
     }
     options.archive.setFile(target.part, serializer.serializeToString(target.notes));
   }
-  return { insertedNotes, deletedNotes };
+  return marks;
 }

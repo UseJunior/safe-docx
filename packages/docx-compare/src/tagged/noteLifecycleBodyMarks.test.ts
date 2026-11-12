@@ -70,19 +70,18 @@ function hasAncestor(element: Element, stop: Element, localName: string): boolea
 }
 
 /**
- * Every run sits inside the marker wrapper and every paragraph mark but the
- * note's final one carries the marker; the final mark ends the note story.
+ * Every run sits inside the marker wrapper; paragraph marks carry no
+ * revision, since the note story resolves with its anchor and LibreOffice
+ * joins body paragraphs when a styled note paragraph mark is tracked.
  */
 function expectEntryMarked(entry: Element, marker: 'ins' | 'del'): void {
   const paragraphs = Array.from(entry.getElementsByTagNameNS(W, 'p'));
   expect(paragraphs.length).toBeGreaterThan(0);
-  paragraphs.forEach((paragraph, index) => {
+  for (const paragraph of paragraphs) {
     const markRunProperties = Array.from(paragraph.getElementsByTagNameNS(W, 'rPr'))
       .find(rPr => (rPr.parentNode as Element).localName === 'pPr');
-    const marks = ['ins', 'del'].map(name => markRunProperties?.getElementsByTagNameNS(W, name).length ?? 0);
-    const final = index === paragraphs.length - 1;
-    expect(marks, `paragraph ${index} mark`).toEqual(final ? [0, 0] : marker === 'ins' ? [1, 0] : [0, 1]);
-  });
+    expect(['ins', 'del'].map(name => markRunProperties?.getElementsByTagNameNS(W, name).length ?? 0), 'paragraph mark').toEqual([0, 0]);
+  }
   const runs = Array.from(entry.getElementsByTagNameNS(W, 'r'));
   expect(runs.length).toBeGreaterThan(0);
   for (const run of runs) expect(hasAncestor(run, entry, marker), `run inside w:${marker}`).toBe(true);
@@ -263,7 +262,9 @@ describe('added and removed note bodies carry tracked lifecycle marks', () => {
     },
   );
 
-  for (const lifecycle of ['added', 'removed'] as const) {
+  for (const lifecycle of ['added', 'removed', 'unanchored'] as const) {
+    // 'unanchored': the revised package keeps the definition but drops its
+    // anchor, as when a paragraph holding a note is deleted.
     test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })(
       `marks a ${lifecycle} footnote whose body holds a cross-reference field`,
       async () => {
@@ -283,7 +284,15 @@ describe('added and removed note bodies carry tracked lifecycle marks', () => {
         ]) paragraph.appendChild(notes.importNode(parseXml(xml).documentElement, true));
         archive.setFile('word/footnotes.xml', serialize(notes));
         const withField = await archive.save();
-        const plain = await buildSyntheticDocx({ paragraphs: BODY });
+        let plain = await buildSyntheticDocx({ paragraphs: BODY });
+        if (lifecycle === 'unanchored') {
+          const unanchored = await DocxArchive.load(withField);
+          const main = parseXml(await unanchored.getDocumentXml());
+          const reference = main.getElementsByTagNameNS(W, 'footnoteReference')[0]!.parentNode as Element;
+          reference.parentNode!.removeChild(reference);
+          unanchored.setDocumentXml(serialize(main));
+          plain = await unanchored.save();
+        }
         const [original, revised] = lifecycle === 'added' ? [plain, withField] : [withField, plain];
         const result = await compareDocuments(original, revised, { author: AUTHOR, date: DATE });
         const entry = userEntries((await (await DocxArchive.load(result.document)).getFile('word/footnotes.xml'))!, 'footnote')[0]!;
@@ -338,7 +347,7 @@ describe('added and removed note bodies carry tracked lifecycle marks', () => {
       // docx-core's document.ts. The marks guarantee no note text survives.
       expect(resolvedEntries.footnote).toEqual([]);
       expect(resolvedEntries.endnote.map(entry => entry.getAttributeNS(W, 'id'))).toEqual(['1']);
-      expect(resolvedEntries.endnote[0]!.getElementsByTagNameNS(W, 'p')).toHaveLength(1);
+      expect(resolvedEntries.endnote[0]!.getElementsByTagNameNS(W, 'p')).toHaveLength(NOTE_PARAGRAPHS.multi.length);
       expect(resolvedEntries.endnote[0]!.getElementsByTagNameNS(W, 'r')).toHaveLength(0);
     });
   }
