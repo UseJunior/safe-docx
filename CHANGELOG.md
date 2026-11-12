@@ -13,8 +13,9 @@
   story, so every stored copy carries identical tracked text and Word and
   older readers show the same redline. Previously the main story tracked such
   a box as deleted and reinserted, and a header/footer refused it. A pure
-  re-save (storage changed, text and drawing unchanged) shows no revision; a
-  visible drawing change is listed with the `drawing` scope. (#1383)
+  re-save (storage changed, text unchanged) shows no text revision; the
+  spelling only one side stores is listed with the `drawing` scope, since it
+  may draw the box differently. (#1383)
 
 - A header or footer change the redline cannot carry (a resized logo or
   shape, listed in `unrepresentedChanges`) no longer makes `compareDocuments`

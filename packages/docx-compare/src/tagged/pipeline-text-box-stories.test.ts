@@ -1608,9 +1608,12 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
 
     await then('both stored copies of each box carry the tracked edit', () => {
       expect(sourceXml).not.toContain('<mc:AlternateContent');
-      // Word's DrawingML spelling draws what its VML spelling draws (to VML's
-      // rounding), so the added spelling is no drawing change.
-      expect(listed).toBeUndefined();
+      // The DrawingML spelling only the revised side stores cannot be shown
+      // to draw what the shared VML spelling draws, so each box's drawing is
+      // listed once, by the drawing Word renders.
+      expect((listed as Array<{ scope: string; drawing: { element: string; index: number } }>)
+        .map((change) => [change.scope, change.drawing.element, change.drawing.index]))
+        .toEqual([['drawing', 'drawing', 0], ['drawing', 'drawing', 1]]);
       expect(storedStoryTexts(redlined)).toHaveLength(4);
       expect(storedStoryTexts(acceptAllChanges(redlined))).toEqual(storedStoryTexts(revisedXml));
       expect(storedStoryTexts(rejectAllChanges(redlined))).toEqual(

@@ -54,7 +54,6 @@ const RELATIONSHIPS_NS =
 const PACKAGE_RELATIONSHIPS_NS =
   'http://schemas.openxmlformats.org/package/2006/relationships';
 const OFFICE_VML_NS = 'urn:schemas-microsoft-com:office:office';
-const WORD_VML_NS = 'urn:schemas-microsoft-com:office:word';
 const WORDPROCESSING_DRAWING_NS =
   'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
 const serializer = new XMLSerializer();
@@ -734,95 +733,6 @@ function isWithinElement(element: Element, container: Element): boolean {
   return false;
 }
 
-const EMU_PER_UNIT: Record<string, number> = { pt: 12700, in: 914400, cm: 360000, mm: 36000, px: 9525 };
-/** VML writes lengths rounded to a few hundredths of a point. */
-const TWIN_LENGTH_TOLERANCE_EMU = 1270;
-
-/** A VML CSS length in EMU, or `undefined` when it is not one this check reads. */
-function vmlLengthEmu(value: string | undefined): number | undefined {
-  if (value === undefined) return 0;
-  const match = /^(-?(?:\d+\.?\d*|\.\d+))(pt|in|cm|mm|px)?$/u.exec(value.trim());
-  if (!match) return undefined;
-  const amount = Number(match[1]);
-  if (!match[2]) return amount === 0 ? 0 : undefined;
-  return amount * EMU_PER_UNIT[match[2]]!;
-}
-
-const HORIZONTAL_FRAMES: Record<string, string> = {
-  column: 'text', margin: 'margin', page: 'page', character: 'char',
-  leftMargin: 'left-margin-area', rightMargin: 'right-margin-area',
-  insideMargin: 'inner-margin-area', outsideMargin: 'outer-margin-area',
-};
-const VERTICAL_FRAMES: Record<string, string> = {
-  paragraph: 'text', margin: 'margin', page: 'page', line: 'line',
-  topMargin: 'top-margin-area', bottomMargin: 'bottom-margin-area',
-  insideMargin: 'inner-margin-area', outsideMargin: 'outer-margin-area',
-};
-const WRAP_TYPES: Record<string, string> = {
-  wrapSquare: 'square', wrapTight: 'tight', wrapThrough: 'through', wrapTopAndBottom: 'topAndBottom', wrapNone: 'none',
-};
-
-/**
- * Do the DrawingML and VML spellings of one twinned box draw it the same
- * size, at the same place, with the same wrap? Word writes both from one
- * shape, so they agree to within VML's rounding; spellings that disagree, or
- * use a placement this check cannot read, are not taken as the same drawing.
- */
-function twinSpellingsAgree(drawingCopy: Element, vmlCopy: Element): boolean {
-  const drawing = drawingContainer(drawingCopy);
-  const shape = nearestShape(vmlCopy);
-  if (!drawing || !shape) return false;
-  const placement = directChildElements(drawing)[0];
-  if (!placement || placement.namespaceURI !== WORDPROCESSING_DRAWING_NS) return false;
-  const child = (parent: Element, name: string): Element | undefined =>
-    directChildElements(parent).find((element) =>
-      element.namespaceURI === WORDPROCESSING_DRAWING_NS && element.localName === name);
-  const style = new Map((shape.getAttribute('style') ?? '').split(';')
-    .map((declaration) => declaration.split(':').map((part) => part.trim()))
-    .filter((pair): pair is [string, string] => pair.length === 2 && pair[0] !== '')
-    .map(([key, value]) => [key, value]));
-  const near = (emu: number | undefined, value: string | undefined): boolean => {
-    const vml = vmlLengthEmu(value);
-    return emu !== undefined && Number.isFinite(emu) && vml !== undefined &&
-      Math.abs(emu - vml) <= TWIN_LENGTH_TOLERANCE_EMU;
-  };
-  const extent = child(placement, 'extent');
-  if (!extent ||
-    !near(Number(extent.getAttribute('cx')), style.get('width')) ||
-    !near(Number(extent.getAttribute('cy')), style.get('height'))) return false;
-  const absolute = style.get('position') === 'absolute';
-  if (placement.localName === 'inline') return !absolute;
-  if (placement.localName !== 'anchor' || !absolute) return false;
-  const axisAgrees = (axis: 'H' | 'V'): boolean => {
-    const position = child(placement, `position${axis}`);
-    if (!position) return false;
-    const frames = axis === 'H' ? HORIZONTAL_FRAMES : VERTICAL_FRAMES;
-    const word = axis === 'H' ? 'horizontal' : 'vertical';
-    if (frames[position.getAttribute('relativeFrom') ?? ''] !== (style.get(`mso-position-${word}-relative`) ?? 'text')) {
-      return false;
-    }
-    const offset = child(position, 'posOffset');
-    if (offset) {
-      return (style.get(`mso-position-${word}`) ?? 'absolute') === 'absolute' &&
-        near(Number(offset.textContent), style.get(axis === 'H' ? 'margin-left' : 'margin-top'));
-    }
-    const align = child(position, 'align');
-    return align !== undefined && style.get(`mso-position-${word}`) === align.textContent?.trim();
-  };
-  if (!axisAgrees('H') || !axisAgrees('V')) return false;
-  const wrap = directChildElements(placement).find((element) =>
-    element.namespaceURI === WORDPROCESSING_DRAWING_NS && element.localName in WRAP_TYPES);
-  const vmlWrap = directChildElements(shape).find((element) =>
-    element.namespaceURI === WORD_VML_NS && element.localName === 'wrap')?.getAttribute('type') ?? 'none';
-  return wrap !== undefined && WRAP_TYPES[wrap.localName] === vmlWrap;
-}
-
-/** Every twinned side's DrawingML and VML spellings draw the same box. */
-function storedSpellingsAgree(copies: readonly Element[]): boolean {
-  const drawing = copies.find((copy) => storageVocabulary(copy) === 'drawing');
-  const vml = copies.find((copy) => storageVocabulary(copy) === 'pict');
-  return !drawing || !vml || twinSpellingsAgree(drawing, vml);
-}
 
 interface TextBoxStorageAlignment {
   /**
@@ -836,6 +746,12 @@ interface TextBoxStorageAlignment {
   /**
    * A copy written in a vocabulary both sides store has a different drawing
    * (size, position, wrap), beyond Word's editing-session ids.
+   */
+  sharedChanged: boolean;
+  /**
+   * The drawing may read differently: `sharedChanged`, or a spelling (the
+   * DrawingML or the VML one) was added or dropped, which nothing on the
+   * other side can be compared with. Reported with the `drawing` scope.
    */
   visible: boolean;
   /** The revised drawing a reader sees, for a `drawing` entry. */
@@ -857,9 +773,8 @@ interface TextBoxStorageAlignment {
  * names relationships that mean the same in the original, neither brings nor
  * takes away a VML template another box relies on, and every stored copy on
  * each side says the same thing. A drawing change is `visible` when the
- * spelling both sides store changed, or when a twin's two spellings draw
- * different sizes, places or wraps (`twinSpellingsAgree`), since the reader
- * of the added or dropped spelling then sees a different drawing.
+ * spelling both sides store changed, or when a spelling was added or dropped,
+ * since the reader of that spelling may see a different drawing.
  *
  * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
  * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
@@ -892,17 +807,21 @@ function textBoxStorageAlignment(
     canonicalNode(copy) === canonicalNode(source(copy)) &&
     relationshipClosureFingerprint(copy, revisedTargets) ===
       relationshipClosureFingerprint(source(copy), originalTargets));
-  // The spelling both sides store is compared directly. The spelling only
-  // one side stores is compared to its own twin: when the two spellings of a
-  // twin disagree, the reader that renders the added or dropped one sees a
-  // different drawing, and that is a change too.
-  const visible = !storedSpellingsAgree(originalCopies) || !storedSpellingsAgree(revisedCopies) ||
-    revisedCopies.some((copy) => {
-      const original = sameVocabulary(copy);
-      return original !== undefined &&
-        drawingShapeFingerprint(drawingContainer(original)!, { withoutEditingSessionIds: true }) !==
-          drawingShapeFingerprint(drawingContainer(copy)!, { withoutEditingSessionIds: true });
-    });
+  // The spelling both sides store is compared directly. A spelling only one
+  // side stores cannot be compared with anything: no rule maps every
+  // DrawingML property (placement, z-order, rotation, fill, ...) onto VML, so
+  // the reader that renders it may see a different drawing. Gaining or
+  // losing a spelling is therefore reported as a drawing change, never
+  // assumed to be a faithful re-save.
+  const sharedChanged = revisedCopies.some((copy) => {
+    const original = sameVocabulary(copy);
+    return original !== undefined &&
+      drawingShapeFingerprint(drawingContainer(original)!, { withoutEditingSessionIds: true }) !==
+        drawingShapeFingerprint(drawingContainer(copy)!, { withoutEditingSessionIds: true });
+  });
+  const vocabularies = (copies: readonly Element[]): string =>
+    [...new Set(copies.map((copy) => storageVocabulary(copy)))].sort().join('|');
+  const spellingChanged = vocabularies(originalCopies) !== vocabularies(revisedCopies);
   const renderedContainer = drawingContainer(renderedRevisedCopy)!;
   const name = drawingName(renderedRevisedCopy, renderedContainer) ??
     revisedCopies.map((copy) => drawingName(copy, drawingContainer(copy)!)).find((candidate) => candidate);
@@ -916,7 +835,8 @@ function textBoxStorageAlignment(
       originalRoot.parentNode!.replaceChild(aligned, originalRoot);
     },
     textUnchanged,
-    visible,
+    sharedChanged,
+    visible: sharedChanged || spellingChanged,
     renderedContainer,
     ...(name ? { name } : {}),
   };
@@ -2019,7 +1939,7 @@ function assertLifecycleStoriesAreSectionBound(
  * store takes the revised storage around its original story, so its text is
  * compared in every stored copy. A header or footer story is spliced into the
  * revised part, so the revised storage is carried whether or not its text
- * changed; a visible drawing change in a spelling both sides store is
+ * changed; a changed shared spelling, or a spelling only one side stores, is
  * reported for the `drawing` scope, as any header/footer drawing change is
  * (#1382). A box that names another identity, or whose storage cannot be
  * carried, is refused: a header or footer cannot track a replaced box (#1384).
@@ -2865,14 +2785,14 @@ export async function deletedAncillaryStoryOutputPaths(
  * original document, and say what it changed.
  *
  * A box paired across storage shapes (`sameBoxStoredDifferently`) whose text
- * changed, or whose drawing did not visibly change, takes the revised storage
- * around its original story (`textBoxStorageAlignment`), so its text is
- * tracked inside the box in every stored copy and a pure re-save by a newer
- * Word — the same box, now twinned — shows no revision at all. A visible
- * drawing change in a spelling both sides store is listed with the `drawing`
- * scope, as for any box whose text and drawing both changed (#1382). A box
- * whose drawing alone changed, or whose storage cannot be carried, stays a
- * native replacement in the outer comparison.
+ * changed, or whose spelling both sides store did not change, takes the
+ * revised storage around its original story (`textBoxStorageAlignment`), so
+ * its text is tracked inside the box in every stored copy and a re-save by a
+ * newer Word — the same box, now twinned — shows no text revision. The added
+ * or dropped spelling is listed with the `drawing` scope, as any drawing the
+ * redline carries without markup is (#1382). A box whose shared spelling
+ * alone changed, or whose storage cannot be carried, stays a native
+ * replacement in the outer comparison.
  *
  * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
  * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
@@ -2912,7 +2832,7 @@ function alignBodyTextBoxStorage(
       originalTargets,
       revisedTargets,
     );
-    if (!alignment || (alignment.textUnchanged && alignment.visible)) continue;
+    if (!alignment || (alignment.textUnchanged && alignment.sharedChanged)) continue;
     alignment.apply();
     aligned = true;
     if (!alignment.visible) continue;

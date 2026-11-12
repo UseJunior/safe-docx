@@ -273,6 +273,26 @@ async function assertProjections(
   await assertSchema(compared);
 }
 
+/**
+ * The `drawing` entry a carried storage change lists: the drawing Word
+ * renders, the DrawingML one when the revised side stores it.
+ */
+function listedDrawing(
+  revisedStorage: Storage,
+  story: 'body' | 'footer',
+): Array<Record<string, unknown>> {
+  const element = revisedStorage === vmlOnly
+    ? { element: 'pict', name: 'box1' }
+    : { element: 'drawing', name: 'Text Box 1' };
+  return [{
+    scope: 'drawing',
+    kind: 'changed',
+    sectionIndex: 0,
+    ...(story === 'footer' ? { role: 'default' } : {}),
+    drawing: { story, partPath: story === 'body' ? BODY : FOOTER, index: 0, ...element },
+  }];
+}
+
 const STORAGE_CHANGES: ReadonlyArray<readonly [label: string, original: Storage, revised: Storage]> = [
   ['VML only, re-saved twinned in mc:AlternateContent', vmlOnly, twin],
   ['twinned in mc:AlternateContent, saved back as VML only', twin, vmlOnly],
@@ -323,8 +343,8 @@ describe('text boxes stored as DrawingML only or differently in the two document
         );
         expect(storageUntracked(output)).toBe(true);
       });
-      await and('nothing is listed: a re-saved box is the same box', () => {
-        expect(result.unrepresentedChanges).toBeUndefined();
+      await and('the added or dropped spelling is listed as a drawing change, once', () => {
+        expect(result.unrepresentedChanges).toEqual(listedDrawing(revisedStorage, 'body'));
       });
       await and('Accept All is the revised document; Reject All the original text in the revised storage', () =>
         assertProjections(original, revised, result.document, BODY));
@@ -334,8 +354,9 @@ describe('text boxes stored as DrawingML only or differently in the two document
       given, when, then,
     }: AllureBddContext) => {
       // A newer Word re-saving an older document rewrites how the box is
-      // stored without changing what the box says or how it is drawn. There
-      // is nothing for a reviewer to accept or reject.
+      // stored without changing what the box says. There is no text for a
+      // reviewer to accept or reject; the spelling one side alone stores
+      // cannot be shown to draw the same box, so it is listed, not hidden.
       const original = await given('the box as the original stores it', () =>
         bodyPackage(originalStorage('Notice to: Same address')));
       const revised = await given('the same box and text, stored the other way', () =>
@@ -343,10 +364,10 @@ describe('text boxes stored as DrawingML only or differently in the two document
       const result = await when('the documents are compared', () =>
         compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
 
-      await then('the redline is the revised document with no revision and nothing listed', async () => {
+      await then('the redline is the revised document with no revision and the drawing listed', async () => {
         const output = await partXml(result.document, BODY);
         expect(revisionCount(output)).toBe(0);
-        expect(result.unrepresentedChanges).toBeUndefined();
+        expect(result.unrepresentedChanges).toEqual(listedDrawing(revisedStorage, 'body'));
         await assertProjections(original, revised, result.document, BODY);
       });
     });
@@ -465,7 +486,8 @@ describe('text boxes stored as DrawingML only or differently in the two document
   }: AllureBddContext) => {
     // Word renders the 260pt mc:Choice; saved back as VML only, it renders
     // the 200pt spelling. The VML both documents store is unchanged, but the
-    // drawing Word shows is not, so the change is never silent.
+    // drawing Word shows is not, so the change is never silent: the dropped
+    // spelling is listed whether or not the text changed.
     const lopsided = twinned('3302000', '200pt');
     const sameText = await given('the twin saved back as VML only, text unchanged', async () => ({
       original: await bodyPackage(lopsided('Notice to: Same address')),
@@ -485,13 +507,11 @@ describe('text boxes stored as DrawingML only or differently in the two document
       return { original, revised, result: await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS) };
     });
 
-    await then('the unedited body box keeps its native replacement, which Reject All restores', async () => {
+    await then('the unedited body box shows no revision and its drawing is listed', async () => {
       const output = await partXml(sameResult.document, BODY);
-      expect(storageUntracked(output)).toBe(false);
-      expect(sameResult.unrepresentedChanges).toBeUndefined();
-      expect(readerView(rejectAllChanges(output))).toEqual(readerView(await partXml(sameText.original, BODY)));
-      expect(readerView(await docxCorePart(sameResult.document, 'reject', BODY)))
-        .toEqual(readerView(await partXml(sameText.original, BODY)));
+      expect(revisionCount(output)).toBe(0);
+      expect(sameResult.unrepresentedChanges).toEqual(listedDrawing(vmlOnly, 'body'));
+      await assertProjections(sameText.original, sameText.revised, sameResult.document, BODY);
     });
     await and('the edited box is tracked in place and its drawing listed, in the body and in a footer', async () => {
       expect(trackedCopyText(await partXml(editedResult.document, BODY))).toEqual([{ deleted: 'Old', inserted: 'New' }]);
@@ -504,6 +524,41 @@ describe('text boxes stored as DrawingML only or differently in the two document
       await assertProjections(edited.original, edited.revised, editedResult.document, BODY);
       expect(footerResult.result.unrepresentedChanges?.map((change) => change.scope)).toEqual(['drawing']);
       await assertProjections(footerResult.original, footerResult.revised, footerResult.result.document, FOOTER);
+    });
+  });
+
+  test('lists the drawing of a re-stored twin whose DrawingML spelling places or paints the box differently', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The size and offsets both spellings write can agree while the DrawingML
+    // one draws a different box: `simplePos="1"` places it by `wp:simplePos`,
+    // `behindDoc` sends it behind the text, `a:xfrm/@rot` turns it. No rule
+    // maps every such property onto VML, so a spelling only one side stores
+    // is always listed, never taken for a faithful re-save.
+    const variants: ReadonlyArray<readonly [string, (xml: string) => string]> = [
+      ['placed by wp:simplePos', (xml) => xml.replace('simplePos="0"', 'simplePos="1"')
+        .replace('<wp:simplePos x="0" y="0"/>', '<wp:simplePos x="3810000" y="1905000"/>')],
+      ['sent behind the text', (xml) => xml.replace('behindDoc="0"', 'behindDoc="1"')],
+      ['rotated', (xml) => xml.replace('<a:xfrm>', '<a:xfrm rot="5400000">')],
+    ];
+    const results = await when('a VML-only box is compared with each re-stored twin, text unchanged', () =>
+      Promise.all(variants.map(async ([label, vary]) => {
+        const original = await bodyPackage(vmlOnly('Notice to: Same address'));
+        const revised = await bodyPackage(vary(twin('Notice to: Same address')));
+        const footerOriginal = await footerPackage(vmlOnly('Footer notice'));
+        const footerRevised = await footerPackage(vary(twin('Footer notice')));
+        return {
+          label,
+          body: await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS),
+          footer: await compareDocumentsAtomizer(footerOriginal, footerRevised, COMPARE_OPTIONS),
+        };
+      })));
+
+    await then('each one lists the drawing, in the body and in a footer', () => {
+      for (const { label, body, footer } of results) {
+        expect(body.unrepresentedChanges, label).toEqual(listedDrawing(twin, 'body'));
+        expect(footer.unrepresentedChanges, label).toEqual(listedDrawing(twin, 'footer'));
+      }
     });
   });
 
@@ -580,8 +635,8 @@ describe('text boxes stored as DrawingML only or differently in the two document
         );
         expect(storageUntracked(output)).toBe(true);
       });
-      await and('neither the footer nor the drawing is listed', () => {
-        expect(result.unrepresentedChanges).toBeUndefined();
+      await and('the footer is not listed; the added or dropped spelling is, as a drawing', () => {
+        expect(result.unrepresentedChanges).toEqual(listedDrawing(revisedStorage, 'footer'));
       });
       await and('Accept All is the revised footer; Reject All the original text in the revised storage', () =>
         assertProjections(original, revised, result.document, FOOTER));
@@ -596,9 +651,9 @@ describe('text boxes stored as DrawingML only or differently in the two document
     const result = await when('the documents are compared', () =>
       compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
 
-    await then('the footer carries no revision and nothing is listed', async () => {
+    await then('the footer carries no revision and only the added spelling is listed', async () => {
       expect(revisionCount(await partXml(result.document, FOOTER))).toBe(0);
-      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(result.unrepresentedChanges).toEqual(listedDrawing(twin, 'footer'));
       await assertProjections(original, revised, result.document, FOOTER);
     });
   });
