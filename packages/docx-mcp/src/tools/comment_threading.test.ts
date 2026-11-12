@@ -11,6 +11,7 @@ import {
 } from '../testing/session-test-utils.js';
 import { getComments } from './get_comments.js';
 import { readFile } from './read_file.js';
+import { deleteComment } from './delete_comment.js';
 
 const test = testAllure.epic('Document Reading').withLabels({ feature: 'Comment Threading' });
 
@@ -217,4 +218,27 @@ describe('MCP tools keep a reply whose thread parent cannot be resolved (#1353)'
       expect(lines.filter((line) => /^#(COMMENT|REPLY) /.test(line)).map((line) => line.match(/ c(\d+) /)?.[1])).toEqual(['0']);
     });
   });
+  for (const [shape, unanchored, expectDocumentXml] of [
+    ['without body range markers', true, false],
+    ['with its own body range markers', false, true],
+  ] as const) {
+    test(`delete_comment on an orphan ${shape} reports word/document.xml only if markers were removed`, async ({ given, when, then }: AllureBddContext) => {
+      const fixture = await given(`a DOCX whose orphaned reply thread is ${shape}`, () => writeFixture(
+        orphanThread.map((comment) => (comment.id === 0 ? comment : { ...comment, unanchored })),
+      ));
+      const result = await when('the orphan is deleted', () => deleteComment(fixture.mgr, { file_path: fixture.filePath, comment_id: 1 }));
+
+      await then('the orphan thread is gone and the manifest names document.xml exactly when its milestones were removed', async () => {
+        assertSuccess(result, 'delete_comment');
+        const remaining = await getComments(fixture.mgr, { file_path: fixture.filePath });
+        assertSuccess(remaining, 'get_comments');
+        expect(threadContents(remaining.comments as Thread[])).toEqual([expected[0]]);
+        const session = await fixture.mgr.getSessionByFilePath(fixture.filePath);
+        if (!session || session.provider !== 'docx') throw new Error('Expected a DOCX session');
+        const entry = session.nonRevisionManifest.find((change) => change.tool === 'delete_comment');
+        expect(entry!.parts.includes('word/document.xml')).toBe(expectDocumentXml);
+        expect(entry!.parts).toContain('word/comments.xml');
+      });
+    });
+  }
 });

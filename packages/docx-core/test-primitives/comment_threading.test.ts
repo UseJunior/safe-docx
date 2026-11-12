@@ -417,4 +417,29 @@ describe('comment threading keeps replies whose parent link cannot be followed (
       expect((await extensionRows(fixture.zip)).map((row) => row.getAttributeNS(OOXML.W15_NS, 'paraId'))).toEqual(['10000001']);
     });
   });
+  for (const [scenario, rewrite, commentId, expectedBefore, expectedAfter] of [
+    ['two comments share a paragraph ID', (xml: string) => xml.replace('w14:paraId="10000000"', 'w14:paraId="10000001"'),
+      0, ['0->root', '1->root', '2->1'], ['1->root', '2->1']],
+    ['two definitions share a w:id', (xml: string) => xml.replace('w:id="2"', 'w:id="0"'),
+      1, ['0->root', '1->0'], ['0->root']],
+  ] as Array<[string, (xml: string) => string, number, string[], string[]]>) {
+    test(`deleting a comment when ${scenario} follows the tree getComments shows`, async ({ given, when, then }: AllureBddContext) => {
+      let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+      await given(`a cyclic thread in which ${scenario}`, async () => {
+        fixture = await loadFixture([
+          { id: 0, paragraphs: ['A'], parentId: 1 },
+          { id: 1, paragraphs: ['B'], parentId: 2 },
+          { id: 2, paragraphs: ['C'], parentId: 1 },
+        ]);
+        fixture.zip.writeText('word/comments.xml', rewrite(await fixture.zip.readText('word/comments.xml')));
+        expect(edges(await getComments(fixture.zip, fixture.doc))).toEqual(expectedBefore);
+      });
+      await when(`comment ${commentId} is deleted`, async () => {
+        await deleteComment(fixture.doc, fixture.zip, { commentId });
+      });
+      await then('only that comment and the replies listed beneath it are removed', async () => {
+        expect(edges(await getComments(fixture.zip, fixture.doc))).toEqual(expectedAfter);
+      });
+    });
+  }
 });
