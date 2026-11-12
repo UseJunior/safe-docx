@@ -1,6 +1,7 @@
 import { OOXML, W } from './namespaces.js';
 import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 import { getParagraphText, getParagraphRuns } from './text.js';
+import { runContentVisibleLength } from './run_content_visible_text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { buildTableMetaMap, deriveTableContext } from './table_context.js';
 import { extractListLabel, stripListLabel, LabelType } from './list_labels.js';
@@ -292,9 +293,14 @@ type ParagraphFootnoteRef = { offset: number; id: number; display: number };
  * (read_file's clean_text suffix) never re-walk the DOM. @see #393
  *
  * Self-contained: only inspects the paragraph DOM for w:footnoteReference
- * elements. Does NOT modify getParagraphRuns or getParagraphText.
+ * elements. Does NOT modify getParagraphRuns or getParagraphText. Run lengths
+ * come from the shared run-content definition (`runContentVisibleLength`), so
+ * the offsets are in the same raw-offset space as `getParagraphText`.
+ *
+ * @internal Exported for the walker-agreement tests (issue #1045); not part of
+ * the supported API.
  */
-function getFootnoteMarkersForParagraph(
+export function getFootnoteMarkersForParagraph(
   p: Element,
   displayMap: Map<number, number>,
 ): ParagraphFootnoteRef[] {
@@ -334,11 +340,8 @@ function getFootnoteMarkersForParagraph(
 
       if (fieldState === 1) continue; // skip field code
 
-      if (el.localName === W.t) {
-        runVisibleLen += (el.textContent ?? '').length;
-      } else if (el.localName === W.tab || el.localName === W.br) {
-        runVisibleLen += 1;
-      } else if (el.localName === W.footnoteReference) {
+      runVisibleLen += runContentVisibleLength(el);
+      if (el.localName === W.footnoteReference) {
         hasFootnoteRef = true;
         const idStr = getWAttr(el, 'id');
         if (idStr) footnoteId = parseInt(idStr, 10);
