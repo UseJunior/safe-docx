@@ -173,10 +173,11 @@ describe('retained common-text formatting', () => {
       + '<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>beta</w:t></w:r></w:p>',
     );
     const special = await importDocxToMarkdoc(specialSource);
+    // The w:sym glyph is one character of the paragraph text (U+F0FC).
     await expect(compileMarkdoc(special.anchoredSource, change(
       special.markdoc,
-      'Alphabeta',
-      '{% retain-format highlight="none" %}Alphabeta{% /retain-format %}',
+      'Alpha\uF0FCbeta',
+      '{% retain-format highlight="none" %}Alpha\uF0FCbeta{% /retain-format %}',
     ))).rejects.toMatchObject({ code: 'UNSUPPORTED_EDIT_STRUCTURE' });
   });
 
