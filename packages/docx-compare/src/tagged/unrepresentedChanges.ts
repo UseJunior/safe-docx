@@ -24,6 +24,28 @@ import { createResolvedStoryReader, type ResolvedStoryReader } from './storyRela
 
 const REVISION_TAGS = new Set(['sectPrChange']);
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+
+/**
+ * A markup-compatibility attribute (Requires, Ignorable, ProcessContent,
+ * MustUnderstand, ...) names namespaces by prefix, so its value is compared
+ * with each prefix resolved: rebinding a prefix changes which mc:Choice Word
+ * selects even when no other character differs (Codex round 15).
+ */
+function isPrefixListAttribute(element: Element, attribute: Attr): boolean {
+  if (attribute.namespaceURI === MC_NS) return true;
+  // mc:Choice carries Requires unqualified.
+  return !attribute.namespaceURI && element.namespaceURI === MC_NS && localName(element) === 'Choice' &&
+    (attribute.localName ?? attribute.name) === 'Requires';
+}
+
+function resolvedMarkupCompatibilityValue(element: Element, value: string): string {
+  return value.trim().split(/\s+/u).filter(Boolean).map((token) => {
+    const [prefix = '', ...rest] = token.split(':');
+    const uri = element.lookupNamespaceURI(prefix) ?? `unbound:${prefix}`;
+    return rest.length > 0 ? `{${uri}}${rest.join(':')}` : `{${uri}}`;
+  }).join(' ');
+}
 
 /**
  * Report aligned content controls whose `w:sdtPr`/`w:sdtEndPr` differ.
@@ -359,6 +381,10 @@ function normalizedStoryXml(xml: string): string {
         element.removeAttributeNode(attribute);
       }
     }
+    for (const attribute of Array.from(element.attributes)) {
+      if (!isPrefixListAttribute(element, attribute)) continue;
+      attribute.value = resolvedMarkupCompatibilityValue(element, attribute.value);
+    }
     for (const child of Array.from(element.childNodes)) {
       if (child.nodeType === 1) {
         const childElement = child as Element;
@@ -611,7 +637,7 @@ const VOLATILE_PROPERTY_FIELDS = /(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIM
 const SELF_CONTAINED_FIELDS = new Set([
   'PAGE', 'NUMPAGES', 'SECTIONPAGES', 'SECTION', 'DATE', 'TIME', 'PRINTDATE', 'SAVEDATE', 'CREATEDATE',
   'EDITTIME', 'LASTSAVEDBY', 'REVNUM', 'NUMWORDS', 'NUMCHARS', 'AUTHOR', 'TITLE', 'SUBJECT', 'KEYWORDS',
-  'COMMENTS', 'DOCPROPERTY', 'INFO', 'FILENAME', 'FILESIZE', 'TEMPLATE', 'DOCVARIABLE',
+  'COMMENTS', 'DOCPROPERTY', 'INFO', 'FILENAME', 'TEMPLATE', 'DOCVARIABLE',
 ]);
 
 /**
@@ -704,7 +730,8 @@ function environmentCanonicalXml(node: Node, dropSessionIds: boolean): string {
     const attr = element.attributes.item(index);
     if (!attr || attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
     if (dropSessionIds && attr.namespaceURI === W_NS && attr.localName?.startsWith('rsid')) continue;
-    attrs.push(`${attr.namespaceURI ?? ''}|${attr.localName ?? attr.name}=${JSON.stringify(attr.value)}`);
+    const value = isPrefixListAttribute(element, attr) ? resolvedMarkupCompatibilityValue(element, attr.value) : attr.value;
+    attrs.push(`${attr.namespaceURI ?? ''}|${attr.localName ?? attr.name}=${JSON.stringify(value)}`);
   }
   attrs.sort();
   const children = Array.from(element.childNodes).map((child) => environmentCanonicalXml(child, dropSessionIds)).join('');
@@ -767,7 +794,7 @@ async function storyFormattingEnvironment(
     .map(bindingLine).sort().join('\n')}`);
   // Every role each part plays, from every relationship part in the package.
   const roles = new Map<string, Set<string>>();
-  const relsPaths = archive.listFiles().filter((path) => /(^|\/)_rels\/[^/]+\.rels$/u.test(path)).sort();
+  const relsPaths = archive.listFiles().filter((path) => /(^|\/)_rels\/[^/]*\.rels$/u.test(path)).sort();
   const relationshipsByPart = new Map<string, PartRelationship[]>();
   for (const relsPath of relsPaths) {
     const ownerFolder = relsPath.replace(/(^|\/)_rels\/[^/]+$/u, '');
@@ -793,6 +820,13 @@ async function storyFormattingEnvironment(
   const stylesParts = new Set(documentRelationships
     .filter((relationship) => !relationship.external && /\/(styles|stylesWithEffects)$/u.test(relationship.type))
     .map((relationship) => relationship.path));
+  // A custom property linked to a bookmark (linkTarget) shows content from
+  // the story holding that bookmark, so it is read as a cross-story field.
+  for (const relationship of relationshipsByPart.get('_rels/.rels') ?? []) {
+    if (relationship.external || !/\/custom-properties$/u.test(relationship.type)) continue;
+    const xml = await archive.getFile(relationship.path);
+    if (xml !== null && /\blinkTarget\s*=/u.test(xml)) return `linked-properties:${Math.random()}`;
+  }
   const propertyParts = new Set((relationshipsByPart.get('_rels/.rels') ?? [])
     .filter((relationship) => !relationship.external && DOCUMENT_PROPERTIES_ROLE.test(relationship.type))
     .map((relationship) => relationship.path));

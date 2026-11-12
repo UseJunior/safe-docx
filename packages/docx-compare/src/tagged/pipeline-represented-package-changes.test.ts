@@ -882,6 +882,101 @@ describe('changes the redline still does not carry stay listed', () => {
     });
   }
 
+  const withRootRelationship = async (archive: DocxArchive, id: string, type: string, target: string, contentType: string): Promise<void> => {
+    const rootRels = (await archive.getFile('_rels/.rels'))!;
+    if (!rootRels.includes(`Target="${target}"`)) {
+      archive.setFile('_rels/.rels', rootRels.replace('</Relationships>', `<Relationship Id="${id}" Type="${type}" Target="${target}"/></Relationships>`));
+    }
+    const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+    if (!contentTypes.includes(`PartName="/${target}"`)) {
+      archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>', `<Override PartName="/${target}" ContentType="${contentType}"/></Types>`));
+    }
+  };
+
+  test('a last-saved-by property no header/footer shows does not keep an allocation-only header entry listed', async () => {
+    // cp:lastModifiedBy is rewritten on every save; with no field or binding
+    // that shows it, the core properties part the package root names is
+    // compared without it.
+    const withLastSavedBy = async (buffer: Buffer, name: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('docProps/core.xml',
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties">' +
+        `<cp:lastModifiedBy>${name}</cp:lastModifiedBy></cp:coreProperties>`);
+      await withRootRelationship(archive, 'rIdCore', 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties',
+        'docProps/core.xml', 'application/vnd.openxmlformats-package.core-properties+xml');
+      return archive.save();
+    };
+    const header = story('rIdH', 'header', 'header1.xml', 'Plain header');
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withLastSavedBy(await packageWith(body, LAYOUT, [header]), 'Alice');
+    const revised = await withLastSavedBy(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'header')).toEqual([]);
+  });
+
+  test('a header DOCPROPERTY field whose custom property is linked to a moved bookmark stays listed when only its reference allocation differs', async () => {
+    // A linked custom property (linkTarget) shows the bookmarked text of
+    // another story (Codex round 15).
+    const withLinkedProperty = async (buffer: Buffer): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('docProps/custom.xml',
+        '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
+        '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Brand" linkTarget="Brand"><vt:lpwstr>Alice</vt:lpwstr></property></Properties>');
+      await withRootRelationship(archive, 'rIdCustom', `${R_NS}/custom-properties`,
+        'docProps/custom.xml', 'application/vnd.openxmlformats-officedocument.custom-properties+xml');
+      return archive.save();
+    };
+    const mark = (bookmarked: 'Alice' | 'Bob', text: 'Alice' | 'Bob'): string => (text === bookmarked
+      ? `<w:bookmarkStart w:id="7" w:name="Brand"/><w:r><w:t>${text}</w:t></w:r><w:bookmarkEnd w:id="7"/>`
+      : `<w:r><w:t>${text}</w:t></w:r>`);
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> DOCPROPERTY Brand </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Alice</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+    };
+    const body = (bookmarked: 'Alice' | 'Bob'): string =>
+      `<w:p>${mark(bookmarked, 'Alice')}<w:r><w:t xml:space="preserve"> </w:t></w:r>${mark(bookmarked, 'Bob')}</w:p>` +
+      sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withLinkedProperty(await packageWith(body('Alice'), LAYOUT, [header]));
+    const revised = await withLinkedProperty(await packageWith(body('Bob'), ref('header', 'rIdH') + LAYOUT, [header]));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
+  test('a header mc:Choice whose required prefix is rebound stays listed when only its reference allocation differs', async () => {
+    // Requires names a namespace by prefix; rebinding the prefix changes
+    // which branch Word shows without changing any other character (Codex
+    // round 15).
+    const withRequiredNamespace = async (buffer: Buffer, uri: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      const xml = (await archive.getFile('word/header1.xml'))!;
+      archive.setFile('word/header1.xml', xml.replace('<w:hdr ', `<w:hdr xmlns:req="${uri}" `));
+      return archive.save();
+    };
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+        '<mc:Choice Requires="req"><w:p><w:r><w:t>Alice</w:t></w:r></w:p></mc:Choice>' +
+        '<mc:Fallback><w:p><w:r><w:t>Bob</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent>',
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withRequiredNamespace(await packageWith(body, LAYOUT, [header]), 'http://schemas.microsoft.com/office/word/2010/wordml');
+    const revised = await withRequiredNamespace(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'urn:review:unsupported');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any
