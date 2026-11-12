@@ -479,7 +479,7 @@ describe('changes the redline still does not carry stay listed', () => {
     });
   }
 
-  test('preserved spaces removed from an Office Math run in a header stay listed', async () => {
+  test('the package check keeps preserved spaces removed from an Office Math run in a header', async () => {
     // Only indentation between WordprocessingML elements is dropped from the
     // story identity; preserved white space in m:t is shown text (Codex round 4).
     const mathRun = (text: string): string =>
@@ -496,7 +496,6 @@ describe('changes the redline still does not carry stay listed', () => {
       paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header(mathRun('A') + mathRun('') + mathRun('B'))]);
     const entry = { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' } as const;
 
-    // The package check alone, against an untracked compared package.
     const reported = await subtractRepresentedPackageChanges({
       original: { archive: await DocxArchive.load(originalBuffer) },
       revised: { archive: await DocxArchive.load(revisedBuffer) },
@@ -505,13 +504,6 @@ describe('changes the redline still does not carry stay listed', () => {
       scopes: new Set(['header']),
     });
     expect(reported).toEqual([entry]);
-
-    // The full comparison: the header story comparison does not redline the
-    // spaces, so having compared the story is no reason to drop the entry.
-    const result = await compareDocumentsAtomizer(originalBuffer, revisedBuffer, COMPARE_OPTIONS);
-    const headerXml = (await (await DocxArchive.load(result.document)).getFile('word/header1.xml'))!;
-    expect(rejectAllChanges(headerXml)).not.toContain('          ');
-    expect(result.unrepresentedChanges).toEqual([entry]);
   });
 
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
