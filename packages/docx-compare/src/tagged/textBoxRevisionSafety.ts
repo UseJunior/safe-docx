@@ -154,7 +154,10 @@ export interface TextBoxStoryComparisonPlan {
   /**
    * Header and footer parts whose whole difference is their text-box stories
    * plus the drawings in `drawingChanges`; their header/footer entry is
-   * represented by those (#1382).
+   * represented by those (#1382). A part with no changed story is the revised
+   * part untouched, so its Reject All is the original with exactly those
+   * drawings replaced by construction; a part with a changed story is held to
+   * that by the projection check.
    */
   drawingAccountedPartPaths?: string[];
   /**
@@ -2687,8 +2690,9 @@ export async function prepareTextBoxStoryComparison(
   // whole box, and the note would describe a shape the redline does track.
   // A drawing whose text did not change stays in the outer comparison, which
   // tracks it as a replaced atomic leaf; so does a box whose drawing cannot
-  // move across (a different number of hosted stories, or a relationship id
-  // that resolves elsewhere in the original document).
+  // move across: a drawing hosting more than one box (a VML group, whose
+  // other boxes' geometry the note would not name), or a relationship id
+  // that resolves elsewhere in the original document.
   const changedVisualBoxes = new Set(
     changedCopies.map(({ revisedIndex }) => visualOrdinals[revisedIndex] ?? revisedIndex),
   );
@@ -2705,7 +2709,8 @@ export async function prepareTextBoxStoryComparison(
   const renderedCopies = new Set(textBoxGroups(revisedDocument).map((group) => group.selected));
   for (const [visualIndex, copies] of shapeChangesByBox) {
     const movable = copies.every(({ change }) =>
-      ownTextBoxes(change.originalContainer).length === ownTextBoxes(change.revisedContainer).length &&
+      ownTextBoxes(change.originalContainer).length === 1 &&
+      ownTextBoxes(change.revisedContainer).length === 1 &&
       drawingRelationshipsAgree(
         change.revisedContainer,
         originalRelationshipTargets,

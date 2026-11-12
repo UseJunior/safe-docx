@@ -462,6 +462,36 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
     });
   });
 
+  test('control: a grouped box keeps its native replacement, so a sibling resize is not hidden', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // A VML group draws several boxes in one w:pict. Carrying the revised
+    // group around box A would also carry box B's resize, which a note naming
+    // A would not disclose; the group stays a native replacement instead.
+    const member = (id: string, text: string, width: string): string =>
+      `<v:shape id="${id}" style="width:${width};height:50pt"><v:textbox>${story(text)}</v:textbox></v:shape>`;
+    const group = (a: string, b: string): string =>
+      `<w:r><w:pict><v:group id="group1" style="width:400pt;height:100pt" coordsize="400,100">${a}${b}</v:group></w:pict></w:r>`;
+    const original = await given('a group of two boxes', () =>
+      bodyPackage(group(member('a', 'Old A', '200pt'), member('b', 'Same B', '200pt'))));
+    const revised = await given('box A edited and widened, box B only widened', () =>
+      bodyPackage(group(member('a', 'New A', '260pt'), member('b', 'Same B', '300pt'))));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the group is tracked as replaced and Reject All restores both boxes', async () => {
+      const output = await partXml(result.document, 'word/document.xml');
+      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(drawingsUntracked(output)).toBe(false);
+      const originalView = readerView(await partXml(original, 'word/document.xml'));
+      const revisedView = readerView(await partXml(revised, 'word/document.xml'));
+      expect(readerView(acceptAllChanges(output))).toEqual(revisedView);
+      expect(readerView(rejectAllChanges(output))).toEqual(originalView);
+      expect(readerView(await docxCorePart(result.document, 'reject', 'word/document.xml'))).toEqual(originalView);
+      await assertSchema(result.document);
+    });
+  });
+
   test('tracks a nested box whose drawing and text change inside an edited box', async ({
     given, when, then,
   }: AllureBddContext) => {
@@ -528,6 +558,54 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
       });
     });
   }
+
+  test('lists a footer drawing-only change beside an unrelated header change without refusing', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The header holds a plain VML rectangle (no text box) that is resized:
+    // a header change the redline does not carry, listed as before. The
+    // footer drawing entry must not pull the whole-package projection check
+    // in and refuse the comparison over it.
+    const withHeader = async (footerBox: string, rectWidth: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await footerPackage(footerBox));
+      archive.setDocumentXml((await archive.getDocumentXml()).replace(
+        '<w:sectPr>',
+        '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/>',
+      ));
+      archive.setFile('word/_rels/document.xml.rels', (await archive.getFile('word/_rels/document.xml.rels'))!.replace(
+        '</Relationships>',
+        `<Relationship Id="rIdHeader" Type="${R_NS}/header" Target="header1.xml"/></Relationships>`,
+      ));
+      archive.setFile(
+        'word/header1.xml',
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="${W_NS}" xmlns:v="${NAMESPACES.v}">` +
+          `<w:p><w:r><w:pict><v:rect id="rect1" style="width:${rectWidth};height:50pt"/></w:pict></w:r></w:p></w:hdr>`,
+      );
+      archive.setFile('[Content_Types].xml', (await archive.getFile('[Content_Types].xml'))!.replace(
+        '</Types>',
+        '<Override PartName="/word/header1.xml"' +
+          ' ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>',
+      ));
+      return archive.save();
+    };
+    const original = await given('a footer box and a header rectangle', () =>
+      withHeader(vmlBox('Footer notice'), '100pt'));
+    const revised = await given('the footer box and the header rectangle both resized', () =>
+      withHeader(vmlBox('Footer notice', { width: '260pt' }), '150pt'));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the footer drawing and the header are each listed once', () => {
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' }),
+        expect.objectContaining({
+          scope: 'drawing',
+          drawing: expect.objectContaining({ story: 'footer', partPath: 'word/footer1.xml' }),
+        }),
+      ]));
+      expect(result.unrepresentedChanges).toHaveLength(2);
+    });
+  });
 
   test('lists a footer box whose drawing alone changes', async ({
     given, when, then,

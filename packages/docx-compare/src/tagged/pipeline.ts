@@ -1430,9 +1430,7 @@ async function compareDocumentsTagged(
     textBoxPlan.stories,
   );
   const sectionAlignedStories = new Set<TextBoxStoryInput>();
-  // A header/footer whose only differences are its text-box stories and the
-  // drawings listed with the `drawing` scope is represented by those (#1382).
-  const representedPartPaths = new Set<string>(textBoxPlan.drawingAccountedPartPaths);
+  const representedPartPaths = new Set<string>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   const compareStory = async (story: TextBoxStoryInput): Promise<void> => {
     if (
@@ -1658,10 +1656,14 @@ async function compareDocumentsTagged(
     },
   );
   const alignedSectionKinds = sectionAligned.representedSectionKinds;
+  // A header/footer whose only differences are its text-box stories and the
+  // drawings listed with the `drawing` scope is represented by those (#1382).
+  const drawingAccountedPartPaths = new Set(textBoxPlan.drawingAccountedPartPaths);
   const unrepresentedChanges = [...(outerResult.unrepresentedChanges ?? []).filter(
     (change) => !textBoxPlan.representedAncillaryChanges.some(
       (represented) =>
-        representedPartPaths.has(represented.partPath) &&
+        (representedPartPaths.has(represented.partPath) ||
+          drawingAccountedPartPaths.has(represented.partPath)) &&
         change.scope === represented.scope &&
         change.kind === represented.kind &&
         change.sectionIndex === represented.sectionIndex &&
