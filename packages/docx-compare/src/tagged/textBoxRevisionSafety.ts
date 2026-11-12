@@ -2762,7 +2762,7 @@ function hasRevisionWrapperAncestor(element: Element, stopAt: Element): boolean 
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  */
-function markLifecycleParagraph(
+export function markLifecycleParagraph(
   paragraph: Element,
   markerTag: 'w:ins' | 'w:del',
   author: string,

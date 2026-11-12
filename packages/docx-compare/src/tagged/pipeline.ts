@@ -101,6 +101,7 @@ import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { coalesceProjectionEquivalentBookmarkSplits } from './bookmarkSplitCoalescing.js';
 import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
 import { alignedInlineNoteAnchorPair } from './inlineFootnoteAnchorPair.js';
+import { markLifecycleNoteBodies } from './noteLifecycleMarking.js';
 import {
   collectBookmarkReferenceNamesInXml,
   collectWordPartBookmarkNames,
@@ -548,6 +549,13 @@ export async function buildStandaloneTaggedPackage(
   const noteReferenceSourceIds = new Map<'footnote' | 'endnote', Map<string, string>>();
   taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
   resultArchive.setDocumentXml(taggedXml);
+  await markLifecycleNoteBodies({
+    archive: resultArchive,
+    documentXml: taggedXml,
+    author: options.author,
+    date: options.date,
+    minimumRevisionId: options.minimumRevisionId,
+  });
   const rootCommentIds = await collectStoryReferenceIds(
     resultArchive,
     taggedXml,
