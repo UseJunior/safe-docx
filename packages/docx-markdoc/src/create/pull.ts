@@ -796,17 +796,22 @@ function addedInline(paragraph: PullParagraph, notes: PullDiagnostic[], where: s
   return out;
 }
 
-/** `w:jc` as read by pull, as a `paragraph-layout` align value. */
-const LAYOUT_ALIGN: Record<string, string> = { left: 'left', center: 'center', right: 'right', both: 'justify' };
+/**
+ * `w:jc` as written, as a `paragraph-layout` align value. Start and end are the
+ * left and right pull already treats them as; `distribute` and the other values
+ * have no align word.
+ */
+const LAYOUT_ALIGN: Record<string, string> = { left: 'left', start: 'left', center: 'center', right: 'right', end: 'right', both: 'justify' };
 
 /**
  * The `{% paragraph-layout %}` attributes that write a body paragraph's own
  * alignment and left/hanging indent, or undefined when it sets neither or sets a
  * value the tag's closed vocabulary cannot write (left to the formatting check).
  */
-function paragraphLayoutAttributes(properties: string): string | undefined {
-  const parts = properties.split(';');
-  const jc = parts.find((part) => part.startsWith('jc='))?.slice(3);
+function paragraphLayoutAttributes(paragraph: PullParagraph): string | undefined {
+  const parts = paragraph.properties.split(';');
+  // The raw value: the signature reads `distribute` as `both`, which the tag would rebuild as plain justification.
+  const jc = paragraph.alignmentValue;
   const ind = parts.find((part) => part.startsWith('ind(') && part.endsWith(')'))?.slice(4, -1);
   if (jc === undefined && ind === undefined) return undefined;
   const attributes: string[] = [];
@@ -821,7 +826,7 @@ function paragraphLayoutAttributes(properties: string): string | undefined {
     for (const pair of ind.split(' ').filter(Boolean)) {
       const [name, value = ''] = pair.split('=');
       if (!/^\d+$/u.test(value)) return undefined;
-      if ((name === 'left' || name === 'start') && left === undefined && (PARAGRAPH_LAYOUT_LEFT_INDENTS as readonly string[]).includes(inches(value))) left = inches(value);
+      if (name === 'left' && (PARAGRAPH_LAYOUT_LEFT_INDENTS as readonly string[]).includes(inches(value))) left = inches(value);
       else if (name === 'hanging' && (PARAGRAPH_LAYOUT_HANGING_INDENTS as readonly string[]).includes(inches(value))) hanging = inches(value);
       else return undefined;
     }
@@ -859,7 +864,7 @@ function addedBlock(paragraph: PullParagraph, notes: PullDiagnostic[], where: st
     case undefined:
     case CREATION_STYLE.body: {
       // A body paragraph with its own alignment or indent, as a retyped `{% paragraph-layout %}` paragraph keeps.
-      const layout = paragraphLayoutAttributes(paragraph.properties);
+      const layout = paragraphLayoutAttributes(paragraph);
       return { kind: 'plain', markdown: layout ? `{% paragraph-layout ${layout} %}${inline}{% /paragraph-layout %}` : inline };
     }
     default:

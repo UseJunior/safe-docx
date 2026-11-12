@@ -196,6 +196,9 @@ describe('Traceability: paragraph layout in created documents', () => {
       // Built as written, the same source passes, and moving its layout is a negative control that is detected.
       const built = await createDocumentFromMarkdoc(twins);
       expect(built.certificate.checks.roundTrip.paragraphLayout).toMatchObject({ passed: true, negativeControls: { changedLayout: true, droppedParagraph: true, movedLayout: true } });
+      // The moved layout goes to the nearest paragraph that lays out differently, past a run of the same layout.
+      const run = await createDocumentFromMarkdoc('{% paragraph-layout align="left" %}\nOne.\n\nTwo.\n{% /paragraph-layout %}\n\nPlain.\n');
+      expect(run.certificate.checks.roundTrip.paragraphLayout).toMatchObject({ passed: true, negativeControls: { movedLayout: true } });
     },
   );
 
@@ -260,6 +263,21 @@ describe('Traceability: paragraph layout in created documents', () => {
         const one = await createDocumentFromMarkdoc(source);
         const retyped = await pullCreationEdits({ source, base: one, edited: await editDocument(one.docx, (xml) => xml.replace('Alpha.', 'Gamma.')) });
         expect(retyped, source).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
+
+      // A retyped paragraph whose layout the tag cannot write (distributed alignment, a w:start indent) is not
+      // wrapped as if it could: the pull stays incomplete and reports the formatting.
+      for (const [source, change] of [
+        ['{% paragraph-layout align="justify" %}Alpha.{% /paragraph-layout %}\n', (xml: string) => xml.replace('Alpha.', 'Gamma.').replace('<w:jc w:val="both"/>', '<w:jc w:val="distribute"/>')],
+        ['{% paragraph-layout indent-left="1" %}Alpha.{% /paragraph-layout %}\n', (xml: string) => xml.replace('Alpha.', 'Gamma.').replace('w:left="1440"', 'w:start="1440"')],
+      ] as const) {
+        const one = await createDocumentFromMarkdoc(source);
+        const edited = await editDocument(one.docx, change);
+        expect(edited.equals(one.docx), source).toBe(false);
+        const retyped = await pullCreationEdits({ source, base: one, edited });
+        expect(retyped.complete, source).toBe(false);
+        expect(retyped.diagnostics.map((diagnostic) => diagnostic.code), source).toContain('PULL_PARAGRAPH_FORMATTING');
+        expect(retyped.pulledSource ?? '', source).not.toContain('paragraph-layout');
       }
     },
   );

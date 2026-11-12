@@ -536,9 +536,11 @@ function paragraphLayoutRoundTrip(expected: SourceProjection, readback: Creation
   if (laidOut(wanted) === 0 && laidOut(found) === 0) return undefined;
   const mismatches = bodyLayoutMismatches(wanted, found);
   // Three negative controls, each of which must be detected: the first layout changed, its paragraph dropped, and
-  // its layout moved to a neighbouring paragraph that lays out differently (the same text there or not).
+  // its layout swapped with the nearest paragraph that lays out differently (the same text there or not).
   const first = wanted.findIndex((entry) => entry.layout !== null);
-  const neighbour = [first + 1, first - 1].find((index) => index >= 0 && index < wanted.length && wanted[index]!.layout !== wanted[first]?.layout);
+  // The nearest paragraph, either way, whose layout differs from the first layout.
+  const neighbour = first === -1 ? undefined : Array.from({ length: wanted.length }, (_, distance) => [first + distance, first - distance]).flat()
+    .find((index) => index >= 0 && index < wanted.length && wanted[index]!.layout !== wanted[first]!.layout);
   const detects = (mutated: BodyLayout[]) => bodyLayoutMismatches(mutated, found).length > 0;
   const negativeControls: ParagraphLayoutComparison['negativeControls'] = {
     changedLayout: first === -1 ? 'not applicable' : detects(wanted.map((entry, index) => (index === first ? { ...entry, layout: `${entry.layout} ind.right=1` } : entry))),
