@@ -13,6 +13,7 @@ import {
   getParagraphRuns,
   parseXml,
   relationshipPartPath,
+  runContentVisibleText,
   serializeXml,
   collectRunInHeadingIds,
   validateStructuralInsertions,
@@ -370,16 +371,18 @@ function trackedCharacters(paragraph: Element, projection: 'accept' | 'reject'):
     const excluded = projection === 'accept'
       ? nextWrappers.has('del') || nextWrappers.has('moveFrom')
       : nextWrappers.has('ins') || nextWrappers.has('moveTo');
-    if (element.localName === 't' || element.localName === 'delText') {
+    // Deleted text is w:delText; every other character comes from the shared
+    // run-content definition (w:t, w:tab, w:br, w:sym), so these offsets stay
+    // in the coordinate space of getParagraphRuns that the spans use.
+    const contribution = element.localName === 'delText'
+      ? element.textContent ?? ''
+      : runContentVisibleText(element);
+    if (contribution !== null) {
       if (!excluded) {
-        for (const character of element.textContent ?? '') {
+        for (const character of contribution) {
           characters.push({ text: character, revisionWrapped: nextWrappers.size > 0, run: nextRun });
         }
       }
-      return;
-    }
-    if ((element.localName === 'tab' || element.localName === 'br') && !excluded) {
-      characters.push({ text: element.localName === 'tab' ? '\t' : '\n', revisionWrapped: nextWrappers.size > 0, run: nextRun });
       return;
     }
     for (const child of Array.from(element.childNodes)) visit(child, nextWrappers, nextRun);
