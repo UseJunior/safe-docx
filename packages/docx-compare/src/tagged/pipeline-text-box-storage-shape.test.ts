@@ -528,7 +528,7 @@ describe('text boxes stored as DrawingML only or differently in the two document
   });
 
   test('lists the drawing of a re-stored twin whose DrawingML spelling places or paints the box differently', async ({
-    given, when, then,
+    when, then,
   }: AllureBddContext) => {
     // The size and offsets both spellings write can agree while the DrawingML
     // one draws a different box: `simplePos="1"` places it by `wp:simplePos`,
