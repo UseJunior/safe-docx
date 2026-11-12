@@ -12,6 +12,26 @@
   listed slot is excluded from the original-side check only while it stays
   listed and no story comparison wrote it. (#1391)
 
+- `docx-markdoc create` admits a `{% paragraph-layout %}…{% /paragraph-layout %}` block tag that
+  gives body paragraphs their own layout from a closed vocabulary: `align`
+  (`left`, `center`, `right`, `justify`), `indent-left` and `indent-hanging`
+  (0.25 to 2 inches in quarter-inch steps; the hanging indent no larger than
+  the left one). It covers a flush-left address block or notice line in a
+  justified document and a definitions list whose wrapped lines line up under
+  a hanging first line. The read-back checks every paragraph's direct `w:jc`
+  and `w:ind` against the lowering, and the round trip checks each tagged
+  paragraph's layout against the source alone, each with negative controls; a
+  malformed tag fails with `INVALID_PARAGRAPH_LAYOUT`. `pull` carries edits inside the
+  tag, and writes a retyped paragraph that keeps its alignment and indent back
+  in the tag. (#1424)
+
+- Documents built by `docx-markdoc create` no longer stretch a justified line
+  that ends in a manual line break (`\`): `word/settings.xml` now sets
+  `w:doNotExpandShiftReturn`, a Word compatibility setting that LibreOffice also honours, so address
+  blocks and venue lines keep normal word spacing. Every created document's
+  bytes change once. `generateDocx` gains the opt-in
+  `DocumentSpec.compatibility.doNotExpandShiftReturn` that writes it. (#1196)
+
 - `unrepresentedChanges` no longer lists section, header or footer changes
   the redline already carries. Sections were compared by index, so after a
   section break was added or removed every later section was reported as

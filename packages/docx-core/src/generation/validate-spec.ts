@@ -135,6 +135,7 @@ export function validateSpec(spec: DocumentSpec): void {
   }
 
   validateTheme(spec);
+  validateCompatibility(spec);
   if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
   if (spec.defaults?.paragraph) validateParagraphProps(spec.defaults.paragraph, '/defaults/paragraph');
   const declaredStyleIds = validateStyles(spec.styles ?? []);
@@ -348,6 +349,24 @@ function validateTextReferenceTarget(bookmark: string, target: ParagraphSpec, pa
   const shown = target.runs.map((inline) => (inline.kind === 'text' ? inline.text : '')).join('');
   if (shown.trim().length === 0) {
     throw new GenerationSpecError('invalid_value', path, `A text cross-reference to bookmark '${bookmark}' would show empty text`);
+  }
+}
+
+/** The opt-in compatibility settings generation can write, each a boolean. */
+const COMPATIBILITY_SETTINGS: ReadonlySet<string> = new Set(['doNotExpandShiftReturn']);
+
+function validateCompatibility(spec: DocumentSpec): void {
+  if (spec.compatibility === undefined) return;
+  if (spec.compatibility === null || typeof spec.compatibility !== 'object' || Array.isArray(spec.compatibility)) {
+    throw new GenerationSpecError('invalid_value', '/compatibility', 'compatibility must be an object of boolean settings');
+  }
+  for (const [key, value] of Object.entries(spec.compatibility)) {
+    if (!COMPATIBILITY_SETTINGS.has(key)) {
+      throw new GenerationSpecError('invalid_value', `/compatibility/${key}`, `Unsupported compatibility setting '${key}'`);
+    }
+    if (value !== undefined && typeof value !== 'boolean') {
+      throw new GenerationSpecError('invalid_value', `/compatibility/${key}`, `${key} must be a boolean`);
+    }
   }
 }
 

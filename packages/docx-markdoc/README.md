@@ -663,6 +663,15 @@ package, determinism, read-back and brownfield-import checks:
   paragraph, table cell and footer text must each be detected as negative
   controls. Each mismatch is recorded with its source line and the missing
   and extra words.
+- **Paragraph layout.** When the source or the DOCX has a `{% paragraph-layout %}`
+  paragraph, the read-back compares every body paragraph's direct `w:jc` and
+  `w:ind` with what the build meant to write, and the round trip compares
+  each tagged paragraph's text and the layout its attributes call for, read
+  straight from the source, with the layout each DOCX paragraph sets
+  directly, position by position over the non-empty body paragraphs. A layout
+  lost, changed, moved to another paragraph (even one with the same text) or
+  added where the source has none fails; each comparison has its own negative
+  controls.
 - **PDF words.** When a PDF is rendered, its text layer (`pdftotext -raw`)
   must match the source word for word. Generated text is worked out from the
   source, not guessed from its shape: list labels (`1.`, `(a)`, `(i)`,
@@ -903,7 +912,33 @@ such as an unclosed tag, and headings below `###`.
   at its own `]`.
 - Ordered lists get real `1.` / `(a)` / `(i)` numbering. Each top-level list
   starts at its first marker; nested lists always start at (a) or (i).
-- A line ending in `\` is a line break.
+- A line ending in `\` is a line break. In a justified paragraph, the line
+  before the break keeps normal word spacing: every created document sets
+  Word's `w:doNotExpandShiftReturn`, which LibreOffice honours too.
+- `{% paragraph-layout %}…{% /paragraph-layout %}` gives body paragraphs their own layout, from a
+  closed vocabulary: `align` is `left`, `center`, `right` or `justify`;
+  `indent-left` and `indent-hanging` are `0.25`, `0.5`, `0.75`, `1`,
+  `1.25`, `1.5`, `1.75` or `2` (inches). `indent-left` moves every line in
+  from the left margin; with `indent-hanging` the first line starts that
+  much further left. A hanging indent needs an `indent-left` at least as
+  large. Numbers may be quoted or not (`indent-left=0.5`). Each paragraph
+  inside the tag gets the same layout, and the tag holds what
+  `{% center %}` holds, line breaks included:
+
+  ```markdoc
+  {% paragraph-layout indent-left="0.5" indent-hanging="0.5" %}
+  "Affiliate" means any entity that controls, is controlled by, or is under common control with a party.
+
+  "Services" means the services described in each statement of work.
+  {% /paragraph-layout %}
+
+  {% paragraph-layout align="left" indent-left="0.5" %}Acme Corporation\
+  1 Example Street\
+  Example City, ST 00000{% /paragraph-layout %}
+  ```
+
+  A tag without an attribute or text, a value outside its list, or a hanging
+  indent larger than the left indent fails with `INVALID_PARAGRAPH_LAYOUT`.
 - `{% page-break /%}` starts the next block on a new page.
 - `{% section %}` starts a next-page section. With no `footer` or
   `page-numbers` attribute, the section keeps the previous section's footer.

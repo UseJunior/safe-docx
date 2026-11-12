@@ -58,6 +58,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/generation/emit/section.ts |
 | `ECMA-PART1-17-3-1-24` | w:pBdr paragraph border collection | 5 | 1 | 17.3.1.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pBdr` | packages/docx-core/src/generation/emit/borders.ts; packages/docx-core/src/generation/generation-paragraph-borders.test.ts |
 | `ECMA-PART1-17-3-1-26` | w:pPr child-element ordering | 5 | 1 | 17.3.1.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
+| `ECMA-PART1-17-3-1-12` | w:ind paragraph indentation | 5 | 1 | 17.3.1.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind` | packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/readback.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts |
 | `ECMA-PART1-17-3-1-13` | w:jc paragraph alignment | 5 | 1 | 17.3.1.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
 | `ECMA-PART1-17-3-1-14` | w:keepLines keep paragraph lines together | 5 | 1 | 17.3.1.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
 | `ECMA-PART1-17-3-1-15` | w:keepNext keep paragraph with next | 5 | 1 | 17.3.1.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
@@ -82,6 +83,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-10-3` | w:ftr footer part emission | 5 | 1 | 17.10.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr` | packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
 | `ECMA-PART1-11-3-3` | Document Settings part | 5 | 1 | 11.3.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-15-3-4` | w:compatSetting custom compatibility setting | 5 | 1 | 17.15.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
+| `ECMA-PART1-17-15-3-5` | w:doNotExpandShiftReturn compatibility setting | 5 | 1 | 17.15.3.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-compatibility-settings.test.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | packages/docx-core/src/generation/emit/settings-part.ts |
 | `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/primitives/body_fields.ts; packages/docx-core/src/primitives/body_fields.test.ts |
 | `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
@@ -940,6 +942,22 @@ property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
 
+### ECMA-PART1-17-3-1-12 — w:ind paragraph indentation
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.12
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind`
+- **Verified by:** packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/readback.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts
+
+`w:ind` sets a paragraph's indentation. A `docx-markdoc create`
+`{% paragraph-layout %}` paragraph carries `w:left` and `w:hanging` in twips
+(`w:hanging` never larger than `w:left`, so the first line stays inside the
+text area). The read-back reads every attribute of a body paragraph's direct
+`w:ind`, and the build compares it with the source. Style-level indents,
+`w:start`/`w:end`, the character-unit attributes and `w:firstLine` are not
+written by `create`.
+
 ### ECMA-PART1-17-3-1-13 — w:jc paragraph alignment
 
 - **Edition:** ECMA-376 5
@@ -1303,6 +1321,22 @@ Generation emits one custom compatibility setting under `w:compat`, carrying
 the required name, URI, and value attributes in the settings sequence. ECMA-376
 defines this extensibility structure; MS-DOCX §2.3.5, not ECMA-376, defines
 the Microsoft `compatibilityMode` values and assigns the semantics of value 15.
+
+### ECMA-PART1-17-15-3-5 — w:doNotExpandShiftReturn compatibility setting
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.15.3.5
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-compatibility-settings.test.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts
+
+When `w:doNotExpandShiftReturn` is on, a line of a fully justified paragraph
+(`w:jc` `both`) that ends in a soft line break is not justified. Generation
+writes the empty element inside `w:compat`, before the `compatibilityMode`
+custom setting as the `CT_Compat` sequence requires, only when
+`DocumentSpec.compatibility.doNotExpandShiftReturn` is true; `docx-markdoc
+create` sets it on every document it builds. This entry covers emission and
+order, not how a renderer lays out the line.
 
 ### ECMA-PART1-17-10-1 — w:evenAndOddHeaders setting
 

@@ -79,7 +79,11 @@ function dropParagraph(needle: string): (lowering: CreationLowering) => Creation
   return (lowering) => ({
     ...lowering,
     spec: { ...lowering.spec, sections: lowering.spec.sections.map((section) => ({ ...section, blocks: section.blocks.filter(keep) })) },
-    projection: { ...lowering.projection, paragraphs: lowering.projection.paragraphs.filter((paragraph) => !paragraph.includes(needle)) },
+    projection: {
+      ...lowering.projection,
+      paragraphs: lowering.projection.paragraphs.filter((paragraph) => !paragraph.includes(needle)),
+      layouts: lowering.projection.layouts.filter((_, index) => !lowering.projection.paragraphs[index]!.includes(needle)),
+    },
   });
 }
 
