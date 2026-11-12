@@ -9,6 +9,7 @@ import {
 import { buildParagraphIndex } from './paragraph-index.js';
 import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 import { SYM_LOCAL_NAME } from './symbol_run_content.js';
+import { runContentVisibleLength } from './run_content_visible_text.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -155,12 +156,15 @@ function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlS
 }
 
 
+/**
+ * Raw-offset length of one run content element. Kept as a public alias of
+ * {@link runContentVisibleLength}, the single definition every paragraph
+ * walker shares.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1045
+ */
 export function visibleLengthForEl(el: Element): number {
-  if (el.namespaceURI !== OOXML.W_NS) return 0;
-  if (el.localName === W.t) return (el.textContent ?? '').length;
-  if (el.localName === W.tab) return 1;
-  if (el.localName === W.br) return 1;
-  return 0;
+  return runContentVisibleLength(el);
 }
 
 export function getDirectContentElements(run: Element): Element[] {

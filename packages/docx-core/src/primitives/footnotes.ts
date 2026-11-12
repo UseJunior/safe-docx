@@ -10,6 +10,7 @@ import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
 import { buildParagraphIndex } from './paragraph-index.js';
+import { splitRunAtVisibleOffset } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { childElements, isW } from './dom-helpers.js';
@@ -624,87 +625,20 @@ function splitRunAndInsertReference(
   visibleOffset: number,
   referenceNode: Element,
 ): void {
-  const doc = run.ownerDocument;
-  if (!doc) throw new Error('Run has no ownerDocument');
-
   const parent = run.parentNode;
   if (!parent) throw new Error('Run has no parent');
 
-  // Clone the run for the right portion
-  const rightRun = run.cloneNode(true) as Element;
-  parent.insertBefore(rightRun, run.nextSibling);
-
-  // Split text content in the runs
-  const leftContent = getDirectContentElements(run);
-  const rightContent = getDirectContentElements(rightRun);
-
-  let pos = 0;
-  for (let i = 0; i < leftContent.length; i++) {
-    const lEl = leftContent[i]!;
-    const rEl = rightContent[i]!;
-
-    if (lEl.namespaceURI !== OOXML.W_NS) continue;
-
-    if (lEl.localName === W.t) {
-      const full = lEl.textContent ?? '';
-      const len = full.length;
-      const start = pos;
-      const end = pos + len;
-
-      if (visibleOffset <= start) {
-        // Entire element belongs to right
-        lEl.parentNode?.removeChild(lEl);
-        pos += len;
-        continue;
-      }
-      if (visibleOffset >= end) {
-        // Entire element belongs to left
-        rEl.parentNode?.removeChild(rEl);
-        pos += len;
-        continue;
-      }
-
-      // Split inside this element
-      const leftText = full.slice(0, visibleOffset - start);
-      const rightText = full.slice(visibleOffset - start);
-      lEl.textContent = leftText;
-      rEl.textContent = rightText;
-      setXmlSpacePreserve(lEl, leftText);
-      setXmlSpacePreserve(rEl, rightText);
-      if (!leftText) lEl.parentNode?.removeChild(lEl);
-      if (!rightText) rEl.parentNode?.removeChild(rEl);
-      pos += len;
-    } else if (lEl.localName === W.tab || lEl.localName === W.br) {
-      if (visibleOffset <= pos) {
-        lEl.parentNode?.removeChild(lEl);
-      } else {
-        rEl.parentNode?.removeChild(rEl);
-      }
-      pos += 1;
-    } else {
-      // Non-visible elements (rPr is already handled by cloneNode)
-      if (lEl.localName !== W.rPr) {
-        if (pos < visibleOffset) rEl.parentNode?.removeChild(rEl);
-        else lEl.parentNode?.removeChild(lEl);
-      }
-    }
-  }
+  // The shared splitter: run content lengths come from the one raw-offset
+  // definition, and zero-length content exactly at the offset goes to the
+  // right-hand run, ahead of which the reference is inserted.
+  const { left, right } = splitRunAtVisibleOffset(run, visibleOffset, 'right');
 
   // Insert the reference run between left and right
-  parent.insertBefore(referenceNode, rightRun);
+  parent.insertBefore(referenceNode, right);
 
   // Clean up empty runs
-  if (!hasVisibleContent(run)) run.parentNode?.removeChild(run);
-  if (!hasVisibleContent(rightRun)) rightRun.parentNode?.removeChild(rightRun);
-}
-
-function getDirectContentElements(run: Element): Element[] {
-  const out: Element[] = [];
-  for (const child of Array.from(run.childNodes)) {
-    if (child.nodeType !== 1) continue;
-    out.push(child as Element);
-  }
-  return out;
+  if (!hasVisibleContent(left)) left.parentNode?.removeChild(left);
+  if (!hasVisibleContent(right)) right.parentNode?.removeChild(right);
 }
 
 function hasVisibleContent(run: Element): boolean {
@@ -716,13 +650,6 @@ function hasVisibleContent(run: Element): boolean {
     return true;
   }
   return false;
-}
-
-function setXmlSpacePreserve(t: Element, text: string): void {
-  if (!text) return;
-  if (text.startsWith(' ') || text.endsWith(' ')) {
-    t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-  }
 }
 
 function addFootnoteElement(

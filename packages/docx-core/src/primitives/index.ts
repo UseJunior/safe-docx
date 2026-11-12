@@ -17,6 +17,7 @@ export * from './serialize_plaintext.js';
 export * from './serialize_blocks.js';
 export * from './styles.js';
 export * from './symbol_run_content.js';
+export * from './run_content_visible_text.js';
 export * from './text.js';
 export * from './body_fields.js';
 export * from './paragraph-index.js';

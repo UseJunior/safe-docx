@@ -9,6 +9,7 @@
 import { OOXML, W } from './namespaces.js';
 import { isW, getDirectChildrenByName } from './dom-helpers.js';
 import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
+import { runContentVisibleText } from './run_content_visible_text.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -69,17 +70,11 @@ function getParagraphText(p: Element): string {
   const runs = p.getElementsByTagNameNS(OOXML.W_NS, W.r);
   for (let r = 0; r < runs.length; r++) {
     const run = runs[r]!;
-    // Collect w:t text nodes and w:tab / w:br
+    // Collect what each run content element contributes to paragraph text.
     for (const child of Array.from(run.childNodes)) {
       if (child.nodeType !== 1) continue;
-      const el = child as Element;
-      if (isW(el, W.t)) {
-        parts.push(el.textContent ?? '');
-      } else if (isW(el, W.tab)) {
-        parts.push('\t');
-      } else if (isW(el, W.br)) {
-        parts.push('\n');
-      }
+      const text = runContentVisibleText(child as Element);
+      if (text !== null) parts.push(text);
     }
   }
   return parts.join('');
