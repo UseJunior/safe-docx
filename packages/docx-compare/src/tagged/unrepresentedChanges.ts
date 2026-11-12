@@ -605,9 +605,36 @@ async function storyFieldsShowVolatileProperties(archive: DocxArchive, storyPart
     // fragments are joined as they are and searched without word boundaries:
     // a false match only keeps entries listed.
     if (VOLATILE_PROPERTY_FIELDS.test(instructions.join(''))) return true;
+    // A content control bound to the core or extended properties shows them
+    // too; any data binding keeps them, whatever store it names.
+    if (Array.from(document.getElementsByTagName('*')).some((element) => localName(element) === 'dataBinding')) {
+      return true;
+    }
   }
   return false;
 }
+/**
+ * A package part as comparable text: attributes sorted, every child element
+ * and text node kept in order, and only WordprocessingML editing-session ids
+ * (`w:rsid*`) left out. Custom XML is compared as it is, since a bound
+ * control can show any attribute or text in it (Codex round 12).
+ */
+function environmentCanonicalXml(node: Node): string {
+  if (node.nodeType === 3 || node.nodeType === 4) return `"${JSON.stringify(node.nodeValue ?? '')}"`;
+  if (node.nodeType !== 1) return '';
+  const element = node as Element;
+  const attrs: string[] = [];
+  for (let index = 0; index < element.attributes.length; index++) {
+    const attr = element.attributes.item(index);
+    if (!attr || attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
+    if (attr.namespaceURI === W_NS && attr.localName?.startsWith('rsid')) continue;
+    attrs.push(`${attr.namespaceURI ?? ''}|${attr.localName ?? attr.name}=${JSON.stringify(attr.value)}`);
+  }
+  attrs.sort();
+  const children = Array.from(element.childNodes).map(environmentCanonicalXml).join('');
+  return `<${element.namespaceURI ?? ''}|${localName(element)}[${attrs.join(',')}]{${children}}>`;
+}
+
 /**
  * Elements that record editing sessions or view state, not appearance.
  * (`w:evenAndOddHeaders` is also left out, but only from the settings part
@@ -706,7 +733,7 @@ async function storyFormattingEnvironment(
             if (VOLATILE_DOCUMENT_PROPERTIES.has(localName(element))) element.parentNode?.removeChild(element);
           }
         }
-        entry = canonicalElement(root);
+        entry = environmentCanonicalXml(root);
       } catch {
         entry = `bytes:${createHash('sha256').update(bytes).digest('hex')}`;
       }

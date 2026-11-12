@@ -733,6 +733,57 @@ describe('changes the redline still does not carry stay listed', () => {
   });
   }
 
+  const boundHeader = (xpath: string, prefixMappings: string, shown: string): Part => ({
+    id: 'rIdH', kind: 'header', target: 'header1.xml',
+    contentXml: `<w:sdt><w:sdtPr><w:dataBinding w:prefixMappings="${prefixMappings}" w:xpath="${xpath}"/><w:text/></w:sdtPr>` +
+      `<w:sdtContent><w:p><w:r><w:t>${shown}</w:t></w:r></w:p></w:sdtContent></w:sdt>`,
+  });
+
+  test('a header content control bound to the last-saved-by property stays listed when that property changes and only its reference allocation differs', async () => {
+    // A data-bound control shows a document property without any field, so
+    // cp:lastModifiedBy stays in the environment digest (Codex round 12).
+    const withLastSavedBy = async (buffer: Buffer, name: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('docProps/core.xml',
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties">' +
+        `<cp:lastModifiedBy>${name}</cp:lastModifiedBy></cp:coreProperties>`);
+      return archive.save();
+    };
+    const header = boundHeader('/cp:coreProperties[1]/cp:lastModifiedBy[1]',
+      "xmlns:cp='http://schemas.openxmlformats.org/package/2006/metadata/core-properties'", 'Alice');
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withLastSavedBy(await packageWith(body, LAYOUT, [header]), 'Alice');
+    const revised = await withLastSavedBy(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
+  test('a header content control bound to a custom XML attribute named rsid stays listed when that attribute changes and only its reference allocation differs', async () => {
+    // Only WordprocessingML editing-session ids are left out of the
+    // environment; a custom XML attribute that happens to be named rsid is
+    // data a bound control shows (Codex round 12).
+    const withBrand = async (buffer: Buffer, value: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('customXml/item1.xml', `<b:brand xmlns:b="urn:review:brand" rsid="${value}"/>`);
+      return archive.save();
+    };
+    const header = boundHeader('/b:brand[1]/@rsid', "xmlns:b='urn:review:brand'", 'Alice');
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withBrand(await packageWith(body, LAYOUT, [header]), 'Alice');
+    const revised = await withBrand(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any
