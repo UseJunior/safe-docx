@@ -47,6 +47,35 @@ function referenceLifecycle(reference: Element): ReferenceLifecycle {
 }
 
 /**
+ * Note kinds with at least one definition whose anchors are all tracked
+ * insertions or all tracked deletions. The pipeline renumbers these kinds'
+ * notes in anchor order before marking them: LibreOffice binds note bodies
+ * to anchors in ascending identifier order rather than by `w:id`, so a
+ * removed note merged in under its original identifier, or an added note
+ * under a high identifier, attached the wrong body to the anchors around it
+ * on Accept and Reject.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
+ * @see https://github.com/UseJunior/safe-docx/issues/941
+ */
+export function noteKindsWithLifecycleAnchors(documentXml: string): Set<'footnote' | 'endnote'> {
+  const document = parseXml(documentXml);
+  const kinds = new Set<'footnote' | 'endnote'>();
+  for (const kind of ['footnote', 'endnote'] as const) {
+    const lifecycles = new Map<string, Set<ReferenceLifecycle>>();
+    for (const reference of Array.from(document.getElementsByTagNameNS(OOXML.W_NS, `${kind}Reference`))) {
+      const id = canonicalNoteId(reference.getAttributeNS(OOXML.W_NS, 'id') ?? '');
+      if (id === undefined) continue;
+      if (!lifecycles.has(id)) lifecycles.set(id, new Set());
+      lifecycles.get(id)!.add(referenceLifecycle(reference));
+    }
+    if ([...lifecycles.values()].some(seen => seen.size === 1 && !seen.has('live'))) kinds.add(kind);
+  }
+  return kinds;
+}
+
+/**
  * Mark the body of every footnote and endnote whose anchors are all tracked
  * insertions as inserted, and of every note whose anchors are all tracked
  * deletions as deleted: each run, including the note's own reference mark,
@@ -163,42 +192,7 @@ export async function markLifecycleNoteBodies(options: {
       }
       marked.set(id, markerTag === 'w:ins' ? 'inserted' : 'deleted');
     }
-    orderDefinitionsByReference(target.notes, target.kind, document);
     options.archive.setFile(target.part, serializer.serializeToString(target.notes));
   }
   return marks;
-}
-
-/**
- * Put note definitions in the order of their first anchor in the main story,
- * reserved separator entries first and unreferenced definitions last. A
- * removed note's definition is merged in from the original after the revised
- * definitions; Word binds anchors by `w:id`, but LibreOffice binds them by
- * position, so an out-of-order definition attached the wrong body to every
- * later anchor on Accept and Reject. Identifiers are unchanged.
- *
- * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
- * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
- */
-function orderDefinitionsByReference(notes: Document, kind: 'footnote' | 'endnote', document: Document): void {
-  const firstReference = new Map<string, number>();
-  Array.from(document.getElementsByTagNameNS(OOXML.W_NS, `${kind}Reference`)).forEach((reference, position) => {
-    const id = canonicalNoteId(reference.getAttributeNS(OOXML.W_NS, 'id') ?? '');
-    if (id !== undefined && !firstReference.has(id)) firstReference.set(id, position);
-  });
-  const root = notes.documentElement;
-  const entries = Array.from(root.childNodes).filter((node): node is Element => isW(node, kind));
-  const rank = (entry: Element, index: number): [number, number] => {
-    if (RESERVED_NOTE_TYPES.has(entry.getAttributeNS(OOXML.W_NS, 'type') ?? '')) return [0, index];
-    const position = firstReference.get(canonicalNoteId(entry.getAttributeNS(OOXML.W_NS, 'id') ?? '') ?? '');
-    return position === undefined ? [2, index] : [1, position];
-  };
-  const ordered = entries
-    .map((entry, index) => ({ entry, key: rank(entry, index) }))
-    .sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1])
-    .map(({ entry }) => entry);
-  if (ordered.every((entry, index) => entry === entries[index])) return;
-  // Re-append in the new order after the last entry so any non-entry
-  // children keep their place ahead of the definitions they preceded.
-  for (const entry of ordered) root.appendChild(entry);
 }

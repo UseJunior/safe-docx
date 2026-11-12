@@ -260,8 +260,12 @@ describe('added and removed note bodies carry tracked lifecycle marks', () => {
       expect(unchanged.getElementsByTagNameNS(W, 'ins')).toHaveLength(0);
       expect(unchanged.getElementsByTagNameNS(W, 'del')).toHaveLength(0);
       expectEntryMarked(byText('Removed note A.'), 'del');
-      // Definitions follow anchor order (A, B, C) for position-binding readers.
+      // LibreOffice binds note bodies in ascending identifier order, so the
+      // anchors' identifiers ascend in document order (A, B, C).
       expect(footnotes.map(n => (n.textContent ?? '').slice(0, 9))).toEqual(['Removed n', 'Unchanged', 'Added not']);
+      const anchorIds = Array.from(parseXml(await archive.getDocumentXml()).getElementsByTagNameNS(W, 'footnoteReference')).map(r => Number(r.getAttributeNS(W, 'id')));
+      expect(anchorIds).toEqual([...anchorIds].sort((a, b) => a - b));
+      expect(footnotes.map(n => Number(n.getAttributeNS(W, 'id')))).toEqual(anchorIds);
       expectEntryMarked(byText('Added note C.'), 'ins');
       expectEntryMarked(userEntries((await archive.getFile('word/endnotes.xml'))!, 'endnote')[0]!, 'ins');
       expect(extractTextWithParagraphs(acceptAllChanges(await archive.getDocumentXml()))).toContain('agree to every term below');
