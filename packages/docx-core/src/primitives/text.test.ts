@@ -2706,6 +2706,31 @@ describe('w:sym symbol characters in the paragraph text (#1046)', () => {
       expect(getParagraphText(firstParagraph(rejected))).toBe('Yes \uF0A8');
     });
   });
+
+  symbolTest('a replacement that keeps the character of a removed symbol writes the w:sym back, in order, with its font', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let p!: Element;
+    await given('two fontless-run symbols with the same character but different fonts, and text', () => {
+      doc = makeDoc('<w:p><w:r><w:t>a</w:t><w:sym w:font="Wingdings" w:char="F0A8"/><w:t>b</w:t><w:sym w:font="Webdings" w:char="F0A8"/></w:r></w:p>');
+      p = firstParagraph(doc);
+    });
+    await when('the whole paragraph is rebuilt bold, with the text changed but both glyphs kept', () => {
+      replaceParagraphTextRange(p, 0, 4, [{ text: 'A\uF0A8B\uF0A8', addRunProps: { bold: true } }], trackedCtx());
+    });
+    await then('accept-all leaves both symbols, in order, with their own fonts, in a bold run, and no literal glyph text', () => {
+      const accepted = doc.cloneNode(true) as Document;
+      acceptChanges(accepted);
+      const ap = firstParagraph(accepted);
+      expect(getParagraphText(ap)).toBe('A\uF0A8B\uF0A8');
+      expect(symbolsIn(ap).map((sym) => sym.getAttribute('w:font'))).toEqual(['Wingdings', 'Webdings']);
+      expect(Array.from(ap.getElementsByTagNameNS(W_NS, W.t)).map((t) => t.textContent).join('')).toBe('AB');
+      expect(serialize(ap)).toContain('<w:b w:val="1"/>');
+      const rejected = doc.cloneNode(true) as Document;
+      rejectChanges(rejected);
+      expect(getParagraphText(firstParagraph(rejected))).toBe('a\uF0A8b\uF0A8');
+      expect(serialize(firstParagraph(rejected))).not.toContain('<w:b');
+    });
+  });
 });
 
 describe('replaceParagraphTextRange — result-less complex field inside a replaced range (#1082)', () => {

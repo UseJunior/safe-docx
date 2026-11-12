@@ -534,9 +534,9 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
  * A `w:sym` glyph is one character of the paragraph text since issue #1046,
  * so the fingerprint of a symbol-bearing paragraph hashes the glyph's
  * character. A private-use codepoint survives NFKC, so the fingerprint differs
- * from the one computed while the glyph was invisible: a stored
- * `content_fingerprint` / `portable_paragraph_ref` for such a paragraph no
- * longer resolves (it does not silently resolve to another paragraph).
+ * from the one computed while the glyph was invisible, and a stored
+ * `content_fingerprint` / `portable_paragraph_ref` for such a paragraph must
+ * be refreshed.
  */
 describe('document-paragraph-id-stability-and-fingerprint — fingerprints of symbol-bearing paragraphs', () => {
   const test = testAllure.epic('Document Reading').withLabels({ feature: TEST_FEATURE });

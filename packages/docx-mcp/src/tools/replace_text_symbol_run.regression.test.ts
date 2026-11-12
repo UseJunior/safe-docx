@@ -16,7 +16,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, expect } from 'vitest';
-import { DocxArchive, parseXml, rejectChanges } from '@usejunior/docx-core';
+import { DocxArchive, acceptChanges, parseXml, rejectChanges } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   openSession,
@@ -227,3 +227,101 @@ describe('replace_text — a range spanning a w:sym-only run (#1044)', () => {
     });
   });
 });
+
+/**
+ * A formatting-only edit over a symbol rebuilds the range from plain text. The
+ * symbol's glyph comes from its own `w:font`, which the run properties need
+ * not repeat, so the rebuilt run must carry the `w:sym` again rather than the
+ * private-use character as literal text (issue #1046 review).
+ */
+const FONTLESS_CHECKBOX_PARAGRAPHS = [
+  // 1: sym-only run with no rFonts
+  `<w:p><w:r><w:t xml:space="preserve">Own run </w:t></w:r><w:r>${CHECKBOX}</w:r><w:r><w:t xml:space="preserve"> end</w:t></w:r></w:p>`,
+  // 2: symbol mid-run
+  `<w:p><w:r><w:t>a</w:t>${CHECKBOX}<w:t>b</w:t></w:r></w:p>`,
+  // 3: symbol inside an existing tracked insertion
+  `<w:p><w:r><w:t xml:space="preserve">Inserted </w:t></w:r><w:ins w:id="41" w:author="Earlier" w:date="2026-01-01T00:00:00Z"><w:r>${CHECKBOX}</w:r></w:ins></w:p>`,
+];
+
+const FONTLESS_DOCUMENT_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+  ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+  '<w:body>' +
+  '<w:p><w:r><w:t xml:space="preserve">Symbols without a run font:</w:t></w:r></w:p>' +
+  FONTLESS_CHECKBOX_PARAGRAPHS.join('') +
+  '</w:body></w:document>';
+
+function liveSymbolsIn(p: Element): Element[] {
+  return Array.from(p.getElementsByTagNameNS(W_NS, 'sym')).filter((el) => !insideDeletion(el));
+}
+
+function isBoldRun(run: Element): boolean {
+  const rPr = Array.from(run.childNodes).find((c): c is Element => c.nodeType === 1 && (c as Element).localName === 'rPr');
+  return !!rPr && rPr.getElementsByTagNameNS(W_NS, 'b').length > 0;
+}
+
+describe('replace_text — formatting a w:sym keeps the symbol and its font (#1046)', () => {
+  registerCleanup();
+
+  const cases = [
+    { name: 'a sym-only run', paragraph: 1, old: '\uF0A8', expected: 'Own run \uF0A8 end' },
+    { name: 'a symbol mid-run', paragraph: 2, old: 'a\uF0A8b', expected: 'a\uF0A8b' },
+    { name: 'a symbol inside an existing insertion', paragraph: 3, old: '\uF0A8', expected: 'Inserted \uF0A8' },
+  ];
+
+  for (const tracked of [true, false]) {
+    for (const c of cases) {
+      test(`${tracked ? 'tracked' : 'untracked'}: bolding ${c.name} writes the w:sym back with its font`, async ({ given, when, then }: AllureBddContext) => {
+        const mgr = createTestSessionManager({ defaultAiAuthor: tracked ? 'SafeDocX' : null });
+        const session = await given('paragraphs whose checkbox font lives only on the w:sym element', () =>
+          openSession([], { mgr, xml: FONTLESS_DOCUMENT_XML }),
+        );
+        const paraId = session.paraIds[c.paragraph]!;
+
+        const outPath = path.join(session.tmpDir, `out-format-${c.paragraph}.docx`);
+        await when(`replace_text wraps "${c.old}" in <b> with normalize_first`, async () => {
+          const replaced = await replaceText(mgr, {
+            file_path: session.inputPath,
+            target_paragraph_id: paraId,
+            old_string: c.old,
+            new_string: `<b>${c.old}</b>`,
+            instruction: 'bold the checkbox',
+            normalize_first: true,
+          });
+          assertSuccess(replaced, 'replace_text');
+          expect(replaced.after_text).toBe(c.expected);
+          assertSuccess(await save(mgr, { file_path: session.inputPath, save_to_local_path: outPath, save_format: tracked ? 'tracked' : 'clean' }), 'save');
+        });
+
+        await then('after accepting every change the paragraph holds one bold w:sym with the Wingdings font and no literal glyph text', async () => {
+          const doc = await loadDocumentXml(outPath);
+          if (tracked) acceptChanges(doc);
+          const p = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))[c.paragraph]!;
+          const live = liveSymbolsIn(p);
+          expect(live).toHaveLength(1);
+          expect(live[0]!.getAttribute('w:font')).toBe('Wingdings');
+          expect(live[0]!.getAttribute('w:char')).toBe('F0A8');
+          expect(isBoldRun(live[0]!.parentNode as Element)).toBe(true);
+          expect(textOf(p, 't')).not.toContain('\uF0A8');
+        });
+
+        if (tracked) {
+          await then('rejecting every change restores the original symbol, not bold', async () => {
+            const doc = await loadDocumentXml(outPath);
+            rejectChanges(doc);
+            const p = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))[c.paragraph]!;
+            const live = liveSymbolsIn(p);
+            // Reject-all also removes the pre-existing insertion of case 3.
+            expect(live).toHaveLength(c.paragraph === 3 ? 0 : 1);
+            for (const sym of live) {
+              expect(sym.getAttribute('w:font')).toBe('Wingdings');
+              expect(isBoldRun(sym.parentNode as Element)).toBe(false);
+            }
+          });
+        }
+      });
+    }
+  }
+});
+

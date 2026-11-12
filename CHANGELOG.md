@@ -18,12 +18,15 @@
     are seeded from that text. This applies only to paragraphs without
     `w14:paraId`, in a document that does not already carry `_bk_*`
     bookmarks.
-  - `content_fingerprint` and `portable_paragraph_ref` values stored
-    before this release no longer resolve for those paragraphs; they do
-    not resolve to a different paragraph.
+  - `content_fingerprint` and `portable_paragraph_ref` values change for
+    those paragraphs, so values stored before this release must be
+    refreshed. A stale value can fail to resolve, or can resolve to another
+    paragraph whose text matches the old symbol-less text.
 
   A range that covers a symbol deletes it as part of the tracked change, as
-  before (#1044). The `replace_text` warning about removing a symbol "not
+  before (#1044). A replacement that keeps a removed symbol's character, such
+  as a formatting-only edit over a checkbox, writes it back as the same
+  `w:sym` with its font, not as literal text. The `replace_text` warning about removing a symbol "not
   shown in the paragraph text" is retired, because the symbol is now shown
   there. (#1046, #1045, #797)
 

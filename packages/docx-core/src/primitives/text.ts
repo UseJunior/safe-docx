@@ -9,6 +9,7 @@ import {
 import { buildParagraphIndex } from './paragraph-index.js';
 import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 import { runContentVisibleLength } from './run_content_visible_text.js';
+import { SYM_LOCAL_NAME, symbolRunCoordinateCharacter } from './symbol_run_content.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -121,8 +122,56 @@ function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
   return clone;
 }
 
-function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlSpace = false): void {
-  // Convert \t and \n to OOXML equivalents where possible.
+/**
+ * The `w:sym` elements a replacement range removes, by the character each one
+ * contributes to the paragraph text.
+ *
+ * A symbol's glyph depends on its own `w:font` attribute, which the run
+ * properties need not repeat. The replacement text is plain characters, so a
+ * text-identical rebuild (a formatting-only edit) or a replacement that keeps
+ * a removed symbol's character would otherwise write that character as literal
+ * `w:t` text in the template run's font, losing the glyph. Writing it back as
+ * a copy of the removed `w:sym` keeps the symbol and its font (issue #1046).
+ * Repeated characters reuse the removed symbols in document order, then the
+ * last one.
+ */
+type RemovedSymbols = Map<string, { elements: Element[]; next: number }>;
+
+function collectRemovedSymbols(first: Element, last: Element): RemovedSymbols {
+  const removed: RemovedSymbols = new Map();
+  for (let node: Node | null = first; node; node = node.nextSibling) {
+    if (node.nodeType === 1 && isW(node as Element, W.r)) {
+      for (const el of getDirectContentElements(node as Element)) {
+        if (!isW(el, SYM_LOCAL_NAME)) continue;
+        const ch = symbolRunCoordinateCharacter(el);
+        if (ch === undefined) continue;
+        const entry = removed.get(ch) ?? { elements: [], next: 0 };
+        entry.elements.push(el.cloneNode(true) as Element);
+        removed.set(ch, entry);
+      }
+    }
+    if (node === last) break;
+  }
+  return removed;
+}
+
+function takeRemovedSymbol(removed: RemovedSymbols | undefined, ch: string): Element | null {
+  const entry = removed?.get(ch);
+  if (!entry) return null;
+  const source = entry.elements[Math.min(entry.next, entry.elements.length - 1)]!;
+  entry.next += 1;
+  return source.cloneNode(true) as Element;
+}
+
+function appendTextToRun(
+  doc: Document,
+  run: Element,
+  text: string,
+  preserveXmlSpace = false,
+  removedSymbols?: RemovedSymbols,
+): void {
+  // Convert \t and \n to OOXML equivalents where possible, and a removed
+  // symbol's character back to that w:sym.
   let buf = '';
   const flush = () => {
     if (!buf) return;
@@ -147,6 +196,12 @@ function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlS
     if (ch === '\n') {
       flush();
       run.appendChild(doc.createElementNS(OOXML.W_NS, 'w:br'));
+      continue;
+    }
+    const symbol = takeRemovedSymbol(removedSymbols, ch);
+    if (symbol) {
+      flush();
+      run.appendChild(symbol);
       continue;
     }
     buf += ch;
@@ -1163,6 +1218,7 @@ export function replaceParagraphTextRange(
   }
 
   const insertBeforeNode = rangeEndRunEl.nextSibling;
+  const removedSymbols = collectRemovedSymbols(rangeStartRunEl, rangeEndRunEl);
 
   // Remove runs in [rangeStartRunEl, rangeEndRunEl] inclusive (only w:r elements).
   //
@@ -1293,7 +1349,7 @@ export function replaceParagraphTextRange(
     if (ctx && hasExplicitFormattingMutation && rPrComparableSignature(newRPr) !== sourceRPrSignature) {
       ensureRPr(doc, newRun).appendChild(buildRPrChangeElement(getSnapshotRPr(doc, sourceRPr), ctx));
     }
-    appendTextToRun(doc, newRun, part.text, part.preserveXmlSpace);
+    appendTextToRun(doc, newRun, part.text, part.preserveXmlSpace, removedSymbols);
     if (getRunVisibleLength(newRun) > 0) {
       replacementRuns.push(newRun);
     }
