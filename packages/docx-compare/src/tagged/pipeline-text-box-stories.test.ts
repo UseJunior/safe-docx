@@ -958,7 +958,7 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     });
   });
 
-  test('fails closed when a story hyperlink target changes', async ({
+  test('tracks a story hyperlink whose target changes', async ({
     given,
     when,
     then,
@@ -977,26 +977,34 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
         { namespaces: TEXT_BOX_NAMESPACES },
       ),
     );
-    let failure: unknown;
+    const result = await when('comparison resolves the relationship closure', () =>
+      compareDocumentsAtomizer(original, revised),
+    );
 
-    await when('comparison resolves the relationship closure', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
-    });
-
-    await then('the typed diagnostic identifies the changed closure', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
-          expect.objectContaining({
-            reason: expect.stringContaining('relationship closure'),
-          }),
-        ],
-      });
+    await then('each projection keeps its own link target (#1381)', async () => {
+      const archive = await DocxArchive.load(result.document);
+      const xml = await archive.getDocumentXml();
+      const targets = new Map(
+        Array.from(
+          parseXml((await archive.getFile('word/_rels/document.xml.rels'))!)
+            .getElementsByTagName('Relationship'),
+        ).map((relationship) => [
+          relationship.getAttribute('Id'),
+          relationship.getAttribute('Target'),
+        ]),
+      );
+      const linkTarget = (projected: string): string | null | undefined => {
+        const hyperlink = parseXml(projected)
+          .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')
+          .item(0)
+          ?.getElementsByTagNameNS(OOXML.W_NS, 'hyperlink')
+          .item(0);
+        return targets.get(hyperlink?.getAttributeNS(OOXML.R_NS, 'id') ?? '');
+      };
+      expect(textBoxText(acceptAllChanges(xml))).toBe('Revised');
+      expect(textBoxText(rejectAllChanges(xml))).toBe('Original');
+      expect(linkTarget(acceptAllChanges(xml))).toBe('https://example.test/revised');
+      expect(linkTarget(rejectAllChanges(xml))).toBe('https://example.test/original');
     });
   });
 

@@ -376,6 +376,43 @@ export interface ImportedRelationship {
 }
 
 /**
+ * Bring what one relationship of `sourceOwnerPart` reaches into
+ * `resultArchive`, for a relationship that `resultOwnerPart` is about to
+ * declare, and return the `Target` that relationship must carry there.
+ *
+ * An external target (a hyperlink's URL) needs no part, so it is returned
+ * as it stands. An internal target is copied with its own transitive
+ * relationships under the rules {@link importReferencedRelationships}
+ * follows (an identical part with an identical closure is reused; a
+ * conflicting name is copied aside), then expressed relative to
+ * `resultOwnerPart`, whose directory may differ from the source owner's.
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1381
+ */
+export async function importRelationshipTarget(
+  sourceArchive: DocxArchive,
+  sourceOwnerPart: string,
+  relationship: { target: string; targetMode: string | null },
+  resultArchive: DocxArchive,
+  resultOwnerPart: string,
+): Promise<string> {
+  if (relationship.targetMode === 'External') return relationship.target;
+  const sourceTarget = resolveTarget(sourceOwnerPart, relationship.target);
+  const landedTarget = await copyPartClosure(
+    sourceArchive,
+    resultArchive,
+    sourceTarget,
+    new Map(),
+    {
+      source: new PayloadFingerprints(sourceArchive),
+      result: new PayloadFingerprints(resultArchive),
+    },
+  );
+  return posix.relative(posix.dirname(resultOwnerPart), landedTarget);
+}
+
+/**
  * Pull every relationship the merged document references but the base package
  * lacks, copying target parts and registering their content types.
  *

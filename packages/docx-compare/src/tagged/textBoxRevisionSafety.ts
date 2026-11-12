@@ -40,6 +40,8 @@ import {
   formatDate,
   wrapRunWithTrackChange,
 } from './revisionMarkup.js';
+import { importRelationshipTarget } from './relationshipIdCollision.js';
+import { PayloadFingerprints, resolvePartPath } from './picturePayload.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const VML_NS = 'urn:schemas-microsoft-com:vml';
@@ -402,12 +404,18 @@ function unsupportedStoryReason(
   return undefined;
 }
 
-function relationshipTargets(
+interface RelationshipEntry {
+  type: string;
+  target: string;
+  targetMode: string;
+}
+
+function relationshipEntries(
   relationshipsXml: string | null,
-): ReadonlyMap<string, string> {
-  if (!relationshipsXml) return new Map();
+): Map<string, RelationshipEntry> {
+  const entries = new Map<string, RelationshipEntry>();
+  if (!relationshipsXml) return entries;
   const document = parseXml(relationshipsXml);
-  const targets = new Map<string, string>();
   // By namespace and local name, as a package reader resolves them: a
   // prefixed `<pr:Relationship>` is as real as an unprefixed one, and missing
   // it would leave a reachable payload out of the closure (round-4 review of
@@ -417,16 +425,28 @@ function relationshipTargets(
   )) {
     const id = relationship.getAttribute('Id');
     if (!id) continue;
-    targets.set(
-      id,
-      [
-        relationship.getAttribute('Type') ?? '',
-        relationship.getAttribute('Target') ?? '',
-        relationship.getAttribute('TargetMode') ?? '',
-      ].join('|'),
-    );
+    entries.set(id, {
+      type: relationship.getAttribute('Type') ?? '',
+      target: relationship.getAttribute('Target') ?? '',
+      targetMode: relationship.getAttribute('TargetMode') ?? '',
+    });
   }
-  return targets;
+  return entries;
+}
+
+function relationshipSemantics({ type, target, targetMode }: RelationshipEntry): string {
+  return [type, target, targetMode].join('|');
+}
+
+function relationshipTargets(
+  relationshipsXml: string | null,
+): Map<string, string> {
+  return new Map(
+    [...relationshipEntries(relationshipsXml)].map(([id, entry]) => [
+      id,
+      relationshipSemantics(entry),
+    ]),
+  );
 }
 
 /**
@@ -467,12 +487,27 @@ function relationshipClosureFingerprint(
  * Relationship identifiers are local to their owning OPC part. Nested story
  * comparison temporarily promotes a header/footer text box to document.xml,
  * whose tagged publication may canonicalize an equivalent hyperlink to a
- * different id. Translate those temporary ids back through relationship
- * semantics before splicing the story into its real owner.
+ * different id. Translate those temporary ids back through what each
+ * relationship reaches before splicing the story into its real owner: its
+ * type and external target, or for an internal target its payload (the part's
+ * bytes and everything its own relationships reach), so a target path that
+ * names different bytes in the owner's package is not mistaken for the same
+ * picture.
+ *
+ * A relationship the owner does not yet declare is imported into the owner's
+ * own relationship part under an id free there: the original target of a
+ * retargeted hyperlink, which only the tracked deletion still names, or a
+ * relationship the outer comparison never saw because the story was cut out
+ * of it. A footer story's relationships therefore land in the footer's
+ * `.rels`, never in `document.xml.rels`. An external target needs only the
+ * relationship; an internal one brings its part along.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.4
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.3
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.2.3
  * @see https://github.com/UseJunior/safe-docx/issues/713
+ * @see https://github.com/UseJunior/safe-docx/issues/1381
  */
 async function remapComparedStoryRelationshipIds(
   storyArchive: DocxArchive,
@@ -481,30 +516,82 @@ async function remapComparedStoryRelationshipIds(
   storyBody: Element,
   visualIndex: number,
 ): Promise<void> {
+  const ownerRelationshipsPath = owningRelationshipsPath(ownerPartPath);
   const [temporaryRelationships, ownerRelationships] = await Promise.all([
     storyArchive.getFile('word/_rels/document.xml.rels'),
-    outerArchive.getFile(owningRelationshipsPath(ownerPartPath)),
+    outerArchive.getFile(ownerRelationshipsPath),
   ]);
-  const temporaryTargets = relationshipTargets(temporaryRelationships);
-  const ownerTargets = relationshipTargets(ownerRelationships);
-  const ownerIdByTarget = new Map(
-    [...ownerTargets].map(([id, target]) => [target, id]),
-  );
+  const temporaryEntries = relationshipEntries(temporaryRelationships);
+  const ownerEntries = relationshipEntries(ownerRelationships);
+  const storyPayloads = new PayloadFingerprints(storyArchive);
+  const ownerPayloads = new PayloadFingerprints(outerArchive);
+  // Payload key -> owner id, for ids already resolved or imported here.
+  const ownerIdByPayload = new Map<string, string>();
+  const findOwnerId = async (entry: RelationshipEntry, payload: string): Promise<string | undefined> => {
+    const known = ownerIdByPayload.get(payload);
+    if (known) return known;
+    for (const [id, candidate] of ownerEntries) {
+      if (candidate.type !== entry.type) continue;
+      if ((candidate.targetMode === 'External') !== (entry.targetMode === 'External')) continue;
+      if (await ownerPayloads.payloadOf(ownerPartPath, id) !== payload) continue;
+      ownerIdByPayload.set(payload, id);
+      return id;
+    }
+    return undefined;
+  };
+  let ownerDocument: Document | undefined;
+  let nextOrdinal = 1;
+  const allocateOwnerId = (): string => {
+    let candidate = `rId${nextOrdinal++}`;
+    while (ownerEntries.has(candidate)) candidate = `rId${nextOrdinal++}`;
+    return candidate;
+  };
 
   for (const element of [storyBody, ...Array.from(storyBody.getElementsByTagName('*'))]) {
     for (const attribute of Array.from(element.attributes)) {
       if (!isRelationshipReference(attribute)) continue;
-      const semantics = temporaryTargets.get(attribute.value);
-      const ownerId = semantics ? ownerIdByTarget.get(semantics) : undefined;
-      if (!ownerId) {
+      const entry = temporaryEntries.get(attribute.value);
+      if (!entry) {
         throw new UnsupportedTextBoxRevisionError([{
           index: visualIndex,
           partPath: ownerPartPath,
           reason: 'the compared text-box story relationship closure could not be rebound to its owner',
         }]);
       }
+      // The story's relationship table was promoted to word/document.xml with
+      // its internal targets rebased onto word/ (`promotedStoryRelationshipsXml`).
+      const payload = await storyPayloads.payloadOf('word/document.xml', attribute.value);
+      let ownerId = await findOwnerId(entry, payload);
+      if (!ownerId) {
+        const { type, targetMode } = entry;
+        const ownerTarget = await importRelationshipTarget(
+          storyArchive,
+          'word/document.xml',
+          { target: entry.target, targetMode: targetMode || null },
+          outerArchive,
+          ownerPartPath,
+        );
+        ownerDocument ??= parseXml(
+          ownerRelationships ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+        );
+        ownerId = allocateOwnerId();
+        const relationship = ownerDocument.createElementNS(
+          PACKAGE_RELATIONSHIPS_NS,
+          'Relationship',
+        );
+        relationship.setAttribute('Id', ownerId);
+        relationship.setAttribute('Type', type);
+        relationship.setAttribute('Target', ownerTarget);
+        if (targetMode) relationship.setAttribute('TargetMode', targetMode);
+        ownerDocument.documentElement.appendChild(relationship);
+        ownerEntries.set(ownerId, { type, target: ownerTarget, targetMode });
+        ownerIdByPayload.set(payload, ownerId);
+      }
       attribute.value = ownerId;
     }
+  }
+  if (ownerDocument) {
+    outerArchive.setFile(ownerRelationshipsPath, serializer.serializeToString(ownerDocument));
   }
 }
 
@@ -594,6 +681,41 @@ function owningRelationshipsPath(partPath: string): string {
   const directory = slash >= 0 ? partPath.slice(0, slash) : '';
   const filename = slash >= 0 ? partPath.slice(slash + 1) : partPath;
   return `${directory ? `${directory}/` : ''}_rels/${filename}.rels`;
+}
+
+/**
+ * `ownerPartPath`'s relationship table as the main document part's, for a
+ * story promoted to `word/document.xml` for comparison. Relationship targets
+ * are relative to the part that owns them (Part 2 §6.5.3.4), so an internal
+ * target of a part stored outside `word/` (`word/headers/footer.xml` naming
+ * `../media/logo.png`) is rebased onto `word/` to keep naming the same part
+ * inside the story package; parts in `word/` are carried as they are.
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1381
+ */
+function promotedStoryRelationshipsXml(
+  relationshipsXml: string | null,
+  ownerPartPath: string,
+): string {
+  if (!relationshipsXml) return `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`;
+  if (posix.dirname(ownerPartPath) === 'word') return relationshipsXml;
+  const document = parseXml(relationshipsXml);
+  for (const relationship of Array.from(
+    document.getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship'),
+  )) {
+    if (relationship.getAttribute('TargetMode') === 'External') continue;
+    const target = relationship.getAttribute('Target');
+    if (!target) continue;
+    relationship.setAttribute(
+      'Target',
+      posix.relative('word', resolvePartPath(ownerPartPath, target))
+        .split('/')
+        .map((segment) => (segment === '..' ? segment : encodeURIComponent(segment)))
+        .join('/'),
+    );
+  }
+  return serializer.serializeToString(document);
 }
 
 interface SelectedAncillaryStory {
@@ -1377,13 +1499,11 @@ async function ancillaryStoryInputs(
         ));
         storyOriginalArchive.setFile(
           'word/_rels/document.xml.rels',
-          pair.original.relationshipsXml
-            ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+          promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
         );
         storyRevisedArchive.setFile(
           'word/_rels/document.xml.rels',
-          pair.revised.relationshipsXml
-            ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+          promotedStoryRelationshipsXml(pair.revised.relationshipsXml, pair.revised.targetPath),
         );
         stories.push({
           index: 0,
@@ -1442,7 +1562,6 @@ async function ancillaryStoryInputs(
     for (let index = 0; index < pair.original.textBoxes.length; index += 1) {
       const originalTextBox = pair.original.textBoxes[index]!;
       const revisedTextBox = pair.revised.textBoxes[index]!;
-      if (canonicalNode(originalTextBox) === canonicalNode(revisedTextBox)) continue;
       const originalRelationshipClosure = relationshipClosureFingerprint(
         originalTextBox,
         originalTargets,
@@ -1451,13 +1570,21 @@ async function ancillaryStoryInputs(
         revisedTextBox,
         revisedTargets,
       );
+      // As for body boxes: identical markup over a changed closure is a
+      // change, and a changed closure is compared, its relationships
+      // imported into this part's own `.rels` by the splice (#1381).
+      if (
+        canonicalNode(originalTextBox) === canonicalNode(revisedTextBox) &&
+        originalRelationshipClosure === revisedRelationshipClosure
+      ) {
+        continue;
+      }
       const reason =
         unsupportedStoryReason(originalTextBox) ??
         unsupportedStoryReason(revisedTextBox) ??
         (originalRelationshipClosure === undefined ||
-        revisedRelationshipClosure === undefined ||
-        originalRelationshipClosure !== revisedRelationshipClosure
-          ? 'the ancillary text-box relationship closure changed or could not be resolved'
+        revisedRelationshipClosure === undefined
+          ? 'the ancillary text-box relationship closure could not be resolved'
           : undefined) ??
         scaffoldPairingReason(
           originalTextBox,
@@ -1492,13 +1619,11 @@ async function ancillaryStoryInputs(
       );
       storyOriginalArchive.setFile(
         'word/_rels/document.xml.rels',
-        pair.original.relationshipsXml ??
-          `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+        promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
       );
       storyRevisedArchive.setFile(
         'word/_rels/document.xml.rels',
-        pair.revised.relationshipsXml ??
-          `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+        promotedStoryRelationshipsXml(pair.revised.relationshipsXml, pair.revised.targetPath),
       );
       stories.push({
         index,
@@ -1526,8 +1651,7 @@ async function ancillaryStoryInputs(
     );
     storyRevisedArchive.setFile(
       'word/_rels/document.xml.rels',
-      story.relationshipsXml ??
-        `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(story.relationshipsXml, story.targetPath),
     );
     stories.push({
       index: 0,
@@ -1551,8 +1675,7 @@ async function ancillaryStoryInputs(
     );
     storyOriginalArchive.setFile(
       'word/_rels/document.xml.rels',
-      story.relationshipsXml ??
-        `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(story.relationshipsXml, story.targetPath),
     );
     storyRevisedArchive.setFile(
       'word/_rels/document.xml.rels',
@@ -1896,11 +2019,11 @@ export async function sectionAlignedOrdinaryStoryInputs(
     storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(revisedDocumentXml, revisedStory.xml));
     storyOriginalArchive.setFile(
       'word/_rels/document.xml.rels',
-      originalStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(originalStory.relationshipsXml, originalPath),
     );
     storyRevisedArchive.setFile(
       'word/_rels/document.xml.rels',
-      revisedStory.relationshipsXml ?? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+      promotedStoryRelationshipsXml(revisedStory.relationshipsXml, comparedPath),
     );
     stories.push({
       index: 0,
@@ -2196,9 +2319,6 @@ export async function prepareTextBoxStoryComparison(
   const changedCopies: Array<{ originalIndex: number; revisedIndex: number }> = [];
   for (const [originalTextBox, revisedTextBox] of pairedCopies) {
     const index = revisedRawIndex.get(revisedTextBox)!;
-    if (canonicalNode(originalTextBox) === canonicalNode(revisedTextBox)) {
-      continue;
-    }
     const originalRelationshipClosure = relationshipClosureFingerprint(
       originalTextBox,
       originalRelationshipTargets,
@@ -2207,13 +2327,25 @@ export async function prepareTextBoxStoryComparison(
       revisedTextBox,
       revisedRelationshipTargets,
     );
+    // Identical markup is an unchanged box only when every relationship id
+    // in it still means the same thing: a hyperlink retargeted under its old
+    // id is a change too (#1381).
+    if (
+      canonicalNode(originalTextBox) === canonicalNode(revisedTextBox) &&
+      originalRelationshipClosure === revisedRelationshipClosure
+    ) {
+      continue;
+    }
+    // A closure that differs is compared like any other story change: the
+    // story comparison tracks the old and the new reference, and the splice
+    // imports what the owner lacks (#1381). A reference that resolves to
+    // nothing cannot be rebound at all.
     const reason =
       unsupportedStoryReason(originalTextBox, { allowNestedTextBoxes: true }) ??
       unsupportedStoryReason(revisedTextBox, { allowNestedTextBoxes: true }) ??
       (originalRelationshipClosure === undefined ||
-      revisedRelationshipClosure === undefined ||
-      originalRelationshipClosure !== revisedRelationshipClosure
-        ? 'the text-box relationship closure changed or could not be resolved'
+      revisedRelationshipClosure === undefined
+        ? 'the text-box relationship closure could not be resolved'
         : undefined) ??
       scaffoldPairingReason(
         originalTextBox,

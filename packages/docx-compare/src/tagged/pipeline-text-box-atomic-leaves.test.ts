@@ -431,28 +431,33 @@ describe('Text-box stories holding pictures, objects and nested boxes (#1380)', 
       assertFaithfulRedline(fixture.original, fixture.revised, result.document));
   });
 
-  test('refuses, rather than loses, a picture swapped through its o:relid relationship', async ({
-    given, when, then,
+  test('redlines a picture whose o:relid now names another image, beside a box text edit', async ({
+    given, when, then, and,
   }: AllureBddContext) => {
-    const fixture = await given('a box whose text changes and whose o:relid picture now names another image', () =>
-      compare(
-        bodyWithBox(run('Box old') + vmlPicture({ relid: true })),
+    // Until #1381 a changed relationship closure refused the comparison. The
+    // story comparison now tracks the old picture as deleted (bound to the
+    // original image, imported into the owning part) and the new one as
+    // inserted.
+    const fixture = await given('a box whose text changes and whose o:relid picture now names another image', async () => ({
+      original: await packageWith(bodyWithBox(run('Box old') + vmlPicture({ relid: true }))),
+      revised: await packageWith(
         bodyWithBox(run('Box new') + vmlPicture({ relid: true })),
         'media/image2.png',
-      ));
-    let failure: unknown;
-    await when('the documents are compared', async () => {
-      try {
-        await fixture.compare();
-      } catch (error) {
-        failure = error;
-      }
-    });
+        { image: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from([0])]) },
+      ),
+    }));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(fixture.original, fixture.revised, COMPARE_OPTIONS));
+    const document = await documentXmlOf(result.document);
 
-    await then('the relationship-closure change is named instead of the swap vanishing', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect((failure as Error).message).toContain('relationship closure changed');
+    await then('the old picture is a tracked deletion and the new one a tracked insertion', () => {
+      const placement = Array.from(boxes(document)[0]!.getElementsByTagNameNS(VML_NS, 'shape'))
+        .map((shape) => (isInside(shape, ['del']) ? 'del' : isInside(shape, ['ins']) ? 'ins' : 'kept'));
+      expect(placement).toEqual(['del', 'ins']);
+      expect(trackedText(boxes(document)[0]!)).toEqual({ inserted: 'new', deleted: 'old' });
     });
+    await and('accept and reject reproduce the two documents, each picture bound to its own image', () =>
+      assertFaithfulRedline(fixture.original, fixture.revised, result.document));
   });
 
   for (const [label, storyXml, payload] of [
