@@ -242,6 +242,52 @@ describe('document properties primitive', () => {
     expect(await entryTexts(zip)).toEqual(before);
   });
 
+  test('a carriage return held by a character reference survives a rewrite and reads back as written', async () => {
+    const core = WORD_CORE.replace('<dc:creator>Alice</dc:creator>', '<dc:creator>Alice</dc:creator><dc:description>a&#13;b</dc:description>');
+    const zip = await DocxZip.load(await packageWithParts(core));
+    const result = await setDocumentProperties(zip, { core: { title: 'line\rbreak' } });
+    expect(result.changed).toBe(true);
+    const persisted = await readDocumentProperties(await DocxZip.load(await zip.toBuffer()));
+    expect(persisted.core.description).toBe('a\rb');
+    expect(persisted.core.title).toBe('line\rbreak');
+    expect(persisted.core).toEqual(result.current.core);
+    // The same value again is a no-op once it is held exactly.
+    expect((await setDocumentProperties(zip, { core: { title: 'line\rbreak' } })).changed).toBe(false);
+  });
+
+  test('an xsi namespace bound only as the default namespace still gets a prefix for xsi:type', async () => {
+    const core = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + `<p:coreProperties xmlns:p="${CP}" xmlns="${XSI}"><p:revision>1</p:revision></p:coreProperties>`;
+    const zip = await DocxZip.load(await packageWithParts(core));
+    await setDocumentProperties(zip, { core: { created: '2026-01-02T03:04:05Z' } });
+    const doc = parseXml((await zip.readText('docProps/core.xml')));
+    const created = doc.getElementsByTagNameNS(DCTERMS, 'created')[0]!;
+    expect(created.getAttributeNS(XSI, 'type')).toBe('dcterms:W3CDTF');
+    expect(created.getAttributeNode('type')).toBeNull();
+    expect((await readDocumentProperties(zip)).core.created).toBe('2026-01-02T03:04:05Z');
+  });
+
+  test('a missing extended part in a strict package is created with the strict namespace and relationship type', async () => {
+    const source = await JSZip.loadAsync(await buildDocxFromBodyXml('<w:p><w:r><w:t>Body</w:t></w:r></w:p>'));
+    const rels = await source.file('_rels/.rels')!.async('string');
+    expect(rels).toContain('http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument');
+    source.file('_rels/.rels', rels.replace(
+      'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+      'http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument',
+    ));
+    const zip = await DocxZip.load(await source.generateAsync({ type: 'nodebuffer' }));
+    const result = await setDocumentProperties(zip, { app: { company: 'X' } });
+    const appPath = result.partsCreated[0]!;
+    const app = parseXml(await zip.readText(appPath));
+    expect(app.documentElement!.namespaceURI).toBe('http://purl.oclc.org/ooxml/officeDocument/extendedProperties');
+    expect(app.documentElement!.lookupNamespaceURI('vt')).toBe('http://purl.oclc.org/ooxml/officeDocument/docPropsVTypes');
+    const relTypes = Array.from(parseXml(await zip.readText('_rels/.rels')).getElementsByTagNameNS(OOXML.REL_NS, 'Relationship'))
+      .filter((rel) => rel.getAttribute('Target') === appPath)
+      .map((rel) => rel.getAttribute('Type'));
+    expect(relTypes).toEqual([EXTENDED_PROPERTIES_REL_TYPES[1]]);
+    expect((await readDocumentProperties(zip)).app.company).toBe('X');
+  });
+
   test('W3CDTF accepts each profile granularity and rejects out-of-range fields', () => {
     for (const value of ['2026', '2026-02', '2026-02-28', '2024-02-29', '2026-02-28T10:20Z', '2026-02-28T10:20:30Z', '2026-02-28T10:20:30.45-05:00']) {
       expect(isW3cdtfDate(value), value).toBe(true);

@@ -53,6 +53,10 @@ package relationship (an Id unused in `_rels/.rels`) and a content-type
 override. Removing a property from a part that does not exist is a no-op.
 If a relationship names a part whose entry is missing, the part is created at
 that path and given an override.
+A new extended part takes the strict namespace and relationship type when the
+package's main document relationship is strict; core properties have one
+vocabulary in both conformance classes. A rewritten part writes each carriage
+return as `&#13;`, so a value read back equals the value written.
 
 ### 4. Validate everything, then write
 

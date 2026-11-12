@@ -376,23 +376,29 @@ async function sameFile(a: string, b: string): Promise<boolean> {
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /**
- * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
- * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
- */
-/**
  * The document-properties entry of the CLI summary. Without a frontmatter
- * `date`, it says the created and modified dates are the fixed 2006 default,
- * so a document is not delivered with them unawares.
+ * `date`, it says the created date (and the modified date, unless `modified`
+ * chose one) is the fixed 2006 default, so a document is not delivered with
+ * it unawares.
  */
 export function propertiesSummary(created: CreatedDocument): string {
   const { values } = created.certificate.checks.properties;
   const application = values['app.application'];
+  const createdIso = values['core.created'];
+  const modifiedIso = values['core.modified'];
+  const sameDates = modifiedIso === createdIso;
   const dates = created.certificate.frontmatter.date === undefined
-    ? `created and modified ${values['core.created']} (no frontmatter date; set date: to choose them)`
-    : `created ${values['core.created']}${values['core.modified'] === values['core.created'] ? '' : `, modified ${values['core.modified']}`}`;
+    ? sameDates
+      ? `created and modified ${createdIso} (no frontmatter date; set date: to choose them)`
+      : `created ${createdIso} (no frontmatter date; set date: to choose it), modified ${modifiedIso}`
+    : `created ${createdIso}${sameDates ? '' : `, modified ${modifiedIso}`}`;
   return `properties ok (${dates}; application ${application === null ? 'omitted' : JSON.stringify(application)}; negative control ok)`;
 }
 
+/**
+ * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
+ * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
+ */
 /**
  * The cross-references entry of the CLI summary. With text or relative
  * references it counts them apart from the other number references and

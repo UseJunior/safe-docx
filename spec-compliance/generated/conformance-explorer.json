@@ -4229,7 +4229,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd#type:CT_Properties",
-      "claimRationale": "Extended properties are non-repeatable elements of the Extended File\nProperties part's `Properties` root, each of which can be empty or omitted.\n`AppVersion` has the form `XX.YYYY` (§22.2.2.2). safe-docx reads and writes\n`Application`, `AppVersion`, `Company`, `Manager` and `Template` in the root's\nown namespace and prefix (transitional or strict), refuses an `AppVersion`\nof any other form, keeps every other element (statistics, heading pairs,\ntitles of parts) untouched, and lets generation omit `Application`.",
+      "claimRationale": "Extended properties are non-repeatable elements of the Extended File\nProperties part's `Properties` root. §22.2 lets each one be omitted, and lets\nit be empty only where its schema type admits an empty value: a string\nproperty such as `Company` can be empty, an integer statistic such as `Pages`\ncannot, and `AppVersion` has the form `XX.YYYY` (§22.2.2.2). safe-docx reads\nand writes `Application`, `AppVersion`, `Company`, `Manager` and `Template` in\nthe root's own namespace and prefix (transitional or strict), writes only\nnon-empty values and refuses an `AppVersion` of any other form, keeps every\nother element (statistics, heading pairs, titles of parts) untouched, creates\na missing part in the strict namespace when the main document relationship is\nstrict (§15.2.12.3), and lets generation omit `Application`.",
       "evidence": [
         {
           "kind": "source",

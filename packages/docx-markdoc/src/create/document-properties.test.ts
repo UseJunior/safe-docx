@@ -122,6 +122,13 @@ describe('Traceability: document properties of created documents', () => {
           expect(keyed.summary).toContain('properties ok (created 2026-01-02T00:00:00Z, modified 2026-02-03T04:05:06Z; application "Acme Drafting"; negative control ok)');
         });
 
+        await then('a modified date without a frontmatter date names both, flagging only the created default', async () => {
+          const file = path.join(dir, 'modified-only.mdoc');
+          await writeFile(file, source(['modified: 2026-02-03T04:05:06Z']));
+          const modifiedOnly = await runCreateCommand([file, path.join(dir, 'out-modified'), '--no-pdf']);
+          expect(modifiedOnly.summary).toContain('properties ok (created 2006-01-01T00:00:00Z (no frontmatter date; set date: to choose it), modified 2026-02-03T04:05:06Z; application "safe-docx"; negative control ok)');
+        });
+
         await then('a lowering that writes a different Application fails verification', async () => {
           await expect(createDocumentFromMarkdoc(source(KEYED), {
             transformLowering(lowering) {
@@ -143,6 +150,7 @@ describe('Traceability: document properties of created documents', () => {
           ['modified: last week'],
           ['date: 2026-03-01', 'modified: 2026-02-28'],
           ['date: 2026-03-01T10:00:00Z', 'modified: 2026-03-01T09:59:59Z'],
+          ['date: 2026-03-01T00:00:00.0001Z', 'modified: 2026-03-01T00:00:00.0000Z'],
           ['application: ""'],
           ['last-modified-by: '],
         ]) {
@@ -150,6 +158,7 @@ describe('Traceability: document properties of created documents', () => {
         }
         // modified equal to date is allowed.
         await expect(createDocumentFromMarkdoc(source(['date: 2026-03-01', 'modified: 2026-03-01']))).resolves.toBeDefined();
+        await expect(createDocumentFromMarkdoc(source(['date: 2026-03-01T00:00:00.5Z', 'modified: 2026-03-01T00:00:00.50Z']))).resolves.toBeDefined();
       });
     },
   );

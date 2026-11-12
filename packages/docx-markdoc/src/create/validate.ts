@@ -258,7 +258,7 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
       (result as Record<string, string>)[key] = value;
     }
   }
-  if (result.date !== undefined && result.modified !== undefined && Date.parse(creationTimestamp(result.modified)) < Date.parse(creationTimestamp(result.date))) {
+  if (result.date !== undefined && result.modified !== undefined && compareCreationTimestamps(result.modified, result.date) < 0) {
     throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `modified (${result.modified}) must not be earlier than date (${result.date}).`);
   }
   const problem = checkRunningTextKeys({
@@ -281,6 +281,26 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
 /** A frontmatter `date` or `modified` as the timestamp written to docProps: a bare date is midnight UTC. */
 export function creationTimestamp(value: string): string {
   return value.includes('T') ? value : `${value}T00:00:00Z`;
+}
+
+/**
+ * Order two `date` / `modified` values without losing precision. Both are
+ * UTC and fixed-width up to the seconds, so those compare as text; any
+ * fractional digits then compare zero-padded to the same length (Date.parse
+ * would round them to milliseconds).
+ */
+export function compareCreationTimestamps(left: string, right: string): number {
+  const split = (value: string): [string, string] => {
+    const [seconds, fraction = ''] = creationTimestamp(value).replace(/Z$/u, '').split('.');
+    return [seconds!, fraction];
+  };
+  const [leftSeconds, leftFraction] = split(left);
+  const [rightSeconds, rightFraction] = split(right);
+  if (leftSeconds !== rightSeconds) return leftSeconds < rightSeconds ? -1 : 1;
+  const width = Math.max(leftFraction.length, rightFraction.length);
+  const a = leftFraction.padEnd(width, '0');
+  const b = rightFraction.padEnd(width, '0');
+  return a === b ? 0 : a < b ? -1 : 1;
 }
 
 /** The closed value set of each running-text key that takes a word. */

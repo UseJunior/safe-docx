@@ -816,12 +816,16 @@ never reads the clock.
 - **Verified by:** packages/docx-core/src/primitives/document_properties.ts; packages/docx-core/src/primitives/document_properties.test.ts; packages/docx-core/src/generation/generation-document-properties.test.ts
 
 Extended properties are non-repeatable elements of the Extended File
-Properties part's `Properties` root, each of which can be empty or omitted.
-`AppVersion` has the form `XX.YYYY` (§22.2.2.2). safe-docx reads and writes
-`Application`, `AppVersion`, `Company`, `Manager` and `Template` in the root's
-own namespace and prefix (transitional or strict), refuses an `AppVersion`
-of any other form, keeps every other element (statistics, heading pairs,
-titles of parts) untouched, and lets generation omit `Application`.
+Properties part's `Properties` root. §22.2 lets each one be omitted, and lets
+it be empty only where its schema type admits an empty value: a string
+property such as `Company` can be empty, an integer statistic such as `Pages`
+cannot, and `AppVersion` has the form `XX.YYYY` (§22.2.2.2). safe-docx reads
+and writes `Application`, `AppVersion`, `Company`, `Manager` and `Template` in
+the root's own namespace and prefix (transitional or strict), writes only
+non-empty values and refuses an `AppVersion` of any other form, keeps every
+other element (statistics, heading pairs, titles of parts) untouched, creates
+a missing part in the strict namespace when the main document relationship is
+strict (§15.2.12.3), and lets generation omit `Application`.
 
 ### ECMA-PART1-17-5-2-29 — w:sdt block-level structured document tag
 

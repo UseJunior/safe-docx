@@ -32,6 +32,7 @@ const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 export const EXTENDED_PROPERTIES_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/extended-properties';
 export const EXTENDED_PROPERTIES_STRICT_NS = 'http://purl.oclc.org/ooxml/officeDocument/extendedProperties';
 const DOCPROPS_VTYPES_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes';
+const DOCPROPS_VTYPES_STRICT_NS = 'http://purl.oclc.org/ooxml/officeDocument/docPropsVTypes';
 
 export const CORE_PROPERTIES_CONTENT_TYPE = 'application/vnd.openxmlformats-package.core-properties+xml';
 export const EXTENDED_PROPERTIES_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.extended-properties+xml';
@@ -365,7 +366,7 @@ function declaredNamespaces(element: Element): Map<string, string> {
  * namespace. `required` insists on that exact prefix (dcterms, which
  * `xsi:type="dcterms:W3CDTF"` names).
  */
-function prefixFor(root: Element, ns: string, preferred: string, required = false): string {
+function prefixFor(root: Element, ns: string, preferred: string, required = false, forAttribute = false): string {
   const declared = declaredNamespaces(root);
   if (required) {
     const bound = declared.get(preferred);
@@ -379,8 +380,9 @@ function prefixFor(root: Element, ns: string, preferred: string, required = fals
       `The core properties part binds the prefix '${preferred}' to '${bound}', but ${preferred}:W3CDTF dates need it bound to '${ns}'.`,
     );
   }
-  if (root.namespaceURI === ns) return root.prefix ?? '';
-  for (const [prefix, uri] of declared) if (uri === ns) return prefix;
+  // A default namespace never qualifies an attribute, so an attribute needs a real prefix.
+  if (root.namespaceURI === ns && (root.prefix || !forAttribute)) return root.prefix ?? '';
+  for (const [prefix, uri] of declared) if (uri === ns && (prefix !== '' || !forAttribute)) return prefix;
   let prefix = preferred;
   for (let suffix = 1; declared.has(prefix); suffix++) prefix = `${preferred}${suffix}`;
   root.setAttributeNS(XMLNS_NS, `xmlns:${prefix}`, ns);
@@ -424,7 +426,7 @@ function applyCore(doc: Document, writes: Partial<Record<WritableCoreDocumentPro
     }
     if (isDate) {
       prefixFor(root, DCTERMS_NS, 'dcterms', true);
-      const xsiPrefix = prefixFor(root, XSI_NS, 'xsi');
+      const xsiPrefix = prefixFor(root, XSI_NS, 'xsi', false, true);
       element.setAttributeNS(XSI_NS, `${xsiPrefix}:type`, 'dcterms:W3CDTF');
     }
     setText(element, value);
@@ -476,6 +478,21 @@ const NEW_CORE_PART =
   ` xmlns:dcterms="${DCTERMS_NS}" xmlns:dcmitype="${DCMITYPE_NS}" xmlns:xsi="${XSI_NS}"/>`;
 const NEW_APP_PART =
   `${XML_DECL}\n<Properties xmlns="${EXTENDED_PROPERTIES_NS}" xmlns:vt="${DOCPROPS_VTYPES_NS}"/>`;
+const NEW_STRICT_APP_PART =
+  `${XML_DECL}\n<Properties xmlns="${EXTENDED_PROPERTIES_STRICT_NS}" xmlns:vt="${DOCPROPS_VTYPES_STRICT_NS}"/>`;
+const STRICT_OFFICE_DOCUMENT_REL_TYPE = 'http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument';
+
+/**
+ * Whether the package's main document is related with the Strict relationship
+ * type, so a new extended-properties part takes the Strict namespace and
+ * relationship type (Part 1 § 15.2.12.3). Core properties are package-level
+ * and have one vocabulary in both conformance classes.
+ */
+function isStrictPackage(relsDoc: Document | null): boolean {
+  if (!relsDoc) return false;
+  return Array.from(relsDoc.getElementsByTagNameNS(OOXML.REL_NS, 'Relationship'))
+    .some((rel) => rel.getAttribute('Type') === STRICT_OFFICE_DOCUMENT_REL_TYPE);
+}
 
 /** A path for a new part: `preferred`, or the first `stemN.xml` no entry already uses. */
 function freePartPath(zip: DocxZip, preferred: string): string {
@@ -540,8 +557,14 @@ function validateMutation(mutation: DocumentPropertiesMutation): void {
   }
 }
 
+/**
+ * Serialize a part. A carriage return in the DOM can only have come from a
+ * `&#13;` reference or a written value (parsing normalizes literal line
+ * ends), and a literal one would be read back as a line feed, so each is
+ * written as `&#13;` to keep the value it holds.
+ */
 function serializePart(doc: Document): string {
-  const text = serializeXml(doc);
+  const text = serializeXml(doc).replace(/\r/gu, '&#13;');
   return text.startsWith('<?xml') ? text : `${XML_DECL}\n${text}`;
 }
 
@@ -567,6 +590,7 @@ export async function setDocumentProperties(
   const core = await loadPropertiesPart(zip, relsDoc, CORE_PROPERTIES_REL_TYPES, 'core');
   const app = await loadPropertiesPart(zip, relsDoc, EXTENDED_PROPERTIES_REL_TYPES, 'app');
   const previous = project(core?.doc, app?.doc, core?.path ?? null, app?.path ?? null);
+  const strict = isStrictPackage(relsDoc);
 
   const partsCreated: string[] = [];
   const partsChanged: string[] = [];
@@ -589,12 +613,16 @@ export async function setDocumentProperties(
     if (!doc) {
       // Removing a property from a part that does not exist changes nothing.
       if (!hasValue(writes)) return { doc: null, path };
-      doc = parseXml(which === 'core' ? NEW_CORE_PART : NEW_APP_PART);
+      doc = parseXml(which === 'core' ? NEW_CORE_PART : strict ? NEW_STRICT_APP_PART : NEW_APP_PART);
       created = true;
       if (!loaded) {
         path = freePartPath(zip, which === 'core' ? 'docProps/core.xml' : 'docProps/app.xml');
         packageRels ??= parseXml(`${XML_DECL}\n<Relationships xmlns="${OOXML.REL_NS}"/>`);
-        addPackageRelationship(packageRels, which === 'core' ? CORE_PROPERTIES_REL_TYPES[0] : EXTENDED_PROPERTIES_REL_TYPES[0], path);
+        addPackageRelationship(
+          packageRels,
+          which === 'core' ? CORE_PROPERTIES_REL_TYPES[0] : EXTENDED_PROPERTIES_REL_TYPES[strict ? 1 : 0],
+          path,
+        );
         relsChanged = true;
       }
       if (!ctDoc) {
