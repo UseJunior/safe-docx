@@ -104,7 +104,7 @@ part: 4
 section: "14.9.1.1"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent
-verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts
 ```
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
@@ -121,10 +121,17 @@ VML picture (`w:pict`), a DrawingML picture (`w:drawing`) or an embedded object
 unchanged one passes through without revision markup, and one whose markup
 changed is a tracked deletion of the old run plus a tracked insertion of the new
 one. A change to the relationship closure the story reaches through `r:*` or
-`o:relid` attributes is still refused, and the closure includes the content of
-every internal target part, so a picture or object that now names another part,
-or whose part was replaced under the same relationship, is never carried
-silently. A main-document story holding a nested box —
+`o:relid` attributes — a hyperlink added, removed or pointed at another target,
+or a picture that now names another image part — is compared like any other
+story change: the old reference is a tracked deletion bound to the original
+target and the new one a tracked insertion bound to the revised target, and
+every relationship either side needs is imported, under an id unique there,
+into the relationship part of the part that owns the box (the footer's own
+`.rels` for a footer box), with an internal target's part copied in alongside
+(Part 2 §6.5.3.4). Identical box markup whose relationship ids now resolve
+elsewhere counts as a change. A part replaced under the same relationship is
+carried by the story comparison and listed by the picture payload audit, so it
+is never carried silently. A main-document story holding a nested box —
 non-conformant under this clause, but present in documents a comparison
 receives — is compared too: the nested box is compared as a story of its own,
 cut before its enclosing story and spliced back after it, and a nested box whose
@@ -148,10 +155,10 @@ a `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host
 anywhere above it. Such a box has no drawing scaffold this implementation can
 fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,
 which aborts the whole comparison rather than emitting a partial redline. The
-claim likewise does not cover a change to the relationship closure of any
-text-box story — that check runs ahead of the twin carve-out and applies to
-twinned and untwinned boxes alike — nor a change to the containing scaffold of
-an untwinned box.
+claim likewise does not cover a text-box story with a relationship reference
+that resolves to nothing in its owning part — that check runs ahead of the twin
+carve-out and applies to twinned and untwinned boxes alike — nor a change to the
+containing scaffold of an untwinned box.
 
 **Inserted and deleted main-document text boxes are inside the subset.** Boxes
 pair across the two documents by anchor identity — the VML shape `id` and the
@@ -626,7 +633,7 @@ part: 1
 section: "17.16.22"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink
-verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts
+verifiedBy: packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-core/src/primitives/relationships.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-core/src/primitives/text.ts; packages/docx-markdoc/src/import.ts
 ```
 
 `w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose
@@ -637,7 +644,10 @@ tracked edits to link text nest as `<w:hyperlink><w:ins>…` /
 CT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit
 `w:hyperlink`. safe-docx's comparison engine preserves the wrapper and
 its attributes when serializing tagged paragraphs that contain hyperlinks,
-and never merges text atoms across a hyperlink boundary. The enforcement
+and never merges text atoms across a hyperlink boundary. A link that exists
+on one side only — added, removed, or the old and new halves of a retargeted
+link — keeps its `w:hyperlink` container in the paragraph and tracks the runs
+inside it, in body text and in text-box stories alike. The enforcement
 lives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`
 (`nearestHyperlinkAncestor`) and
 `packages/docx-compare/src/tagged/taggedTreeSerializer.ts`
