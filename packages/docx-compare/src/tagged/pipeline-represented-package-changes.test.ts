@@ -700,6 +700,34 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  test('a header LASTSAVEDBY field whose last-saved-by property changes stays listed when only its reference allocation differs', async () => {
+    // cp:lastModifiedBy is rewritten on every save and left out of the
+    // environment digest, but not while a header field can show it
+    // (Codex round 10).
+    const withLastSavedBy = async (buffer: Buffer, name: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('docProps/core.xml',
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
+        `xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Agreement</dc:title><cp:lastModifiedBy>${name}</cp:lastModifiedBy></cp:coreProperties>`);
+      return archive.save();
+    };
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> LASTSAVEDBY </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Alice</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withLastSavedBy(await packageWith(body, LAYOUT, [header]), 'Alice');
+    const revised = await withLastSavedBy(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
     // snapshot without w:titlePg leaves the revised title page in place on

@@ -571,10 +571,10 @@ const ENVIRONMENT_EXCLUDED = [
 ];
 /**
  * Document-property entries every save rewrites (save time, revision count,
- * editing time, statistics, the application that saved): none can be shown
- * by a DOCPROPERTY field in a way the redline would need to carry, while the
- * properties a field can show (title, author, company, custom properties)
- * stay in the digest.
+ * editing time, statistics, the application that saved). They are left out
+ * of the digest only while no header/footer field can show them
+ * (`VOLATILE_PROPERTY_FIELDS`); the properties a field can always show
+ * (title, author, company, custom properties) stay in.
  */
 const VOLATILE_DOCUMENT_PROPERTIES = new Set([
   'modified', 'revision', 'lastModifiedBy', 'lastPrinted',
@@ -582,6 +582,31 @@ const VOLATILE_DOCUMENT_PROPERTIES = new Set([
   'Application', 'AppVersion', 'DocSecurity', 'ScaleCrop', 'LinksUpToDate', 'SharedDoc', 'HyperlinksChanged',
   'HeadingPairs', 'TitlesOfParts',
 ]);
+/** Fields that show a save-rewritten property (LASTSAVEDBY, REVNUM, SAVEDATE, statistics, DOCPROPERTY, INFO). */
+const VOLATILE_PROPERTY_FIELDS = /\b(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIME|NUMWORDS|NUMCHARS|DOCPROPERTY|INFO)\b/iu;
+
+/** Whether any field in the given story parts may show a save-rewritten document property. */
+async function storyFieldsShowVolatileProperties(archive: DocxArchive, storyParts: Iterable<string>): Promise<boolean> {
+  for (const path of storyParts) {
+    const xml = await archive.getFile(path);
+    if (xml === null) continue;
+    let document: Document;
+    try {
+      document = parseXml(xml);
+    } catch {
+      return true;
+    }
+    const instructions = [
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'instrText')).map((element) => element.textContent ?? ''),
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'delInstrText')).map((element) => element.textContent ?? ''),
+      ...Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple')).map((element) => element.getAttributeNS(W_NS, 'instr') ?? ''),
+    ];
+    // A complex field's instruction may be split over runs, so the joined
+    // text is searched; naming one of these words anywhere counts.
+    if (VOLATILE_PROPERTY_FIELDS.test(instructions.join(' '))) return true;
+  }
+  return false;
+}
 /**
  * Elements that record editing sessions or view state, not appearance.
  * (`w:evenAndOddHeaders` is also left out, but only from the settings part
@@ -615,6 +640,7 @@ async function storyFormattingEnvironment(
   const storyParts = new Set(documentRelationships
     .filter((relationship) => !relationship.external && STORY_RELATIONSHIP_TYPES.has(relationship.type))
     .map((relationship) => relationship.path));
+  const keepVolatileProperties = await storyFieldsShowVolatileProperties(archive, storyParts);
   const digest = createHash('sha256');
   // Which part plays which role (styles, theme, settings, ...) is itself part
   // of how a story looks: the document's implicit relationships (those its
@@ -671,7 +697,7 @@ async function storyFormattingEnvironment(
             element.parentNode?.removeChild(element);
           }
         }
-        if (path.startsWith('docProps/')) {
+        if (path.startsWith('docProps/') && !keepVolatileProperties) {
           for (const element of Array.from(root.getElementsByTagName('*'))) {
             if (VOLATILE_DOCUMENT_PROPERTIES.has(localName(element))) element.parentNode?.removeChild(element);
           }
