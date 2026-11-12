@@ -9,9 +9,11 @@
  * expressed in it. Each of those walkers used to decide for itself which run
  * content elements count and how much, so a change to one (for example letting
  * a `w:sym` glyph count as a character) would have left the others addressing
- * different characters. Every walker now asks this module, and keeps only its
- * own context rules (field-code suppression, tracked-deletion handling, story
- * boundaries).
+ * different characters. Every raw-offset walker named in issue #1045 now asks
+ * this module, and keeps only its own context rules (field-code suppression,
+ * tracked-deletion handling, story boundaries). Projections that are not
+ * paragraph raw offsets (comment and footnote body text, the run-in heading
+ * detector's header text) keep their own `w:t` walks.
  *
  * A `w:sym` symbol character contributes nothing here yet: it is zero-width
  * run content in the coordinate space, like a field marker or a proofing mark.
