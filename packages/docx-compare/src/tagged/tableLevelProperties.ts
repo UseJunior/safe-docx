@@ -94,7 +94,7 @@ export interface TableLevelPropertyResolution {
   /** The element to publish, or null when neither side needs one. */
   element: WmlElement | null;
   /** Which revision record, if any, the published element carries. */
-  record: 'none' | 'preserved' | 'comparison';
+  record: 'none' | 'unchanged' | 'preserved' | 'comparison';
 }
 
 export interface TableLevelRecordFactory {
@@ -153,7 +153,7 @@ export function resolveTableLevelProperty(
       subtreeSignature(revisedRecord) === subtreeSignature(originalRecord)) {
     // Both inputs carry the same pending revision over the same live state:
     // publish the revised element unchanged, record included.
-    return { element: revised!.cloneNode(true) as WmlElement, record: 'preserved' };
+    return { element: revised!.cloneNode(true) as WmlElement, record: 'unchanged' };
   }
   const prior = originalPriorState(original, localName);
   if (signature(prior) === signature(live)) {
@@ -197,9 +197,10 @@ export function tableRowsOf(table: Element): WmlElement[] {
 }
 
 /**
- * Give every row of a table whose `w:tblPr` carries a comparison
- * `w:tblPrChange` a row-level `w:tblPrExChange`, unless the row already
- * carries one.
+ * Give every row of a table whose published `w:tblPr` gained a
+ * `w:tblPrChange` (a comparison record, or an original-only pending one kept
+ * by the comparison) a row-level `w:tblPrExChange`, unless the row already
+ * carries one. A record both inputs already carried is passed through as is.
  *
  * Word 16.114.3 for Mac recognises a table-property revision only through a
  * row-level `w:tblPrExChange`: a lone `w:tblPrChange` shows no revision and

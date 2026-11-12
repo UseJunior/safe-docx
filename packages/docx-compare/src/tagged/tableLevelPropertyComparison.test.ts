@@ -276,6 +276,25 @@ describe('table property changes', () => {
   );
 
   test.openspec('[SDX-COMPTABLE-11] a table property change emits a native table-property revision')(
+    'keeps w:tblPr and w:tblGrid in schema order when a bookmark is added at the start of the table', async () => {
+      const bookmarked = (tblPr: string, marker: string) =>
+        table(tblPr, ROWS).replace('<w:tbl>', `<w:tbl>${marker}`).replace('</w:tbl>', `${marker ? '<w:bookmarkEnd w:id="7"/>' : ''}</w:tbl>`);
+      const start = '<w:bookmarkStart w:id="7" w:name="Schedule"/>';
+      const directions: Array<[string, string]> = [['', start], [start, '']];
+      for (const [originalMarker, revisedMarker] of directions) {
+        const { xml } = await compareChecked(
+          body(bookmarked(WIDTH, originalMarker)),
+          body(bookmarked('<w:tblW w:w="6500" w:type="dxa"/>', revisedMarker)),
+        );
+        const tbl = parseXml(xml).getElementsByTagNameNS(W_NS, 'tbl')[0]!;
+        const names = childElements(tbl).map((child) => child.localName);
+        expect(names.slice(0, 2)).toEqual(['tblPr', 'tblGrid']);
+        expect(records(xml, 'tblPrChange')).toHaveLength(1);
+      }
+    },
+  );
+
+  test.openspec('[SDX-COMPTABLE-11] a table property change emits a native table-property revision')(
     'publishes the revised table properties without a record when formatting is ignored', async () => {
       const { xml } = await compareChecked(
         body(table(`<w:tblStyle w:val="TableGrid"/>${WIDTH}`, ROWS)),
@@ -310,8 +329,14 @@ describe('pending table-level records carried by one input', () => {
         expect(kept).toHaveLength(1);
         expect(kept[0]!.getAttributeNS(W_NS, 'id')).not.toBe('90');
         if (name !== 'tblGridChange') expect(kept[0]!.getAttributeNS(W_NS, 'author')).toBe('Prior');
-        expect(records(xml, 'tblPrExChange').length + records(xml, 'tblPrChange').length
-          + records(xml, 'tblGridChange').length).toBe(1);
+        if (name === 'tblPrChange') {
+          // A kept table-property revision gets the row companions Word needs.
+          expectRowCompanions(xml);
+          expect(records(xml, 'tblPrExChange')).toHaveLength(ROWS.length);
+        } else {
+          expect(records(xml, 'tblPrExChange').length + records(xml, 'tblPrChange').length
+            + records(xml, 'tblGridChange').length).toBe(1);
+        }
       },
     );
 

@@ -2660,7 +2660,7 @@ The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
 `@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live
 exceptions, reject restores the snapshot's `w:tblPrEx` content. Comparison
 emits `w:tblPrExChange` for a changed row `w:tblPrEx`, and on every row of a
-table whose `w:tblPr` gets a comparison `w:tblPrChange` (Word shows a
+table whose published `w:tblPr` gains a `w:tblPrChange` (Word shows a
 table-property revision only through a row-level `w:tblPrExChange`).
 docx-core's native accept/reject do not yet resolve it.
 

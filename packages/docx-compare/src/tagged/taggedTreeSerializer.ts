@@ -182,6 +182,39 @@ function propertyInsertionPoint(container: WmlElement): Node | null {
   return exceptions ? exceptions.nextSibling : container.firstChild;
 }
 
+const TABLE_LEADING_RANGE_MARKUP = new Set([
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+  'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+  'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+  'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+]);
+
+/**
+ * `emitted` children of a table in `CT_Tbl` order: only bare range markup may
+ * precede `w:tblPr`, and `w:tblGrid` follows it directly (§ 17.4.37). A
+ * side-only boundary emitted ahead of the table properties (inside a
+ * `w:ins`/`w:del`, which only row content admits) moves after `w:tblGrid`,
+ * where it still opens or closes at the table's start (#1399).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.37
+ */
+function tableChildrenInSchemaOrder(container: WmlElement, emitted: WmlElement[]): WmlElement[] {
+  if (container.namespaceURI !== W_NS || container.localName !== 'tbl') return emitted;
+  const isProperty = (child: WmlElement, name: string) => child.namespaceURI === W_NS && child.localName === name;
+  const properties = emitted.find((child) => isProperty(child, 'tblPr'));
+  const grid = emitted.find((child) => isProperty(child, 'tblGrid'));
+  const rest = emitted.filter((child) => child !== properties && child !== grid);
+  let leading = 0;
+  while (leading < rest.length && rest[leading]!.namespaceURI === W_NS &&
+    TABLE_LEADING_RANGE_MARKUP.has(rest[leading]!.localName)) leading++;
+  return [
+    ...rest.slice(0, leading),
+    ...(properties ? [properties] : []),
+    ...(grid ? [grid] : []),
+    ...rest.slice(leading),
+  ];
+}
+
 /** `emitted` children of a table row with `w:tblPrEx` moved ahead of `w:trPr` (§ 17.4.78). */
 function rowChildrenInSchemaOrder(container: WmlElement, emitted: WmlElement[]): WmlElement[] {
   if (container.localName !== 'tr') return emitted;
@@ -2339,7 +2372,7 @@ function emitNode(
       freshId: () => allocateRevision().id,
     };
     const publishedTableLevel = new Set<string>();
-    let tablePropertiesRecord: 'none' | 'preserved' | 'comparison' = 'none';
+    let tablePropertiesRecord: 'none' | 'unchanged' | 'preserved' | 'comparison' = 'none';
     for (let index = 0; index < node.children.length; index++) {
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
@@ -2518,8 +2551,8 @@ function emitNode(
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End', plan.comparison));
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
-    replaceElementChildren(base, rowChildrenInSchemaOrder(base, emitted));
-    if (tablePropertiesRecord === 'comparison') {
+    replaceElementChildren(base, tableChildrenInSchemaOrder(base, rowChildrenInSchemaOrder(base, emitted)));
+    if (tablePropertiesRecord === 'comparison' || tablePropertiesRecord === 'preserved') {
       addRowExceptionRevisionCompanions(base, tableLevelRecords);
     }
   }
