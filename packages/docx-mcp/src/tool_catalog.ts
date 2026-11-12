@@ -59,6 +59,9 @@ const GOOGLE_DOC_ID_FIELD = {
   ),
 };
 
+/** A settable document-property text value: a string sets it, null removes it. */
+const CORE_TEXT_PROPERTY = z.string().min(1).nullable().optional();
+
 export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'read_file',
@@ -132,6 +135,17 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     surface: 'internal',
     description:
       'Read DOCX main-document sections in document order. Returns zero-based session-relative section_index values, paragraph/body boundary metadata, page numbering, page size, margins, and header/footer relationship references. Call again after any operation that changes section topology. Read-only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
+    name: 'get_document_properties',
+    surface: 'internal',
+    description:
+      'Read DOCX document properties: core properties from the Core Properties part (docProps/core.xml: title, subject, creator, keywords, description, category, content_status, language, identifier, version, last_modified_by, revision, created, modified, last_printed) and extended properties from the Extended File Properties part (docProps/app.xml: application, app_version, company, manager, template). Each value is the element text, or null when the element or the part is absent; core_part and app_part name the parts (null when the package has none). Read-only.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -489,6 +503,46 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .strict()
         .optional()
         .describe('Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
+    name: 'set_document_properties',
+    surface: 'package-mutation',
+    description:
+      'Set or remove DOCX document properties from a closed set: core (title, subject, creator, keywords, description, category, content_status, language, last_modified_by, revision, created, modified) and extended (application, app_version, company, manager, template). A string sets a property, null removes its element, and an omitted key is left unchanged. created and modified must be W3CDTF dates (e.g. 2026-01-02 or 2026-01-02T03:04:05Z) and are written with xsi:type="dcterms:W3CDTF"; revision is a non-negative integer; app_version has the form XX.YYYY. Only the named elements change: other elements, namespaces and extensions in the parts are kept. A document without docProps/core.xml or docProps/app.xml gets the part, its package relationship and its content-type override when a value is set in it. Surface: package-mutation — document properties have no tracked-change form, so an effective change is untracked and listed in the save report non-revision change manifest. A call whose values already hold reports changed=false and records no edit. DOCX only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
+      core: z
+        .object({
+          title: CORE_TEXT_PROPERTY.describe('dc:title.'),
+          subject: CORE_TEXT_PROPERTY.describe('dc:subject.'),
+          creator: CORE_TEXT_PROPERTY.describe('dc:creator (author).'),
+          keywords: CORE_TEXT_PROPERTY.describe('cp:keywords; replaces any existing keyword values.'),
+          description: CORE_TEXT_PROPERTY.describe('dc:description (comments).'),
+          category: CORE_TEXT_PROPERTY.describe('cp:category.'),
+          content_status: CORE_TEXT_PROPERTY.describe('cp:contentStatus, such as Draft or Final.'),
+          language: CORE_TEXT_PROPERTY.describe('dc:language, a language tag such as en-US.'),
+          last_modified_by: CORE_TEXT_PROPERTY.describe('cp:lastModifiedBy.'),
+          revision: z.number().int().nonnegative().nullable().optional().describe('cp:revision, a non-negative integer; null removes it.'),
+          created: CORE_TEXT_PROPERTY.describe('dcterms:created, a W3CDTF date.'),
+          modified: CORE_TEXT_PROPERTY.describe('dcterms:modified, a W3CDTF date.'),
+        })
+        .strict()
+        .optional()
+        .describe('Core properties (docProps/core.xml). identifier, version and last_printed are read-only.'),
+      app: z
+        .object({
+          application: CORE_TEXT_PROPERTY.describe('Application: the name of the producing application; null leaves it out.'),
+          app_version: CORE_TEXT_PROPERTY.describe('AppVersion, of the form XX.YYYY such as 16.0000.'),
+          company: CORE_TEXT_PROPERTY.describe('Company.'),
+          manager: CORE_TEXT_PROPERTY.describe('Manager.'),
+          template: CORE_TEXT_PROPERTY.describe('Template, the attached template name.'),
+        })
+        .strict()
+        .optional()
+        .describe('Extended properties (docProps/app.xml).'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },

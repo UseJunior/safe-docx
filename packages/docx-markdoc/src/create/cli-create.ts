@@ -380,6 +380,20 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
  * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
  */
 /**
+ * The document-properties entry of the CLI summary. Without a frontmatter
+ * `date`, it says the created and modified dates are the fixed 2006 default,
+ * so a document is not delivered with them unawares.
+ */
+export function propertiesSummary(created: CreatedDocument): string {
+  const { values } = created.certificate.checks.properties;
+  const application = values['app.application'];
+  const dates = created.certificate.frontmatter.date === undefined
+    ? `created and modified ${values['core.created']} (no frontmatter date; set date: to choose them)`
+    : `created ${values['core.created']}${values['core.modified'] === values['core.created'] ? '' : `, modified ${values['core.modified']}`}`;
+  return `properties ok (${dates}; application ${application === null ? 'omitted' : JSON.stringify(application)}; negative control ok)`;
+}
+
+/**
  * The cross-references entry of the CLI summary. With text or relative
  * references it counts them apart from the other number references and
  * names the text-extent or relative-context control; without, it reads as
@@ -670,6 +684,7 @@ async function createLocked(
         : []),
       ...(checks.crossReferences ? [crossReferenceSummary(checks.crossReferences)] : []),
       'deterministic',
+      propertiesSummary(created),
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
       ...(checks.roundTrip.paragraphLayout ? [`paragraph layout ok (${plural(checks.roundTrip.paragraphLayout.paragraphs.actual, 'paragraph')}; ${controlsSummary({ 'read-back': checks.readback.layouts?.negativeControlDetected ?? 'not applicable', 'changed layout': checks.roundTrip.paragraphLayout.negativeControls.changedLayout, 'dropped paragraph': checks.roundTrip.paragraphLayout.negativeControls.droppedParagraph, 'moved layout': checks.roundTrip.paragraphLayout.negativeControls.movedLayout })})`] : []),

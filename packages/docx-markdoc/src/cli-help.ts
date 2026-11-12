@@ -274,8 +274,11 @@ const either = (values: readonly string[]): string => values.join(' | ');
  */
 const CREATION_KEY_VALUES: Readonly<Record<string, string>> = {
   title: '<text>: the document title property, not a visible paragraph (write a # heading for that); default the first # heading',
-  author: '<text>: the document author property',
-  date: 'YYYY-MM-DD or a UTC ISO timestamp: the document date properties',
+  author: '<text>: the document author property (dc:creator)',
+  date: 'YYYY-MM-DD or a UTC ISO timestamp: the created date, and the modified date unless modified is set; default 2006-01-01T00:00:00Z',
+  modified: 'YYYY-MM-DD or a UTC ISO timestamp: the modified date, not earlier than date; default date',
+  'last-modified-by': '<text>: the last-modified-by property',
+  application: '<text> | none: the Application property in docProps/app.xml (default safe-docx; none leaves it out)',
   header: `<text>: the running header (on {% section %}, header=false for an empty one)`,
   'header-align': `${alignments} (default center); needs header text`,
   'header-first': `<text> | ${FIRST_PAGE_NONE}: the first page's header (${FIRST_PAGE_NONE} for no header on page 1)`,
