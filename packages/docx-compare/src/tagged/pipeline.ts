@@ -1629,18 +1629,6 @@ async function compareDocumentsTagged(
       reason: 'assembled nested stories failed accept/reject round-trip validation',
     }]);
   }
-  if (
-    textBoxPlan.hasAncillaryTextBoxStories ||
-    representedPartPaths.size > 0
-  ) {
-    // Reject All shows the revised drawing of a listed header/footer text box
-    // (#1382), so the original it is held to carries that drawing too.
-    await assertAncillaryTextBoxStoryProjection(
-      textBoxPlan.ancillaryProjectionOriginal ?? original,
-      revised,
-      document,
-    );
-  }
   const results = [outerResult, ...storyResults.map(({ result }) => result)];
   const stats = results.reduce<CompareStats>(
     (combined, result) => ({
@@ -1702,6 +1690,23 @@ async function compareDocumentsTagged(
         change.role === represented.role,
     ),
   ), ...(textBoxPlan.drawingChanges ?? [])];
+  if (
+    textBoxPlan.hasAncillaryTextBoxStories ||
+    representedPartPaths.size > 0
+  ) {
+    // Reject All shows the revised drawing of a listed header/footer text box
+    // (#1382), so the original it is held to carries that drawing too. A
+    // listed header/footer no story compared shows the revised part (#1391).
+    await assertAncillaryTextBoxStoryProjection(
+      textBoxPlan.ancillaryProjectionOriginal ?? original,
+      revised,
+      document,
+      {
+        changes: unrepresentedChanges,
+        comparedPartPaths: new Set(storyResults.map(({ partPath }) => partPath)),
+      },
+    );
+  }
 
   return withRepresentedPackageChangesRemoved(original, revised, {
     ...outerResult,
