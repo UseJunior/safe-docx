@@ -506,6 +506,41 @@ describe('changes the redline still does not carry stay listed', () => {
     expect(reported).toEqual([entry]);
   });
 
+  test('a header whose character style definition changes stays listed when only its reference allocation differs', async () => {
+    // The header part is the same on both sides, but the style it names
+    // turns red in styles.xml, which the redline does not track. Story
+    // identity includes the style and list definitions a story depends on
+    // (Codex round 5).
+    const withStyle = async (buffer: Buffer, color: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('word/styles.xml',
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W_NS}">` +
+        `<w:style w:type="character" w:styleId="Logo"><w:name w:val="Logo"/><w:rPr><w:color w:val="${color}"/></w:rPr></w:style></w:styles>`);
+      const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
+      archive.setFile('word/_rels/document.xml.rels', rels.replace('</Relationships>',
+        `<Relationship Id="rIdStyles" Type="${R_NS}/styles" Target="styles.xml"/></Relationships>`));
+      const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+      if (!contentTypes.includes('/word/styles.xml')) {
+        archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
+          '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>'));
+      }
+      return archive.save();
+    };
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<w:p><w:r><w:rPr><w:rStyle w:val="Logo"/></w:rPr><w:t>Logo</w:t></w:r></w:p>',
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withStyle(await packageWith(body, LAYOUT, [header]), '000000');
+    const revised = await withStyle(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'FF0000');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a w:titlePg the snapshot cannot undo in Word stays listed', async () => {
     // w:sectPrChange snapshots are applied property by property by Word: a
     // snapshot without w:titlePg leaves the revised title page in place on

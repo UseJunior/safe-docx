@@ -482,6 +482,11 @@ async function packageProjectionView(
     settingsXml: await source.archive.getFile('word/settings.xml'),
   });
   if (!bindings.ok) bindings = undefined;
+  const formatting = storyFormattingDependencies(
+    await source.archive.getStylesXml(),
+    await source.archive.getNumberingXml(),
+    project,
+  );
   const identities = new Map<string, Promise<StoryIdentity>>();
   return {
     rawSectionCount: liveSectionProperties(rawDocument).length,
@@ -499,12 +504,110 @@ async function packageProjectionView(
           // An unresolvable reference gets an identity nothing else has.
           const resolved = (await readStory(source.archive, path, normalizedStoryXml(projected)))?.semantic
             ?? `unresolved:${label}:${path}`;
-          return { absent: false, identity: resolved };
+          return { absent: false, identity: `${resolved}\n${formatting(projected)}` };
         })();
         identities.set(path, identity);
       }
       return identity;
     },
+  };
+}
+
+const STYLE_REFERENCES = new Set(['pStyle', 'rStyle', 'tblStyle', 'numStyleLink', 'styleLink']);
+const LIST_ID_CHILDREN: ReadonlySet<string> = new Set(['abstractNumId', 'nsid', 'tmpl']);
+
+/**
+ * The style and numbering definitions a story's formatting depends on, in a
+ * comparable form: the document defaults, the default styles, every style the
+ * story names with each style it is based on, and every list it uses with
+ * its abstract definition. Two stories with identical XML still look
+ * different when a definition they depend on changed in `styles.xml` or
+ * `numbering.xml`, which the redline does not track; a part identity without
+ * them would read an explicit-versus-inherited reference as allocation only
+ * (Codex round 5). Definitions the story does not reach are left out, so
+ * styles a comparison adds for other content do not tell two stories apart.
+ */
+function storyFormattingDependencies(
+  stylesXml: string | null,
+  numberingXml: string | null,
+  project: (xml: string) => string,
+): (storyXml: string) => string {
+  const projectedOrRaw = (xml: string | null): Document | undefined => {
+    if (xml === null) return undefined;
+    try {
+      return parseXml(project(xml));
+    } catch {
+      return parseXml(xml);
+    }
+  };
+  const styles = projectedOrRaw(stylesXml);
+  const numbering = projectedOrRaw(numberingXml);
+  const wChildren = (parent: Element | undefined, name: string): Element[] =>
+    parent ? childElements(parent).filter((child) => child.namespaceURI === W_NS && localName(child) === name) : [];
+  const wVal = (element: Element): string | null => element.getAttributeNS(W_NS, 'val');
+  const styleById = new Map<string, Element>();
+  const defaults: string[] = [];
+  for (const style of wChildren(styles?.documentElement, 'style')) {
+    const id = style.getAttributeNS(W_NS, 'styleId');
+    if (id) styleById.set(id, style);
+    if (style.getAttributeNS(W_NS, 'default') === '1' || style.getAttributeNS(W_NS, 'default') === 'true') {
+      if (id) defaults.push(id);
+    }
+  }
+  const docDefaults = wChildren(styles?.documentElement, 'docDefaults').map(canonicalElement).join('');
+  const numById = new Map<string, Element>();
+  for (const num of wChildren(numbering?.documentElement, 'num')) {
+    const id = num.getAttributeNS(W_NS, 'numId');
+    if (id) numById.set(id, num);
+  }
+  const abstractById = new Map<string, Element>();
+  for (const abstract of wChildren(numbering?.documentElement, 'abstractNum')) {
+    const id = abstract.getAttributeNS(W_NS, 'abstractNumId');
+    if (id) abstractById.set(id, abstract);
+  }
+  const referencesIn = (root: Element, styleIds: Set<string>, numIds: Set<string>): void => {
+    for (const element of Array.from(root.getElementsByTagNameNS(W_NS, '*'))) {
+      const name = localName(element);
+      const value = wVal(element);
+      if (value === null) continue;
+      if (STYLE_REFERENCES.has(name)) styleIds.add(value);
+      else if (name === 'numId') numIds.add(value);
+    }
+  };
+  return (storyXml) => {
+    const styleIds = new Set<string>(defaults);
+    const numIds = new Set<string>();
+    referencesIn(parseXml(storyXml).documentElement, styleIds, numIds);
+    const seenStyles = new Map<string, string>();
+    const pending = [...styleIds];
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      if (seenStyles.has(id)) continue;
+      const style = styleById.get(id);
+      seenStyles.set(id, style ? canonicalElement(style) : 'missing');
+      if (!style) continue;
+      for (const basedOn of wChildren(style, 'basedOn')) {
+        const parent = wVal(basedOn);
+        if (parent) pending.push(parent);
+      }
+      const before = new Set(styleIds);
+      referencesIn(style, styleIds, numIds);
+      for (const added of styleIds) if (!before.has(added)) pending.push(added);
+    }
+    const lists = [...numIds].sort().map((id) => {
+      const num = numById.get(id);
+      if (!num) return `${id}=missing`;
+      const abstractId = wChildren(num, 'abstractNumId').map(wVal)[0];
+      const abstract = abstractId ? abstractById.get(abstractId) : undefined;
+      // List ids (and the abstract list's nsid/tmpl) are allocation details;
+      // the level definitions and overrides are what show.
+      const definition = (element: Element, skip: ReadonlySet<string>): string => childElements(element)
+        .filter((child) => !(child.namespaceURI === W_NS && skip.has(localName(child))))
+        .map(canonicalElement)
+        .join('');
+      return `${definition(num, LIST_ID_CHILDREN)}|${abstract ? definition(abstract, LIST_ID_CHILDREN) : 'missing'}`;
+    });
+    return `defaults:${docDefaults}\nstyles:${[...seenStyles].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([id, value]) => `${id}=${value}`).join('\n')}\nlists:${lists.join('\n')}`;
   };
 }
 
