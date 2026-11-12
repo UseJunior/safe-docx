@@ -107,7 +107,7 @@ describe('Traceability: paragraph layout in created documents', () => {
         passed: true,
         paragraphs: { expected: 4, actual: 4 },
         mismatches: [],
-        negativeControls: { changedLayout: true, droppedParagraph: true },
+        negativeControls: { changedLayout: true, droppedParagraph: true, movedLayout: true },
       });
       // The source oracle reads the layout straight from the tag's attributes.
       expect(projectSourceText(AGREEMENT).body.map((entry) => entry.layout ?? null)).toEqual([
@@ -138,7 +138,7 @@ describe('Traceability: paragraph layout in created documents', () => {
       expect(certificate.checks.readback).toMatchObject({ passed: false, detail: 'paragraph 2 layout: expected "ind.left=720 ind.hanging=720", read "ind.left=720"' });
       expect(certificate.checks.roundTrip.passed).toBe(false);
       expect(certificate.checks.roundTrip.paragraphLayout!.mismatches[0]).toEqual({
-        paragraph: 1,
+        paragraph: 2,
         expected: 'ind.left=720 ind.hanging=720 | "Affiliate" means any entity that directly or indirectly controls, is controlled by, or is under common control with a party to this Agreement.',
         actual: 'ind.left=720 | "Affiliate" means any entity that directly or indirectly controls, is controlled by, or is under common control with a party to this Agreement.',
       });
@@ -152,7 +152,7 @@ describe('Traceability: paragraph layout in created documents', () => {
         },
       }));
       expect(certificate.checks.readback.passed).toBe(true);
-      expect(certificate.checks.roundTrip.paragraphLayout).toMatchObject({ passed: false, mismatches: [{ paragraph: 3, expected: expect.stringMatching(/^jc=left ind\.left=1440 \| /u), actual: expect.stringMatching(/^jc=right ind\.left=1440 \| /u) }] });
+      expect(certificate.checks.roundTrip.paragraphLayout).toMatchObject({ passed: false, mismatches: [{ paragraph: 4, expected: expect.stringMatching(/^jc=left ind\.left=1440 \| /u), actual: expect.stringMatching(/^jc=right ind\.left=1440 \| /u) }] });
 
       // A layout on a paragraph the source never laid out is extra, even with the lowering kept in step.
       certificate = await verificationFailure(createDocumentFromMarkdoc('First paragraph.\n\nSecond paragraph.\n', {
@@ -166,9 +166,36 @@ describe('Traceability: paragraph layout in created documents', () => {
       expect(certificate.checks.roundTrip.paragraphLayout).toEqual({
         passed: false,
         paragraphs: { expected: 0, actual: 1 },
-        mismatches: [{ paragraph: 1, expected: null, actual: 'jc=left | Second paragraph.' }],
-        negativeControls: { changedLayout: 'not applicable', droppedParagraph: 'not applicable' },
+        mismatches: [{ paragraph: 2, expected: 'no layout | Second paragraph.', actual: 'jc=left | Second paragraph.' }],
+        negativeControls: { changedLayout: 'not applicable', droppedParagraph: 'not applicable', movedLayout: 'not applicable' },
       });
+
+      // A layout moved to the next paragraph, which holds the same text, with the lowering kept in step: the read-back
+      // passes, and the round trip still fails because it binds each layout to its paragraph's place in the body.
+      const twins = '{% paragraph-layout align="left" %}Twin.{% /paragraph-layout %}\n\nTwin.\n';
+      certificate = await verificationFailure(createDocumentFromMarkdoc(twins, {
+        transformLowering: (lowering) => {
+          const blocks = lowering.spec.sections[0]!.blocks;
+          const { alignment: _moved, ...unaligned } = blocks[0]! as typeof blocks[number] & { alignment?: string };
+          blocks[0] = unaligned as typeof blocks[number];
+          blocks[1] = { ...blocks[1]!, alignment: 'left' } as typeof blocks[number];
+          return { ...lowering, projection: { ...lowering.projection, layouts: [null, 'jc=left'] } };
+        },
+      }));
+      expect(certificate.checks.readback.passed).toBe(true);
+      expect(certificate.checks.roundTrip.paragraphLayout).toEqual({
+        passed: false,
+        paragraphs: { expected: 1, actual: 1 },
+        mismatches: [
+          { paragraph: 1, expected: 'jc=left | Twin.', actual: 'no layout | Twin.' },
+          { paragraph: 2, expected: 'no layout | Twin.', actual: 'jc=left | Twin.' },
+        ],
+        // The moved-layout control matches what was actually built here, so it reads as undetected.
+        negativeControls: { changedLayout: true, droppedParagraph: true, movedLayout: false },
+      });
+      // Built as written, the same source passes, and moving its layout is a negative control that is detected.
+      const built = await createDocumentFromMarkdoc(twins);
+      expect(built.certificate.checks.roundTrip.paragraphLayout).toMatchObject({ passed: true, negativeControls: { changedLayout: true, droppedParagraph: true, movedLayout: true } });
     },
   );
 
@@ -223,6 +250,17 @@ describe('Traceability: paragraph layout in created documents', () => {
       expect(deletion.complete).toBe(true);
       expect(deletion.pulledSource).not.toContain('"Services" means');
       expect(deletion.pulledSource).toContain('{% paragraph-layout indent-left="0.5" indent-hanging="0.5" %}\n"Affiliate" means');
+
+      // Retyping all of a laid-out paragraph's words keeps its layout: the new paragraph is written in the tag again.
+      for (const [source, expected] of [
+        ['{% paragraph-layout align="left" %}Alpha.{% /paragraph-layout %}\n', '{% paragraph-layout align="left" %}Gamma.{% /paragraph-layout %}\n'],
+        ['{% paragraph-layout align="left" %}\nAlpha.\n{% /paragraph-layout %}\n', '{% paragraph-layout align="left" %}Gamma.{% /paragraph-layout %}\n'],
+        ['{% paragraph-layout align="justify" indent-left="1" indent-hanging="0.5" %}Alpha.{% /paragraph-layout %}\n', '{% paragraph-layout align="justify" indent-left="1" indent-hanging="0.5" %}Gamma.{% /paragraph-layout %}\n'],
+      ] as const) {
+        const one = await createDocumentFromMarkdoc(source);
+        const retyped = await pullCreationEdits({ source, base: one, edited: await editDocument(one.docx, (xml) => xml.replace('Alpha.', 'Gamma.')) });
+        expect(retyped, source).toMatchObject({ complete: true, diagnostics: [], pulledSource: expected });
+      }
     },
   );
 });

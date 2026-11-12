@@ -33,8 +33,11 @@ must not carry, and it has no indents.
 - **Two layout comparisons.** The read-back compares the lowering's
   projection with the DOCX, paragraph by paragraph, as it does for text. The
   round trip reads the expected layout straight from the source tag and
-  compares it with every DOCX paragraph that sets `w:jc` or `w:ind` directly,
-  so a lowering that changes both its spec and its projection still fails.
+  compares it with the layout each DOCX paragraph sets directly, position by
+  position over the non-empty body paragraphs (empty ones are generated after
+  tables and as section breaks), so a lowering that changes or moves a layout
+  in both its spec and its projection still fails, even onto a paragraph with
+  the same text. Comparing only the laid-out paragraphs would miss that move.
   The import IR has no paragraph formatting, so the round trip reads the
   layout from the created DOCX's `w:pPr` rather than through `import`.
 - **`doNotExpandShiftReturn` for every created document (#1196).** ECMA-376

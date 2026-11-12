@@ -12,11 +12,12 @@
   and `w:ind` against the lowering, and the round trip checks each tagged
   paragraph's layout against the source alone, each with negative controls; a
   malformed tag fails with `INVALID_PARAGRAPH_LAYOUT`. `pull` carries edits inside the
-  tag. (#1424)
+  tag, and writes a retyped paragraph that keeps its alignment and indent back
+  in the tag. (#1424)
 
 - Documents built by `docx-markdoc create` no longer stretch a justified line
   that ends in a manual line break (`\`): `word/settings.xml` now sets
-  `w:doNotExpandShiftReturn`, which Word and LibreOffice honour, so address
+  `w:doNotExpandShiftReturn`, a Word compatibility setting that LibreOffice also honours, so address
   blocks and venue lines keep normal word spacing. Every created document's
   bytes change once. `generateDocx` gains the opt-in
   `DocumentSpec.compatibility.doNotExpandShiftReturn` that writes it. (#1196)

@@ -19,9 +19,9 @@ The build SHALL verify the layout twice. The read-back SHALL compare each
 body paragraph's direct `w:jc` and `w:ind` with the lowering's projection,
 with a negative control. The round trip SHALL compare each `{% paragraph-layout %}`
 paragraph's text and the layout its attributes call for, read straight from
-the source, with every body paragraph of the DOCX whose own `w:pPr` sets
-`w:jc` or `w:ind`, in order, with negative controls that change and drop one
-expected layout. A missing, misplaced, changed or extra layout SHALL fail the
+the source, with the layout each body paragraph of the DOCX sets in its own
+`w:pPr`, position by position over the non-empty body paragraphs, with
+negative controls that change, drop and move one expected layout. A missing, misplaced, changed or extra layout SHALL fail the
 build with `CREATION_VERIFICATION_FAILED`.
 
 #### Scenario: [SDX-MDOC-PARALAYOUT-01] a paragraph-layout tag gives each of its paragraphs its own alignment and indents
@@ -33,11 +33,12 @@ build with `CREATION_VERIFICATION_FAILED`.
 - **AND** each `align` word SHALL be written as its `w:jc` value, and `create --help` SHALL list the tag with its values
 
 #### Scenario: [SDX-MDOC-PARALAYOUT-02] verification fails when a layout is lost, changed or added on the way
-- **GIVEN** a lowering whose spec loses a hanging indent, a lowering that changes an alignment in both its spec and its projection, and a lowering that adds an alignment to a paragraph the source never laid out
+- **GIVEN** a lowering whose spec loses a hanging indent, a lowering that changes an alignment in both its spec and its projection, a lowering that adds an alignment to a paragraph the source never laid out, and a lowering that moves an alignment, in both its spec and its projection, to the next paragraph, which holds the same text
 - **WHEN** each is created
 - **THEN** the first SHALL fail the read-back and the round trip, naming the paragraph and both layouts
 - **AND** the second SHALL pass the read-back and fail the round trip
 - **AND** the third SHALL fail the round trip with an extra laid-out paragraph and its negative controls not applicable
+- **AND** the fourth SHALL pass the read-back and fail the round trip at both paragraphs, while the same source built as written passes with its moved-layout negative control detected
 
 #### Scenario: [SDX-MDOC-PARALAYOUT-03] a malformed paragraph-layout tag fails closed before any output
 - **GIVEN** sources with a `{% paragraph-layout %}` without attributes, an `align` or `indent-left` outside its list, an `indent-hanging` larger than its `indent-left` or without one, no text, an unknown attribute, and a list inside the tag
@@ -50,7 +51,8 @@ build with `CREATION_VERIFICATION_FAILED`.
 - **THEN** `word/settings.xml` SHALL hold `w:doNotExpandShiftReturn` before the `compatibilityMode` setting in `w:compat`, in both documents
 
 #### Scenario: [SDX-MDOC-PARALAYOUT-05] pull carries a wording edit inside a paragraph-layout tag back into the tag
-- **GIVEN** a created agreement holding `{% paragraph-layout %}` paragraphs, edited in Word to change the wording of one and, separately, to delete one paragraph of a two-paragraph tag
+- **GIVEN** a created agreement holding `{% paragraph-layout %}` paragraphs, edited in Word to change the wording of one and, separately, to delete one paragraph of a two-paragraph tag, and one-paragraph tags whose every word is retyped
 - **WHEN** each edit is pulled
 - **THEN** the changed wording SHALL be written inside the tag, leaving its attributes unchanged, and the pull SHALL be complete
 - **AND** the deleted paragraph SHALL be removed from the source while the tag keeps its other paragraph
+- **AND** each retyped paragraph SHALL be written in a `{% paragraph-layout %}` tag with the same attributes, and the pull SHALL be complete

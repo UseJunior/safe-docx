@@ -5,7 +5,7 @@ import { lowerCreationMarkdoc, NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN, type Crea
 import { CREATION_STYLE } from './profile.js';
 import { readPullDocx, type PullDocx, type PullParagraph, type PullStory } from './pull-docx.js';
 import { buildSourceMap, lineStartsOf, type SourceHolder, type SourceMap, type SourceParagraph, type SourcePiece } from './pull-source.js';
-import { RUNNING_TEXT_KEYS } from './validate.js';
+import { PARAGRAPH_LAYOUT_HANGING_INDENTS, PARAGRAPH_LAYOUT_LEFT_INDENTS, RUNNING_TEXT_KEYS } from './validate.js';
 
 /**
  * Something in the edited DOCX that `pull` reports but does not write into
@@ -796,6 +796,41 @@ function addedInline(paragraph: PullParagraph, notes: PullDiagnostic[], where: s
   return out;
 }
 
+/** `w:jc` as read by pull, as a `paragraph-layout` align value. */
+const LAYOUT_ALIGN: Record<string, string> = { left: 'left', center: 'center', right: 'right', both: 'justify' };
+
+/**
+ * The `{% paragraph-layout %}` attributes that write a body paragraph's own
+ * alignment and left/hanging indent, or undefined when it sets neither or sets a
+ * value the tag's closed vocabulary cannot write (left to the formatting check).
+ */
+function paragraphLayoutAttributes(properties: string): string | undefined {
+  const parts = properties.split(';');
+  const jc = parts.find((part) => part.startsWith('jc='))?.slice(3);
+  const ind = parts.find((part) => part.startsWith('ind(') && part.endsWith(')'))?.slice(4, -1);
+  if (jc === undefined && ind === undefined) return undefined;
+  const attributes: string[] = [];
+  if (jc !== undefined) {
+    if (!LAYOUT_ALIGN[jc]) return undefined;
+    attributes.push(`align="${LAYOUT_ALIGN[jc]}"`);
+  }
+  if (ind !== undefined) {
+    const inches = (twips: string) => String(Number(twips) / 1440);
+    let left: string | undefined;
+    let hanging: string | undefined;
+    for (const pair of ind.split(' ').filter(Boolean)) {
+      const [name, value = ''] = pair.split('=');
+      if (!/^\d+$/u.test(value)) return undefined;
+      if ((name === 'left' || name === 'start') && left === undefined && (PARAGRAPH_LAYOUT_LEFT_INDENTS as readonly string[]).includes(inches(value))) left = inches(value);
+      else if (name === 'hanging' && (PARAGRAPH_LAYOUT_HANGING_INDENTS as readonly string[]).includes(inches(value))) hanging = inches(value);
+      else return undefined;
+    }
+    if (left !== undefined) attributes.push(`indent-left="${left}"`);
+    if (hanging !== undefined) attributes.push(`indent-hanging="${hanging}"`);
+  }
+  return attributes.length > 0 ? attributes.join(' ') : undefined;
+}
+
 type AddedBlock = { kind: 'plain' | 'list' | 'quote'; markdown: string };
 
 /** The creation markup for one added paragraph, by its paragraph style. */
@@ -822,8 +857,11 @@ function addedBlock(paragraph: PullParagraph, notes: PullDiagnostic[], where: st
     case CREATION_STYLE.legend:
       return { kind: 'plain', markdown: `{% legend %}${inline}{% /legend %}` };
     case undefined:
-    case CREATION_STYLE.body:
-      return { kind: 'plain', markdown: inline };
+    case CREATION_STYLE.body: {
+      // A body paragraph with its own alignment or indent, as a retyped `{% paragraph-layout %}` paragraph keeps.
+      const layout = paragraphLayoutAttributes(paragraph.properties);
+      return { kind: 'plain', markdown: layout ? `{% paragraph-layout ${layout} %}${inline}{% /paragraph-layout %}` : inline };
+    }
     default:
       notes.push({ code: 'PULL_ADDED_PARAGRAPH_STYLE', message: `${where} has paragraph style '${style}', which create does not express; it is written as a body paragraph` });
       return { kind: 'plain', markdown: inline };

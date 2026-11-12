@@ -35,8 +35,9 @@ unless the document sets `w:doNotExpandShiftReturn` (ECMA-376 Part 1
   - the read-back compares every body paragraph's direct `w:jc` and `w:ind`
     with the lowering's projection (`checks.readback.layouts`);
   - the round trip compares each `{% paragraph-layout %}` paragraph's text and the layout
-    its attributes call for, read straight from the source, with every body
-    paragraph of the DOCX whose own `w:pPr` sets `w:jc` or `w:ind`
+    its attributes call for, read straight from the source, with the layout
+    each body paragraph of the DOCX sets in its own `w:pPr`, position by
+    position over the non-empty body paragraphs
     (`checks.roundTrip.paragraphLayout`). A missing, misplaced, changed or
     extra layout fails the build.
 - `pull` maps a wording edit inside a `{% paragraph-layout %}` paragraph back into the

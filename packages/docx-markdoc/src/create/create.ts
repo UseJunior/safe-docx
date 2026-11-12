@@ -162,7 +162,7 @@ export type ParagraphLayoutComparison = {
   passed: boolean;
   paragraphs: { expected: number; actual: number };
   mismatches: Array<{ paragraph: number; expected: string | null; actual: string | null }>;
-  negativeControls: Record<'changedLayout' | 'droppedParagraph', boolean | 'not applicable'>;
+  negativeControls: Record<'changedLayout' | 'droppedParagraph' | 'movedLayout', boolean | 'not applicable'>;
 };
 
 /** One section's header or footer, from the source against the import. */
@@ -501,47 +501,60 @@ function footnoteRoundTrip(expected: SourceProjection, ir: ReturnType<typeof req
   };
 }
 
-/** Run the independent round-trip comparison, with negative controls that must each be detected. */
-/** A laid-out paragraph as compared: its layout token, then its normalized text. */
-type LaidOutParagraph = { layout: string; text: string };
+/** A body paragraph as compared: its layout token (null for none), then its normalized text. */
+type BodyLayout = { layout: string | null; text: string };
 
-function laidOutMismatches(expected: readonly LaidOutParagraph[], actual: readonly LaidOutParagraph[]): ParagraphLayoutComparison['mismatches'] {
-  const show = (entry: LaidOutParagraph | undefined) => (entry ? `${entry.layout} | ${entry.text}` : null);
+/**
+ * Position by position over the non-empty body paragraphs: a layout must sit on the same paragraph on both sides,
+ * and a laid-out paragraph must carry the same text. Text without a layout is the body comparison's job.
+ */
+function bodyLayoutMismatches(expected: readonly BodyLayout[], actual: readonly BodyLayout[]): ParagraphLayoutComparison['mismatches'] {
+  const show = (entry: BodyLayout | undefined) => (entry ? `${entry.layout ?? 'no layout'} | ${entry.text}` : null);
   const out: ParagraphLayoutComparison['mismatches'] = [];
   for (let index = 0; index < Math.max(expected.length, actual.length); index += 1) {
     const a = expected[index];
     const b = actual[index];
-    if (a?.layout !== b?.layout || a?.text !== b?.text) out.push({ paragraph: index + 1, expected: show(a), actual: show(b) });
+    const layoutDiffers = (a?.layout ?? null) !== (b?.layout ?? null) || (a === undefined) !== (b === undefined);
+    const textDiffers = (a?.layout != null || b?.layout != null) && a?.text !== b?.text;
+    if (layoutDiffers || textDiffers) out.push({ paragraph: index + 1, expected: show(a), actual: show(b) });
   }
   return out;
 }
 
 /**
- * Each `{% paragraph-layout %}` paragraph's layout as the source calls for it against
- * the DOCX paragraphs whose own `w:pPr` sets `w:jc` or `w:ind`, or undefined
- * when neither side has one. The expectation never comes from the lowering.
+ * Each body paragraph's layout as the source calls for it (from `{% paragraph-layout %}`)
+ * against the layout its own `w:pPr` sets (`w:jc`, `w:ind`) in the DOCX, position by
+ * position over the non-empty paragraphs, or undefined when neither side has a
+ * layout. The expectation never comes from the lowering. Empty paragraphs are left
+ * out on both sides (create generates them after a table and as section breaks).
  */
 function paragraphLayoutRoundTrip(expected: SourceProjection, readback: CreationReadback): ParagraphLayoutComparison | undefined {
-  const wanted: LaidOutParagraph[] = expected.body.flatMap((entry) => (entry.layout === undefined ? [] : [{ layout: entry.layout, text: normalizeOracleText(entry.text) }]));
-  const found: LaidOutParagraph[] = readback.paragraphs.flatMap((text, index) => {
-    const layout = readback.layouts[index];
-    return layout === null || layout === undefined ? [] : [{ layout, text: normalizeOracleText(text) }];
-  });
-  if (wanted.length === 0 && found.length === 0) return undefined;
-  const mismatches = laidOutMismatches(wanted, found);
-  const first = wanted[0];
+  const kept = (entry: BodyLayout) => entry.text !== '' || entry.layout !== null;
+  const wanted: BodyLayout[] = expected.body.map((entry) => ({ layout: entry.layout ?? null, text: normalizeOracleText(entry.text) })).filter(kept);
+  const found: BodyLayout[] = readback.paragraphs.map((text, index) => ({ layout: readback.layouts[index] ?? null, text: normalizeOracleText(text) })).filter(kept);
+  const laidOut = (entries: readonly BodyLayout[]) => entries.filter((entry) => entry.layout !== null).length;
+  if (laidOut(wanted) === 0 && laidOut(found) === 0) return undefined;
+  const mismatches = bodyLayoutMismatches(wanted, found);
+  // Three negative controls, each of which must be detected: the first layout changed, its paragraph dropped, and
+  // its layout moved to a neighbouring paragraph that lays out differently (the same text there or not).
+  const first = wanted.findIndex((entry) => entry.layout !== null);
+  const neighbour = [first + 1, first - 1].find((index) => index >= 0 && index < wanted.length && wanted[index]!.layout !== wanted[first]?.layout);
+  const detects = (mutated: BodyLayout[]) => bodyLayoutMismatches(mutated, found).length > 0;
   const negativeControls: ParagraphLayoutComparison['negativeControls'] = {
-    changedLayout: first === undefined ? 'not applicable' : laidOutMismatches([{ ...first, layout: `${first.layout} ind.right=1` }, ...wanted.slice(1)], found).length > 0,
-    droppedParagraph: first === undefined ? 'not applicable' : laidOutMismatches(wanted.slice(1), found).length > 0,
+    changedLayout: first === -1 ? 'not applicable' : detects(wanted.map((entry, index) => (index === first ? { ...entry, layout: `${entry.layout} ind.right=1` } : entry))),
+    droppedParagraph: first === -1 ? 'not applicable' : detects(wanted.filter((_, index) => index !== first)),
+    movedLayout: first === -1 || neighbour === undefined ? 'not applicable'
+      : detects(wanted.map((entry, index) => (index === first ? { ...entry, layout: wanted[neighbour]!.layout } : index === neighbour ? { ...entry, layout: wanted[first]!.layout } : entry))),
   };
   return {
     passed: mismatches.length === 0 && Object.values(negativeControls).every((value) => value !== false),
-    paragraphs: { expected: wanted.length, actual: found.length },
+    paragraphs: { expected: laidOut(wanted), actual: laidOut(found) },
     mismatches,
     negativeControls,
   };
 }
 
+/** Run the independent round-trip comparison, with negative controls that must each be detected. */
 function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sections: number, readback: CreationReadback): CreationCertificate['checks']['roundTrip'] {
   const ir = requireMarkdoc(importedMarkdoc);
   const paragraphLayout = paragraphLayoutRoundTrip(expected, readback);
