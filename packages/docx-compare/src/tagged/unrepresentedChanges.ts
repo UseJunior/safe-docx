@@ -562,13 +562,28 @@ const STORY_RELATIONSHIP_TYPES = new Set([
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header',
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer',
 ]);
-/** Parts that describe or annotate the package, not how a header or footer looks. */
+/**
+ * Package paths outside the environment: the content-type index, the main
+ * story (compared through its projections) and relationship parts (digested
+ * separately).
+ */
 const ENVIRONMENT_EXCLUDED = [
   /^\[Content_Types\]\.xml$/u,
   /^word\/document\.xml$/u,
   /(^|\/)_rels\//u,
-  /^word\/(people|comments[A-Za-z]*|footnotes|endnotes)\.xml$/u,
 ];
+/**
+ * Relationship types whose target is compared elsewhere (header/footer
+ * stories, slot by slot) or annotates the document without changing how a
+ * header or footer looks (comments, people, notes). A part is left out only
+ * when every relationship naming it has one of these types: a role is read
+ * from the relationships, never from the part's name (Codex round 13).
+ */
+const ENVIRONMENT_EXCLUDED_ROLE = /\/(header|footer|comments|commentsExtended|commentsIds|commentsExtensible|people|footnotes|endnotes)$/u;
+/** Document relationship types whose WordprocessingML parts carry editing-session ids (`w:rsid*`). */
+const SESSION_ID_ROLE = /\/(styles|stylesWithEffects|numbering|settings|fontTable|webSettings)$/u;
+/** Package relationship types of the core and extended document properties. */
+const DOCUMENT_PROPERTIES_ROLE = /\/(metadata\/core-properties|extended-properties)$/u;
 /**
  * Document-property entries every save rewrites (save time, revision count,
  * editing time, statistics, the application that saved). They are left out
@@ -615,11 +630,12 @@ async function storyFieldsShowVolatileProperties(archive: DocxArchive, storyPart
 }
 /**
  * A package part as comparable text: attributes sorted, every child element
- * and text node kept in order, and only WordprocessingML editing-session ids
- * (`w:rsid*`) left out. Custom XML is compared as it is, since a bound
- * control can show any attribute or text in it (Codex round 12).
+ * and text node kept in order. WordprocessingML editing-session ids
+ * (`w:rsid*`) are left out only in parts whose role carries them; custom XML
+ * is compared as it is, since a bound control can show any attribute or text
+ * in it (Codex rounds 12 and 13).
  */
-function environmentCanonicalXml(node: Node): string {
+function environmentCanonicalXml(node: Node, dropSessionIds: boolean): string {
   if (node.nodeType === 3 || node.nodeType === 4) return `"${JSON.stringify(node.nodeValue ?? '')}"`;
   if (node.nodeType !== 1) return '';
   const element = node as Element;
@@ -627,11 +643,11 @@ function environmentCanonicalXml(node: Node): string {
   for (let index = 0; index < element.attributes.length; index++) {
     const attr = element.attributes.item(index);
     if (!attr || attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
-    if (attr.namespaceURI === W_NS && attr.localName?.startsWith('rsid')) continue;
+    if (dropSessionIds && attr.namespaceURI === W_NS && attr.localName?.startsWith('rsid')) continue;
     attrs.push(`${attr.namespaceURI ?? ''}|${attr.localName ?? attr.name}=${JSON.stringify(attr.value)}`);
   }
   attrs.sort();
-  const children = Array.from(element.childNodes).map(environmentCanonicalXml).join('');
+  const children = Array.from(element.childNodes).map((child) => environmentCanonicalXml(child, dropSessionIds)).join('');
   return `<${element.namespaceURI ?? ''}|${localName(element)}[${attrs.join(',')}]{${children}}>`;
 }
 
@@ -640,7 +656,7 @@ function environmentCanonicalXml(node: Node): string {
  * (`w:evenAndOddHeaders` is also left out, but only from the settings part
  * the page check reads it from.)
  */
-const ENVIRONMENT_NOISE = new Set(['rsid', 'rsids', 'latentStyles', 'proofState', 'zoom', 'trackRevisions']);
+const SETTINGS_NOISE = new Set(['rsids', 'proofState', 'zoom', 'trackRevisions']);
 
 /**
  * Everything outside its own part that a header/footer story's appearance
@@ -686,17 +702,45 @@ async function storyFormattingEnvironment(
   digest.update(`document-relationships\n${documentRelationships
     .filter((relationship) => !STORY_RELATIONSHIP_TYPES.has(relationship.type) && !referencedIds.has(relationship.id))
     .map(bindingLine).sort().join('\n')}`);
-  const excluded = (path: string): boolean =>
-    storyParts.has(path) || ENVIRONMENT_EXCLUDED.some((pattern) => pattern.test(path));
-  for (const relsPath of archive.listFiles().filter((path) => /(^|\/)_rels\/[^/]+\.rels$/u.test(path)).sort()) {
+  // Every role each part plays, from every relationship part in the package.
+  const roles = new Map<string, Set<string>>();
+  const relsPaths = archive.listFiles().filter((path) => /(^|\/)_rels\/[^/]+\.rels$/u.test(path)).sort();
+  const relationshipsByPart = new Map<string, PartRelationship[]>();
+  for (const relsPath of relsPaths) {
+    const ownerFolder = relsPath.replace(/(^|\/)_rels\/[^/]+$/u, '');
+    const relationships = await relationshipList(archive, relsPath, ownerFolder);
+    if (!relationships) return `unparseable:${relsPath}:${Math.random()}`;
+    relationshipsByPart.set(relsPath, relationships);
+    for (const relationship of relationships) {
+      if (relationship.external) continue;
+      const set = roles.get(relationship.path) ?? new Set<string>();
+      set.add(relationship.type);
+      roles.set(relationship.path, set);
+    }
+  }
+  const excluded = (path: string): boolean => {
+    if (ENVIRONMENT_EXCLUDED.some((pattern) => pattern.test(path))) return true;
+    const partRoles = roles.get(path);
+    return partRoles !== undefined && partRoles.size > 0 &&
+      Array.from(partRoles).every((type) => ENVIRONMENT_EXCLUDED_ROLE.test(type));
+  };
+  const sessionIdParts = new Set(documentRelationships
+    .filter((relationship) => !relationship.external && SESSION_ID_ROLE.test(relationship.type))
+    .map((relationship) => relationship.path));
+  const stylesParts = new Set(documentRelationships
+    .filter((relationship) => !relationship.external && /\/(styles|stylesWithEffects)$/u.test(relationship.type))
+    .map((relationship) => relationship.path));
+  const propertyParts = new Set((relationshipsByPart.get('_rels/.rels') ?? [])
+    .filter((relationship) => !relationship.external && DOCUMENT_PROPERTIES_ROLE.test(relationship.type))
+    .map((relationship) => relationship.path));
+  for (const relsPath of relsPaths) {
     const ownerFolder = relsPath.replace(/(^|\/)_rels\/[^/]+$/u, '');
     const ownerPath = `${ownerFolder ? `${ownerFolder}/` : ''}${relsPath.replace(/^.*\/_rels\/|^_rels\//u, '').replace(/\.rels$/u, '')}`;
     // The main story's relationships are covered above and by the section
     // bindings; a story part's relationships by the story resolver. The
     // package root's (which part holds the document properties) count.
     if (ownerPath === 'word/document.xml' || (ownerPath !== '' && excluded(ownerPath))) continue;
-    const relationships = await relationshipList(archive, relsPath, ownerFolder);
-    if (!relationships) return `unparseable:${relsPath}:${Math.random()}`;
+    const relationships = relationshipsByPart.get(relsPath) ?? [];
     // The owning part names these relationships by id, so each id stays
     // bound to its target (a swap of two same-type targets changes it).
     digest.update(`\n${relsPath}\n${relationships.map((relationship) => `${relationship.id}=${bindingLine(relationship)}`).sort().join('\n')}`);
@@ -719,21 +763,29 @@ async function storyFormattingEnvironment(
       }
       try {
         const root = parseXml(text).documentElement;
-        for (const element of Array.from(root.getElementsByTagName('*'))) {
-          if (element.namespaceURI !== W_NS) continue;
-          const name = localName(element);
-          // w:evenAndOddHeaders is judged by the page check, which reads it
-          // from the settings part the document's relationship names.
-          if (ENVIRONMENT_NOISE.has(name) || (name === 'evenAndOddHeaders' && path === settingsPath)) {
-            element.parentNode?.removeChild(element);
+        // Editing-session and view state is left out only of the part whose
+        // role holds it (settings, styles), as direct children of its root.
+        // w:evenAndOddHeaders is judged by the page check, which reads it
+        // from the settings part the document's relationship names.
+        if (root.namespaceURI === W_NS) {
+          for (const element of childElements(root)) {
+            if (element.namespaceURI !== W_NS) continue;
+            const name = localName(element);
+            if ((path === settingsPath && (SETTINGS_NOISE.has(name) || name === 'evenAndOddHeaders')) ||
+              (stylesParts.has(path) && name === 'latentStyles')) {
+              root.removeChild(element);
+            }
           }
         }
-        if (path.startsWith('docProps/') && !keepVolatileProperties) {
-          for (const element of Array.from(root.getElementsByTagName('*'))) {
-            if (VOLATILE_DOCUMENT_PROPERTIES.has(localName(element))) element.parentNode?.removeChild(element);
+        if (sessionIdParts.has(path)) {
+          for (const element of Array.from(root.getElementsByTagNameNS(W_NS, 'rsid'))) element.parentNode?.removeChild(element);
+        }
+        if (propertyParts.has(path) && !keepVolatileProperties) {
+          for (const element of childElements(root)) {
+            if (VOLATILE_DOCUMENT_PROPERTIES.has(localName(element))) root.removeChild(element);
           }
         }
-        entry = environmentCanonicalXml(root);
+        entry = environmentCanonicalXml(root, sessionIdParts.has(path));
       } catch {
         entry = `bytes:${createHash('sha256').update(bytes).digest('hex')}`;
       }

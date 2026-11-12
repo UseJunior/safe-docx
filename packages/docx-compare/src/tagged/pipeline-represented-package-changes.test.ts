@@ -784,6 +784,49 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  test('a header content control bound to a w:zoom element inside custom XML stays listed when its value changes and only its reference allocation differs', async () => {
+    // View state is left out only of the settings part; the same element
+    // inside a custom XML store is data a bound control shows (Codex round 13).
+    const withZoom = async (buffer: Buffer, percent: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('customXml/item1.xml', `<b:brand xmlns:b="urn:review:brand" xmlns:w="${W_NS}"><w:zoom w:percent="${percent}"/></b:brand>`);
+      return archive.save();
+    };
+    const header = boundHeader('/b:brand[1]/w:zoom[1]/@w:percent', `xmlns:b='urn:review:brand' xmlns:w='${W_NS}'`, '100');
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withZoom(await packageWith(body, LAYOUT, [header]), '100');
+    const revised = await withZoom(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), '200');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
+  test('a custom XML store at word/comments.xml bound to a header control stays listed when it changes and only its reference allocation differs', async () => {
+    // A part is left out as comments only when a comments relationship names
+    // it; here a customXml relationship does (Codex round 13).
+    const withStore = async (buffer: Buffer, value: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('word/comments.xml', `<b:brand xmlns:b="urn:review:brand" brand="${value}"/>`);
+      const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
+      archive.setFile('word/_rels/document.xml.rels', rels.replace('</Relationships>',
+        `<Relationship Id="rIdData" Type="${R_NS}/customXml" Target="comments.xml"/></Relationships>`));
+      return archive.save();
+    };
+    const header = boundHeader('/b:brand[1]/@brand', "xmlns:b='urn:review:brand'", 'Alice');
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withStore(await packageWith(body, LAYOUT, [header]), 'Alice');
+    const revised = await withStore(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any
