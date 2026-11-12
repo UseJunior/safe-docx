@@ -1126,6 +1126,28 @@ describe('changes the redline still does not carry stay listed', () => {
     });
   }
 
+  test('a header DOCPROPERTY field whose property name comes from a nested field keeps an allocation-only header entry listed', async () => {
+    // DOCPROPERTY "B{ DOCVARIABLE Suffix }" names Bytes once the nested field
+    // is evaluated; a field nested in an instruction is not modeled, so the
+    // entry is not filtered (Codex round 23).
+    const instr = (text: string): string => `<w:r><w:instrText xml:space="preserve">${text}</w:instrText></w:r>`;
+    const char = (type: string): string => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: `<w:p>${char('begin')}${instr(' DOCPROPERTY "B')}${char('begin')}${instr(' DOCVARIABLE Suffix ')}${char('separate')}` +
+        `<w:r><w:t>ytes</w:t></w:r>${char('end')}${instr('" ')}${char('separate')}<w:r><w:t>2048</w:t></w:r>${char('end')}</w:p>`,
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await packageWith(body, LAYOUT, [header]);
+    const revised = await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]);
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
     // numbering.xml names its picture by relationship id; swapping the two
     // targets in numbering.xml.rels changes the bullet without changing any

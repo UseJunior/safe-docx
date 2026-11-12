@@ -738,7 +738,13 @@ async function storyFieldsReadOtherStories(archive: DocxArchive, storyParts: Ite
         if (unsafe(element.getAttributeNS(W_NS, 'instr') ?? '')) return true;
       } else if (name === 'fldChar') {
         const type = element.getAttributeNS(W_NS, 'fldCharType');
-        if (type === 'begin') open.push({ instruction: '', collecting: true });
+        if (type === 'begin') {
+          // A field nested in another field's instruction computes part of
+          // that instruction (a property name, a bookmark), which is not
+          // modeled here (Codex round 23).
+          if (open[open.length - 1]?.collecting) return true;
+          open.push({ instruction: '', collecting: true });
+        }
         else if (type === 'separate') {
           const field = open[open.length - 1];
           if (!field) return true;
