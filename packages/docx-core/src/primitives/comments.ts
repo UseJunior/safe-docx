@@ -1054,6 +1054,27 @@ export type Comment = {
   startTextOffset?: number;
   endTextOffset?: number;
   replies: Comment[];
+  /**
+   * Present only when commentsExtended.xml names a thread parent
+   * (`w15:paraIdParent`) for this comment that could not be honored. The
+   * comment is then returned at the top level (with any replies that did
+   * attach to it still nested underneath) instead of being dropped.
+   */
+  unresolvedThreadParent?: UnresolvedCommentThreadParent;
+};
+
+/**
+ * Why a comment's `w15:paraIdParent` link was not followed:
+ * - `missing-parent`: no comment in comments.xml carries that paragraph ID.
+ * - `self-parent`: the link names the comment's own paragraph ID.
+ * - `cycle`: following parent links returns to this comment; the link of the
+ *   cycle member that appears first in comments.xml is dropped to break it.
+ */
+export type UnresolvedCommentThreadParentReason = 'missing-parent' | 'self-parent' | 'cycle';
+
+export type UnresolvedCommentThreadParent = {
+  paraIdParent: string;
+  reason: UnresolvedCommentThreadParentReason;
 };
 
 export type CommentParagraph = {
@@ -1136,45 +1157,29 @@ export async function getComments(
     if (paragraphId) byParaId.set(paragraphId, comment);
   }
 
-  // Build thread tree from commentsExtended.xml
+  // Build the thread tree from commentsExtended.xml. Only links that resolve
+  // to another comment without forming a cycle are followed; every other
+  // comment surfaces at the top level so none is silently dropped (#1353).
   const extText = await zip.readTextOrNull('word/commentsExtended.xml');
-  if (extText) {
-    const extDoc = parseXml(extText);
-    const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
-    for (let i = 0; i < exEls.length; i++) {
-      const ex = exEls.item(i) as Element;
-      const childParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
-      const parentParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
-      if (!childParaId || !parentParaId) continue;
-
-      const child = byParaId.get(childParaId);
-      const parentComment = byParaId.get(parentParaId);
-      if (child && parentComment) {
-        parentComment.replies.push(child);
-      }
-    }
+  const links = resolveCommentThreadLinks(
+    Array.from(byId.values()).flatMap((comment) => (comment.paragraphId ? [comment.paragraphId] : [])),
+    extText ? parseXml(extText) : null,
+  );
+  // Root suppression uses the comments that actually attached, so a comment
+  // is never both omitted from the roots and missing from every reply list.
+  const attached = new Set<Comment>();
+  for (const [childParaId, parentParaId] of links.parentByChildParaId) {
+    const child = byParaId.get(childParaId)!;
+    byParaId.get(parentParaId)!.replies.push(child);
+    attached.add(child);
   }
-
-  // Collect root-level comments (those not appearing as anyone's reply)
-  const replyParaIds = new Set<string>();
-  if (extText) {
-    const extDoc = parseXml(extText);
-    const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
-    for (let i = 0; i < exEls.length; i++) {
-      const ex = exEls.item(i) as Element;
-      const childParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
-      const parentParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
-      if (childParaId && parentParaId) {
-        replyParaIds.add(childParaId);
-      }
-    }
+  for (const [childParaId, unresolved] of links.unresolvedByChildParaId) {
+    byParaId.get(childParaId)!.unresolvedThreadParent = unresolved;
   }
 
   const roots: Comment[] = [];
   for (const comment of byId.values()) {
-    if (!comment.paragraphId || !replyParaIds.has(comment.paragraphId)) {
-      roots.push(comment);
-    }
+    if (!attached.has(comment)) roots.push(comment);
   }
 
   return roots;
@@ -1299,8 +1304,9 @@ export async function deleteComment(
   const paraIdsToDelete = new Set<string>();
   if (targetParaId) paraIdsToDelete.add(targetParaId);
 
-  // Build paraId→commentId and paraId→commentEl maps for all comments
+  // Build paraId→commentId map for all comments (comments.xml order)
   const paraIdToId = new Map<string, number>();
+  const commentParaIds: string[] = [];
   const allCommentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
   for (let i = 0; i < allCommentEls.length; i++) {
     const el = allCommentEls.item(i) as Element;
@@ -1308,26 +1314,26 @@ export async function deleteComment(
     const id = idStr ? parseInt(idStr, 10) : -1;
     if (id < 0) continue;
     const pid = getCommentElParaId(el);
-    if (pid) paraIdToId.set(pid, id);
+    if (pid) {
+      paraIdToId.set(pid, id);
+      commentParaIds.push(pid);
+    }
   }
 
-  // Read commentsExtended.xml to find descendants via paraIdParent graph
+  // Find descendants through the same resolved reply graph getComments shows,
+  // so a delete never cascades into a comment listed outside the target's
+  // subtree (an orphan, or the root of a broken cycle).
   const extText = await zip.readTextOrNull('word/commentsExtended.xml');
   if (extText) {
     const extDoc = parseXml(extText);
-    const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
+    const { parentByChildParaId } = resolveCommentThreadLinks(commentParaIds, extDoc);
 
     // Build parent→children map
     const childrenOf = new Map<string, string[]>();
-    for (let i = 0; i < exEls.length; i++) {
-      const ex = exEls.item(i) as Element;
-      const childPid = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
-      const parentPid = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
-      if (childPid && parentPid) {
-        const arr = childrenOf.get(parentPid);
-        if (arr) arr.push(childPid);
-        else childrenOf.set(parentPid, [childPid]);
-      }
+    for (const [childPid, parentPid] of parentByChildParaId) {
+      const arr = childrenOf.get(parentPid);
+      if (arr) arr.push(childPid);
+      else childrenOf.set(parentPid, [childPid]);
     }
 
     // BFS from target paraId to collect all descendant paraIds
@@ -1342,6 +1348,23 @@ export async function deleteComment(
           const childId = paraIdToId.get(childPid);
           if (childId != null) idsToDelete.add(childId);
           queue.push(childPid);
+        }
+      }
+    }
+
+    // Rows that describe no comment at all but hang (transitively) off a
+    // deleted comment are dead thread metadata; drop them with their parent.
+    const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
+    for (let grew = true; grew;) {
+      grew = false;
+      for (let i = 0; i < exEls.length; i++) {
+        const ex = exEls.item(i) as Element;
+        const childPid = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
+        const parentPid = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
+        if (childPid && parentPid && !paraIdToId.has(childPid) && !paraIdsToDelete.has(childPid)
+          && paraIdsToDelete.has(parentPid)) {
+          paraIdsToDelete.add(childPid);
+          grew = true;
         }
       }
     }
@@ -1407,6 +1430,82 @@ function getCommentElParaId(commentEl: Element): string | null {
   const first = paras.item(0) as Element;
   return getAttributeSafe(last, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false })
     || getAttributeSafe(first, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
+}
+
+type CommentThreadLinks = {
+  /** Honored child → parent paragraph-ID links, in commentsExtended.xml row order. */
+  parentByChildParaId: Map<string, string>;
+  /** Links that were present but not honored, keyed by the child paragraph ID. */
+  unresolvedByChildParaId: Map<string, UnresolvedCommentThreadParent>;
+};
+
+/**
+ * Resolve the reply graph in commentsExtended.xml into a forest over the
+ * comments that exist in comments.xml. Shared by reading and cascade deletion
+ * so both agree on which comments are replies of which.
+ *
+ * - The first `w15:commentEx` row that names a comment's paragraph ID together
+ *   with a `w15:paraIdParent` decides its parent; later rows for the same ID
+ *   are ignored, so each comment has at most one parent.
+ * - A link whose parent is not a comment, or which names the comment itself,
+ *   is not followed and is reported as unresolved.
+ * - A cycle of links is broken by dropping the link of the member that
+ *   appears first in `commentParaIds` (comments.xml order).
+ *
+ * The input is malformed relative to [MS-DOCX] section 2.5.3.1 whenever a link
+ * is unresolved; the goal is to keep every comment visible, not to emulate
+ * Word's undocumented handling of such packages.
+ *
+ * @see https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/9660dacc-2ceb-4352-87d2-42ba1184f522
+ * @see https://github.com/UseJunior/safe-docx/issues/1353
+ */
+function resolveCommentThreadLinks(commentParaIds: readonly string[], extDoc: Document | null): CommentThreadLinks {
+  const parentByChildParaId = new Map<string, string>();
+  const unresolvedByChildParaId = new Map<string, UnresolvedCommentThreadParent>();
+  if (!extDoc) return { parentByChildParaId, unresolvedByChildParaId };
+
+  const known = new Set(commentParaIds);
+  const decided = new Set<string>();
+  const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
+  for (let i = 0; i < exEls.length; i++) {
+    const ex = exEls.item(i) as Element;
+    const childParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
+    const parentParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
+    if (!childParaId || !parentParaId || !known.has(childParaId) || decided.has(childParaId)) continue;
+    decided.add(childParaId);
+    if (parentParaId === childParaId) {
+      unresolvedByChildParaId.set(childParaId, { paraIdParent: parentParaId, reason: 'self-parent' });
+    } else if (!known.has(parentParaId)) {
+      unresolvedByChildParaId.set(childParaId, { paraIdParent: parentParaId, reason: 'missing-parent' });
+    } else {
+      parentByChildParaId.set(childParaId, parentParaId);
+    }
+  }
+
+  // Every comment has at most one parent, so each walk up the parent chain
+  // either reaches a root, reaches a comment already proven acyclic, or
+  // re-enters the current walk (a cycle).
+  const order = new Map(commentParaIds.map((paraId, index) => [paraId, index]));
+  const settled = new Set<string>();
+  for (const start of commentParaIds) {
+    const path: string[] = [];
+    const onPath = new Set<string>();
+    let current: string | undefined = start;
+    while (current !== undefined && !settled.has(current) && !onPath.has(current)) {
+      path.push(current);
+      onPath.add(current);
+      current = parentByChildParaId.get(current);
+    }
+    if (current !== undefined && onPath.has(current)) {
+      const cycle = path.slice(path.indexOf(current));
+      const breakAt = cycle.reduce((best, paraId) => (order.get(paraId)! < order.get(best)! ? paraId : best));
+      unresolvedByChildParaId.set(breakAt, { paraIdParent: parentByChildParaId.get(breakAt)!, reason: 'cycle' });
+      parentByChildParaId.delete(breakAt);
+    }
+    for (const paraId of path) settled.add(paraId);
+  }
+
+  return { parentByChildParaId, unresolvedByChildParaId };
 }
 
 function removeCommentMarkersFromDocument(

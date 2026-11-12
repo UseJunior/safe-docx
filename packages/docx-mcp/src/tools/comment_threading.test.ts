@@ -15,7 +15,11 @@ import { readFile } from './read_file.js';
 const test = testAllure.epic('Document Reading').withLabels({ feature: 'Comment Threading' });
 
 type Thread = { id: number; text: string; replies: Thread[] };
-type ThreadedCommentFixture = { id: number; paragraphs: string[]; parentId?: number };
+type ThreadedCommentFixture = {
+  id: number; paragraphs: string[]; parentId?: number; rawParentParaId?: string;
+  /** Omit body range markers, as SafeDocX writes replies (#1353). */
+  unanchored?: boolean;
+};
 
 function threadContents(comments: Thread[]): Thread[] {
   return comments.map(({ id, text, replies }) => ({ id, text, replies: threadContents(replies) }));
@@ -37,12 +41,14 @@ async function writeFixture(comments: ThreadedCommentFixture[]) {
       + `<w:r><w:t>${escapeXmlAttr(text)}</w:t></w:r></w:p>`).join('')
     + '</w:comment>').join('');
   const extensions = comments.map((comment) => `<w15:commentEx w15:paraId="${lastId.get(comment.id)}"`
-    + (comment.parentId === undefined ? '' : ` w15:paraIdParent="${lastId.get(comment.parentId)}"`)
+    + (comment.rawParentParaId !== undefined ? ` w15:paraIdParent="${comment.rawParentParaId}"`
+      : comment.parentId === undefined ? '' : ` w15:paraIdParent="${lastId.get(comment.parentId)}"`)
     + ' w15:done="0"/>').join('');
   zip.writeText('word/comments.xml', `<w:comments xmlns:w="${OOXML.W_NS}" xmlns:w14="${OOXML.W14_NS}">${definitions}</w:comments>`);
   zip.writeText('word/commentsExtended.xml', `<w15:commentsEx xmlns:w15="${OOXML.W15_NS}">${extensions}</w15:commentsEx>`);
-  const starts = comments.map(({ id }) => `<w:commentRangeStart w:id="${id}"/>`).join('');
-  const ends = comments.map(({ id }) => `<w:commentRangeEnd w:id="${id}"/><w:r><w:commentReference w:id="${id}"/></w:r>`).join('');
+  const anchored = comments.filter((comment) => !comment.unanchored);
+  const starts = anchored.map(({ id }) => `<w:commentRangeStart w:id="${id}"/>`).join('');
+  const ends = anchored.map(({ id }) => `<w:commentRangeEnd w:id="${id}"/><w:r><w:commentReference w:id="${id}"/></w:r>`).join('');
   zip.writeText('word/document.xml', (await zip.readText('word/document.xml')).replace(
     /<w:p>.*?<\/w:p>/s, `<w:p>${starts}<w:r><w:t>Discussion paragraph.</w:t></w:r>${ends}</w:p>`,
   ));
@@ -131,6 +137,8 @@ describe('Word comment threading through MCP tools (#1224)', () => {
         const replyEdges = lines.filter((line) => line.startsWith('#REPLY '))
           .map((line) => line.match(/^#REPLY c(\d+) -> c(\d+) /)?.slice(1).map(Number));
         expect(replyEdges).toEqual(scenario.edges);
+        expect(reads.toon).not.toHaveProperty('unanchored_orphan_comments');
+        expect(reads.json).not.toHaveProperty('unanchored_orphan_comments');
 
         const nodes = JSON.parse(String(reads.json.content)) as Array<{ comments?: Thread[] }>;
         const comments = nodes.flatMap((node) => node.comments ?? []);
@@ -138,4 +146,75 @@ describe('Word comment threading through MCP tools (#1224)', () => {
       });
     });
   }
+});
+
+describe('MCP tools keep a reply whose thread parent cannot be resolved (#1353)', () => {
+  registerCleanup();
+
+  // Comment 1's w15:paraIdParent names no comment; comment 2 replies to it.
+  const orphanThread: ThreadedCommentFixture[] = [
+    { id: 0, paragraphs: ['Root paragraph 1.', 'Root paragraph 2.'] },
+    { id: 1, paragraphs: ['Orphaned reply.'], rawParentParaId: 'DEADBEEF' },
+    { id: 2, paragraphs: ['Reply to orphan.'], parentId: 1 },
+  ];
+  const expected: Thread[] = [
+    { id: 0, text: 'Root paragraph 1.\nRoot paragraph 2.', replies: [] },
+    { id: 1, text: 'Orphaned reply.', replies: [{ id: 2, text: 'Reply to orphan.', replies: [] }] },
+  ];
+
+  test('get_comments lists the orphan at the top level with an unresolved_thread_parent diagnostic', async ({ given, when, then }: AllureBddContext) => {
+    const fixture = await given('a DOCX with a reply whose paraIdParent does not resolve', () => writeFixture(orphanThread));
+    const result = await when('get_comments reads the document', () => getComments(fixture.mgr, { file_path: fixture.filePath }));
+
+    await then('every comment is returned and only the orphan carries the diagnostic', () => {
+      assertSuccess(result, 'get_comments');
+      const comments = result.comments as Array<Thread & { unresolved_thread_parent?: unknown; replies: Array<{ unresolved_thread_parent?: unknown }> }>;
+      expect(threadContents(comments)).toEqual(expected);
+      expect(comments[1]!.unresolved_thread_parent).toEqual({ para_id_parent: 'DEADBEEF', reason: 'missing-parent' });
+      expect(comments[0]!.unresolved_thread_parent).toBeUndefined();
+      expect(comments[1]!.replies[0]!.unresolved_thread_parent).toBeUndefined();
+      expect(JSON.stringify(comments[0])).not.toContain('unresolved_thread_parent');
+    });
+  });
+
+  test('read_file shows the orphan as a #COMMENT with its reply nested in TOON and JSON', async ({ given, when, then }: AllureBddContext) => {
+    const fixture = await given('a DOCX with a reply whose paraIdParent does not resolve', () => writeFixture(orphanThread));
+    const reads = await when('read_file renders TOON and JSON', async () => ({
+      toon: await readFile(fixture.mgr, { file_path: fixture.filePath, format: 'toon' }),
+      json: await readFile(fixture.mgr, { file_path: fixture.filePath, format: 'json' }),
+    }));
+
+    await then('no comment is missing from either format', () => {
+      assertSuccess(reads.toon, 'read_file(toon)');
+      assertSuccess(reads.json, 'read_file(json)');
+      const lines = String(reads.toon.content).split('\n');
+      expect(lines.filter((line) => line.startsWith('#COMMENT ')).map((line) => line.match(/^#COMMENT \S+ c(\d+) /)?.[1]))
+        .toEqual(['0', '1']);
+      expect(lines.filter((line) => line.startsWith('#REPLY '))
+        .map((line) => line.match(/^#REPLY c(\d+) -> c(\d+) /)?.slice(1).map(Number))).toEqual([[2, 1]]);
+
+      const nodes = JSON.parse(String(reads.json.content)) as Array<{ comments?: Thread[] }>;
+      expect(threadContents(nodes.flatMap((node) => node.comments ?? []))).toEqual(expected);
+    });
+  });
+  test('read_file reports an orphan with no body anchor of its own in unanchored_orphan_comments', async ({ given, when, then }: AllureBddContext) => {
+    const fixture = await given('a DOCX whose orphaned reply and its own reply have no range markers', () => writeFixture(
+      orphanThread.map((comment) => (comment.id === 0 ? comment : { ...comment, unanchored: true })),
+    ));
+    const reads = await when('read_file renders TOON and JSON', async () => ({
+      toon: await readFile(fixture.mgr, { file_path: fixture.filePath, format: 'toon' }),
+      json: await readFile(fixture.mgr, { file_path: fixture.filePath, format: 'json' }),
+    }));
+
+    await then('the orphan thread is reported document-wide with its diagnostic in both formats', () => {
+      for (const [format, read] of [['toon', reads.toon], ['json', reads.json]] as const) {
+        assertSuccess(read, `read_file(${format})`);
+        const orphans = read.unanchored_orphan_comments as Array<Thread & { unresolved_thread_parent: unknown }>;
+        expect(threadContents(orphans), format).toEqual([expected[1]]);
+        expect(orphans[0]!.unresolved_thread_parent, format).toEqual({ para_id_parent: 'DEADBEEF', reason: 'missing-parent' });
+      }
+      const lines = String(reads.toon.content).split('\n');
+      expect(lines.filter((line) => /^#(COMMENT|REPLY) /.test(line)).map((line) => line.match(/ c(\d+) /)?.[1])).toEqual(['0']);
+    });
+  });
 });
