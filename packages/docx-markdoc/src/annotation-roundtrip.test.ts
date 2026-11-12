@@ -538,6 +538,24 @@ describe('canonical annotation round trips', { timeout: LOAD_SENSITIVE_TIMEOUT_M
     });
   });
 
+  test('rejects self-parented and cyclic reply topology now that docx-core lists those comments at the top level (#1353)', async () => {
+    const source = await sourceWithComment(0, 5, true);
+    const zip = await JSZip.loadAsync(source);
+    const extendedXml = await zip.file('word/commentsExtended.xml')!.async('string');
+    const replyParent = /w15:paraIdParent="([^"]+)"/u.exec(extendedXml)![1]!;
+    const replyRow = /<w15:commentEx w15:paraId="([^"]+)" w15:paraIdParent=/u.exec(extendedXml)![1]!;
+    for (const [shape, rewritten, annotationId] of [
+      ['self-parent', extendedXml.replace(`w15:paraIdParent="${replyParent}"`, `w15:paraIdParent="${replyRow}"`), 'comment:1'],
+      ['cycle', extendedXml.replace(`w15:paraId="${replyParent}"`, `w15:paraId="${replyParent}" w15:paraIdParent="${replyRow}"`), 'comment:0'],
+    ] as const) {
+      expect(rewritten, shape).not.toBe(extendedXml);
+      zip.file('word/commentsExtended.xml', rewritten);
+      await expect(importDocxToMarkdoc(await zip.generateAsync({ type: 'nodebuffer' })), shape).rejects.toMatchObject({
+        code: 'ANNOTATION_IMPORT_UNSUPPORTED', details: { annotationId, topology: 'orphan-or-cycle' },
+      });
+    }
+  }, LOAD_SENSITIVE_TIMEOUT_MS);
+
   commentsConformance('[SDX-MDOC-82][SDX-MDOC-90] imports and round-trips Google Docs export comments with paragraph layout properties while rejecting content-bearing pPr children', async () => {
     const source = await sourceWithComment(6, 10);
     const googleExportZip = await JSZip.loadAsync(source);
