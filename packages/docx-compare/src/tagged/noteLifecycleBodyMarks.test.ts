@@ -258,6 +258,65 @@ describe('added and removed note bodies carry tracked lifecycle marks', () => {
     },
   );
 
+  for (const lifecycle of ['added', 'removed'] as const) {
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })(
+      `marks a ${lifecycle} footnote whose body holds a cross-reference field`,
+      async () => {
+        const field = (kind: 'instrText' | 't', text: string): string => `<w:r><w:${kind} xml:space="preserve">${text}</w:${kind}></w:r>`;
+        const noted = await withNoteParagraphs(
+          await buildSyntheticDocx({ paragraphs: BODY, footnoteOnParagraph: 0, footnoteText: 'placeholder' }), 'footnote', ['See Section'],
+        );
+        const archive = await DocxArchive.load(noted);
+        const notes = parseXml((await archive.getFile('word/footnotes.xml'))!);
+        const paragraph = Array.from(notes.getElementsByTagNameNS(W, 'p')).at(-1)!;
+        for (const xml of [
+          `<w:r xmlns:w="${W}"><w:fldChar w:fldCharType="begin"/></w:r>`,
+          field('instrText', ' REF _Ref1 \\h ').replace('<w:r>', `<w:r xmlns:w="${W}">`),
+          `<w:r xmlns:w="${W}"><w:fldChar w:fldCharType="separate"/></w:r>`,
+          field('t', '2.1').replace('<w:r>', `<w:r xmlns:w="${W}">`),
+          `<w:r xmlns:w="${W}"><w:fldChar w:fldCharType="end"/></w:r>`,
+        ]) paragraph.appendChild(notes.importNode(parseXml(xml).documentElement, true));
+        archive.setFile('word/footnotes.xml', serialize(notes));
+        const withField = await archive.save();
+        const plain = await buildSyntheticDocx({ paragraphs: BODY });
+        const [original, revised] = lifecycle === 'added' ? [plain, withField] : [withField, plain];
+        const result = await compareDocuments(original, revised, { author: AUTHOR, date: DATE });
+        const entry = userEntries((await (await DocxArchive.load(result.document)).getFile('word/footnotes.xml'))!, 'footnote')[0]!;
+        expectEntryMarked(entry, lifecycle === 'added' ? 'ins' : 'del');
+        expect(entry.getElementsByTagNameNS(W, lifecycle === 'added' ? 'instrText' : 'delInstrText')).toHaveLength(1);
+        expect(result.ancillaryFieldEvidence).toMatchObject({ status: 'passed' });
+        await expectProjectionsBind('footnote', original, revised, result.document);
+        await expectSchemaValid(result.document, ['footnote']);
+      },
+    );
+  }
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })(
+    'leaves the body of a footnote the revised source already tracks as inserted',
+    async () => {
+      const plain = await buildSyntheticDocx({ paragraphs: BODY });
+      const archive = await DocxArchive.load(await notedDocx('footnote', 'single'));
+      const document = parseXml(await archive.getDocumentXml());
+      const referenceRun = document.getElementsByTagNameNS(W, 'footnoteReference')[0]!.parentNode as Element;
+      const wrapper = document.createElementNS(W, 'w:ins');
+      for (const [name, value] of [['w:id', '901'], ['w:author', 'Earlier author'], ['w:date', '2024-06-01T00:00:00Z']]) wrapper.setAttributeNS(W, name!, value!);
+      referenceRun.parentNode!.replaceChild(wrapper, referenceRun);
+      wrapper.appendChild(referenceRun);
+      archive.setDocumentXml(serialize(document));
+      const notes = parseXml((await archive.getFile('word/footnotes.xml'))!);
+      const textRun = Array.from(notes.getElementsByTagNameNS(W, 't')).at(-1)!.parentNode as Element;
+      const bodyWrapper = notes.createElementNS(W, 'w:ins');
+      for (const [name, value] of [['w:id', '902'], ['w:author', 'Earlier author'], ['w:date', '2024-06-01T00:00:00Z']]) bodyWrapper.setAttributeNS(W, name!, value!);
+      textRun.parentNode!.replaceChild(bodyWrapper, textRun);
+      bodyWrapper.appendChild(textRun);
+      archive.setFile('word/footnotes.xml', serialize(notes));
+      const revised = await archive.save();
+      const result = await compareDocuments(plain, revised, { author: AUTHOR, date: DATE });
+      const compared = await DocxArchive.load(result.document);
+      expect(await compared.getFile('word/footnotes.xml')).toBe(await (await DocxArchive.load(revised)).getFile('word/footnotes.xml'));
+    },
+  );
+
   for (const [lifecycle, operation] of [['added', 'rejectChanges'], ['removed', 'acceptChanges']] as const) {
     test(`characterizes the definition docx-core leaves when the anchor of a ${lifecycle} note is resolved away`, async () => {
       const plain = await buildSyntheticDocx({ paragraphs: BODY });

@@ -51,7 +51,10 @@ function referenceLifecycle(reference: Element): ReferenceLifecycle {
  * note's text no longer reads as if it had always been there and a removed
  * note's text visibly goes with its anchor. A definition still referenced by
  * an unmarked or moved anchor, or by anchors of both kinds, stays as it is.
- * Runs already inside a revision wrapper keep their existing revision.
+ * Runs already inside a revision wrapper keep their existing revision, and a
+ * note whose source anchors already carry the same tracked lifecycle (a note
+ * inserted or deleted with track changes on before the comparison) keeps the
+ * body markup its source gave it.
  *
  * Runs after definitions are merged and repeated references separated, so
  * every definition in the result has its final ID and anchor set. Revision
@@ -69,11 +72,21 @@ function referenceLifecycle(reference: Element): ReferenceLifecycle {
 export async function markLifecycleNoteBodies(options: {
   archive: DocxArchive;
   documentXml: string;
+  /** The revised main story, whose notes an inserted anchor brings in. */
+  revisedDocumentXml: string;
+  /** The original main story, whose notes a deleted anchor takes out. */
+  originalDocumentXml: string;
+  /** Result note ID to pre-separation ID, per kind, for copied references. */
+  noteReferenceSourceIds?: ReadonlyMap<'footnote' | 'endnote', ReadonlyMap<string, string>>;
   author: string;
   date: Date;
   minimumRevisionId?: number;
 }): Promise<{ insertedNotes: number; deletedNotes: number }> {
   const document = parseXml(options.documentXml);
+  const sourceDocuments = {
+    inserted: parseXml(options.revisedDocumentXml),
+    deleted: parseXml(options.originalDocumentXml),
+  };
   const targets: Array<{ part: string; notes: Document; entries: Array<[Element, 'w:ins' | 'w:del']> }> = [];
   for (const kind of ['footnote', 'endnote'] as const) {
     const lifecycles = new Map<string, Set<ReferenceLifecycle>>();
@@ -94,8 +107,14 @@ export async function markLifecycleNoteBodies(options: {
       const seen = id === undefined ? undefined : lifecycles.get(id);
       if (!seen || seen.size !== 1) continue;
       const [lifecycle] = seen;
-      if (lifecycle === 'inserted') entries.push([entry, 'w:ins']);
-      else if (lifecycle === 'deleted') entries.push([entry, 'w:del']);
+      if (lifecycle === 'live') continue;
+      // A source that already tracks this anchor the same way (for example a
+      // note added with track changes on) owns its note's revision history.
+      const sourceId = options.noteReferenceSourceIds?.get(kind)?.get(id!) ?? id!;
+      const sourceReferences = Array.from(sourceDocuments[lifecycle!].getElementsByTagNameNS(OOXML.W_NS, `${kind}Reference`))
+        .filter(reference => canonicalNoteId(reference.getAttributeNS(OOXML.W_NS, 'id') ?? '') === canonicalNoteId(sourceId));
+      if (sourceReferences.length > 0 && sourceReferences.every(reference => referenceLifecycle(reference) === lifecycle)) continue;
+      entries.push([entry, lifecycle === 'inserted' ? 'w:ins' : 'w:del']);
     }
     if (entries.length > 0) targets.push({ part, notes, entries });
   }

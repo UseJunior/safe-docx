@@ -552,6 +552,9 @@ export async function buildStandaloneTaggedPackage(
   await markLifecycleNoteBodies({
     archive: resultArchive,
     documentXml: taggedXml,
+    revisedDocumentXml: await revisedArchive.getDocumentXml(),
+    originalDocumentXml: await originalArchive.getDocumentXml(),
+    noteReferenceSourceIds,
     author: options.author,
     date: options.date,
     minimumRevisionId: options.minimumRevisionId,

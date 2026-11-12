@@ -24,6 +24,7 @@ import {
   classifyFieldInstruction,
   type SupportedComplexField,
 } from './opaquePassthrough.js';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const serializer = new XMLSerializer();
 const NOTE_PARTS = [
@@ -604,8 +605,14 @@ async function evaluateAncillaryFieldSafetyUnsafe(
         });
         continue;
       }
-      const sourceEntryXml = serializer.serializeToString(sourceEntry);
-      const finalEntryXml = serializer.serializeToString(entry.element);
+      // Compare the entry as its source side sees it. A note added or removed
+      // by the comparison carries lifecycle revision marks (#1388), and a
+      // reconciled note carries its definition history; projecting both the
+      // source and the final entry the same way keeps pre-existing source
+      // revisions out of the comparison.
+      const projectToSourceSide = sourceSide === 'original' ? rejectAllChanges : acceptAllChanges;
+      const sourceEntryXml = projectToSourceSide(serializer.serializeToString(sourceEntry));
+      const finalEntryXml = projectToSourceSide(serializer.serializeToString(entry.element));
       const comparison = compareInventories(
         inventoryEligibleFields(sourceEntryXml, note.path, entry.id, allowed),
         inventoryEligibleFields(finalEntryXml, note.path, entry.id, allowed),
