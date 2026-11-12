@@ -136,6 +136,7 @@ export const W = {
   clrSchemeMapping: 'clrSchemeMapping',
   compat: 'compat',
   compatSetting: 'compatSetting',
+  doNotExpandShiftReturn: 'doNotExpandShiftReturn',
   uiPriority: 'uiPriority',
   semiHidden: 'semiHidden',
   unhideWhenUsed: 'unhideWhenUsed',

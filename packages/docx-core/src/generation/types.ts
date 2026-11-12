@@ -33,6 +33,22 @@ export type DocumentSpec = {
     /** Default true. When false, drafting notes compile to nothing. */
     includeDraftingNotes?: boolean;
   };
+  /**
+   * Opt-in compatibility settings written into `w:compat` in
+   * word/settings.xml, before the baseline `compatibilityMode` setting.
+   * Omitted settings are not written, so a spec without this key compiles to
+   * the same bytes as before.
+   */
+  compatibility?: DocumentCompatibilitySpec;
+};
+
+export type DocumentCompatibilitySpec = {
+  /**
+   * `w:doNotExpandShiftReturn`: a line of a fully justified paragraph that
+   * ends in a manual line break (`BreakSpec` of type `line`) is not stretched
+   * to the text width, as the last line of the paragraph is not.
+   */
+  doNotExpandShiftReturn?: boolean;
 };
 
 export type DocumentDefaultsSpec = {
