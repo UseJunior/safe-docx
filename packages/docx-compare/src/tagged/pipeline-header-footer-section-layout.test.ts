@@ -565,12 +565,13 @@ describe('header/footer edits across section-layout changes (#1390)', () => {
   );
 
   test.openspec('[SDX-CMP-SLOTPAIR-05] A story whose pages cannot come out right stays unrepresented')(
-    'keeps refusing a text-box footer edit when the revision turns even pages on with a new even footer',
-    async ({ given, when }: AllureBddContext) => {
-      // Text-box stories keep the #1204 checks. Reject All would show the new
-      // plain even footer where the original showed the boxed default footer;
-      // the redline that could carry the box there would have to track its
-      // carrier run, which the comparison leaves untracked (#647).
+    'lists the new even footer beside a tracked text-box footer edit when the revision turns even pages on',
+    async ({ given, when, then }: AllureBddContext) => {
+      // The new plain even footer cannot receive the boxed default footer's
+      // redline: that would have to track the box's carrier run, which the
+      // comparison leaves untracked (#647). It stays listed and is carried as
+      // the revised part, so Reject All shows it on even pages; the box edit
+      // in the default footer is still tracked (#1391).
       const box = (text: string): string =>
         '<w:p><w:r><w:pict><v:shape id="box1" style="width:200pt;height:40pt"><v:textbox><w:txbxContent>' +
         `${paragraph(text)}</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`;
@@ -582,10 +583,27 @@ describe('header/footer edits across section-layout changes (#1390)', () => {
             part('rIdE', 'footer', 'footer2.xml', 'Even pages'),
           ], '<w:evenAndOddHeaders/>'),
         ]));
-      await when('the pair is compared, the comparison refuses instead of publishing', async () => {
-        await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
-          /accept\/reject package projection validation/u,
-        );
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the box edit is tracked, the even footer is untracked and stays reported', async () => {
+        expect(await revisionCounts(result.document, 'word/footer1.xml')).toEqual({ ins: 1, del: 1 });
+        expect(await revisionCounts(result.document, 'word/footer2.xml')).toEqual({ ins: 0, del: 0 });
+        expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+          expect.objectContaining({ scope: 'footer', kind: 'added', sectionIndex: 0, role: 'even' }),
+        ]));
+        await assertSchema(result.document);
+      });
+      await then('the default footer projects to each side and the even footer reads as revised, with both appliers', async () => {
+        const archive = await DocxArchive.load(result.document);
+        const footer = (await archive.getFile('word/footer1.xml'))!;
+        expect(extractRoundTripComparisonText(rejectAllChanges(footer))).toContain('Old box');
+        expect(extractRoundTripComparisonText(acceptAllChanges(footer))).toContain('New box');
+        expect(extractRoundTripComparisonText(rejectAllChanges((await archive.getFile('word/footer2.xml'))!)))
+          .toBe('Even pages');
+        expect(await shownAfterDocxCore(result.document, 'accept')).toEqual(await shownPages(revised, acceptAllChanges));
+        const rejected = await shownAfterDocxCore(result.document, 'reject');
+        expect(rejected).toEqual(await shownPages(result.document, rejectAllChanges));
+        expect(rejected.join('\n')).toContain('Old box');
+        expect(rejected.join('\n')).toContain('Even pages');
       });
     },
   );

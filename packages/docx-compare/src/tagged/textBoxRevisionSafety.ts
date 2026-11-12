@@ -3292,9 +3292,10 @@ async function markLifecycleAncillaryStoryParagraphs(
  * story that page uses after inheritance, with the bound part projected the
  * same way. Keying by page rather than by reference type means a display
  * switch (`w:titlePg`, `w:evenAndOddHeaders`) that moves a page onto another
- * story changes the inventory. Blank parts are left out, so a page showing a
- * story whose content was entirely a tracked insertion (rejected) or deletion
- * (accepted) reads the same as a page with no story at all.
+ * story changes the inventory. A blank part's pages carry `null` content and
+ * are left out of the comparison, so a page showing a story whose content was
+ * entirely a tracked insertion (rejected) or deletion (accepted) reads the
+ * same as a page with no story at all.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
@@ -3306,7 +3307,7 @@ async function displayedStoryProjectionInventory(
   archive: DocxArchive,
   documentXml: string,
   projection: 'accept' | 'reject',
-): Promise<string[]> {
+): Promise<DisplayedStoryPage[]> {
   const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
   const preliminary = auditSectPr(documentXml, relationshipsXml);
   if (!preliminary.ok) {
@@ -3332,30 +3333,86 @@ async function displayedStoryProjectionInventory(
       unsupportedBindingChanges(bindings.issues),
     );
   }
-  const project = projection === 'accept' ? acceptAllChanges : rejectAllChanges;
   const projectedParts = new Map<string, string | null>();
   const shown = (targetPath: string): string | null => {
     if (!projectedParts.has(targetPath)) {
-      const projectedXml = project(parts.get(targetPath)!);
-      projectedParts.set(
-        targetPath,
-        isBlankStoryPart(projectedXml)
-          ? null
-          : [
-            ordinaryStoryScaffoldFingerprint(projectedXml),
-            extractRoundTripComparisonText(projectedXml),
-          ].join('|'),
-      );
+      projectedParts.set(targetPath, projectedStoryContent(parts.get(targetPath)!, projection));
     }
     return projectedParts.get(targetPath)!;
   };
-  const inventory = [`sections|${bindings.sectionCount}`];
+  const inventory: DisplayedStoryPage[] = [
+    { key: 'sections', content: String(bindings.sectionCount) },
+  ];
   for (const { page, slot } of pageStorySlots(bindings)) {
-    const content = slot.targetPath === undefined ? null : shown(slot.targetPath);
-    if (content === null) continue;
-    inventory.push([slot.sectionOrdinal, slot.kind, page, content].join('|'));
+    if (slot.targetPath === undefined) continue;
+    inventory.push({
+      key: [slot.sectionOrdinal, slot.kind, page].join('|'),
+      targetPath: slot.targetPath,
+      content: shown(slot.targetPath),
+    });
   }
   return inventory;
+}
+
+/** One page entry of `displayedStoryProjectionInventory`. */
+interface DisplayedStoryPage {
+  /** Section ordinal, story kind and kind of page; `sections` for the section count. */
+  key: string;
+  /** The part the page shows, after inheritance. */
+  targetPath?: string;
+  /** What the part shows, or `null` when it shows nothing (a blank page reads as no story). */
+  content: string | null;
+}
+
+/** A projected story part's content, or `null` when it shows nothing. */
+function projectedStoryContent(
+  partXml: string,
+  projection: 'accept' | 'reject',
+): string | null {
+  const projectedXml = (projection === 'accept' ? acceptAllChanges : rejectAllChanges)(partXml);
+  return isBlankStoryPart(projectedXml)
+    ? null
+    : [
+      ordinaryStoryScaffoldFingerprint(projectedXml),
+      extractRoundTripComparisonText(projectedXml),
+    ].join('|');
+}
+
+/**
+ * The header/footer parts the comparison left out of the redline: each part a
+ * listed `header` or `footer` entry names in the revised package (which the
+ * output carries) and no story comparison wrote. The output shows the revised
+ * story there in both projections.
+ */
+function listedUncomparedStoryParts(
+  revisedDocumentXml: string,
+  revisedRelationshipsXml: string | null,
+  unrepresented: UnrepresentedStoryParts,
+): Set<string> {
+  const bindings = auditSectPr(revisedDocumentXml, revisedRelationshipsXml).bindings;
+  const parts = new Set<string>();
+  for (const change of unrepresented.changes) {
+    if ((change.scope !== 'header' && change.scope !== 'footer') || change.kind === 'removed') continue;
+    for (const binding of bindings) {
+      if (
+        binding.sectionOrdinal === change.sectionIndex &&
+        binding.kind === change.scope &&
+        binding.role === change.role &&
+        !unrepresented.comparedPartPaths.has(binding.targetPath)
+      ) {
+        parts.add(binding.targetPath);
+      }
+    }
+  }
+  return parts;
+}
+
+/** The header/footer changes a comparison lists, for the package projection check. */
+export interface UnrepresentedStoryParts {
+  /** The comparison's `unrepresentedChanges`. */
+  changes: readonly UnrepresentedChange[];
+  /** Output parts a header/footer story comparison wrote. */
+  comparedPartPaths: ReadonlySet<string>;
 }
 
 /**
@@ -3374,6 +3431,12 @@ async function displayedStoryProjectionInventory(
  * turns `w:evenAndOddHeaders` on or off is refused when Reject All would
  * leave the original's even pages showing a different story.
  *
+ * A header or footer the comparison lists in `unrepresentedChanges` and does
+ * not compare as a story is carried as the revised part, so a page showing it
+ * is held to that part's own Reject All rather than the original's; a change
+ * left out in one slot no longer refuses the redline of another (#1391). The
+ * slot is excluded only while it stays listed.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.4
@@ -3382,11 +3445,13 @@ async function displayedStoryProjectionInventory(
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
  * @see https://github.com/UseJunior/safe-docx/issues/726
  * @see https://github.com/UseJunior/safe-docx/issues/1204
+ * @see https://github.com/UseJunior/safe-docx/issues/1391
  */
 export async function assertAncillaryTextBoxStoryProjection(
   original: Buffer,
   revised: Buffer,
   compared: Buffer,
+  unrepresented?: UnrepresentedStoryParts,
 ): Promise<void> {
   const [originalArchive, revisedArchive, comparedArchive] = await Promise.all([
     DocxArchive.load(original),
@@ -3425,9 +3490,40 @@ export async function assertAncillaryTextBoxStoryProjection(
       'accept',
     ),
   ]);
+  // A page showing a listed part no story comparison wrote shows the revised
+  // story after Reject All too (#1391): it is held to the revised part's own
+  // Reject All instead of the original. Every other page keeps exact parity,
+  // and Accept All is held to the revised document everywhere.
+  const excludedPartPaths = unrepresented
+    ? listedUncomparedStoryParts(
+      revisedXml,
+      await revisedArchive.getFile('word/_rels/document.xml.rels'),
+      unrepresented,
+    )
+    : new Set<string>();
+  // Blank pages stay in the inventory until here, so a listed part that
+  // shows nothing still replaces the original's expectation for its pages.
+  const expectedRejected = new Map(expectedOriginal.map((page) => [page.key, page.content]));
+  for (const page of rejectedCompared) {
+    if (page.targetPath === undefined || !excludedPartPaths.has(page.targetPath)) continue;
+    const revisedPartXml = await revisedArchive.getFile(page.targetPath);
+    expectedRejected.set(
+      page.key,
+      revisedPartXml === null ? null : projectedStoryContent(revisedPartXml, 'reject'),
+    );
+  }
+  const listed = (pages: Iterable<[string, string | null]>): string[] =>
+    [...pages]
+      .filter((entry): entry is [string, string] => entry[1] !== null)
+      .map(([key, content]) => `${key}|${content}`)
+      .sort();
+  const expectedRejectedPages = listed(expectedRejected);
+  const rejectedComparedPages = listed(rejectedCompared.map((page) => [page.key, page.content]));
+  const expectedRevisedPages = listed(expectedRevised.map((page) => [page.key, page.content]));
+  const acceptedComparedPages = listed(acceptedCompared.map((page) => [page.key, page.content]));
   if (
-    JSON.stringify(expectedOriginal) !== JSON.stringify(rejectedCompared) ||
-    JSON.stringify(expectedRevised) !== JSON.stringify(acceptedCompared)
+    JSON.stringify(expectedRejectedPages) !== JSON.stringify(rejectedComparedPages) ||
+    JSON.stringify(expectedRevisedPages) !== JSON.stringify(acceptedComparedPages)
   ) {
     const digest = (items: string[]): string =>
       createHash('sha256').update(JSON.stringify(items)).digest('hex').slice(0, 12);
@@ -3436,8 +3532,8 @@ export async function assertAncillaryTextBoxStoryProjection(
       partPath: 'word/document.xml',
       reason:
         'assembled relationship-selected stories failed accept/reject package projection validation ' +
-        `(original ${digest(expectedOriginal)} != ${digest(rejectedCompared)}; ` +
-        `revised ${digest(expectedRevised)} != ${digest(acceptedCompared)})`,
+        `(original ${digest(expectedRejectedPages)} != ${digest(rejectedComparedPages)}; ` +
+        `revised ${digest(expectedRevisedPages)} != ${digest(acceptedComparedPages)})`,
     }]);
   }
 }
