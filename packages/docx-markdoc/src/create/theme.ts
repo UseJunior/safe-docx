@@ -5,10 +5,12 @@ import {
   CREATION_STYLE,
   SIGNATURE_LINE,
   textWidthTwips,
+  twipsFromIn,
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
 import { CreationListNumbering, type HeadingNumberScheme } from './list-numbering.js';
+import { paragraphLayoutValue, type ParagraphLayoutAlignment } from './validate.js';
 
 type TextRun = Extract<InlineSpec, { kind: 'text' }>;
 
@@ -234,6 +236,22 @@ function contentParagraphs(node: MarkdocNode): MarkdocNode[] {
   return node.children.some((child) => child.type === 'paragraph') ? node.children.filter((child) => child.type === 'paragraph') : [node];
 }
 
+/**
+ * The direct paragraph properties of a `{% paragraph-layout %}`: its alignment, and its
+ * left and hanging indents in twips. Validation has already held each value
+ * to its closed list.
+ */
+export function paragraphLayoutOf(attributes: Record<string, unknown>): Pick<ParagraphSpec, 'alignment' | 'indent'> {
+  const align = paragraphLayoutValue(attributes.align) as ParagraphLayoutAlignment | undefined;
+  const left = paragraphLayoutValue(attributes['indent-left']);
+  const hanging = paragraphLayoutValue(attributes['indent-hanging']);
+  const indent = {
+    ...(left === undefined ? {} : { leftTwips: twipsFromIn(Number(left)) }),
+    ...(hanging === undefined ? {} : { hangingTwips: twipsFromIn(Number(hanging)) }),
+  };
+  return { ...(align ? { alignment: align } : {}), ...(Object.keys(indent).length > 0 ? { indent } : {}) };
+}
+
 function columnWidths(raw: unknown, columns: number, total: number): number[] {
   const parts = typeof raw === 'string' ? raw.split(',').map((part) => Number(part.trim())) : Array.from({ length: columns }, () => 1);
   const sum = parts.reduce((a, b) => a + b, 0);
@@ -258,6 +276,13 @@ export function creationPlugins(
       tag: 'center',
       renderBlock: (node, api) => contentParagraphs(node).map((paragraph) =>
         theme.styledParagraph(CREATION_STYLE.centered, api.renderInlineChildren(paragraph, {}))),
+    },
+    {
+      // A body paragraph with its own alignment and indents (#1424): one
+      // paragraph per content paragraph, each with the same layout.
+      tag: 'paragraph-layout',
+      renderBlock: (node, api) => contentParagraphs(node).map((paragraph) =>
+        theme.bodyParagraph(api.renderInlineChildren(paragraph, {}), paragraphLayoutOf(node.attributes))),
     },
     {
       tag: 'legend',

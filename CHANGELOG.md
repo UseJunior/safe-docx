@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+- `docx-markdoc create` admits a `{% paragraph-layout %}…{% /paragraph-layout %}` block tag that
+  gives body paragraphs their own layout from a closed vocabulary: `align`
+  (`left`, `center`, `right`, `justify`), `indent-left` and `indent-hanging`
+  (0.25 to 2 inches in quarter-inch steps; the hanging indent no larger than
+  the left one). It covers a flush-left address block or notice line in a
+  justified document and a definitions list whose wrapped lines line up under
+  a hanging first line. The read-back checks every paragraph's direct `w:jc`
+  and `w:ind` against the lowering, and the round trip checks each tagged
+  paragraph's layout against the source alone, each with negative controls; a
+  malformed tag fails with `INVALID_PARAGRAPH_LAYOUT`. `pull` carries edits inside the
+  tag, and writes a retyped paragraph that keeps its alignment and indent back
+  in the tag. (#1424)
+
+- Documents built by `docx-markdoc create` no longer stretch a justified line
+  that ends in a manual line break (`\`): `word/settings.xml` now sets
+  `w:doNotExpandShiftReturn`, a Word compatibility setting that LibreOffice also honours, so address
+  blocks and venue lines keep normal word spacing. Every created document's
+  bytes change once. `generateDocx` gains the opt-in
+  `DocumentSpec.compatibility.doNotExpandShiftReturn` that writes it. (#1196)
+
+- `unrepresentedChanges` no longer lists section, header or footer changes
+  the redline already carries. Sections were compared by index, so after a
+  section break was added or removed every later section was reported as
+  changed, added or removed, along with its header and footer slots, even
+  when Accept All and Reject All showed every page correctly. An entry is
+  now dropped only where Reject All of the redline reproduces the original
+  and Accept All the revised document at that section, in that scope:
+  section properties, or the header/footer story each page shows after
+  inheritance. This covers a section break carried on a tracked paragraph
+  mark, a `w:sectPrChange` whose snapshot names every live property, and a
+  header/footer text-box edit redlined in its part. Entries stay listed when
+  the redline does not carry the change, including a `w:sectPrChange`
+  snapshot that omits a live property Word's Reject All would keep (a new
+  `w:titlePg`, or `w:orient` on a page turned landscape), a break change on
+  a paragraph mark that already carries a revision, a header/footer slot
+  dropped from a surviving section, a header/footer part with no text added
+  or removed (its empty paragraphs or text box still take up room),
+  `w:evenAndOddHeaders` turned off, a changed header/footer field, and every
+  header/footer entry while a header or footer holds a field that can show
+  another story's content (`REF`, `STYLEREF`, a formula and the like). The
+  publication gate reads the same list, so a section divergence is no longer
+  admitted on the strength of an index-shifted entry. (#1427, #1181, #1030)
+
+- Resizing, moving or rewrapping a text box whose text was also edited no
+  longer fails `compareDocuments` with `UnsupportedTextBoxRevisionError`
+  ("scaffold changed"). WordprocessingML has no revision markup for drawing
+  geometry (Part 1 §17.13.5 covers run, paragraph, section, table and
+  numbering properties), so the text edit is tracked inside the box, the
+  redline carries the revised shape, and the box is listed once in
+  `unrepresentedChanges` with the new `drawing` scope (public type
+  `UnrepresentedDrawingChange`: story, part, visual box ordinal, container
+  and name), whose warning says the redline shows the revised shape. Accept
+  All reproduces the revised document; Reject All reproduces the original
+  text in the revised shape. This covers VML boxes (`style`, `w10:wrap`) and
+  Word's twinned boxes (DrawingML `wp:extent`, `wp:positionH`/`wp:positionV`,
+  `wp:wrap*` on `wp:anchor` or `wp:inline`, with the VML fallback), in the
+  main document and in headers and footers. A header or footer box whose
+  drawing alone changed is listed with the `drawing` scope instead of a
+  generic header/footer entry. A main-document box whose drawing alone
+  changed keeps its native redline (the box tracked as replaced), as does a
+  box whose revised drawing names a relationship the original resolves
+  differently. A standalone DrawingML box (no VML twin) is still refused
+  (#1383). (#1382)
+
 - A hyperlink added to, removed from or pointed at another target inside a
   text box, in the main document or in a header or footer, is now tracked by
   `compareDocuments` instead of failing with `UnsupportedTextBoxRevisionError`

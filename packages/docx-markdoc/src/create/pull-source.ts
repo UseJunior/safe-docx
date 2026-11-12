@@ -41,7 +41,7 @@ export type SourcePiece = {
   rawEnd?: number;
 };
 
-export type SourceParagraphKind = 'title' | 'heading' | 'body' | 'quote' | 'list-item' | 'centered' | 'legend' | 'signer' | 'table-cell' | 'generated';
+export type SourceParagraphKind = 'title' | 'heading' | 'body' | 'quote' | 'list-item' | 'centered' | 'legend' | 'laid-out' | 'signer' | 'table-cell' | 'generated';
 
 /** Where one read-back paragraph comes from in the creation source. */
 export type SourceParagraph = {
@@ -172,17 +172,18 @@ type ParagraphUnit = {
   ownLines?: [number, number];
   listItem?: { item: MarkdocNode; list: MarkdocNode };
   quote?: MarkdocNode;
-  /** A `center` or `legend` tag written on one line: its text sits between the tags. */
+  /** A `center`, `legend` or `paragraph-layout` tag written on one line: its text sits between the tags. */
   inlineTag?: boolean;
 };
 
-/** The paragraphs a block tag renders, in order (`center`, `legend`, `signer`, `table`). */
+/** The paragraphs a block tag renders, in order (`center`, `legend`, `paragraph-layout`, `signer`, `table`). */
 function tagUnits(tag: MarkdocNode, outer: MarkdocNode): ParagraphUnit[] | undefined {
   const outerLines = nodeLines(outer);
   switch (tag.tag) {
     case 'center':
-    case 'legend': {
-      const kind = tag.tag === 'center' ? 'centered' : 'legend';
+    case 'legend':
+    case 'paragraph-layout': {
+      const kind = tag.tag === 'center' ? 'centered' : tag.tag === 'legend' ? 'legend' : 'laid-out';
       const paragraphs = tag.children.filter((child) => child.type === 'paragraph');
       if (paragraphs.length === 0) return [{ kind, children: tag.children, lines: outerLines, inlineTag: true }];
       return paragraphs.map((paragraph) => ({ kind, children: paragraph.children, lines: nodeLines(paragraph), ownLines: nodeLines(paragraph) }));

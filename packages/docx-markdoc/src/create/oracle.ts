@@ -60,7 +60,12 @@ import { parseCreationFrontmatter } from './validate.js';
  *   counted from 1 under each heading; an xref to a numbered heading shows
  *   its label in both forms, and to such a clause its label after the
  *   Section it is in (`Section 2.04(b)(i)`), or after the Article when no
- *   Section of that Article precedes it (`ARTICLE II(a)`).
+ *   Section of that Article precedes it (`ARTICLE II(a)`);
+ * - each paragraph of a `{% paragraph-layout %}` is a body paragraph carrying, in its own
+ *   `w:pPr`, the tag's alignment as `w:jc` (`justify` is `both`) and its
+ *   indents as `w:ind` in twips (1440 to the inch): `indent-left` as
+ *   `w:left`, `indent-hanging` as `w:hanging` (see {@link SourceBodyEntry.layout});
+ *   no other body paragraph sets either directly.
  */
 
 /** The only normalization applied before comparing; anything wider could hide an omission. */
@@ -104,7 +109,39 @@ export type SourceBodyEntry = {
   table?: { id: number; row: number };
   /** Offsets in `text` of the footnote references in this paragraph, in order. */
   footnoteMarks?: number[];
+  /**
+   * For a paragraph of a `{% paragraph-layout %}`: its direct `w:jc` and `w:ind` as one
+   * token, `jc=<val>` then `ind.left=<twips>` and `ind.hanging=<twips>`
+   * (`jc=left ind.left=720 ind.hanging=720`), in the form the read-back
+   * writes. Absent on every other paragraph.
+   */
+  layout?: string;
 };
+
+/** `w:jc` values of the `{% paragraph-layout align %}` words, duplicated on purpose from the lowering. */
+const LAYOUT_JC: Readonly<Record<string, string>> = { left: 'left', center: 'center', right: 'right', justify: 'both' };
+
+/** A `{% paragraph-layout %}` attribute's text: a number (`indent-left=0.5`) reads as its decimal text. */
+function layoutWord(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** The layout token a `{% paragraph-layout %}` tag's attributes call for, read straight from the source. */
+function sourceParagraphLayout(node: MarkdocNode): string {
+  const parts: string[] = [];
+  const align = layoutWord(node.attributes.align);
+  if (align !== undefined) parts.push(`jc=${LAYOUT_JC[align] ?? align}`);
+  const twips = (key: string) => {
+    const inches = layoutWord(node.attributes[key]);
+    return inches === undefined ? undefined : Math.round(Number(inches) * 1440);
+  };
+  const left = twips('indent-left');
+  const hanging = twips('indent-hanging');
+  if (left !== undefined) parts.push(`ind.left=${left}`);
+  if (hanging !== undefined) parts.push(`ind.hanging=${hanging}`);
+  return parts.join(' ');
+}
 
 /** A footnote as written in the source: its id and its paragraphs' text. */
 export type SourceFootnote = { id: string; paragraphs: string[] };
@@ -475,7 +512,7 @@ function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map
  * Inline tags (`fill`, `literal`, `u`) are never blocks: a paragraph holding
  * only `{% u %}Defined Term{% /u %}` is still a body paragraph with that text.
  */
-const BLOCK_TAGS: ReadonlySet<string> = new Set(['center', 'legend', 'signer', 'table', 'section', 'page-break', 'footnote']);
+const BLOCK_TAGS: ReadonlySet<string> = new Set(['center', 'legend', 'paragraph-layout', 'signer', 'table', 'section', 'page-break', 'footnote']);
 
 /** The one block tag a paragraph stands for when that tag is its only content. */
 function soleTag(paragraph: MarkdocNode): MarkdocNode | undefined {
@@ -562,6 +599,11 @@ export function projectSourceText(source: string, options: { reader?: Projection
       case 'legend':
         for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph);
         return;
+      case 'paragraph-layout': {
+        const layout = sourceParagraphLayout(node);
+        for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph, { layout });
+        return;
+      }
       case 'signer': {
         const name = node.attributes.name !== undefined ? String(node.attributes.name) : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
         const date = node.attributes.date === undefined ? '' : `\t${String(node.attributes.date)}`;

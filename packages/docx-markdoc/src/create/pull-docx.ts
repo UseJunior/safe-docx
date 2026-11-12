@@ -22,6 +22,8 @@ export type PullParagraph = {
   style?: string;
   /** `w:jc`, normalized to left, center, right or both. */
   alignment?: string;
+  /** The paragraph's own `w:jc` value as written (`distribute` is not `both`), when set. */
+  alignmentValue?: string;
   /** True when the paragraph has its own `w:numPr`. */
   numbered: boolean;
   /**
@@ -378,6 +380,8 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
   const pPr = child(paragraph, 'pPr');
   const style = child(pPr, 'pStyle');
   const alignment = alignmentOf(pPr);
+  const jc = child(pPr, 'jc');
+  const alignmentValue = jc ? attr(jc, 'val') ?? undefined : undefined;
   return {
     text,
     inTableCell,
@@ -385,6 +389,7 @@ function readParagraph(paragraph: Element, inTableCell: boolean): PullParagraph 
     properties: paragraphPropertySignature(pPr),
     ...(style && attr(style, 'val') ? { style: attr(style, 'val')! } : {}),
     ...(alignment ? { alignment } : {}),
+    ...(alignmentValue ? { alignmentValue } : {}),
     numbered: child(pPr, 'numPr') !== undefined,
     label: '',
     crossReferences,

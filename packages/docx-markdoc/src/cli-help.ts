@@ -8,6 +8,9 @@ import {
   FIRST_PAGE_NONE,
   FOOTER_LAYOUTS,
   PAGE_NUMBER_FORMATS,
+  PARAGRAPH_LAYOUT_ALIGNMENTS,
+  PARAGRAPH_LAYOUT_HANGING_INDENTS,
+  PARAGRAPH_LAYOUT_LEFT_INDENTS,
   RUNNING_TEXT_ALIGNMENTS,
   XREF_FORMATS,
   XREF_NUMBERS,
@@ -292,6 +295,7 @@ const CREATION_KEY_VALUES: Readonly<Record<string, string>> = {
 const CREATION_TAG_HELP: Readonly<Record<string, string>> = {
   center: '{% center %}...{% /center %}: a centred paragraph',
   legend: '{% legend %}...{% /legend %}: a legend, such as a signature-page notice, kept with the block before it',
+  'paragraph-layout': `{% paragraph-layout ... %}...{% /paragraph-layout %}: body paragraphs with their own layout; align=${either(PARAGRAPH_LAYOUT_ALIGNMENTS)}, indent-left=${either(PARAGRAPH_LAYOUT_LEFT_INDENTS)} (inches), indent-hanging=${either(PARAGRAPH_LAYOUT_HANGING_INDENTS)} (inches, at most indent-left)`,
   signer: '{% signer name="..." date="..." /%}: a signature block',
   'page-break': '{% page-break /%}: start the next block on a new page',
   section: '{% section ... /%}: start a new section; takes the running-text keys above as attributes for the next section (header=false, page-numbers=true)',

@@ -51,6 +51,7 @@ export type {
   UnrepresentedChangeKind,
   UnrepresentedChangeScope,
   UnrepresentedContentControlChange,
+  UnrepresentedDrawingChange,
   UnrepresentedPictureChange,
   ReconstructionRebuildSafetyDiagnostics,
   ReconstructionSafetyCheckName,

@@ -66,12 +66,38 @@ export type FootnoteReferencePosition = { paragraph: number; offset: number };
  */
 export type CreationProjection = {
   paragraphs: string[];
+  /**
+   * Parallel to `paragraphs`: each body paragraph's direct alignment and
+   * indents as written in its `w:pPr` (see {@link paragraphLayoutToken}), or
+   * null when it has neither. Only a `{% paragraph-layout %}` paragraph has one.
+   */
+  layouts: Array<string | null>;
   footers: FooterProjection[];
   headers: FooterProjection[];
   firstPage: FirstPageProjection[];
   footnoteReferences: FootnoteReferencePosition[];
   footnotes: string[][];
 };
+
+/** `w:jc` values of each ParagraphSpec alignment. */
+const JC_VALUES: Readonly<Record<NonNullable<ParagraphSpec['alignment']>, string>> = { left: 'left', center: 'center', right: 'right', justify: 'both' };
+
+/**
+ * A paragraph's direct alignment and indents as one token, in the form the
+ * read-back writes from `w:pPr`: `jc=<val>` then `ind.<attribute>=<twips>`
+ * for each indent, such as `jc=left ind.left=720 ind.hanging=720`; null when
+ * the paragraph sets neither.
+ */
+export function paragraphLayoutToken(paragraph: Pick<ParagraphSpec, 'alignment' | 'indent'>): string | null {
+  const parts: string[] = [];
+  if (paragraph.alignment) parts.push(`jc=${JC_VALUES[paragraph.alignment]}`);
+  const indent = paragraph.indent ?? {};
+  if (indent.leftTwips !== undefined) parts.push(`ind.left=${indent.leftTwips}`);
+  if (indent.rightTwips !== undefined) parts.push(`ind.right=${indent.rightTwips}`);
+  if (indent.firstLineTwips !== undefined) parts.push(`ind.firstLine=${indent.firstLineTwips}`);
+  if (indent.hangingTwips !== undefined) parts.push(`ind.hanging=${indent.hangingTwips}`);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
 
 /** The space docx-core writes between a note's number and its text. */
 export const FOOTNOTE_MARK_SPACE = ' ';
@@ -344,13 +370,13 @@ function bookmarkTargets(node: MarkdocNode, blocks: BlockSpec[]): void {
   }
 }
 
-type BlockProjection = Pick<CreationProjection, 'paragraphs' | 'footnoteReferences' | 'footnotes'>;
+type BlockProjection = Pick<CreationProjection, 'paragraphs' | 'layouts' | 'footnoteReferences' | 'footnotes'>;
 
 /**
  * Body paragraphs in document order, table cells included, as read-back must
  * find them, with each footnote reference's position and its note's text.
  */
-function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] }, references: ReferenceTexts = NO_REFERENCES): BlockProjection {
+function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs: [], layouts: [], footnoteReferences: [], footnotes: [] }, references: ReferenceTexts = NO_REFERENCES): BlockProjection {
   for (const block of blocks) {
     if (block.kind === 'table') {
       for (const row of block.rows) for (const cell of row.cells) projectBlocks(cell.blocks, out, references);
@@ -367,6 +393,7 @@ function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs:
       offset += runText([run], references, position).length;
     }
     out.paragraphs.push(runText(block.runs, references, position));
+    out.layouts.push(paragraphLayoutToken(block));
   }
   return out;
 }
@@ -638,10 +665,13 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   // (the dedicated break paragraph, or the closing paragraph of the body).
   const references = referenceTexts(specSections, theme.numbering);
   const titleText = titleBlocks ? projectBlocks(titleBlocks, undefined, references).paragraphs[0] : undefined;
-  const projected: BlockProjection = { paragraphs: [], footnoteReferences: [], footnotes: [] };
+  const projected: BlockProjection = { paragraphs: [], layouts: [], footnoteReferences: [], footnotes: [] };
   for (const section of specSections) {
     projectBlocks(section.blocks, projected, references);
-    if (section.blocks.at(-1)?.kind === 'table') projected.paragraphs.push('');
+    if (section.blocks.at(-1)?.kind === 'table') {
+      projected.paragraphs.push('');
+      projected.layouts.push(null);
+    }
   }
   const { paragraphs } = projected;
   const paragraphEntries: number[] = [];
@@ -662,12 +692,16 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     defaults: creationDefaults(profile),
     styles: creationStyles(profile, { header: sections.some((section) => section.header !== undefined) }),
     ...(theme.numbering.length > 0 ? { numbering: [...theme.numbering] } : {}),
+    // A justified line that ends in a manual line break (`\`) is not stretched
+    // to the text width (#1196); Word and LibreOffice both honour it.
+    compatibility: { doNotExpandShiftReturn: true },
     sections: specSections,
   };
   return {
     spec,
     projection: {
       paragraphs,
+      layouts: projected.layouts,
       footnoteReferences: projected.footnoteReferences,
       footnotes: projected.footnotes,
       footers: sections.map((section) => (section.footer ? footerLines(section.footer) : null)),

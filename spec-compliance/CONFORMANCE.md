@@ -18,14 +18,14 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-25` | w:r run content model excludes revision wrappers | 5 | 1 | 17.3.2.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
-| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts |
+| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts |
 | `ECMA-PART4-19-1-2-11` | VML image data relationship (v:imagedata) | 5 | 4 | 19.1.2.11 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts |
-| `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts |
-| `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
+| `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts |
+| `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts |
 | `ECMA-PART1-17-13-5-14` | Deleted run content | 5 | 1 | 17.13.5.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-13-5-18` | Inserted run content | 5 | 1 | 17.13.5.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-16-13` | w:delInstrText containment in tracked deletions | 5 | 1 | 17.16.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts |
-| `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts |
+| `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts; packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts |
 | `ECMA-PART1-17-13-6-1` | Bookmark end | 5 | 1 | 17.13.6.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-cross-references.test.ts |
 | `ECMA-PART1-17-13-6-2` | Bookmark start | 5 | 1 | 17.13.6.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/bookmark-names.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-markdoc/src/create/cross-references.test.ts |
 | `ECMA-PART1-17-13-7-1` | Permission range end | 5 | 1 | 17.13.7.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -58,6 +58,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/generation/emit/section.ts |
 | `ECMA-PART1-17-3-1-24` | w:pBdr paragraph border collection | 5 | 1 | 17.3.1.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pBdr` | packages/docx-core/src/generation/emit/borders.ts; packages/docx-core/src/generation/generation-paragraph-borders.test.ts |
 | `ECMA-PART1-17-3-1-26` | w:pPr child-element ordering | 5 | 1 | 17.3.1.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
+| `ECMA-PART1-17-3-1-12` | w:ind paragraph indentation | 5 | 1 | 17.3.1.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind` | packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/readback.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts |
 | `ECMA-PART1-17-3-1-13` | w:jc paragraph alignment | 5 | 1 | 17.3.1.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
 | `ECMA-PART1-17-3-1-14` | w:keepLines keep paragraph lines together | 5 | 1 | 17.3.1.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
 | `ECMA-PART1-17-3-1-15` | w:keepNext keep paragraph with next | 5 | 1 | 17.3.1.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext` | packages/docx-core/src/primitives/layout.ts; packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts |
@@ -82,6 +83,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-10-3` | w:ftr footer part emission | 5 | 1 | 17.10.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr` | packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
 | `ECMA-PART1-11-3-3` | Document Settings part | 5 | 1 | 11.3.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-15-3-4` | w:compatSetting custom compatibility setting | 5 | 1 | 17.15.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
+| `ECMA-PART1-17-15-3-5` | w:doNotExpandShiftReturn compatibility setting | 5 | 1 | 17.15.3.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-compatibility-settings.test.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | packages/docx-core/src/generation/emit/settings-part.ts |
 | `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/pipeline.field-validation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-cross-references.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; packages/docx-core/src/primitives/body_fields.ts; packages/docx-core/src/primitives/body_fields.test.ts |
 | `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/field_evaluation.ts; packages/docx-core/test-primitives/field_evaluation.test.ts; packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
@@ -242,7 +244,7 @@ bodies and re-emits them across comment and footnote projections.
 - **Part / Section:** Part 4 § 14.9.1.1
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
 WordprocessingML-content container inside a drawing object. It prohibits
@@ -294,8 +296,23 @@ fingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`
 which aborts the whole comparison rather than emitting a partial redline. The
 claim likewise does not cover a text-box story with a relationship reference
 that resolves to nothing in its owning part — that check runs ahead of the twin
-carve-out and applies to twinned and untwinned boxes alike — nor a change to the
-containing scaffold of an untwinned box.
+carve-out and applies to twinned and untwinned boxes alike.
+
+**A changed drawing around a changed story is inside the subset, as a listed
+change.** A box's size, position and wrap live in its drawing (the `w:drawing`,
+`w:pict` or `w:object` around the story: a DrawingML `wp:extent`,
+`wp:positionH`/`wp:positionV` or `wp:wrap*`, a VML `style` or `w10:wrap`), and
+Part 1 §17.13.5 defines no revision element for any of it. When the story text
+and the drawing both changed, safe-docx tracks the text inside the box, carries
+the revised drawing, and lists the box once in `unrepresentedChanges` with the
+`drawing` scope: Accept All shows the revised text and drawing, Reject All the
+original text in the revised drawing. Every stored copy of a twinned box moves
+together. A drawing whose relationship ids mean something else in the original,
+or which hosts a different number of stories, is instead left to the main-story
+comparison, which tracks the whole box as replaced; so is a main-story box whose
+drawing alone changed. In a header or footer, where a replaced box cannot be
+tracked, a changed drawing is listed whether or not its text changed, and a
+drawing that names another anchor identity there is still refused.
 
 **Inserted and deleted main-document text boxes are inside the subset.** Boxes
 pair across the two documents by anchor identity — the VML shape `id` and the
@@ -333,7 +350,7 @@ image and a swapped image is redlined in the main story or listed in
 - **Part / Section:** Part 1 § 20.4.2.38
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 
 Part 1 §20.4.2.38 defines `w:txbxContent` inside a DrawingML text box
 (`wps:txbx`) and, like Part 4 §14.9.1.1 for VML, calls a story non-conformant
@@ -349,7 +366,7 @@ references stay refused.
 - **Part / Section:** Part 4 § 19.1.2.22
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 
 Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. Throughout the
 accepted comparison subset, safe-docx places tracked changes only in the hosted
@@ -362,14 +379,16 @@ belongs to `EG_ShapeElements`, which `CT_Shape` shares with `CT_Rect`,
 of the nearest `v:textbox` as the host, and accepts `v:shape`, `v:rect`,
 `v:roundrect` and `v:oval` alike.
 
-Where a story's host is untwinned VML, safe-docx fingerprints that scaffold with
-the story emptied out and refuses the comparison unless both sides present the
-same scaffold. **That requirement is deliberately not enforced for a text box
-stored inside `mc:AlternateContent`.** The DrawingML copy of a Word twin has no
-VML host of its own, and failing closed on the missing fingerprint would refuse
-the commonest text box Word produces. Which branch of a twin governs the scaffold
-is the `mc:AlternateContent`-aware story walk's question and is not settled here,
-so this claim asserts no stable-scaffold guarantee for a twinned box.
+Where a story's host is untwinned VML, safe-docx requires both sides to present a
+VML scaffold it can fingerprint, and refuses the comparison otherwise. **That
+requirement is deliberately not enforced for a text box stored inside
+`mc:AlternateContent`.** The DrawingML copy of a Word twin has no VML host of its
+own, and failing closed on the missing fingerprint would refuse the commonest
+text box Word produces. A scaffold that differs between the two sides — a resized,
+moved or rewrapped shape — is paired rather than refused: no revision element
+can carry the shape's `style` or `w10:wrap`, so a changed story is tracked inside
+the revised shape and the shape is listed in `unrepresentedChanges` with the
+`drawing` scope (see ECMA-PART4-14-9-1-1).
 
 ### ECMA-PART1-17-13-5-14 — Deleted run content
 
@@ -418,7 +437,7 @@ placement of sibling `w:fldChar` runs relative to the enclosing deletion.
 - **Part / Section:** Part 1 § 17.13.5
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange`
-- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts; packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts
 
 Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,
 `w:bookmarkStart`, `w:bookmarkEnd`, `w:permStart`, `w:permEnd`, and the
@@ -923,6 +942,22 @@ property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
 
+### ECMA-PART1-17-3-1-12 — w:ind paragraph indentation
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.12
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind`
+- **Verified by:** packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/readback.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts
+
+`w:ind` sets a paragraph's indentation. A `docx-markdoc create`
+`{% paragraph-layout %}` paragraph carries `w:left` and `w:hanging` in twips
+(`w:hanging` never larger than `w:left`, so the first line stays inside the
+text area). The read-back reads every attribute of a body paragraph's direct
+`w:ind`, and the build compares it with the source. Style-level indents,
+`w:start`/`w:end`, the character-unit attributes and `w:firstLine` are not
+written by `create`.
+
 ### ECMA-PART1-17-3-1-13 — w:jc paragraph alignment
 
 - **Edition:** ECMA-376 5
@@ -1286,6 +1321,22 @@ Generation emits one custom compatibility setting under `w:compat`, carrying
 the required name, URI, and value attributes in the settings sequence. ECMA-376
 defines this extensibility structure; MS-DOCX §2.3.5, not ECMA-376, defines
 the Microsoft `compatibilityMode` values and assigns the semantics of value 15.
+
+### ECMA-PART1-17-15-3-5 — w:doNotExpandShiftReturn compatibility setting
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.15.3.5
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-compatibility-settings.test.ts; packages/docx-markdoc/src/create/paragraph-layout.test.ts
+
+When `w:doNotExpandShiftReturn` is on, a line of a fully justified paragraph
+(`w:jc` `both`) that ends in a soft line break is not justified. Generation
+writes the empty element inside `w:compat`, before the `compatibilityMode`
+custom setting as the `CT_Compat` sequence requires, only when
+`DocumentSpec.compatibility.doNotExpandShiftReturn` is true; `docx-markdoc
+create` sets it on every document it builds. This entry covers emission and
+order, not how a renderer lays out the line.
 
 ### ECMA-PART1-17-10-1 — w:evenAndOddHeaders setting
 

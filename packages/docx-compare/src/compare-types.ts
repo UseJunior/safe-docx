@@ -126,7 +126,13 @@ export type ComparisonStrategy = 'tagged-tree' | 'legacy';
 export type ComparisonStrategyFallbackReason =
   | 'tagged_tree_publication_safety_check_failed';
 
-export type UnrepresentedChangeScope = 'section' | 'header' | 'footer' | 'contentControl' | 'picture';
+export type UnrepresentedChangeScope =
+  | 'section'
+  | 'header'
+  | 'footer'
+  | 'contentControl'
+  | 'picture'
+  | 'drawing';
 export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 
 /** Identity of the content control whose properties differ (`contentControl` scope). */
@@ -171,6 +177,31 @@ export interface UnrepresentedPictureChange {
 }
 
 /**
+ * A text box whose drawing shape (size, position, wrap or other geometry of
+ * its `w:drawing`, `w:pict` or `w:object` container) changed while the text
+ * inside it also changed, or, in a header or footer, a shape change alone
+ * (`drawing` scope). WordprocessingML has no revision markup for drawing
+ * geometry, so the redline tracks the text inside the box and carries the
+ * revised shape: Accept All shows the revised shape, and Reject All shows the
+ * original text in the revised shape.
+ */
+export interface UnrepresentedDrawingChange {
+  /** The story holding the drawing. */
+  story: 'body' | 'header' | 'footer';
+  /** The output package part holding the drawing, e.g. `word/document.xml`. */
+  partPath: string;
+  /**
+   * Zero-based ordinal of the text box among the text boxes a reader sees in
+   * that part, counting one `mc:AlternateContent` twin as one box.
+   */
+  index: number;
+  /** The drawing's WordprocessingML container in the revised document. */
+  element: 'drawing' | 'pict' | 'object';
+  /** `wp:docPr/@name` or the VML shape id, when present. */
+  name?: string;
+}
+
+/**
  * A package-level input difference not expressed by emitted tracked-change
  * markup. Revision counts intentionally remain text-oriented.
  */
@@ -185,6 +216,8 @@ export interface UnrepresentedChange {
   contentControl?: UnrepresentedContentControlChange;
   /** The affected picture or object when scope is `picture`. */
   picture?: UnrepresentedPictureChange;
+  /** The affected drawing when scope is `drawing`. */
+  drawing?: UnrepresentedDrawingChange;
 }
 
 /** @deprecated Tagged publication throws instead of falling back to reconstruction. */

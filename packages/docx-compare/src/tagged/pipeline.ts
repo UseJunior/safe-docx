@@ -50,7 +50,7 @@ import {
   rejectAllChanges,
   compareTexts,
 } from './trackChangesAcceptorAst.js';
-import { detectUnrepresentedChanges } from './unrepresentedChanges.js';
+import { detectUnrepresentedChanges, subtractRepresentedPackageChanges } from './unrepresentedChanges.js';
 import { auditPicturePayloads, payloadSwappedRelationshipIds } from './picturePayload.js';
 import {
   type NumberingIntegrationOptions,
@@ -628,8 +628,20 @@ export async function buildStandaloneTaggedPackage(
     acceptAllChanges(taggedRevisedXml),
     taggedXml,
   );
+  // A section entry the redline already carries (a tracked break mark, a
+  // Word-safe w:sectPrChange) is dropped before the gate reads the list, so a
+  // genuinely unrepresented section divergence is not admitted on the strength
+  // of an index-shifted entry (#1181). Header/footer entries wait for the
+  // stories to be spliced (`compareDocumentsTagged`).
+  const reportedChanges = await subtractRepresentedPackageChanges({
+    original: { archive: originalArchive, documentXml: originalXml },
+    revised: { archive: revisedArchive, documentXml: revisedXml },
+    compared: { archive: resultArchive, documentXml: taggedXml },
+    changes: unrepresentedChanges,
+    scopes: SECTION_SCOPE,
+  });
   const sectionFormattingIsExplicitlyUnrepresented =
-    unrepresentedChanges.some((change) =>
+    reportedChanges.some((change) =>
       change.scope === 'section' || change.scope === 'header' || change.scope === 'footer') &&
     [formattingFidelity.accept, formattingFidelity.reject].every((report) =>
       report.runFormatting.score === 1 &&
@@ -638,7 +650,7 @@ export async function buildStandaloneTaggedPackage(
       report.unalignedExpectedParagraphs === 0 &&
       report.unalignedActualParagraphs === 0 &&
       report.divergences.every((divergence) =>
-        sectionDivergenceIsReported(divergence, unrepresentedChanges)),
+        sectionDivergenceIsReported(divergence, reportedChanges)),
     );
   // Disabling detection opts out of representing original-to-revised format
   // differences; it does not opt out of validating the published package.
@@ -675,9 +687,12 @@ export async function buildStandaloneTaggedPackage(
     formattingFidelity,
     revisionAttributions,
     unrepresentedChanges:
-      unrepresentedChanges.length > 0 ? unrepresentedChanges : undefined,
+      reportedChanges.length > 0 ? reportedChanges : undefined,
   };
 }
+
+const SECTION_SCOPE: ReadonlySet<'section'> = new Set(['section']);
+const PACKAGE_SCOPES: ReadonlySet<'section' | 'header' | 'footer'> = new Set(['section', 'header', 'footer']);
 
 const STORY_SCOPE_BY_REFERENCE_PROPERTY: Readonly<Record<string, 'header' | 'footer'>> = {
   'w:headerReference': 'header',
@@ -1398,7 +1413,9 @@ async function compareDocumentsTagged(
       outerResult.document,
       new Set(),
     );
-    if (sectionAligned.stories.length === 0) return outerResult;
+    if (sectionAligned.stories.length === 0) {
+      return withRepresentedPackageChangesRemoved(original, revised, outerResult);
+    }
   }
   bookmarkNameReservations ??= await reserveBookmarkNames();
   const textBoxPlan: TextBoxStoryComparisonPlan = preparedPlan ?? {
@@ -1617,7 +1634,13 @@ async function compareDocumentsTagged(
     textBoxPlan.hasAncillaryTextBoxStories ||
     representedPartPaths.size > 0
   ) {
-    await assertAncillaryTextBoxStoryProjection(original, revised, document);
+    // Reject All shows the revised drawing of a listed header/footer text box
+    // (#1382), so the original it is held to carries that drawing too.
+    await assertAncillaryTextBoxStoryProjection(
+      textBoxPlan.ancillaryProjectionOriginal ?? original,
+      revised,
+      document,
+    );
   }
   const results = [outerResult, ...storyResults.map(({ result }) => result)];
   const stats = results.reduce<CompareStats>(
@@ -1662,31 +1685,66 @@ async function compareDocumentsTagged(
       moveToRanges: 0,
     },
   );
-  const alignedSectionKinds = sectionAligned.representedSectionKinds;
-  const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(
+  // Section-aligned header/footer entries are not dropped here by section
+  // index and kind: that pairing reads a part with no text as no part, so it
+  // would hide a removed empty-but-tall header. `withRepresentedPackageChangesRemoved`
+  // judges each entry on the spliced package instead (#1427).
+  // A header/footer whose only differences are its text-box stories and the
+  // drawings listed with the `drawing` scope is represented by those (#1382).
+  const drawingAccountedPartPaths = new Set(textBoxPlan.drawingAccountedPartPaths);
+  const unrepresentedChanges = [...(outerResult.unrepresentedChanges ?? []).filter(
     (change) => !textBoxPlan.representedAncillaryChanges.some(
       (represented) =>
-        representedPartPaths.has(represented.partPath) &&
+        (representedPartPaths.has(represented.partPath) ||
+          drawingAccountedPartPaths.has(represented.partPath)) &&
         change.scope === represented.scope &&
         change.kind === represented.kind &&
         change.sectionIndex === represented.sectionIndex &&
         change.role === represented.role,
-    ) && !alignedSectionKinds.some(
-      (represented) =>
-        change.scope === represented.kind &&
-        change.sectionIndex === represented.sectionIndex,
     ),
-  );
+  ), ...(textBoxPlan.drawingChanges ?? [])];
 
-  return {
+  return withRepresentedPackageChangesRemoved(original, revised, {
     ...outerResult,
     document,
     stats,
     unrepresentedChanges:
-      unrepresentedChanges && unrepresentedChanges.length > 0
+      unrepresentedChanges.length > 0
         ? unrepresentedChanges
         : undefined,
-  };
+  });
+}
+
+/**
+ * Drop the section, header and footer entries the finished package
+ * represents, judged on the spliced stories through the section alignment
+ * (`subtractRepresentedPackageChanges`). Text-box and section-aligned story
+ * redlines are in place only now, so this is the first point at which a
+ * header/footer entry can be checked against them (#1427, #1030).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1427
+ */
+async function withRepresentedPackageChangesRemoved(
+  original: Buffer,
+  revised: Buffer,
+  result: TaggedCompareResult,
+): Promise<TaggedCompareResult> {
+  if (!result.unrepresentedChanges?.some((change) => (PACKAGE_SCOPES as ReadonlySet<string>).has(change.scope))) {
+    return result;
+  }
+  const [originalArchive, revisedArchive, comparedArchive] = await Promise.all([
+    DocxArchive.load(original),
+    DocxArchive.load(revised),
+    DocxArchive.load(result.document),
+  ]);
+  const kept = await subtractRepresentedPackageChanges({
+    original: { archive: originalArchive },
+    revised: { archive: revisedArchive },
+    compared: { archive: comparedArchive },
+    changes: result.unrepresentedChanges,
+    scopes: PACKAGE_SCOPES,
+  });
+  return { ...result, unrepresentedChanges: kept.length > 0 ? kept : undefined };
 }
 
 /**

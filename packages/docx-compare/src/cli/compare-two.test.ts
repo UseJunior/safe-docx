@@ -6,7 +6,7 @@ import type { CompareResult } from '../compare-types.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   buildDocxWithDefaultFooter,
-  buildDocxWithPageWidth,
+  buildDocxWithTitlePage,
 } from '../testing/footer-story-fixture.js';
 import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 
@@ -190,10 +190,10 @@ describe('docx-comparison CLI unrepresented changes (#1029)', () => {
     const originalPath = join(dir, 'original.docx');
     const revisedPath = join(dir, 'revised.docx');
 
-    await given('an original on US Letter and a revision on A4', async () => {
+    await given('an original without a distinct first page and a revision with one', async () => {
       await Promise.all([
-        writeFile(originalPath, await buildDocxWithPageWidth('Body text', 12240)),
-        writeFile(revisedPath, await buildDocxWithPageWidth('Body text, revised', 11906)),
+        writeFile(originalPath, await buildDocxWithTitlePage('Body text', false)),
+        writeFile(revisedPath, await buildDocxWithTitlePage('Body text, revised', true)),
       ]);
     });
 

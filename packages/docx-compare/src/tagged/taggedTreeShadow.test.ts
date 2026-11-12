@@ -292,7 +292,7 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test('reports package-only changes and their source-projected formatting evidence', async () => {
+  test('represents a page-size-only section change and keeps its source-projected formatting evidence', async () => {
     const paragraph = '<w:p><w:r><w:t>Stable agreement.</w:t></w:r></w:p>';
     const withPageSize = async (width: string, height: string): Promise<Buffer> => {
       const archive = await DocxArchive.load(await buildDocxFromBodyXml(paragraph));
@@ -315,9 +315,12 @@ describe('tagged-tree offline evaluation', () => {
       numbering: DEFAULT_NUMBERING_OPTIONS,
     });
 
-    expect(standalone.unrepresentedChanges).toEqual([
-      expect.objectContaining({ scope: 'section', kind: 'changed' }),
-    ]);
+    // The page-size change is a w:sectPrChange whose snapshot names every
+    // live w:pgSz attribute, so Reject All (the appliers' and Word's, which
+    // restores the snapshot attribute by attribute) brings back the original
+    // size: the change is represented, not reported (#1181).
+    expect(standalone.documentXml).toContain('w:sectPrChange');
+    expect(standalone.unrepresentedChanges).toBeUndefined();
     expect(standalone.formattingFidelity.accept.score).toBe(1);
     expect(standalone.formattingFidelity.reject.score).toBe(1);
   });
