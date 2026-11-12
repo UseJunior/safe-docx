@@ -627,6 +627,8 @@ const ENVIRONMENT_EXCLUDED = [
 const ENVIRONMENT_EXCLUDED_ROLE = /\/(header|footer|comments|commentsExtended|commentsIds|commentsExtensible|people|footnotes|endnotes)$/u;
 /** Document relationship types whose WordprocessingML parts carry editing-session ids (`w:rsid*`). */
 const SESSION_ID_ROLE = /\/(styles|stylesWithEffects|numbering|settings|fontTable|webSettings)$/u;
+/** Document relationship types whose parts may carry tracked property changes that Accept/Reject All resolves. */
+const REVISION_ROLE = /\/(styles|stylesWithEffects|numbering)$/u;
 /** Package relationship types of the core and extended document properties. */
 const DOCUMENT_PROPERTIES_ROLE = /\/(metadata\/core-properties|extended-properties)$/u;
 /**
@@ -836,6 +838,9 @@ async function storyFormattingEnvironment(
   const sessionIdParts = new Set(documentRelationships
     .filter((relationship) => !relationship.external && SESSION_ID_ROLE.test(relationship.type))
     .map((relationship) => relationship.path));
+  const revisionParts = new Set(documentRelationships
+    .filter((relationship) => !relationship.external && REVISION_ROLE.test(relationship.type))
+    .map((relationship) => relationship.path));
   const stylesParts = new Set(documentRelationships
     .filter((relationship) => !relationship.external && /\/(styles|stylesWithEffects)$/u.test(relationship.type))
     .map((relationship) => relationship.path));
@@ -872,10 +877,14 @@ async function storyFormattingEnvironment(
     if (/\.(xml|rels|vml)$/iu.test(path)) {
       const xml = bytes.toString('utf8');
       let text = xml;
-      try {
-        text = project(xml);
-      } catch {
-        text = xml;
+      // Accept/Reject All applies only where WordprocessingML revisions
+      // live; elsewhere (custom XML) a w:ins element is data (Codex round 17).
+      if (revisionParts.has(path)) {
+        try {
+          text = project(xml);
+        } catch {
+          text = xml;
+        }
       }
       try {
         const root = parseXml(text).documentElement;

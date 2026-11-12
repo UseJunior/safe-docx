@@ -807,6 +807,27 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
+  test('a header content control bound to a w:ins element inside custom XML stays listed when its value changes and only its reference allocation differs', async () => {
+    // Accept/Reject All resolves revisions only in the parts that hold them;
+    // a w:ins element inside a custom XML store is data (Codex round 17).
+    const withData = async (buffer: Buffer, value: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('customXml/item1.xml',
+        `<b:brand xmlns:b="urn:review:brand" xmlns:w="${W_NS}"><w:ins w:id="1" w:author="Data" brand="${value}"/></b:brand>`);
+      return archive.save();
+    };
+    const header = boundHeader('/b:brand[1]/w:ins[1]/@brand', `xmlns:b='urn:review:brand' xmlns:w='${W_NS}'`, 'Alice');
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withData(await packageWith(body, LAYOUT, [header]), 'Alice');
+    const revised = await withData(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+
   test('a header content control bound to a w:zoom element inside custom XML stays listed when its value changes and only its reference allocation differs', async () => {
     // View state is left out only of the settings part; the same element
     // inside a custom XML store is data a bound control shows (Codex round 13).
