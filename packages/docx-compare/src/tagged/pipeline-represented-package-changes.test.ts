@@ -836,6 +836,34 @@ describe('changes the redline still does not carry stay listed', () => {
     });
   }
 
+  for (const extensionType of ['https://example.org/review/webSettings', 'https://example.org/review/styles']) {
+    test(`a custom XML store also named by the extension relationship ${extensionType} keeps its stored bytes when a bound comment-selected value moves`, async () => {
+      // Roles are matched by exact relationship type, and a part is
+      // normalized only when every relationship naming it has a normalizing
+      // role (Codex round 19).
+      const withStore = async (buffer: Buffer, selected: 'Alice' | 'Bob'): Promise<Buffer> => {
+        const archive = await DocxArchive.load(buffer);
+        archive.setFile('customXml/item1.xml', `<b:brand xmlns:b="urn:review:brand">${(['Alice', 'Bob'] as const)
+          .map((name) => `<b:value>${name === selected ? '<!--selected-->' : ''}${name}</b:value>`).join('')}</b:brand>`);
+        const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
+        archive.setFile('word/_rels/document.xml.rels', rels.replace('</Relationships>',
+          `<Relationship Id="rIdData" Type="${R_NS}/customXml" Target="../customXml/item1.xml"/>` +
+          `<Relationship Id="rIdExtension" Type="${extensionType}" Target="../customXml/item1.xml"/></Relationships>`));
+        return archive.save();
+      };
+      const header = boundHeader("/b:brand[1]/b:value[comment()='selected']", "xmlns:b='urn:review:brand'", 'Alice');
+      const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+      const original = await withStore(await packageWith(body, LAYOUT, [header]), 'Alice');
+      const revised = await withStore(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+      ]));
+    });
+  }
+
   test('a header content control bound to a w:ins element inside custom XML stays listed when its value changes and only its reference allocation differs', async () => {
     // Accept/Reject All resolves revisions only in the parts that hold them;
     // a w:ins element inside a custom XML store is data (Codex round 17).

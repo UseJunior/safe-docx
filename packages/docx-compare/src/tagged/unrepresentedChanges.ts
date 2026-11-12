@@ -617,6 +617,15 @@ const ENVIRONMENT_EXCLUDED = [
   /^word\/document\.xml$/u,
   /(^|\/)_rels\//u,
 ];
+const OFFICE_RELATIONSHIP_BASES = [
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/',
+  'http://purl.oclc.org/ooxml/officeDocument/relationships/',
+];
+/** Relationship type URIs for the named Office roles, Transitional and Strict, plus any extension URIs given whole. */
+function officeRelationshipTypes(names: readonly string[], extensions: readonly string[] = []): ReadonlySet<string> {
+  return new Set([...OFFICE_RELATIONSHIP_BASES.flatMap((base) => names.map((name) => `${base}${name}`)), ...extensions]);
+}
+const STYLES_WITH_EFFECTS = 'http://schemas.microsoft.com/office/2007/relationships/stylesWithEffects';
 /**
  * Relationship types whose target is compared elsewhere (header/footer
  * stories, slot by slot) or annotates the document without changing how a
@@ -624,13 +633,28 @@ const ENVIRONMENT_EXCLUDED = [
  * when every relationship naming it has one of these types: a role is read
  * from the relationships, never from the part's name (Codex round 13).
  */
-const ENVIRONMENT_EXCLUDED_ROLE = /\/(header|footer|comments|commentsExtended|commentsIds|commentsExtensible|people|footnotes|endnotes)$/u;
+const ENVIRONMENT_EXCLUDED_ROLE = officeRelationshipTypes(['header', 'footer', 'comments', 'footnotes', 'endnotes'], [
+  'http://schemas.microsoft.com/office/2011/relationships/commentsExtended',
+  'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds',
+  'http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible',
+  'http://schemas.microsoft.com/office/2011/relationships/people',
+]);
 /** Document relationship types whose WordprocessingML parts carry editing-session ids (`w:rsid*`). */
-const SESSION_ID_ROLE = /\/(styles|stylesWithEffects|numbering|settings|fontTable|webSettings)$/u;
+const SESSION_ID_ROLE = officeRelationshipTypes(['styles', 'numbering', 'settings', 'fontTable', 'webSettings'], [STYLES_WITH_EFFECTS]);
 /** Document relationship types whose parts may carry tracked property changes that Accept/Reject All resolves. */
-const REVISION_ROLE = /\/(styles|stylesWithEffects|numbering)$/u;
+const REVISION_ROLE = officeRelationshipTypes(['styles', 'numbering'], [STYLES_WITH_EFFECTS]);
+const STYLES_ROLE = officeRelationshipTypes(['styles'], [STYLES_WITH_EFFECTS]);
 /** Package relationship types of the core and extended document properties. */
-const DOCUMENT_PROPERTIES_ROLE = /\/(metadata\/core-properties|extended-properties)$/u;
+const DOCUMENT_PROPERTIES_ROLE = officeRelationshipTypes(['extended-properties', 'metadata/core-properties'], [
+  'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties',
+]);
+/**
+ * Roles whose parts are compared in a normalized form. A part is normalized
+ * only when every relationship naming it has one of these exact types, so an
+ * extension relationship or an added custom XML role keeps its stored bytes
+ * (Codex round 19).
+ */
+const NORMALIZING_ROLE = new Set([...SESSION_ID_ROLE, ...DOCUMENT_PROPERTIES_ROLE]);
 /**
  * Document-property entries every save rewrites (save time, revision count,
  * editing time, statistics, the application that saved). They are left out
@@ -833,16 +857,16 @@ async function storyFormattingEnvironment(
     if (ENVIRONMENT_EXCLUDED.some((pattern) => pattern.test(path))) return true;
     const partRoles = roles.get(path);
     return partRoles !== undefined && partRoles.size > 0 &&
-      Array.from(partRoles).every((type) => ENVIRONMENT_EXCLUDED_ROLE.test(type));
+      Array.from(partRoles).every((type) => ENVIRONMENT_EXCLUDED_ROLE.has(type));
   };
   const sessionIdParts = new Set(documentRelationships
-    .filter((relationship) => !relationship.external && SESSION_ID_ROLE.test(relationship.type))
+    .filter((relationship) => !relationship.external && SESSION_ID_ROLE.has(relationship.type))
     .map((relationship) => relationship.path));
   const revisionParts = new Set(documentRelationships
-    .filter((relationship) => !relationship.external && REVISION_ROLE.test(relationship.type))
+    .filter((relationship) => !relationship.external && REVISION_ROLE.has(relationship.type))
     .map((relationship) => relationship.path));
   const stylesParts = new Set(documentRelationships
-    .filter((relationship) => !relationship.external && /\/(styles|stylesWithEffects)$/u.test(relationship.type))
+    .filter((relationship) => !relationship.external && STYLES_ROLE.has(relationship.type))
     .map((relationship) => relationship.path));
   // A custom property linked to a bookmark (linkTarget) shows content from
   // the story holding that bookmark, so it is read as a cross-story field.
@@ -852,7 +876,7 @@ async function storyFormattingEnvironment(
     if (xml !== null && /\blinkTarget\s*=/u.test(xml)) return `linked-properties:${Math.random()}`;
   }
   const propertyParts = new Set((relationshipsByPart.get('_rels/.rels') ?? [])
-    .filter((relationship) => !relationship.external && DOCUMENT_PROPERTIES_ROLE.test(relationship.type))
+    .filter((relationship) => !relationship.external && DOCUMENT_PROPERTIES_ROLE.has(relationship.type))
     .map((relationship) => relationship.path));
   for (const relsPath of relsPaths) {
     const ownerFolder = relsPath.replace(/(^|\/)_rels\/[^/]+$/u, '');
@@ -881,8 +905,11 @@ async function storyFormattingEnvironment(
     // is compared by its stored bytes: a data binding's XPath can observe
     // prefixes, comments and anything else a canonical form drops (Codex
     // round 18).
-    const normalized = revisionParts.has(path) || sessionIdParts.has(path) || stylesParts.has(path) ||
-      path === settingsPath || (propertyParts.has(path) && !keepVolatileProperties);
+    const partRoles = roles.get(path);
+    const onlyNormalizingRoles = partRoles !== undefined && partRoles.size > 0 &&
+      Array.from(partRoles).every((type) => NORMALIZING_ROLE.has(type));
+    const normalized = onlyNormalizingRoles && (revisionParts.has(path) || sessionIdParts.has(path) || stylesParts.has(path) ||
+      path === settingsPath || (propertyParts.has(path) && !keepVolatileProperties));
     if (normalized) {
       const xml = bytes.toString('utf8');
       let text = xml;
