@@ -19,7 +19,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
-| `ECMA-PART4-19-1-2-11` | VML image data relationship (v:imagedata) | 5 | 4 | 19.1.2.11 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts |
+| `ECMA-PART4-19-1-2-11` | VML image data relationship (v:imagedata) | 5 | 4 | 19.1.2.11 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts |
 | `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts |
 | `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-13-5-14` | Deleted run content | 5 | 1 | 17.13.5.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts |
@@ -308,16 +308,17 @@ are still refused.
 - **Part / Section:** Part 4 § 19.1.2.11
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts
 
 Part 4 §19.1.2.11 defines `v:imagedata`, the image of a VML picture, which names
 its image part by relationship id through either `r:id` or the
 `urn:schemas-microsoft-com:office:office` attribute `o:relid`; both are typed
 `ST_RelationshipId`. safe-docx reads both spellings as relationship references
-when it fingerprints the relationship closure of a text-box story and when it
-rebinds a compared story's relationship ids to the owning part, so a picture in
-a text box stays bound to its image and a swapped image is refused rather than
-lost.
+when it fingerprints the relationship closure of a text-box story, when it
+rebinds a compared story's relationship ids to the owning part, and when it
+renumbers, imports and audits picture payloads, so a picture stays bound to its
+image and a swapped image is redlined in the main story or listed in
+`unrepresentedChanges` elsewhere, never lost.
 
 ### ECMA-PART1-20-4-2-38 — DrawingML rich text-box content (w:txbxContent)
 

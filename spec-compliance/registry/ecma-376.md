@@ -173,17 +173,18 @@ part: 4
 section: "19.1.2.11"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata
-verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts
+verifiedBy: packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts
 ```
 
 Part 4 §19.1.2.11 defines `v:imagedata`, the image of a VML picture, which names
 its image part by relationship id through either `r:id` or the
 `urn:schemas-microsoft-com:office:office` attribute `o:relid`; both are typed
 `ST_RelationshipId`. safe-docx reads both spellings as relationship references
-when it fingerprints the relationship closure of a text-box story and when it
-rebinds a compared story's relationship ids to the owning part, so a picture in
-a text box stays bound to its image and a swapped image is refused rather than
-lost.
+when it fingerprints the relationship closure of a text-box story, when it
+rebinds a compared story's relationship ids to the owning part, and when it
+renumbers, imports and audits picture payloads, so a picture stays bound to its
+image and a swapped image is redlined in the main story or listed in
+`unrepresentedChanges` elsewhere, never lost.
 
 ## [ECMA-PART1-20-4-2-38] DrawingML rich text-box content (w:txbxContent)
 
