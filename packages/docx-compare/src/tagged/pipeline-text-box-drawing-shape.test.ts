@@ -145,6 +145,24 @@ function twoAnchors(text: string, rectangleWidth: string): string {
     `<mc:Fallback>${fallback}</mc:Fallback></mc:AlternateContent></w:r>`;
 }
 
+/**
+ * Two VML boxes sharing one `v:shapetype` template, defined in the first
+ * box's drawing; only the first box's text is a parameter.
+ */
+function sharedTemplateBoxes(text: string, templatePath: string): string {
+  const first = vmlBox(text)
+    .replace('<v:shape ', `<v:shapetype id="shared" coordsize="21600,21600" path="${templatePath}"/><v:shape `)
+    .replace('type="#_x0000_t202"', 'type="#shared"');
+  const second = vmlBox('Second box')
+    .replace('id="box1"', 'id="box2"')
+    .replace('o:spid="_x0000_s1026"', 'o:spid="_x0000_s1027"')
+    .replace('type="#_x0000_t202"', 'type="#shared"');
+  return first + second;
+}
+
+const RECTANGLE_PATH = 'm0,0l21600,0,21600,21600,0,21600xe';
+const TRIANGLE_PATH = 'm10800,0l21600,21600,0,21600xe';
+
 function bodyPackage(box: string, bodyText = 'The parties agree as follows.'): Promise<Buffer> {
   return buildDocxFromBodyXml(paragraph(bodyText) + anchored(box), [], {
     namespaces: NAMESPACES,
@@ -539,6 +557,31 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
     });
   });
 
+  test('control: a changed shape template another box shares keeps its native replacement', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The template in the edited box's drawing also shapes the second box.
+    // Carrying it would reshape that box behind a note naming the first.
+    const original = await given('two boxes sharing a rectangle template', () =>
+      bodyPackage(sharedTemplateBoxes('Notice to: Old address', RECTANGLE_PATH)));
+    const revised = await given('the first box edited and the template made a triangle', () =>
+      bodyPackage(sharedTemplateBoxes('Notice to: New address', TRIANGLE_PATH)));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the drawing is tracked as replaced and Reject All restores the template', async () => {
+      const output = await partXml(result.document, 'word/document.xml');
+      expect(result.unrepresentedChanges).toBeUndefined();
+      const templatePaths = (xml: string): string[] =>
+        Array.from(parseXml(xml).getElementsByTagNameNS(NAMESPACES.v, 'shapetype'))
+          .map((template) => template.getAttribute('path') ?? '');
+      expect(templatePaths(rejectAllChanges(output))).toEqual([RECTANGLE_PATH]);
+      expect(templatePaths(await docxCorePart(result.document, 'reject', 'word/document.xml')))
+        .toEqual([RECTANGLE_PATH]);
+      expect(templatePaths(acceptAllChanges(output))).toEqual([TRIANGLE_PATH]);
+    });
+  });
+
   test('tracks a nested box whose drawing and text change inside an edited box', async ({
     given, when, then,
   }: AllureBddContext) => {
@@ -684,6 +727,21 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
       footerPackage(twoAnchors('Footer notice: Old', '1270000')));
     const revised = await given('the box edited and the rectangle resized', () =>
       footerPackage(twoAnchors('Footer notice: New', '2540000')));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the footer stays listed', () => {
+      expect(result.unrepresentedChanges?.map((change) => change.scope)).toContain('footer');
+    });
+  });
+
+  test('keeps the footer entry when a footer box changes a shape template another box shares', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const original = await given('two footer boxes sharing a rectangle template', () =>
+      footerPackage(sharedTemplateBoxes('Footer notice: Old', RECTANGLE_PATH)));
+    const revised = await given('the first box edited and the template made a triangle', () =>
+      footerPackage(sharedTemplateBoxes('Footer notice: New', TRIANGLE_PATH)));
     const result = await when('the documents are compared', () =>
       compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
 

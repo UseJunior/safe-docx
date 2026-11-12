@@ -447,6 +447,20 @@ function isSoleDrawingShape(textBox: Element, container: Element): boolean {
   return graphicData.length === 1 && directChildElements(graphicData[0]!).length === 1;
 }
 
+/**
+ * Do the drawings carry the same VML shape templates (`v:shapetype`)? A
+ * template is shared by every shape whose `type` names it, inside the drawing
+ * or anywhere else in the part, so carrying a changed template would reshape
+ * boxes a note naming this box does not describe.
+ */
+function shapeTemplatesAgree(originalContainer: Element, revisedContainer: Element): boolean {
+  const templates = (container: Element): string[] =>
+    Array.from(container.getElementsByTagNameNS(VML_NS, 'shapetype')).map((template) => canonicalNode(template));
+  const original = templates(originalContainer);
+  const revised = templates(revisedContainer);
+  return original.length === revised.length && original.every((template, index) => template === revised[index]);
+}
+
 const WORDPROCESSING_DRAWING_2010_NS =
   'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing';
 
@@ -1927,7 +1941,8 @@ async function ancillaryStoryInputs(
         if (
           shapedBoxes.every(({ index, change }) =>
             isSoleDrawingShape(pair.original.textBoxes[index]!, change.originalContainer) &&
-            isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer)) &&
+            isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer) &&
+            shapeTemplatesAgree(change.originalContainer, change.revisedContainer)) &&
           canonicalNode(
             parseXml(partXmlWithRevisedTextBoxes(alignedXml, pair.revised.xml)).documentElement,
           ) === pair.revised.canonical
@@ -2753,6 +2768,7 @@ export async function prepareTextBoxStoryComparison(
       ownTextBoxes(change.revisedContainer).length === 1 &&
       isSoleDrawingShape(originalTextBoxes[originalIndex]!, change.originalContainer) &&
       isSoleDrawingShape(revisedTextBoxes[revisedIndex]!, change.revisedContainer) &&
+      shapeTemplatesAgree(change.originalContainer, change.revisedContainer) &&
       drawingRelationshipsAgree(
         change.revisedContainer,
         originalRelationshipTargets,
