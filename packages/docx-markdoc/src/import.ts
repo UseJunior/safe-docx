@@ -589,6 +589,15 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
       throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} appears more than once in reply topology.`, { annotationId: id, topology: 'duplicate-or-cycle' });
     }
     importedCommentIds.add(comment.id);
+    // docx-core lists a comment whose reply link cannot be followed at the top
+    // level so readers do not lose it (#1353); import still refuses to guess
+    // the intended thread and fails closed rather than inventing a new root.
+    if (comment.unresolvedThreadParent) {
+      throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment reply topology is orphaned or cyclic at comment ${comment.id}.`, {
+        annotationId: id,
+        topology: 'orphan-or-cycle',
+      });
+    }
     const commentElement = elementByWordId(commentsXml, W.comment, comment.id);
     if (!commentElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} has no definition.`, { annotationId: id });
     const hyperlinks = assertAdmittedAnnotationElement(commentElement, id, 'annotationRef', styles, commentsRelationships);

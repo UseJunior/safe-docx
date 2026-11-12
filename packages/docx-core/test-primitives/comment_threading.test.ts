@@ -247,3 +247,223 @@ describe('comment threading uses the last paragraph identity (#1224)', () => {
     });
   });
 });
+
+function unresolvedParents(comments: Comment[]): Array<[number, Comment['unresolvedThreadParent']]> {
+  return comments.flatMap((comment) => [
+    ...(comment.unresolvedThreadParent ? [[comment.id, comment.unresolvedThreadParent] as [number, Comment['unresolvedThreadParent']]] : []),
+    ...unresolvedParents(comment.replies),
+  ]);
+}
+
+describe('comment threading keeps replies whose parent link cannot be followed (#1353)', () => {
+  test('lists a reply with a dangling parent link as a root', async ({ given, when, then }: AllureBddContext) => {
+    let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+    let comments!: Comment[];
+    await given('a two-paragraph root and a reply whose w15:paraIdParent names no comment', async () => {
+      fixture = await loadFixture([
+        { id: 0, paragraphs: ['Root first.', 'Root last.'] },
+        { id: 1, paragraphs: ['Reply.'], rawParentParaId: 'DEADBEEF' },
+      ]);
+    });
+    await when('comments are loaded', async () => {
+      comments = await getComments(fixture.zip, fixture.doc);
+    });
+    await then('both comments are returned and the reply carries a missing-parent diagnostic', async () => {
+      expect(edges(comments)).toEqual(['0->root', '1->root']);
+      expect(comments[1]!.text).toBe('Reply.');
+      expect(unresolvedParents(comments)).toEqual([[1, { paraIdParent: 'DEADBEEF', reason: 'missing-parent' }]]);
+      expect(comments[0]).not.toHaveProperty('unresolvedThreadParent');
+    });
+  });
+
+  test('keeps an orphaned reply\'s own descendants nested beneath it', async ({ given, when, then }: AllureBddContext) => {
+    let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+    let comments!: Comment[];
+    await given('an intact thread plus an orphan with a two-level descendant chain', async () => {
+      fixture = await loadFixture([
+        { id: 0, paragraphs: ['Root.'] },
+        { id: 1, paragraphs: ['Reply to root.'], parentId: 0 },
+        { id: 2, paragraphs: ['Orphan first.', 'Orphan last.'], rawParentParaId: 'DEADBEEF' },
+        { id: 3, paragraphs: ['Reply to orphan.'], parentId: 2 },
+        { id: 4, paragraphs: ['Nested under orphan.'], parentId: 3 },
+      ]);
+    });
+    await when('comments are loaded', async () => {
+      comments = await getComments(fixture.zip, fixture.doc);
+    });
+    await then('every comment appears exactly once and only the orphan is flagged', async () => {
+      expect(edges(comments)).toEqual(['0->root', '1->0', '2->root', '3->2', '4->3']);
+      expect(unresolvedParents(comments)).toEqual([[2, { paraIdParent: 'DEADBEEF', reason: 'missing-parent' }]]);
+      expect(await getComment(fixture.zip, fixture.doc, 4)).toMatchObject({ text: 'Nested under orphan.' });
+    });
+  });
+
+  test('lists a self-parented comment as a root and keeps its replies', async ({ given, when, then }: AllureBddContext) => {
+    let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+    let comments!: Comment[];
+    await given('a comment whose w15:paraIdParent is its own paragraph ID, with a reply', async () => {
+      fixture = await loadFixture([
+        { id: 0, paragraphs: ['Independent root.'] },
+        { id: 1, paragraphs: ['Self-parented.'], parentId: 1 },
+        { id: 2, paragraphs: ['Reply.'], parentId: 1 },
+      ]);
+    });
+    await when('comments are loaded', async () => {
+      comments = await getComments(fixture.zip, fixture.doc);
+    });
+    await then('the self link is not followed and the reply stays nested', async () => {
+      expect(edges(comments)).toEqual(['0->root', '1->root', '2->1']);
+      expect(unresolvedParents(comments)).toEqual([[1, { paraIdParent: '10000001', reason: 'self-parent' }]]);
+    });
+  });
+
+  for (const [name, fixtureComments, expectedEdges, expectedUnresolved] of [
+    ['two-comment cycle', [
+      { id: 0, paragraphs: ['A.'], parentId: 1 },
+      { id: 1, paragraphs: ['B.'], parentId: 0 },
+      { id: 2, paragraphs: ['Reply to B.'], parentId: 1 },
+    ], ['0->root', '1->0', '2->1'], [[0, { paraIdParent: '10000001', reason: 'cycle' }]]],
+    ['three-comment cycle entered from a tail', [
+      { id: 0, paragraphs: ['Independent root.'] },
+      { id: 1, paragraphs: ['A.'], parentId: 3 },
+      { id: 2, paragraphs: ['B.'], parentId: 1 },
+      { id: 3, paragraphs: ['C.'], parentId: 2 },
+      { id: 4, paragraphs: ['Tail into C.'], parentId: 3 },
+    ], ['0->root', '1->root', '2->1', '3->2', '4->3'], [[1, { paraIdParent: '10000003', reason: 'cycle' }]]],
+  ] as Array<[string, ThreadedCommentFixture[], string[], Array<[number, Comment['unresolvedThreadParent']]>]>) {
+    test(`breaks a ${name} at its first comment without dropping or repeating any`, async ({ given, when, then }: AllureBddContext) => {
+      let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+      let comments!: Comment[];
+      await given(`commentsExtended.xml rows forming a ${name}`, async () => {
+        fixture = await loadFixture(fixtureComments);
+      });
+      await when('comments are loaded', async () => {
+        comments = await getComments(fixture.zip, fixture.doc);
+      });
+      await then('the tree is finite, lists each comment once, and flags the broken link', async () => {
+        expect(edges(comments)).toEqual(expectedEdges);
+        expect(unresolvedParents(comments)).toEqual(expectedUnresolved);
+      });
+    });
+  }
+
+  test('follows only the first commentEx row when a comment names two parents', async ({ given, when, then }: AllureBddContext) => {
+    let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+    let comments!: Comment[];
+    await given('a reply with a second commentEx row naming a different parent', async () => {
+      fixture = await loadFixture([
+        { id: 0, paragraphs: ['Root A.'] },
+        { id: 1, paragraphs: ['Root B.'] },
+        { id: 2, paragraphs: ['Reply.'], parentId: 0 },
+      ]);
+      const part = 'word/commentsExtended.xml';
+      fixture.zip.writeText(part, (await fixture.zip.readText(part)).replace('</w15:commentsEx>',
+        '<w15:commentEx w15:paraId="10000002" w15:paraIdParent="10000001" w15:done="0"/></w15:commentsEx>'));
+    });
+    await when('comments are loaded', async () => {
+      comments = await getComments(fixture.zip, fixture.doc);
+    });
+    await then('the reply appears once, under the parent its first row names', async () => {
+      expect(edges(comments)).toEqual(['0->root', '2->0', '1->root']);
+    });
+  });
+
+  for (const [scenario, fixtureComments, commentId, expectedIds, expectedEdges] of [
+    ['an orphan', [
+      { id: 0, paragraphs: ['Root.'] },
+      { id: 1, paragraphs: ['Orphan.'], rawParentParaId: 'DEADBEEF' },
+      { id: 2, paragraphs: ['Reply to orphan.'], parentId: 1 },
+    ], 1, [0], ['0->root']],
+    ['the reply side of a broken cycle', [
+      { id: 0, paragraphs: ['A.'], parentId: 1 },
+      { id: 1, paragraphs: ['B.'], parentId: 0 },
+      { id: 2, paragraphs: ['Reply to B.'], parentId: 1 },
+    ], 1, [0], ['0->root']],
+  ] as Array<[string, ThreadedCommentFixture[], number, number[], string[]]>) {
+    test(`deleting ${scenario} cascades only through the subtree get_comments shows`, async ({ given, when, then }: AllureBddContext) => {
+      let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+      await given(`a document containing ${scenario}`, async () => {
+        fixture = await loadFixture(fixtureComments);
+      });
+      await when(`comment ${commentId} is deleted`, async () => {
+        await deleteComment(fixture.doc, fixture.zip, { commentId });
+      });
+      await then('its listed descendants are removed and every comment outside that subtree survives', async () => {
+        const remaining = await definitions(fixture.zip);
+        expect(remaining.map((comment) => Number(comment.getAttributeNS(OOXML.W_NS, 'id')))).toEqual(expectedIds);
+        expect((await extensionRows(fixture.zip)).map((row) => row.getAttributeNS(OOXML.W15_NS, 'paraId')))
+          .toEqual(remaining.map((comment) => paragraphIds(comment).at(-1)));
+        expect(edges(await getComments(fixture.zip, fixture.doc))).toEqual(expectedEdges);
+      });
+    });
+  }
+
+  test('deleting a comment also drops commentEx rows that describe no comment but hang off it', async ({ given, when, then }: AllureBddContext) => {
+    let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+    await given('a root whose commentEx subtree includes two rows with no comment definition', async () => {
+      fixture = await loadFixture([
+        { id: 0, paragraphs: ['Root.'] },
+        { id: 1, paragraphs: ['Other root.'] },
+      ]);
+      const part = 'word/commentsExtended.xml';
+      fixture.zip.writeText(part, (await fixture.zip.readText(part)).replace('</w15:commentsEx>',
+        '<w15:commentEx w15:paraId="0BADF00D" w15:paraIdParent="0DEADC0D" w15:done="0"/>'
+        + '<w15:commentEx w15:paraId="0DEADC0D" w15:paraIdParent="10000000" w15:done="0"/></w15:commentsEx>'));
+    });
+    await when('the root is deleted', async () => {
+      await deleteComment(fixture.doc, fixture.zip, { commentId: 0 });
+    });
+    await then('only the surviving comment keeps a commentEx row', async () => {
+      expect((await extensionRows(fixture.zip)).map((row) => row.getAttributeNS(OOXML.W15_NS, 'paraId'))).toEqual(['10000001']);
+    });
+  });
+  for (const [scenario, rewrite, commentId, expectedBefore, expectedAfter] of [
+    ['two comments share a paragraph ID', (xml: string) => xml.replace('w14:paraId="10000000"', 'w14:paraId="10000001"'),
+      0, ['0->root', '1->root', '2->1'], ['1->root', '2->1']],
+    ['two definitions share a w:id', (xml: string) => xml.replace('w:id="2"', 'w:id="0"'),
+      1, ['0->root', '1->0'], ['0->root']],
+  ] as Array<[string, (xml: string) => string, number, string[], string[]]>) {
+    test(`deleting a comment when ${scenario} follows the tree getComments shows`, async ({ given, when, then }: AllureBddContext) => {
+      let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+      await given(`a cyclic thread in which ${scenario}`, async () => {
+        fixture = await loadFixture([
+          { id: 0, paragraphs: ['A'], parentId: 1 },
+          { id: 1, paragraphs: ['B'], parentId: 2 },
+          { id: 2, paragraphs: ['C'], parentId: 1 },
+        ]);
+        fixture.zip.writeText('word/comments.xml', rewrite(await fixture.zip.readText('word/comments.xml')));
+        expect(edges(await getComments(fixture.zip, fixture.doc))).toEqual(expectedBefore);
+      });
+      await when(`comment ${commentId} is deleted`, async () => {
+        await deleteComment(fixture.doc, fixture.zip, { commentId });
+      });
+      await then('only that comment and the replies listed beneath it are removed', async () => {
+        expect(edges(await getComments(fixture.zip, fixture.doc))).toEqual(expectedAfter);
+      });
+    });
+  }
+  for (const [deletedId, expectedAfter] of [[1, ['0->root', '2->root']], [2, ['0->root']]] as const) {
+    test(`deleting comment ${deletedId} does not hand a shared paragraph ID's parent link to the surviving comment`, async ({ given, when, then }: AllureBddContext) => {
+      let fixture!: Awaited<ReturnType<typeof loadFixture>>;
+      await given('an independent root that shares its paragraph ID with a reply to comment 2', async () => {
+        fixture = await loadFixture([
+          { id: 0, paragraphs: ['Independent root.'] },
+          { id: 1, paragraphs: ['Reply to C.'], parentId: 2 },
+          { id: 2, paragraphs: ['C.'] },
+        ]);
+        const part = 'word/comments.xml';
+        fixture.zip.writeText(part, (await fixture.zip.readText(part)).replace('w14:paraId="10000000"', 'w14:paraId="10000001"'));
+        expect(edges(await getComments(fixture.zip, fixture.doc))).toEqual(['0->root', '2->root', '1->2']);
+      });
+      await when(`comment ${deletedId} is deleted`, async () => {
+        await deleteComment(fixture.doc, fixture.zip, { commentId: deletedId });
+      });
+      await then('the surviving comment stays an unflagged root and keeps its commentEx row', async () => {
+        const comments = await getComments(fixture.zip, fixture.doc);
+        expect(edges(comments)).toEqual(expectedAfter);
+        expect(unresolvedParents(comments)).toEqual([]);
+        expect((await extensionRows(fixture.zip)).map((row) => row.getAttributeNS(OOXML.W15_NS, 'paraId'))).toContain('10000001');
+      });
+    });
+  }
+});

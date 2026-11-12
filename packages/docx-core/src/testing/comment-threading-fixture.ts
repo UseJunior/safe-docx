@@ -6,6 +6,11 @@ export type ThreadedCommentFixture = {
   id: number;
   paragraphs: string[];
   parentId?: number;
+  /**
+   * Raw `w15:paraIdParent` value, overriding `parentId`. Lets a test author a
+   * dangling link to a paragraph ID that no comment carries (#1353).
+   */
+  rawParentParaId?: string;
   author?: string;
   /** Older SafeDocX output placed the only paragraph ID on the first paragraph. */
   legacyFirstParaId?: boolean;
@@ -37,7 +42,8 @@ export async function buildCommentThreadingDocx(comments: ThreadedCommentFixture
   }).join('');
   const extendedXml = comments.map((comment) =>
     `<w15:commentEx w15:paraId="${threadIds.get(comment.id)}"`
-      + (comment.parentId === undefined ? '' : ` w15:paraIdParent="${threadIds.get(comment.parentId)}"`)
+      + (comment.rawParentParaId !== undefined ? ` w15:paraIdParent="${comment.rawParentParaId}"`
+        : comment.parentId === undefined ? '' : ` w15:paraIdParent="${threadIds.get(comment.parentId)}"`)
       + ' w15:done="0"/>').join('');
   const idsXml = comments.map((comment) => `<w16cid:commentId w16cid:paraId="${threadIds.get(comment.id)}"`
     + ` w16cid:durableId="${(0x2A000000 + comment.id).toString(16).toUpperCase()}"/>`).join('');

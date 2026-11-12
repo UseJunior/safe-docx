@@ -80,7 +80,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .enum(['none', 'paragraph_notes', 'endnotes', 'inline_markers'])
         .optional()
         .describe(
-          'How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering.',
+          'How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. A reply whose thread parent link cannot be followed and that has no paragraph anchor of its own is reported in a document-wide unanchored_orphan_comments field instead of being omitted.',
         ),
       show_formatting: z
         .boolean()
@@ -597,7 +597,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'get_comments',
     surface: 'internal',
     description:
-      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.',
+      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX); a reply whose commentsExtended.xml parent link cannot be followed (missing, self-referencing, or cyclic) is listed at the top level with an unresolved_thread_parent diagnostic instead of being dropped. Supports DOCX and ODT. Read-only.',
     input: z.object({
       ...FILE_FIELD,
     }),

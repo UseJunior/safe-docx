@@ -220,6 +220,32 @@ function mapDocumentViewComment(
   return mapped;
 }
 
+type UnanchoredOrphanComment = DocumentViewComment & {
+  unresolved_thread_parent: { para_id_parent: string; reason: string };
+};
+
+/**
+ * A comment whose commentsExtended.xml parent link cannot be followed is listed
+ * as a root by getComments (#1353). Word-authored replies carry their own range
+ * markers and so render under their paragraph like any root, but a reply
+ * written without a body anchor has no paragraph to attach to. Report those
+ * document-wide (never windowed, like top-level `footnotes`) so the thread is
+ * not silently missing from read_file. Null when there are none, so the field
+ * is absent for well-formed documents.
+ */
+function collectUnanchoredOrphanComments(comments: readonly Comment[]): UnanchoredOrphanComment[] | null {
+  const orphans = comments.flatMap((comment) => (comment.unresolvedThreadParent && !getCommentAnchorParagraphId(comment)
+    ? [{
+      ...mapDocumentViewComment(comment),
+      unresolved_thread_parent: {
+        para_id_parent: comment.unresolvedThreadParent.paraIdParent,
+        reason: comment.unresolvedThreadParent.reason,
+      },
+    }]
+    : []));
+  return orphans.length > 0 ? orphans : null;
+}
+
 function attachParagraphComments(
   nodes: readonly DocumentViewNode[],
   comments: readonly Comment[],
@@ -437,9 +463,11 @@ export async function readFile(
     // surface the cause via metadata. We still don't fail the read so the body content
     // remains consumable, but the caller (and our smoke tests) can detect the silent drop.
     let commentLoadError: string | null = null;
+    let unanchoredOrphanComments: UnanchoredOrphanComment[] | null = null;
     if (commentRendering !== 'none') {
       try {
         const comments = await session.doc.getComments();
+        unanchoredOrphanComments = collectUnanchoredOrphanComments(comments);
         // Inline-marker rendering also needs paragraph elements for comment anchor
         // paragraphs that may not appear in `enriched` (e.g., when a comment range
         // spans into a paragraph outside the visible window). The shared index covers
@@ -594,6 +622,7 @@ export async function readFile(
         ...(result.warnings ? { warnings: result.warnings } : {}),
         ...paginationMeta,
         ...(topLevelFootnotes != null ? { footnotes: topLevelFootnotes } : {}),
+        ...(unanchoredOrphanComments != null ? { unanchored_orphan_comments: unanchoredOrphanComments } : {}),
         ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
         ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
       }, metadata));
@@ -608,6 +637,7 @@ export async function readFile(
       paragraphs_returned: paragraphsReturned,
       ...paginationMeta,
       ...(topLevelFootnotes != null ? { footnotes: topLevelFootnotes } : {}),
+      ...(unanchoredOrphanComments != null ? { unanchored_orphan_comments: unanchoredOrphanComments } : {}),
       ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
       ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
     }, metadata));
