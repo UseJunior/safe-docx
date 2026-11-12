@@ -583,7 +583,7 @@ const VOLATILE_DOCUMENT_PROPERTIES = new Set([
   'HeadingPairs', 'TitlesOfParts',
 ]);
 /** Fields that show a save-rewritten property (LASTSAVEDBY, REVNUM, SAVEDATE, statistics, DOCPROPERTY, INFO). */
-const VOLATILE_PROPERTY_FIELDS = /\b(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIME|NUMWORDS|NUMCHARS|DOCPROPERTY|INFO)\b/iu;
+const VOLATILE_PROPERTY_FIELDS = /(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIME|NUMWORDS|NUMCHARS|DOCPROPERTY|INFO)/iu;
 
 /** Whether any field in the given story parts may show a save-rewritten document property. */
 async function storyFieldsShowVolatileProperties(archive: DocxArchive, storyParts: Iterable<string>): Promise<boolean> {
@@ -601,9 +601,10 @@ async function storyFieldsShowVolatileProperties(archive: DocxArchive, storyPart
       ...Array.from(document.getElementsByTagNameNS(W_NS, 'delInstrText')).map((element) => element.textContent ?? ''),
       ...Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple')).map((element) => element.getAttributeNS(W_NS, 'instr') ?? ''),
     ];
-    // A complex field's instruction may be split over runs, so the joined
-    // text is searched; naming one of these words anywhere counts.
-    if (VOLATILE_PROPERTY_FIELDS.test(instructions.join(' '))) return true;
+    // A complex field's instruction may be split anywhere over runs, so the
+    // fragments are joined as they are and searched without word boundaries:
+    // a false match only keeps entries listed.
+    if (VOLATILE_PROPERTY_FIELDS.test(instructions.join(''))) return true;
   }
   return false;
 }
@@ -644,8 +645,9 @@ async function storyFormattingEnvironment(
   const digest = createHash('sha256');
   // Which part plays which role (styles, theme, settings, ...) is itself part
   // of how a story looks: the document's implicit relationships (those its
-  // markup does not name by r:id) are compared by type and resolved target,
-  // and so is every other non-story relationship part. Ids are allocation.
+  // markup does not name by r:id) are compared by type and resolved target
+  // (their ids are allocation), and every other non-story relationship part
+  // by id, type and resolved target, since its owner names them by id.
   const referencedIds = new Set<string>();
   for (const element of [rawDocument.documentElement, ...Array.from(rawDocument.getElementsByTagName('*'))]) {
     for (const attribute of Array.from(element.attributes)) {
@@ -668,7 +670,9 @@ async function storyFormattingEnvironment(
     if (ownerPath === 'word/document.xml' || (ownerPath !== '' && excluded(ownerPath))) continue;
     const relationships = await relationshipList(archive, relsPath, ownerFolder);
     if (!relationships) return `unparseable:${relsPath}:${Math.random()}`;
-    digest.update(`\n${relsPath}\n${relationships.map(bindingLine).sort().join('\n')}`);
+    // The owning part names these relationships by id, so each id stays
+    // bound to its target (a swap of two same-type targets changes it).
+    digest.update(`\n${relsPath}\n${relationships.map((relationship) => `${relationship.id}=${bindingLine(relationship)}`).sort().join('\n')}`);
   }
   const paths = archive.listFiles()
     .filter((path) => !path.endsWith('/'))

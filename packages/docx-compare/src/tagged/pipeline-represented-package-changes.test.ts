@@ -700,7 +700,11 @@ describe('changes the redline still does not carry stay listed', () => {
     ]));
   });
 
-  test('a header LASTSAVEDBY field whose last-saved-by property changes stays listed when only its reference allocation differs', async () => {
+  for (const [label, instruction] of [
+    ['', '<w:r><w:instrText xml:space="preserve"> LASTSAVEDBY </w:instrText></w:r>'],
+    [' split over two runs', '<w:r><w:instrText xml:space="preserve"> LAST</w:instrText></w:r><w:r><w:instrText xml:space="preserve">SAVEDBY </w:instrText></w:r>'],
+  ] as const) {
+  test(`a header LASTSAVEDBY field${label} whose last-saved-by property changes stays listed when only its reference allocation differs`, async () => {
     // cp:lastModifiedBy is rewritten on every save and left out of the
     // environment digest, but not while a header field can show it
     // (Codex round 10).
@@ -714,12 +718,55 @@ describe('changes the redline still does not carry stay listed', () => {
     };
     const header: Part = {
       id: 'rIdH', kind: 'header', target: 'header1.xml',
-      contentXml: '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> LASTSAVEDBY </w:instrText></w:r>' +
+      contentXml: `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>${instruction}` +
         '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Alice</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
     };
     const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
     const original = await withLastSavedBy(await packageWith(body, LAYOUT, [header]), 'Alice');
     const revised = await withLastSavedBy(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'Bob');
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
+    ]));
+  });
+  }
+
+  test('a numbering picture bullet whose relationship target swaps stays listed when only its reference allocation differs', async () => {
+    // numbering.xml names its picture by relationship id; swapping the two
+    // targets in numbering.xml.rels changes the bullet without changing any
+    // part's bytes (Codex round 11).
+    const VML = 'urn:schemas-microsoft-com:vml';
+    const withBullets = async (buffer: Buffer, first: string, second: string): Promise<Buffer> => {
+      const archive = await DocxArchive.load(buffer);
+      archive.setFile('word/media/red.png', Buffer.from('red'));
+      archive.setFile('word/media/blue.png', Buffer.from('blue'));
+      archive.setFile('word/numbering.xml',
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="${W_NS}" xmlns:r="${R_NS}" xmlns:v="${VML}">` +
+        '<w:numPicBullet w:numPicBulletId="0"><w:pict><v:shape style="width:9pt;height:9pt"><v:imagedata r:id="rIdA"/></v:shape></w:pict></w:numPicBullet>' +
+        '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlPicBulletId w:val="0"/></w:lvl></w:abstractNum>' +
+        '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>');
+      archive.setFile('word/_rels/numbering.xml.rels',
+        `<Relationships xmlns="${PKG_NS}"><Relationship Id="rIdA" Type="${R_NS}/image" Target="media/${first}.png"/>` +
+        `<Relationship Id="rIdB" Type="${R_NS}/image" Target="media/${second}.png"/></Relationships>`);
+      const rels = (await archive.getFile('word/_rels/document.xml.rels'))!;
+      archive.setFile('word/_rels/document.xml.rels', rels.replace('</Relationships>',
+        `<Relationship Id="rIdNumbering" Type="${R_NS}/numbering" Target="numbering.xml"/></Relationships>`));
+      const contentTypes = (await archive.getFile('[Content_Types].xml'))!;
+      archive.setFile('[Content_Types].xml', contentTypes.replace('</Types>',
+        (contentTypes.includes('Extension="png"') ? '' : '<Default Extension="png" ContentType="image/png"/>') +
+        (contentTypes.includes('/word/numbering.xml') ? '' : '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>') +
+        '</Types>'));
+      return archive.save();
+    };
+    const header: Part = {
+      id: 'rIdH', kind: 'header', target: 'header1.xml',
+      contentXml: '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Logo</w:t></w:r></w:p>',
+    };
+    const body = sectionEnd('Section one.', ref('header', 'rIdH') + LAYOUT) + paragraph('Section two.');
+    const original = await withBullets(await packageWith(body, LAYOUT, [header]), 'red', 'blue');
+    const revised = await withBullets(await packageWith(body, ref('header', 'rIdH') + LAYOUT, [header]), 'blue', 'red');
 
     const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
 
