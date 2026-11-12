@@ -25,6 +25,27 @@
   publication gate reads the same list, so a section divergence is no longer
   admitted on the strength of an index-shifted entry. (#1427, #1181, #1030)
 
+- Resizing, moving or rewrapping a text box whose text was also edited no
+  longer fails `compareDocuments` with `UnsupportedTextBoxRevisionError`
+  ("scaffold changed"). WordprocessingML has no revision markup for drawing
+  geometry (Part 1 §17.13.5 covers run, paragraph, section, table and
+  numbering properties), so the text edit is tracked inside the box, the
+  redline carries the revised shape, and the box is listed once in
+  `unrepresentedChanges` with the new `drawing` scope (public type
+  `UnrepresentedDrawingChange`: story, part, visual box ordinal, container
+  and name), whose warning says the redline shows the revised shape. Accept
+  All reproduces the revised document; Reject All reproduces the original
+  text in the revised shape. This covers VML boxes (`style`, `w10:wrap`) and
+  Word's twinned boxes (DrawingML `wp:extent`, `wp:positionH`/`wp:positionV`,
+  `wp:wrap*` on `wp:anchor` or `wp:inline`, with the VML fallback), in the
+  main document and in headers and footers. A header or footer box whose
+  drawing alone changed is listed with the `drawing` scope instead of a
+  generic header/footer entry. A main-document box whose drawing alone
+  changed keeps its native redline (the box tracked as replaced), as does a
+  box whose revised drawing names a relationship the original resolves
+  differently. A standalone DrawingML box (no VML twin) is still refused
+  (#1383). (#1382)
+
 - A hyperlink added to, removed from or pointed at another target inside a
   text box, in the main document or in a header or footer, is now tracked by
   `compareDocuments` instead of failing with `UnsupportedTextBoxRevisionError`

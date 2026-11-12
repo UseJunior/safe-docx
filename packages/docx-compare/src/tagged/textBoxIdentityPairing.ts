@@ -38,7 +38,7 @@ export interface TextBoxGroupPairing {
  * the drawing object; the comparison reads them as object identity, not as a
  * conformance claim about their uniqueness, so duplicates are discarded below.
  */
-function copyIdentityTokens(copy: Element): string[] {
+export function copyIdentityTokens(copy: Element): string[] {
   const tokens: string[] = [];
   let sawVmlHost = false;
   for (let node = copy.parentNode; node?.nodeType === 1; node = node.parentNode) {
