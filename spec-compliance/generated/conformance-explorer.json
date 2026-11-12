@@ -1706,6 +1706,34 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-15-3-5",
+      "title": "w:doNotExpandShiftReturn compatibility setting",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.15.3.5"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn",
+      "claimRationale": "When `w:doNotExpandShiftReturn` is on, a line of a fully justified paragraph\n(`w:jc` `both`) that ends in a soft line break is not justified. Generation\nwrites the empty element inside `w:compat`, before the `compatibilityMode`\ncustom setting as the `CT_Compat` sequence requires, only when\n`DocumentSpec.compatibility.doNotExpandShiftReturn` is true; `docx-markdoc\ncreate` sets it on every document it builds. This entry covers emission and\norder, not how a renderer lays out the line.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/settings-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-compatibility-settings.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/paragraph-layout.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-16-13",
       "title": "w:delInstrText containment in tracked deletions",
       "classification": "targeted",
@@ -2150,6 +2178,34 @@
         {
           "kind": "test",
           "path": "packages/docx-markdoc/src/greenfield.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-12",
+      "title": "w:ind paragraph indentation",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.12"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind",
+      "claimRationale": "`w:ind` sets a paragraph's indentation. A `docx-markdoc create`\n`{% paragraph-layout %}` paragraph carries `w:left` and `w:hanging` in twips\n(`w:hanging` never larger than `w:left`, so the first line stays inside the\ntext area). The read-back reads every attribute of a body paragraph's direct\n`w:ind`, and the build compares it with the source. Style-level indents,\n`w:start`/`w:end`, the character-unit attributes and `w:firstLine` are not\nwritten by `create`.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/properties.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/create/readback.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/paragraph-layout.test.ts"
         }
       ]
     },
@@ -4801,6 +4857,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "doNotExpandShiftReturn",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Compat/sequence/element:doNotExpandShiftReturn",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -5089,6 +5160,21 @@
         {
           "contextPath": "schema/type:CT_NumPr/sequence/element:ilvl",
           "declaredType": "CT_DecimalNumber",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "ind",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:ind",
+          "declaredType": "CT_Ind",
           "minOccurs": "0"
         }
       ]
