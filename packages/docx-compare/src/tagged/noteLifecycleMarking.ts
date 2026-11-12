@@ -163,7 +163,42 @@ export async function markLifecycleNoteBodies(options: {
       }
       marked.set(id, markerTag === 'w:ins' ? 'inserted' : 'deleted');
     }
+    orderDefinitionsByReference(target.notes, target.kind, document);
     options.archive.setFile(target.part, serializer.serializeToString(target.notes));
   }
   return marks;
+}
+
+/**
+ * Put note definitions in the order of their first anchor in the main story,
+ * reserved separator entries first and unreferenced definitions last. A
+ * removed note's definition is merged in from the original after the revised
+ * definitions; Word binds anchors by `w:id`, but LibreOffice binds them by
+ * position, so an out-of-order definition attached the wrong body to every
+ * later anchor on Accept and Reject. Identifiers are unchanged.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
+ */
+function orderDefinitionsByReference(notes: Document, kind: 'footnote' | 'endnote', document: Document): void {
+  const firstReference = new Map<string, number>();
+  Array.from(document.getElementsByTagNameNS(OOXML.W_NS, `${kind}Reference`)).forEach((reference, position) => {
+    const id = canonicalNoteId(reference.getAttributeNS(OOXML.W_NS, 'id') ?? '');
+    if (id !== undefined && !firstReference.has(id)) firstReference.set(id, position);
+  });
+  const root = notes.documentElement;
+  const entries = Array.from(root.childNodes).filter((node): node is Element => isW(node, kind));
+  const rank = (entry: Element, index: number): [number, number] => {
+    if (RESERVED_NOTE_TYPES.has(entry.getAttributeNS(OOXML.W_NS, 'type') ?? '')) return [0, index];
+    const position = firstReference.get(canonicalNoteId(entry.getAttributeNS(OOXML.W_NS, 'id') ?? '') ?? '');
+    return position === undefined ? [2, index] : [1, position];
+  };
+  const ordered = entries
+    .map((entry, index) => ({ entry, key: rank(entry, index) }))
+    .sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1])
+    .map(({ entry }) => entry);
+  if (ordered.every((entry, index) => entry === entries[index])) return;
+  // Re-append in the new order after the last entry so any non-entry
+  // children keep their place ahead of the definitions they preceded.
+  for (const entry of ordered) root.appendChild(entry);
 }

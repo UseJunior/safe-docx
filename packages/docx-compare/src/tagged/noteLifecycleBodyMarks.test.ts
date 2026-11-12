@@ -185,6 +185,35 @@ async function expectUniqueRevisionIds(compared: Buffer): Promise<void> {
   expect(new Set(ids).size).toBe(ids.length);
 }
 
+/**
+ * Original: footnote A on paragraph 1, unchanged footnote B on paragraph 2.
+ * Revised: footnote A removed, a new two-paragraph footnote C added to
+ * paragraph 2 after B, endnote D added, and paragraph 1's wording edited.
+ */
+async function mixedNoteDocx(revised: boolean): Promise<Buffer> {
+  const paragraphs = revised
+    ? ['The parties agree to every term below.', 'Closing occurs on the agreed date.']
+    : BODY;
+  const archive = await DocxArchive.load(await buildSyntheticDocx({ paragraphs, footnoteOnParagraph: 1, footnoteText: 'Unchanged note B.', ...(revised ? { endnoteOnParagraph: 0, endnoteText: 'Added endnote D.' } : {}) }));
+  const document = parseXml(await archive.getDocumentXml());
+  const notes = parseXml((await archive.getFile('word/footnotes.xml'))!);
+  const bodyParagraphs = Array.from(document.getElementsByTagNameNS(W, 'p'));
+  const referenceRun = Array.from(document.getElementsByTagNameNS(W, 'footnoteReference'))[0]!.parentNode as Element;
+  const addNote = (id: string, paragraph: Element, texts: string[]): void => {
+    const run = referenceRun.cloneNode(true) as Element;
+    run.getElementsByTagNameNS(W, 'footnoteReference')[0]!.setAttributeNS(W, 'w:id', id);
+    paragraph.appendChild(run);
+    notes.documentElement.appendChild(notes.importNode(parseXml(
+      `<w:footnote xmlns:w="${W}" w:id="${id}">${texts.map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('')}</w:footnote>`,
+    ).documentElement, true));
+  };
+  if (revised) addNote('2', bodyParagraphs[1]!, ['Added note C.', 'Second paragraph of C.']);
+  else addNote('2', bodyParagraphs[0]!, ['Removed note A.']);
+  archive.setDocumentXml(serialize(document));
+  archive.setFile('word/footnotes.xml', serialize(notes));
+  return archive.save();
+}
+
 describe('added and removed note bodies carry tracked lifecycle marks', () => {
   for (const kind of ['footnote', 'endnote'] as const) {
     for (const size of ['single', 'multi'] as const) {
@@ -216,34 +245,8 @@ describe('added and removed note bodies carry tracked lifecycle marks', () => {
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })(
     'marks a replaced note per side and leaves an unchanged note and an ordinary body edit alone',
     async () => {
-      // Original: footnote A on paragraph 1, unchanged footnote B on paragraph 2.
-      // Revised: footnote A removed, a new two-paragraph footnote C added to
-      // paragraph 2 after B, endnote D added, and paragraph 1's wording edited.
-      const build = async (revised: boolean): Promise<Buffer> => {
-        const paragraphs = revised
-          ? ['The parties agree to every term below.', 'Closing occurs on the agreed date.']
-          : BODY;
-        const archive = await DocxArchive.load(await buildSyntheticDocx({ paragraphs, footnoteOnParagraph: 1, footnoteText: 'Unchanged note B.', ...(revised ? { endnoteOnParagraph: 0, endnoteText: 'Added endnote D.' } : {}) }));
-        const document = parseXml(await archive.getDocumentXml());
-        const notes = parseXml((await archive.getFile('word/footnotes.xml'))!);
-        const bodyParagraphs = Array.from(document.getElementsByTagNameNS(W, 'p'));
-        const referenceRun = Array.from(document.getElementsByTagNameNS(W, 'footnoteReference'))[0]!.parentNode as Element;
-        const addNote = (id: string, paragraph: Element, texts: string[]): void => {
-          const run = referenceRun.cloneNode(true) as Element;
-          run.getElementsByTagNameNS(W, 'footnoteReference')[0]!.setAttributeNS(W, 'w:id', id);
-          paragraph.appendChild(run);
-          notes.documentElement.appendChild(notes.importNode(parseXml(
-            `<w:footnote xmlns:w="${W}" w:id="${id}">${texts.map(t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`).join('')}</w:footnote>`,
-          ).documentElement, true));
-        };
-        if (revised) addNote('2', bodyParagraphs[1]!, ['Added note C.', 'Second paragraph of C.']);
-        else addNote('2', bodyParagraphs[0]!, ['Removed note A.']);
-        archive.setDocumentXml(serialize(document));
-        archive.setFile('word/footnotes.xml', serialize(notes));
-        return archive.save();
-      };
-      const original = await build(false);
-      const revised = await build(true);
+      const original = await mixedNoteDocx(false);
+      const revised = await mixedNoteDocx(true);
       const result = await compareDocuments(original, revised, { author: AUTHOR, date: DATE });
       const archive = await DocxArchive.load(result.document);
       const footnotes = userEntries((await archive.getFile('word/footnotes.xml'))!, 'footnote');
@@ -252,6 +255,8 @@ describe('added and removed note bodies carry tracked lifecycle marks', () => {
       expect(unchanged.getElementsByTagNameNS(W, 'ins')).toHaveLength(0);
       expect(unchanged.getElementsByTagNameNS(W, 'del')).toHaveLength(0);
       expectEntryMarked(byText('Removed note A.'), 'del');
+      // Definitions follow anchor order (A, B, C) for position-binding readers.
+      expect(footnotes.map(n => (n.textContent ?? '').slice(0, 9))).toEqual(['Removed n', 'Unchanged', 'Added not']);
       expectEntryMarked(byText('Added note C.'), 'ins');
       expectEntryMarked(userEntries((await archive.getFile('word/endnotes.xml'))!, 'endnote')[0]!, 'ins');
       expect(extractTextWithParagraphs(acceptAllChanges(await archive.getDocumentXml()))).toContain('agree to every term below');
@@ -375,6 +380,7 @@ reader('LibreOffice binds added and removed note bodies on both projections', ()
           pairs.push([plain, noted], [noted, plain]);
         }
       }
+      pairs.push([await mixedNoteDocx(false), await mixedNoteDocx(true)]);
       const jobs = [];
       for (const [original, revised] of pairs) {
         const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
@@ -388,7 +394,7 @@ reader('LibreOffice binds added and removed note bodies on both projections', ()
       const states = await runLibreOfficeOracle(jobs);
       for (let i = 0; i < pairs.length; i++) {
         const [originalState, revisedState, accepted, rejected] = states.slice(i * 4, i * 4 + 4) as [string, string, string, string];
-        expect(notes(originalState).length + notes(revisedState).length).toBe(1);
+        if (i < pairs.length - 1) expect(notes(originalState).length + notes(revisedState).length).toBe(1);
         expect(notes(accepted), `pair ${i} accept`).toEqual(notes(revisedState));
         expect(notes(rejected), `pair ${i} reject`).toEqual(notes(originalState));
         expect(project(accepted)).toEqual(project(revisedState));
