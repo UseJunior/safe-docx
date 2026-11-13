@@ -54,3 +54,9 @@
 - [x] 8.2 Leave unpaired boxes in the outer comparison and mark their stories with the anchor's revision kind.
 - [x] 8.3 Locate compared stories by placeholder token so inserted/deleted boxes cannot shift the splice target.
 - [x] 8.4 Add issue-reproduction, deleted-mirror, swap, twinned-box, and identity-change fixtures with accept/reject and schema evidence.
+
+## 9. Inserted and deleted header/footer text boxes (#1384)
+
+- [x] 9.1 Pair header/footer text boxes by anchor identity and compare a part whole when a box has no counterpart.
+- [x] 9.2 Locate paired box stories in that part by placeholder token and mark lifecycle boxes' stories with the anchor's revision kind.
+- [x] 9.3 Add default, first and even header/footer fixtures, twinned, mixed edit, hyperlink and refusal cases with accept/reject, schema and LibreOffice evidence.

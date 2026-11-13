@@ -683,25 +683,33 @@ describe('text boxes stored as DrawingML only or differently in the two document
     });
   });
 
-  test('control: a footer box with no spelling in common is still refused', async ({
-    given, when, then,
+  test('tracks a footer box with no spelling in common as replaced', async ({
+    given, when, then, and,
   }: AllureBddContext) => {
-    // A header or footer cannot track a box as replaced (#1384), and a
-    // DrawingML-only box against a VML-only box shares no identity.
+    // A DrawingML-only box against a VML-only box shares no identity, so it
+    // is a different box: the footer tracks the old one as deleted and the
+    // new one as inserted, as the body does (#1384).
     const original = await given('a DrawingML-only footer box', () => footerPackage(drawingMlOnly('Footer notice: Old')));
     const revised = await given('a VML-only footer box', () => footerPackage(vmlOnly('Footer notice: New')));
-    const failure = await when('the documents are compared', () =>
-      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(() => undefined, (error: unknown) => error));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    const output = await partXml(result.document, FOOTER);
 
-    await then('the comparison names the different drawing', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect((failure as UnsupportedTextBoxRevisionError).changes).toEqual([
-        expect.objectContaining({
-          index: 0,
-          partPath: FOOTER,
-          reason: 'the ancillary text-box scaffold names a different drawing (its anchor identity changed)',
-        }),
+    await then('the old box is tracked as deleted and the new one as inserted', () => {
+      expect(trackedCopyText(output)).toEqual([
+        { deleted: 'Footer notice: Old', inserted: '' },
+        { deleted: '', inserted: 'Footer notice: New' },
       ]);
+      expect(result.unrepresentedChanges).toBeUndefined();
+    });
+    await and('Accept All is the revised footer and Reject All the original, exactly', async () => {
+      const originalView = readerView(await partXml(original, FOOTER));
+      const revisedView = readerView(await partXml(revised, FOOTER));
+      expect(readerView(acceptAllChanges(output))).toEqual(revisedView);
+      expect(readerView(rejectAllChanges(output))).toEqual(originalView);
+      expect(readerView(await docxCorePart(result.document, 'accept', FOOTER))).toEqual(revisedView);
+      expect(readerView(await docxCorePart(result.document, 'reject', FOOTER))).toEqual(originalView);
+      await assertSchema(result.document);
     });
   });
 });
