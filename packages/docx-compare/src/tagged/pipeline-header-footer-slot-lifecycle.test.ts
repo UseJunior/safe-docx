@@ -35,6 +35,7 @@ import {
   pageStorySlots,
   resolveEffectiveStoryBindings,
 } from './effectiveStoryBindings.js';
+import { reportSlotChangesAgainstInputs, type NormalizedStorySlot } from './storySlotNormalization.js';
 
 const TEST_FEATURE = 'track-header-footer-slot-lifecycle';
 
@@ -355,6 +356,25 @@ describe('header/footer attached to or dropped from a surviving section (#1394)'
       });
     },
   );
+
+  test('a slot change the redline still cannot carry is reported against the documents as given', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const slots = await given('one slot made explicit on each side', (): NormalizedStorySlot[] => [
+      { side: 'original', sectionOrdinal: 0, kind: 'header', role: 'first', partPath: 'word/header9.xml', copiedFrom: undefined },
+      { side: 'revised', sectionOrdinal: 2, kind: 'footer', role: 'default', partPath: 'word/footer9.xml', copiedFrom: 'word/footer1.xml' },
+    ]);
+    const reported = await when('the comparison reports those slots and another as changed', () =>
+      reportSlotChangesAgainstInputs([
+        { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'first' },
+        { scope: 'footer', kind: 'changed', sectionIndex: 2, role: 'default' },
+        { scope: 'footer', kind: 'changed', sectionIndex: 0, role: 'first' },
+        { scope: 'section', kind: 'changed', sectionIndex: 0 },
+      ] as const, slots));
+    await then('the original-side slot reads as added, the revised-side one as removed, the rest unchanged', () => {
+      expect(reported.map((change) => change.kind)).toEqual(['added', 'removed', 'changed', 'changed']);
+    });
+  });
 });
 
 const STYLE_NS = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0';

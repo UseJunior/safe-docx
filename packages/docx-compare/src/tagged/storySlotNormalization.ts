@@ -274,6 +274,29 @@ export async function normalizeExplicitStorySlots(
   }
 }
 
+/**
+ * Report each header/footer entry left in `unrepresentedChanges` against the
+ * documents as given. A slot this pass gave an explicit reference on one side
+ * compares as `changed`, but the input added that reference (the original had
+ * none) or removed it (the revised has none).
+ */
+export function reportSlotChangesAgainstInputs<T extends {
+  scope: string;
+  kind: 'added' | 'removed' | 'changed';
+  sectionIndex: number;
+  role?: StoryRole;
+}>(changes: readonly T[], slots: readonly NormalizedStorySlot[]): T[] {
+  return changes.map((change) => {
+    if (change.kind !== 'changed') return change;
+    const slot = slots.find((candidate) =>
+      candidate.kind === change.scope &&
+      candidate.role === change.role &&
+      candidate.sectionOrdinal === change.sectionIndex);
+    if (!slot) return change;
+    return { ...change, kind: slot.side === 'original' ? 'added' : 'removed' };
+  });
+}
+
 async function normalizeReadableStorySlots(
   original: Buffer,
   revised: Buffer,

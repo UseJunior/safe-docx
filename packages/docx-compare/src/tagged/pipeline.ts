@@ -51,7 +51,7 @@ import {
   compareTexts,
 } from './trackChangesAcceptorAst.js';
 import { detectUnrepresentedChanges, subtractRepresentedPackageChanges } from './unrepresentedChanges.js';
-import { normalizeExplicitStorySlots } from './storySlotNormalization.js';
+import { normalizeExplicitStorySlots, reportSlotChangesAgainstInputs } from './storySlotNormalization.js';
 import { auditPicturePayloads, payloadSwappedRelationshipIds } from './picturePayload.js';
 import {
   type NumberingIntegrationOptions,
@@ -1866,11 +1866,14 @@ export async function compareDocumentsAtomizer(
         .filter((slot) => slot.side === 'revised' && slot.copiedFrom === undefined)
         .map((slot) => slot.partPath)),
     };
-    return await withPicturePayloadAudit(
+    const result = await withPicturePayloadAudit(
       normalized.original,
       normalized.revised,
       await compareDocumentsTagged(normalized.original, normalized.revised, options, blankSlotParts),
     );
+    return result.unrepresentedChanges && normalized.slots.length > 0
+      ? { ...result, unrepresentedChanges: reportSlotChangesAgainstInputs(result.unrepresentedChanges, normalized.slots) }
+      : result;
   } catch (error) {
     // A raw xmldom ParseError names no part; find and name it (#1024).
     if (!isUnattributedXmlParseError(error)) throw error;
