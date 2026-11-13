@@ -63,7 +63,7 @@ const pageField = (rPr = ''): string =>
   `<w:r>${rPr}<w:t>1</w:t></w:r>` +
   `<w:r>${rPr}<w:fldChar w:fldCharType="end"/></w:r>`;
 
-const isW = (node: Node | null | undefined, name: string): node is Element =>
+const isW = (node: Node | null | undefined, name: string): boolean =>
   !!node && node.nodeType === 1 && (node as Element).namespaceURI === W_NS && (node as Element).localName === name;
 const childrenOf = (element: Element): Element[] =>
   Array.from(element.childNodes).filter((child): child is Element => child.nodeType === 1);
