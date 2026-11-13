@@ -495,7 +495,7 @@ reader('LibreOffice binds a note compared in place on both projections', () => {
       const X = 'http://www.w3.org/1999/xlink';
       const project = (xml: string) => Array.from(parseXml(xml).getElementsByTagName('*'))
         .filter(n => n.namespaceURI === T && ['p', 'h'].includes(n.localName) && !hasOdfNoteAncestor(n, T))
-        .map(n => n.textContent);
+        .map(shownText);
       // LibreOffice refreshes a REF field's displayed result when it accepts
       // or rejects, but not on a plain load, so a field contributes its
       // target bookmark rather than its cached text.
