@@ -152,21 +152,18 @@ async function assertTrackedContainer(original: Buffer, revised: Buffer, kind: '
 }
 
 describe('block content-control revision publication', () => {
-  test('tracks a whole inserted or deleted block container through its paragraph marks and runs', async () => {
-    // With and without a following paragraph: a container can close the body story.
-    for (const after of [paragraph('After'), '']) {
-      const plain = await buildDocxFromBodyXml(paragraph('Outside') + after);
-      for (const xml of blockContainerCases) {
+  // One test per container shape keeps each within the default timeout.
+  // With and without a following paragraph: a container can close the body story.
+  for (const [placement, after] of [['before a paragraph', paragraph('After')], ['at the end of the body', '']] as const) {
+    blockContainerCases.forEach((xml, caseIndex) => {
+      test(`tracks a whole inserted or deleted block container (shape ${caseIndex}, ${placement}) through its paragraph marks and runs`, async () => {
+        const plain = await buildDocxFromBodyXml(paragraph('Outside') + after);
         const withBlock = await buildDocxFromBodyXml(paragraph('Outside') + xml + after);
-        for (const [original, revised, kind] of [
-          [plain, withBlock, 'ins'],
-          [withBlock, plain, 'del'],
-        ] as const) {
-          await assertTrackedContainer(original, revised, kind);
-        }
-      }
-    }
-  });
+        await assertTrackedContainer(plain, withBlock, 'ins');
+        await assertTrackedContainer(withBlock, plain, 'del');
+      });
+    });
+  }
 
   test('tracks a relocated block container as a deletion and an insertion, not a move', async () => {
     const control = wrapControl(paragraph('The optional rider applies to every closing under this agreement.'));
@@ -236,20 +233,17 @@ describe('block content-control revision publication', () => {
     await assertSchema(result.document);
   });
 
-  test('tracks a side-only block container inside an otherwise aligned table cell', async () => {
-    const table = (cellContent: string) => '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/>'
-      + '</w:tblGrid><w:tr><w:tc>' + cellContent + '</w:tc></w:tr></w:tbl>';
-    const plain = await buildDocxFromBodyXml(table(paragraph('Outside')));
-    for (const xml of blockContainerCases) {
+  blockContainerCases.forEach((xml, caseIndex) => {
+    test(`tracks a side-only block container (shape ${caseIndex}) inside an otherwise aligned table cell`, async () => {
+      const table = (cellContent: string) => '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/>'
+        + '</w:tblGrid><w:tr><w:tc>' + cellContent + '</w:tc></w:tr></w:tbl>';
+      const plain = await buildDocxFromBodyXml(table(paragraph('Outside')));
       const withBlock = await buildDocxFromBodyXml(table(paragraph('Outside') + xml));
-      for (const [original, revised, kind] of [
-        [plain, withBlock, 'ins'],
-        [withBlock, plain, 'del'],
-      ] as const) {
-        await assertTrackedContainer(original, revised, kind);
-      }
-    }
+      await assertTrackedContainer(plain, withBlock, 'ins');
+      await assertTrackedContainer(withBlock, plain, 'del');
+    });
   });
+
 });
 
 describe('block content-control formatting fidelity', () => {
