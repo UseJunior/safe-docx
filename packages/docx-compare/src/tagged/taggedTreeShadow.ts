@@ -63,7 +63,7 @@ export interface TaggedTreeShadowInput {
   retainStatisticsMarkers?: boolean;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
-  /** @internal The comparison pipeline guards every story it compares (#1393). */
+  /** @internal Main-body table-topology guard; nested stories try it first (#1393). */
   guardTableTopology?: boolean;
 }
 
@@ -503,8 +503,8 @@ export function buildTaggedTreePublication(
     minimumRevisionId: input.minimumRevisionId,
   });
   if (input.guardTableTopology) {
-    // The comparison pipeline sets it for every story it compares: the main
-    // body and each header, footer or text-box story (#1393).
+    // The main body always sets it; a header, footer or text-box story sets
+    // it first and drops it only when it refuses that story's tables (#1393).
     replaceSkeletonChangedRows(constructed.tree);
     guardBodyTableTopology(constructed.tree);
   }

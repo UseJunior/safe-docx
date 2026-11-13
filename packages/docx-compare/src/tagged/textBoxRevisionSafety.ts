@@ -1453,8 +1453,8 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
  * the row carries no revision record: the story comparison tracks such a row
  * when it is inserted or deleted with `w:trPr/w:ins` or `w:trPr/w:del`, as in
  * the main body, under the same table-topology guard. A row holding a field,
- * a content control, a drawing or a nested table stays in the scaffold, so
- * inserting or deleting it is still listed. Only the eligibility gates use it.
+ * a content control, a drawing, a nested table or table-property exceptions
+ * stays in the scaffold, so inserting or deleting it is still listed. Only the eligibility gates use it.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
@@ -1537,7 +1537,9 @@ const ROW_REVISION_RECORDS = new Set([
  * paragraphs were all removed as admitted plain paragraphs and which carries
  * no revision record, so a story whose tables differ only by such rows reads
  * as the same scaffold. Rows inside a nested table, a content control or a
- * text box are not touched.
+ * text box are not touched. A row with table-property exceptions
+ * (`w:tblPrEx`) stays too: docx-core's Reject All does not restore a
+ * `w:tblPrExChange`, so a change to them is listed.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
@@ -1549,7 +1551,9 @@ function removeTrackableRows(root: Element): void {
       if (row.namespaceURI !== OOXML.W_NS || row.localName !== 'tr') continue;
       const descendants = Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'));
       if (descendants.some((element) =>
-        element.localName === 'p' || ROW_REVISION_RECORDS.has(element.localName))) continue;
+        element.localName === 'p'
+        || element.localName === 'tblPrEx'
+        || ROW_REVISION_RECORDS.has(element.localName))) continue;
       table.removeChild(row);
     }
   }

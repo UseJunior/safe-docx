@@ -149,10 +149,32 @@ function paragraphText(p: Element): string {
   return value;
 }
 
+/** Revision records, which say how a property element changed rather than what it holds. */
+const PROPERTY_REVISIONS = ['ins', 'del', 'trPrChange', 'tcPrChange', 'tblPrExChange'];
+
+/**
+ * A property element's properties without revision records, child order and
+ * attributes kept; an empty or absent element reads as `''`.
+ */
+function propertySignature(properties: Element | undefined): string {
+  if (!properties) return '';
+  const describe = (element: Element): string => {
+    const attributes = Array.from(element.attributes)
+      .filter((attribute) => attribute.prefix !== 'xmlns' && attribute.name !== 'xmlns')
+      .map((attribute) => `${attribute.localName}=${attribute.value}`).sort().join(',');
+    return `${element.localName}[${attributes}](${Array.from(element.childNodes)
+      .filter((child): child is Element => child.nodeType === 1).map(describe).join('')})`;
+  };
+  return Array.from(properties.childNodes)
+    .filter((child): child is Element => child.nodeType === 1 && !PROPERTY_REVISIONS.includes((child as Element).localName))
+    .map(describe).join('');
+}
+
 /**
  * What a story part shows, block by block: a paragraph as its text, a table as
- * its rows, each row as its cells' texts and the cell widths, so a lost row, a
- * merged row or a misplaced cell reads differently.
+ * its rows, each row as its row properties, table-property exceptions and
+ * cells, each cell as its cell properties and paragraph texts, so a lost row,
+ * a merged row, a misplaced cell or a property left behind reads differently.
  */
 function storyView(xml: string): string[] {
   const root = parseXml(xml).documentElement;
@@ -161,10 +183,11 @@ function storyView(xml: string): string[] {
     .map((block) => {
       if (isW(block, 'p')) return `p:${paragraphText(block)}`;
       if (isW(block, 'tbl')) {
-        return 'tbl:' + children(block, 'tr').map((tr) => children(tr, 'tc').map((tc) => {
-          const width = tc.getElementsByTagNameNS(W_NS, 'tcW')[0]?.getAttributeNS(W_NS, 'w') ?? '';
-          return `${width}=${children(tc, 'p').map(paragraphText).join('/')}`;
-        }).join('|')).join(' ; ');
+        return 'tbl:' + children(block, 'tr').map((tr) =>
+          `{${propertySignature(children(tr, 'trPr')[0])}}{${propertySignature(children(tr, 'tblPrEx')[0])}}`
+          + children(tr, 'tc').map((tc) =>
+            `${propertySignature(children(tc, 'tcPr')[0])}=${children(tc, 'p').map(paragraphText).join('/')}`).join('|'),
+        ).join(' ; ');
       }
       return block.localName;
     });
@@ -319,6 +342,17 @@ const ROW_CASES: readonly RowCase[] = [
     markers: { inserted: 2, deleted: 2 },
   },
   {
+    // Row and cell properties of a kept row are tracked as in the body.
+    name: 'a row inserted beside a shading and row-height change to another row',
+    original: [COMPANY, ADDRESS],
+    revised: [
+      COMPANY,
+      `<w:tr><w:trPr><w:trHeight w:val="500"/></w:trPr>${cell(text('Address'), '<w:tcPr><w:tcW w:w="4500" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/></w:tcPr>')}${cell(text('1 Main Street'))}</w:tr>`,
+      PHONE,
+    ],
+    markers: { inserted: 1, deleted: 0 },
+  },
+  {
     name: 'a row deleted and another inserted',
     original: [COMPANY, ADDRESS, PHONE],
     revised: [COMPANY, PHONE, EMAIL],
@@ -434,10 +468,40 @@ describe('a table inside a header text box (#1393)', { timeout: LOAD_SENSITIVE_T
       },
     );
   }
+
+  test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
+    'keeps a grid-width change inside a header text box listed instead of aborting',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('a default header text box table whose first grid column widens, beside a body edit', () =>
+        Promise.all([
+          storyPackage('Body draft', ({ kind, role }) =>
+            (kind === 'header' && role === 'default' ? boxStory(COMPANY) : paragraph(text('Plain')))),
+          storyPackage('Body final', ({ kind, role }) =>
+            (kind === 'header' && role === 'default'
+              ? boxStory(COMPANY).replace('<w:gridCol w:w="4500"/>', '<w:gridCol w:w="5000"/>')
+              : paragraph(text('Plain')))),
+        ]));
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the default header is listed, the body edit is tracked and the package is schema-valid', async () => {
+        expect(result.unrepresentedChanges).toEqual([
+          expect.objectContaining({ scope: 'header', kind: 'changed', role: 'default' }),
+        ]);
+        expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
+        expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+        await assertSchema(result.document);
+      });
+    },
+  );
 });
 
 describe('header and footer table changes the row revisions cannot carry stay listed (#1393)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   const LISTED_CASES: ReadonlyArray<{ name: string; original: string; revised: string }> = [
+    {
+      // docx-core's Reject All does not restore a w:tblPrExChange.
+      name: 'table-property exceptions added to a row',
+      original: story(COMPANY, ADDRESS),
+      revised: story(COMPANY, ADDRESS.replace('<w:tr>', '<w:tr><w:tblPrEx><w:tblW w:w="7000" w:type="dxa"/></w:tblPrEx>')),
+    },
     {
       name: 'an inserted row holding a PAGE field',
       original: story(COMPANY),

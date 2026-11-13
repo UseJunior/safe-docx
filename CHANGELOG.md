@@ -9,11 +9,13 @@
   first-page and even-page headers and footers, rows beside a `PAGE` field
   row, and a row whose cells merge within an unchanged grid, which is
   replaced by a deleted and an inserted row. Header, footer and text-box
-  stories are now held to the main-body table-topology guard, so such a
-  merge inside a text box is no longer emitted as revisions wrapped around
-  cells. Inserting or
-  deleting a row that holds a field, content control, drawing or nested
-  table, or a whole table, is still listed. (#1393)
+  stories are now compared under the main-body table-topology guard first,
+  so such a merge inside a text box is no longer emitted as revisions
+  wrapped around cells; a table change the guard refuses there is still
+  listed. Inserting or deleting a row that holds a field, content control,
+  drawing, nested table or table-property exceptions (`w:tblPrEx`), a
+  change to a row's table-property exceptions, or a whole table, is still
+  listed. (#1393)
 
 - A formatting-only change (bold, font size, alignment, paragraph-mark
   formatting) in a header or footer paragraph that also holds a field such as

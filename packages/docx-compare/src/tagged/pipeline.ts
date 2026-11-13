@@ -174,6 +174,12 @@ export interface StandaloneTaggedPackageOptions {
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
   /**
+   * @internal Hold the story to the main-body table-topology guard. A nested
+   * story is compared with it first and without it only after the guard
+   * refuses its tables (#1393).
+   */
+  guardTableTopology?: boolean;
+  /**
    * @internal Redline a picture whose payload was replaced under unchanged
    * markup. Only the main-story comparison sets it: a nested story is spliced
    * back through its owner's relationship table, which cannot hold the
@@ -487,10 +493,7 @@ export async function buildStandaloneTaggedPackage(
       revisionGrouping: options.revisionGrouping,
       retainStatisticsMarkers: true,
       minimumRevisionId: options.minimumRevisionId,
-      // Every story, the main body and each header, footer or text-box story
-      // alike, is held to the table-topology guard, so a table row inserted,
-      // deleted or replaced there is tracked as in the body (#1393).
-      guardTableTopology: true,
+      guardTableTopology: options.guardTableTopology ?? true,
     });
     return {
       taggedOriginalXml,
@@ -649,14 +652,16 @@ export async function buildStandaloneTaggedPackage(
   // trees would reject a faithful publication.
   const originalProjectionXml = rejectAllChanges(originalXml);
   const revisedProjectionXml = acceptAllChanges(revisedXml);
-  for (const [projection, expectedXml, actualXml] of [
-    ['reject', originalProjectionXml, rejectAllChanges(taggedXml)],
-    ['accept', revisedProjectionXml, acceptAllChanges(taggedXml)],
-  ] as const) {
-    const mismatch = findTableFootprintMismatch(bodyTableFootprint(expectedXml), bodyTableFootprint(actualXml));
-    if (mismatch) {
-      throw new UnsupportedTableTopologyComparisonError('projection', mismatch.tableIndex,
-        mismatch.rowIndex, mismatch.cellIndex, mismatch.columnIndex, { projection, mismatch });
+  if (options.guardTableTopology ?? true) {
+    for (const [projection, expectedXml, actualXml] of [
+      ['reject', originalProjectionXml, rejectAllChanges(taggedXml)],
+      ['accept', revisedProjectionXml, acceptAllChanges(taggedXml)],
+    ] as const) {
+      const mismatch = findTableFootprintMismatch(bodyTableFootprint(expectedXml), bodyTableFootprint(actualXml));
+      if (mismatch) {
+        throw new UnsupportedTableTopologyComparisonError('projection', mismatch.tableIndex,
+          mismatch.rowIndex, mismatch.cellIndex, mismatch.columnIndex, { projection, mismatch });
+      }
     }
   }
   const publicationSafety = (options.publicationSafetyEvaluator ?? evaluateSafetyChecks)(
@@ -1376,6 +1381,7 @@ async function compareDocumentsTaggedCore(
   options: AtomizerOptions,
   bookmarkNameReservations?: Set<string>,
   minimumRevisionId?: number,
+  guardTableTopology = true,
   representPicturePayloadSwaps = false,
 ): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
@@ -1399,6 +1405,7 @@ async function compareDocumentsTaggedCore(
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
     bookmarkNameReservations,
     minimumRevisionId,
+    guardTableTopology,
     representPicturePayloadSwaps,
   });
   return {
@@ -1460,8 +1467,9 @@ async function compareDocumentsTagged(
       bookmarkNameReservations,
       undefined,
       true,
+      true,
     )
-    : await compareDocumentsTaggedCore(original, revised, options, undefined, undefined, true);
+    : await compareDocumentsTaggedCore(original, revised, options, undefined, undefined, true, true);
   let sectionAligned: Awaited<ReturnType<typeof sectionAlignedOrdinaryStoryInputs>> | undefined;
   if (!preparedPlan) {
     // No text-box or topology-matched story to split out. A header/footer
@@ -1547,13 +1555,27 @@ async function compareDocumentsTagged(
         : story.ancillaryMode === 'deleted'
           ? story.revised
           : undefined;
-    let result = await compareDocumentsTaggedCore(
-      lifecycleEmptySide ?? story.original,
-      lifecycleEmptySide ?? story.revised,
-      options,
-      bookmarkNameReservations,
-      nextPackageRevisionId,
-    );
+    // A nested story's tables get the main-body row machinery: an inserted
+    // or deleted row is tracked with w:trPr/w:ins or w:trPr/w:del, and a
+    // changed row skeleton is replaced (#1393). A topology the guard refuses
+    // keeps the unguarded comparison the story used before, so a change that
+    // was listed stays listed instead of aborting the whole comparison.
+    const compareNestedStory = (guardTableTopology: boolean): Promise<TaggedCompareResult> =>
+      compareDocumentsTaggedCore(
+        lifecycleEmptySide ?? story.original,
+        lifecycleEmptySide ?? story.revised,
+        options,
+        bookmarkNameReservations,
+        nextPackageRevisionId,
+        guardTableTopology,
+      );
+    let result: TaggedCompareResult;
+    try {
+      result = await compareNestedStory(true);
+    } catch (error) {
+      if (!(error instanceof UnsupportedTableTopologyComparisonError)) throw error;
+      result = await compareNestedStory(false);
+    }
     refuseUnreportedBlockContainer(result.unrepresentedChanges, story.partPath);
     if (story.ancillaryMode === 'inserted') {
       const marked = await markInsertedAncillaryStoryParagraphs(
