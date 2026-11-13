@@ -25,7 +25,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { describe, expect } from 'vitest';
-import { DocxArchive, DocxDocument, OOXML, parseXml } from '@usejunior/docx-core';
+import { auditSectPr, DocxArchive, DocxDocument, OOXML, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
@@ -434,10 +434,13 @@ describe('changes the redline still does not carry stay listed', () => {
   ] as const;
   for (const [label, contentXml] of TALL_EMPTY_HEADERS) {
     for (const kind of ['added', 'removed'] as const) {
-      test(`a header with no text but ${label} stays listed when ${kind}`, async () => {
+      test(`a header with no text but ${label} is tracked as content when ${kind} on a surviving section`, async () => {
         // The header shows no text, but its empty paragraphs take up room and
-        // push the body down; a part that shows nothing never stands in for
-        // no part (Codex round 2).
+        // push the body down, so a blank story never stands in for it. The
+        // section keeps selecting a header in both projections (#1394): its
+        // paragraph marks and the last paragraph's properties are tracked, so
+        // the side without the header shows one plain empty paragraph, the
+        // blank story a section with no header shows (§17.10.5).
         const header: Part = { id: 'rIdH', kind: 'header', target: 'header1.xml', contentXml };
         const withHeader = await packageWith(paragraph('Stable body.'), ref('header', 'rIdH') + LAYOUT, [header]);
         const withoutHeader = await packageWith(paragraph('Stable body.'), LAYOUT, []);
@@ -445,9 +448,25 @@ describe('changes the redline still does not carry stay listed', () => {
 
         const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
 
-        expect(result.unrepresentedChanges).toEqual([
-          { scope: 'header', kind, sectionIndex: 0, role: 'default' },
-        ]);
+        expect(result.unrepresentedChanges).toBeUndefined();
+        await expectFaithfulProjections(original, revised, result.document);
+        const archive = await DocxArchive.load(result.document);
+        const documentXml = await archive.getDocumentXml();
+        const [binding] = auditSectPr(documentXml, await archive.getFile('word/_rels/document.xml.rels')).bindings;
+        const partXml = (await archive.getFile(binding!.targetPath))!;
+        const shape = (xml: string): { paragraphs: number; spacing: number } => {
+          const document = parseXml(xml);
+          return {
+            paragraphs: document.getElementsByTagNameNS(W_NS, 'p').length,
+            spacing: document.getElementsByTagNameNS(W_NS, 'spacing').length,
+          };
+        };
+        const source = shape(`<w:hdr xmlns:w="${W_NS}">${contentXml}</w:hdr>`);
+        const [withProjection, withoutProjection] = kind === 'added'
+          ? [acceptAllChanges, rejectAllChanges]
+          : [rejectAllChanges, acceptAllChanges];
+        expect(shape(withProjection(partXml))).toEqual(source);
+        expect(shape(withoutProjection(partXml))).toEqual({ paragraphs: 1, spacing: 0 });
       });
     }
   }

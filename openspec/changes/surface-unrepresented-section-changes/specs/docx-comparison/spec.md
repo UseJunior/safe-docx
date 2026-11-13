@@ -26,7 +26,7 @@ statistics SHALL retain their existing meaning.
 - **GIVEN** a revised DOCX whose tracked inserted section exclusively selects a new relationship-addressed footer
 - **WHEN** the pair is successfully compared in place
 - **THEN** every paragraph in the inserted footer story SHALL carry tracked insertion evidence
-- **AND** text insertions SHALL NOT wrap VML or DrawingML carrier objects
+- **AND** a VML or DrawingML carrier run SHALL be a tracked insertion too, so reject-all removes the shape
 - **AND** the represented footer SHALL NOT also appear in `unrepresentedChanges`
 
 #### Scenario: [SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion
@@ -34,15 +34,15 @@ statistics SHALL retain their existing meaning.
 - **GIVEN** an original DOCX whose header or footer is selected only by section slots that the revised DOCX no longer has, because the section was removed
 - **WHEN** the pair is successfully compared in place
 - **THEN** every paragraph in the removed story SHALL carry a tracked paragraph-mark deletion and its text SHALL be `w:delText` inside `w:del`
-- **AND** deletions SHALL NOT wrap VML or DrawingML carrier objects
+- **AND** a VML or DrawingML carrier run SHALL be a tracked deletion too, so accept-all leaves no emptied shape
 - **AND** reject-all SHALL reselect the story with its original text while accept-all SHALL select it through no section
 - **AND** revision identifiers SHALL remain unique across the package
 - **AND** the represented story SHALL NOT appear in `unrepresentedChanges`
 
-#### Scenario: [SDX-CMP-UNREP-05] Story slot dropped from a surviving section is reported as unrepresented
+#### Scenario: [SDX-CMP-UNREP-05] Story slot dropped from a surviving section is tracked as deleted content
 
 - **GIVEN** an original DOCX whose surviving section selects a header or footer role that the revised section no longer selects
 - **WHEN** the pair is successfully compared in place
 - **THEN** no `w:sectPrChange/w:sectPr` snapshot SHALL contain `w:headerReference` or `w:footerReference`, because that snapshot is `CT_SectPrBase`
-- **AND** accept-all and reject-all SHALL both keep the revised section's live header/footer references
-- **AND** the dropped slot SHALL appear in `unrepresentedChanges` with its section ordinal and role
+- **AND** the section SHALL keep a live reference for that role in both projections, to a part whose content is a tracked deletion: accept-all shows it blank and reject-all shows the original story
+- **AND** the dropped slot SHALL NOT appear in `unrepresentedChanges`

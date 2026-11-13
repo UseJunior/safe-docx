@@ -38,6 +38,7 @@ import {
 } from './sectionAlignedStoryPairing.js';
 import {
   addParagraphMarkRevisionMarker,
+  allocateRevisionId,
   createRevisionIdState,
   formatDate,
   wrapRunWithTrackChange,
@@ -120,6 +121,14 @@ export interface TextBoxStoryInput {
    * (see `deletedAncillaryStoryOutputPaths`).
    */
   selectedSlots?: ReadonlyArray<Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role'>>;
+  /**
+   * Set on an `inserted` or `deleted` story whose slot both documents select
+   * because `normalizeExplicitStorySlots` gave the side without a reference a
+   * blank story there (#1394). Its part stays selected in both projections,
+   * so it is written to `partPath` without the reference checks a section
+   * lifecycle needs.
+   */
+  slotLifecycle?: boolean;
   /**
    * The placeholder token a header/footer box compared inside its whole part
    * is found by in the compared part (#1384). Absent for every other story.
@@ -1736,12 +1745,28 @@ function hasAncestorLocalName(element: Element, name: string): boolean {
   return false;
 }
 
+/**
+ * Drop the white space between a section's property elements. `w:sectPr` has
+ * element-only content, so that white space is formatting, not a property,
+ * and a reference added or removed by an editor must not change it (#1394).
+ */
+function withoutFormattingWhitespace(section: Element): Element {
+  const walk = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3 && /^\s*$/u.test(child.nodeValue ?? '')) node.removeChild(child);
+      else if (child.nodeType === 1) walk(child);
+    }
+  };
+  walk(section);
+  return section;
+}
+
 function sectionPropertyFingerprints(documentXml: string): string[] {
   const document = parseXml(documentXml);
   return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'sectPr'))
     .filter((section) => !hasAncestorLocalName(section, 'sectPrChange'))
     .map((section) => {
-      const clone = section.cloneNode(true) as Element;
+      const clone = withoutFormattingWhitespace(section.cloneNode(true) as Element);
       for (const child of directChildElements(clone)) {
         if (
           child.namespaceURI === OOXML.W_NS &&
@@ -1761,12 +1786,27 @@ function ordinarySectionTopologyFingerprints(documentXml: string): string[] {
   return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'sectPr'))
     .filter((section) => !hasAncestorLocalName(section, 'sectPrChange'))
     .map((section) => {
-      const clone = section.cloneNode(true) as Element;
-      for (const reference of [
+      const clone = withoutFormattingWhitespace(section.cloneNode(true) as Element);
+      const references = [
         ...Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'headerReference')),
         ...Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'footerReference')),
-      ]) {
+      ];
+      for (const reference of references) {
         reference.setAttributeNS(RELATIONSHIPS_NS, 'r:id', '__selected_story__');
+      }
+      // The references are one unordered choice group in CT_SectPr, so their
+      // order is not part of the topology (#1394).
+      const anchor = references.length > 0 ? references[0]! : undefined;
+      if (anchor) {
+        const placeholder = clone.ownerDocument!.createComment('references');
+        clone.insertBefore(placeholder, directChildElements(clone).find((child) => references.includes(child)) ?? anchor);
+        for (const reference of references) reference.parentNode?.removeChild(reference);
+        const key = (reference: Element): string =>
+          `${reference.localName}:${reference.getAttributeNS(OOXML.W_NS, 'type') ?? reference.getAttribute('w:type') ?? ''}`;
+        for (const reference of references.sort((left, right) => key(left).localeCompare(key(right)))) {
+          clone.insertBefore(reference, placeholder);
+        }
+        clone.removeChild(placeholder);
       }
       return canonicalNode(clone);
     });
@@ -2351,11 +2391,100 @@ async function lifecycleAncillaryStoryInputs(
   }, ...stories];
 }
 
+/**
+ * Blank stories `normalizeExplicitStorySlots` added, by side and part path:
+ * a slot the other document selects a story for, which this side showed
+ * blank (#1394).
+ */
+export interface BlankSlotParts {
+  original: ReadonlySet<string>;
+  revised: ReadonlySet<string>;
+}
+
+const NO_BLANK_SLOT_PARTS: BlankSlotParts = { original: new Set(), revised: new Set() };
+
+/**
+ * Whether every block-level child of the story part is a paragraph. Lifecycle
+ * marking tracks paragraphs and runs; a block container (`w:sdt`,
+ * `w:customXml`) or a table (whose rows it does not track) would leave its
+ * own empty paragraph or rows on the side without the story.
+ */
+function holdsOnlyBodyParagraphs(partXml: string): boolean {
+  const root = parseXml(partXml).documentElement;
+  if (!root) return false;
+  const blocks = directChildElements(root).filter((element) =>
+    element.namespaceURI !== OOXML.W_NS ||
+    !['bookmarkStart', 'bookmarkEnd', 'permStart', 'permEnd', 'proofErr'].includes(element.localName));
+  return blocks.length > 0 &&
+    blocks.every((element) => element.namespaceURI === OOXML.W_NS && element.localName === 'p');
+}
+
+/**
+ * A pair whose one side is a blank slot story is a whole insertion or
+ * deletion of the other side's story, whatever its scaffold: the slot shows
+ * nothing on the blank side (§17.10.5, §17.10.2). An attached story is
+ * marked inserted in its own part; a dropped story is marked deleted and
+ * written into the blank part the revised side selects in its place. Only a
+ * pair selected by the same slots on both sides qualifies.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1394
+ */
+async function slotLifecycleStoryInput(
+  pair: PairedAncillaryStory,
+  blankSlotParts: BlankSlotParts,
+  originalArchive: DocxArchive,
+  revisedArchive: DocxArchive,
+  originalDocumentXml: string,
+  revisedDocumentXml: string,
+): Promise<TextBoxStoryInput | undefined> {
+  const originalBlank = blankSlotParts.original.has(pair.original.targetPath);
+  const revisedBlank = blankSlotParts.revised.has(pair.revised.targetPath);
+  if (originalBlank === revisedBlank) return undefined;
+  if (pair.original.bindingClosure !== pair.revised.bindingClosure) return undefined;
+  // The story's paragraphs are tracked and its last one is made to read as the
+  // blank story. A story with a table or a block container is left to the
+  // ordinary pairing and its checks, which report what they cannot carry.
+  if (!holdsOnlyBodyParagraphs(originalBlank ? pair.revised.xml : pair.original.xml)) return undefined;
+  const storyOriginalArchive = await originalArchive.clone();
+  const storyRevisedArchive = await revisedArchive.clone();
+  storyOriginalArchive.setDocumentXml(
+    storyDocumentXmlFromPartRoot(originalDocumentXml, originalBlank ? null : pair.original.xml),
+  );
+  storyRevisedArchive.setDocumentXml(
+    storyDocumentXmlFromPartRoot(revisedDocumentXml, revisedBlank ? null : pair.revised.xml),
+  );
+  storyOriginalArchive.setFile(
+    'word/_rels/document.xml.rels',
+    originalBlank
+      ? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`
+      : promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
+  );
+  storyRevisedArchive.setFile(
+    'word/_rels/document.xml.rels',
+    revisedBlank
+      ? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`
+      : promotedStoryRelationshipsXml(pair.revised.relationshipsXml, pair.revised.targetPath),
+  );
+  return {
+    index: 0,
+    visualIndex: 0,
+    partPath: pair.revised.targetPath,
+    container: 'ancillaryPart',
+    ancillaryMode: originalBlank ? 'inserted' : 'deleted',
+    slotLifecycle: true,
+    original: await storyOriginalArchive.save(),
+    revised: await storyRevisedArchive.save(),
+  };
+}
+
 async function ancillaryStoryInputs(
   originalArchive: DocxArchive,
   revisedArchive: DocxArchive,
   originalDocumentXml: string,
   revisedDocumentXml: string,
+  blankSlotParts: BlankSlotParts,
 ): Promise<{
   stories: TextBoxStoryInput[];
   validateProjection: boolean;
@@ -2406,6 +2535,25 @@ async function ancillaryStoryInputs(
   const drawingAlignedOriginalParts = new Map<string, string>();
   const lifecyclePartPaths: string[] = [];
   for (const pair of paired.pairs) {
+    const slotLifecycle = await slotLifecycleStoryInput(
+      pair,
+      blankSlotParts,
+      originalArchive,
+      revisedArchive,
+      originalDocumentXml,
+      revisedDocumentXml,
+    );
+    if (slotLifecycle) {
+      stories.push(slotLifecycle);
+      representedChanges.push(...pair.revised.bindings.map((binding) => ({
+        scope: binding.kind,
+        kind: 'changed' as const,
+        sectionIndex: binding.sectionOrdinal,
+        role: binding.role,
+        partPath: pair.revised.targetPath,
+      })));
+      continue;
+    }
     const lifecycle = await lifecycleAncillaryStoryInputs(
       pair,
       topologyMatches,
@@ -3233,6 +3381,7 @@ function alignBodyTextBoxStorage(
 export async function prepareTextBoxStoryComparison(
   original: Buffer,
   revised: Buffer,
+  blankSlotParts: BlankSlotParts = NO_BLANK_SLOT_PARTS,
 ): Promise<TextBoxStoryComparisonPlan | undefined> {
   const originalArchive = await DocxArchive.load(original);
   const revisedArchive = await DocxArchive.load(revised);
@@ -3243,6 +3392,7 @@ export async function prepareTextBoxStoryComparison(
     revisedArchive,
     originalDocumentXml,
     revisedDocumentXml,
+    blankSlotParts,
   );
   // Relationship semantics only: a payload changed under the same semantics
   // is carried by the story comparison and listed by `auditPicturePayloads`
@@ -3956,8 +4106,12 @@ function hasRevisionWrapperAncestor(element: Element, stopAt: Element): boolean 
 /**
  * Mark one paragraph of a story whose whole lifecycle is an insertion or a
  * deletion: a paragraph-mark revision, plus a run-level wrapper on every run
- * that is not a drawing/VML carrier, does not belong to a nested text box, and
- * is not already inside a revision wrapper.
+ * that does not belong to a nested text box and is not already inside a
+ * revision wrapper. A drawing or VML carrier run is wrapped too, as Word
+ * tracks a shape inserted or deleted with its anchor run: the story's part can
+ * stay selected after Accept All (a removed section's reference carried onto
+ * the next section, #1144; a slot lifecycle, #1394), and an unwrapped carrier
+ * would still draw the emptied shape's outline and fill there.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
@@ -3984,10 +4138,7 @@ function markLifecycleParagraph(
     (element) =>
       // Runs of nested text-box paragraphs belong to those paragraphs.
       !hasAncestorBelow(element, paragraph, 'txbxContent') &&
-      !hasRevisionWrapperAncestor(element, paragraph) &&
-      element.getElementsByTagNameNS(OOXML.W_NS, 'drawing').length === 0 &&
-      element.getElementsByTagNameNS(OOXML.W_NS, 'pict').length === 0 &&
-      element.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length === 0,
+      !hasRevisionWrapperAncestor(element, paragraph),
   )) {
     wrapRunWithTrackChange({
       run,
@@ -4015,6 +4166,7 @@ export async function markInsertedAncillaryStoryParagraphs(
   author: string,
   date: Date,
   minimumRevisionId = 0,
+  options: LifecycleMarkingOptions = {},
 ): Promise<{ document: Buffer; markedParagraphs: number }> {
   return markLifecycleAncillaryStoryParagraphs(
     storyDocument,
@@ -4023,6 +4175,7 @@ export async function markInsertedAncillaryStoryParagraphs(
     date,
     minimumRevisionId,
     'w:ins',
+    options,
   );
 }
 
@@ -4043,6 +4196,7 @@ export async function markDeletedAncillaryStoryParagraphs(
   author: string,
   date: Date,
   minimumRevisionId = 0,
+  options: LifecycleMarkingOptions = {},
 ): Promise<{ document: Buffer; markedParagraphs: number }> {
   return markLifecycleAncillaryStoryParagraphs(
     storyDocument,
@@ -4051,6 +4205,99 @@ export async function markDeletedAncillaryStoryParagraphs(
     date,
     minimumRevisionId,
     'w:del',
+    options,
+  );
+}
+
+export interface LifecycleMarkingOptions {
+  /**
+   * The story's part stays selected on the side without the story (a slot
+   * lifecycle, #1394), so its last paragraph, which neither Accept All nor
+   * Reject All removes, must read as the blank story there: its paragraph
+   * properties are tracked with a `w:pPrChange` against none.
+   */
+  blankFinalParagraph?: boolean;
+}
+
+/**
+ * Track the last paragraph's properties against an empty set, so the side
+ * without the story keeps a plain empty paragraph: for an insertion the
+ * prior properties are empty, for a deletion the current ones are.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ */
+function trackFinalParagraphPropertiesAgainstBlank(
+  body: Element,
+  markerTag: 'w:ins' | 'w:del',
+  author: string,
+  dateString: string,
+  state: ReturnType<typeof createRevisionIdState>,
+): void {
+  const paragraphs = directChildElements(body).filter(
+    (element) => element.namespaceURI === OOXML.W_NS && element.localName === 'p',
+  );
+  const paragraph = paragraphs[paragraphs.length - 1];
+  if (!paragraph) return;
+  const properties = directChildElements(paragraph).find(
+    (element) => element.namespaceURI === OOXML.W_NS && element.localName === 'pPr',
+  );
+  if (!properties) return;
+  const document = body.ownerDocument!;
+  const isW = (element: Element, ...names: string[]): boolean =>
+    element.namespaceURI === OOXML.W_NS && names.includes(element.localName);
+  // Moves `formatting` into a `<changeName><priorName/></changeName>` record
+  // appended to `container`: for a deletion the current state is blank, for
+  // an insertion the prior state is. A record the story already carries keeps
+  // its own history on the side that has the story: an insertion's prior
+  // state becomes blank, a deletion's current state does.
+  const track = (container: Element, formatting: Element[], changeName: string, priorName: string): void => {
+    const existing = directChildElements(container).find((element) => isW(element, changeName));
+    if (existing) {
+      if (markerTag === 'w:del') {
+        for (const element of formatting) container.removeChild(element);
+        return;
+      }
+      const prior = directChildElements(existing).find((element) => isW(element, priorName));
+      if (prior) {
+        while (prior.firstChild) prior.removeChild(prior.firstChild);
+      } else {
+        existing.appendChild(document.createElementNS(OOXML.W_NS, `w:${priorName}`));
+      }
+      return;
+    }
+    if (formatting.length === 0) return;
+    const change = document.createElementNS(OOXML.W_NS, `w:${changeName}`);
+    change.setAttributeNS(OOXML.W_NS, 'w:id', String(allocateRevisionId(state)));
+    change.setAttributeNS(OOXML.W_NS, 'w:author', author);
+    change.setAttributeNS(OOXML.W_NS, 'w:date', dateString);
+    const prior = document.createElementNS(OOXML.W_NS, `w:${priorName}`);
+    if (markerTag === 'w:del') {
+      for (const element of formatting) prior.appendChild(element);
+    }
+    change.appendChild(prior);
+    container.appendChild(change);
+  };
+  // The paragraph mark's character formatting sets an empty line's height
+  // too (CT_ParaRPr: revision markers first, w:rPrChange last).
+  const markProperties = directChildElements(properties).find((element) => isW(element, 'rPr'));
+  if (markProperties) {
+    track(
+      markProperties,
+      directChildElements(markProperties).filter(
+        (element) => !isW(element, 'ins', 'del', 'moveFrom', 'moveTo', 'rPrChange'),
+      ),
+      'rPrChange',
+      'rPr',
+    );
+  }
+  // CT_PPrBase: everything but the paragraph mark's w:rPr, w:sectPr and a
+  // w:pPrChange.
+  track(
+    properties,
+    directChildElements(properties).filter((element) => !isW(element, 'rPr', 'sectPr', 'pPrChange')),
+    'pPrChange',
+    'pPr',
   );
 }
 
@@ -4072,6 +4319,7 @@ async function markLifecycleAncillaryStoryParagraphs(
   date: Date,
   minimumRevisionId: number,
   markerTag: 'w:ins' | 'w:del',
+  options: LifecycleMarkingOptions = {},
 ): Promise<{ document: Buffer; markedParagraphs: number }> {
   const archive = await DocxArchive.load(storyDocument);
   const document = parseXml(await archive.getDocumentXml());
@@ -4113,6 +4361,9 @@ async function markLifecycleAncillaryStoryParagraphs(
         markParagraph(nestedParagraph);
       }
     }
+  }
+  if (options.blankFinalParagraph) {
+    trackFinalParagraphPropertiesAgainstBlank(body, markerTag, author, dateString, state);
   }
   archive.setDocumentXml(serializer.serializeToString(document));
   return {

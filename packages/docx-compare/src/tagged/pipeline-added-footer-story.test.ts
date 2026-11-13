@@ -126,10 +126,11 @@ describe('relationship-selected footer story comparison (#648)', () => {
       const insertions = Array.from(
         footer.getElementsByTagNameNS(OOXML.W_NS, 'ins'),
       );
-      expect(insertions.every((insertion) =>
-        insertion.getElementsByTagNameNS(OOXML.W_NS, 'pict').length === 0 &&
-        insertion.getElementsByTagNameNS(OOXML.W_NS, 'drawing').length === 0
-      )).toBe(true);
+      // The VML carrier run is a tracked insertion too, as Word records an
+      // inserted shape, so Reject All removes the shape with its text (#1394).
+      const carrier = footer.getElementsByTagNameNS(OOXML.W_NS, 'pict').item(0);
+      expect((carrier?.parentNode?.parentNode as Element | undefined)?.localName).toBe('ins');
+      expect(rejectAllChanges(outputFooter!)).not.toContain('<w:pict');
       const footerIds = insertions.map((insertion) =>
         insertion.getAttributeNS(OOXML.W_NS, 'id') ||
         insertion.getAttribute('w:id'),
