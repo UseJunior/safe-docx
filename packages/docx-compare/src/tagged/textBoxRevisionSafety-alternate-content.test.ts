@@ -8,13 +8,15 @@
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @see https://github.com/UseJunior/safe-docx/issues/794
  * @see https://github.com/UseJunior/safe-docx/issues/713
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
  */
 
 import { describe, expect } from 'vitest';
-import { DocxArchive, OOXML } from '@usejunior/docx-core';
+import { DocxArchive, OOXML, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
+import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import {
   assertTextBoxContentUnchanged,
   prepareTextBoxStoryComparison,
@@ -575,8 +577,13 @@ describe('mc:AlternateContent cross-document storage shape', () => {
   );
 
   test(
-    'equal raw counts with different alternate-content boundaries is refused',
-    async ({ given, when, then }: AllureBddContext) => {
+    'equal raw counts with different alternate-content boundaries are not mispaired',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      // Anonymous boxes pair by position only when they are stored alike.
+      // Until #1383 a positional pair that disagreed about storage refused
+      // the comparison; it now leaves both boxes unpaired, so the outer
+      // comparison tracks each as replaced and no story is ever planned
+      // against a mismatched copy.
       const bodies = await given(
         'a twin plus a plain box, revised into a plain box plus a twin',
         () => ({
@@ -589,8 +596,21 @@ describe('mc:AlternateContent cross-document storage shape', () => {
         plan(bodies.original, bodies.revised),
       );
 
-      await then('the pair is refused', () => {
-        expect(outcome.refused).toBe(true);
+      await then('no story pairs a copy with a differently stored one', () => {
+        expect(outcome.refused).toBe(false);
+        expect(outcome.refused ? undefined : outcome.stories).toEqual([]);
+      });
+      await and('the full comparison is exactly reversible', async () => {
+        const original = await buildDocxFromBodyXml(bodies.original, [], ALTERNATE_CONTENT_NAMESPACES);
+        const revised = await buildDocxFromBodyXml(bodies.revised, [], ALTERNATE_CONTENT_NAMESPACES);
+        const result = await compareDocumentsAtomizer(original, revised, { date: FIXED_DATE });
+        const output = await (await DocxArchive.load(result.document)).getDocumentXml();
+        const storedTexts = (xml: string): string[] =>
+          Array.from(parseXml(xml).getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))
+            .map((story) => Array.from(story.getElementsByTagNameNS(OOXML.W_NS, 't'))
+              .map((text) => text.textContent ?? '').join(''));
+        expect(storedTexts(acceptAllChanges(output))).toEqual(['Charlie', 'Echo', 'Echo']);
+        expect(storedTexts(rejectAllChanges(output))).toEqual(['Charlie', 'Charlie', 'Echo']);
       });
     },
   );
