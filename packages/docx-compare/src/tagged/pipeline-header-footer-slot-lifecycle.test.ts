@@ -440,24 +440,38 @@ describe('header/footer attached to or dropped from a surviving section (#1394)'
     },
   );
 
-  test('reports, rather than tracks, a header attached with its last paragraph inside a content control', async ({
-    given, when, then,
-  }: AllureBddContext) => {
-    const header = story('rIdH', 'header', 'header1.xml',
+  const blockContainerHeaders = {
+    'ends in a content control':
       '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:pPr><w:spacing w:after="2000"/></w:pPr><w:r><w:t>Control</w:t></w:r></w:p>' +
-      '</w:sdtContent></w:sdt>');
-    const [original, revised] = await given('one section with no header; the revision adds one held in a content control', () =>
-      Promise.all([
-        packageWith(paragraph('Body'), '', []),
-        packageWith(paragraph('Body'), ref('header', 'rIdH'), [header]),
-      ]));
-    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
-    await then('the added header is listed as unrepresented', () => {
-      expect(result.unrepresentedChanges).toEqual([
-        { scope: 'header', kind: 'added', sectionIndex: 0, role: 'default' },
-      ]);
-    });
-  });
+      '</w:sdtContent></w:sdt>',
+    'holds a content control before its last paragraph':
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:pPr><w:spacing w:after="2000"/></w:pPr><w:r><w:t>Control</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt><w:p/>',
+    'holds custom XML before its last paragraph':
+      '<w:customXml w:element="notice"><w:p><w:pPr><w:spacing w:after="2000"/></w:pPr><w:r><w:t>Custom</w:t></w:r></w:p>' +
+      '</w:customXml><w:p/>',
+    'holds a bordered table before its last paragraph':
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>' +
+      '</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>' +
+      '</w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>',
+  };
+  for (const [shape, content] of Object.entries(blockContainerHeaders)) {
+    for (const direction of ['attached', 'dropped'] as const) {
+      test(`reports, rather than tracks, a header ${direction} that ${shape}`, async ({ given, when, then }: AllureBddContext) => {
+        const header = story('rIdH', 'header', 'header1.xml', content);
+        const withHeader = await packageWith(paragraph('Body'), ref('header', 'rIdH'), [header]);
+        const withoutHeader = await packageWith(paragraph('Body'), '', []);
+        const [original, revised] = await given(`a header that ${shape}, ${direction}`, () =>
+          direction === 'attached' ? [withoutHeader, withHeader] : [withHeader, withoutHeader]);
+        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+        await then('the header change is listed as unrepresented', () => {
+          expect(result.unrepresentedChanges).toEqual([
+            { scope: 'header', kind: direction === 'attached' ? 'added' : 'removed', sectionIndex: 0, role: 'default' },
+          ]);
+        });
+      });
+    }
+  }
 
   test('a slot change the redline still cannot carry is reported against the documents as given', async ({
     given, when, then,

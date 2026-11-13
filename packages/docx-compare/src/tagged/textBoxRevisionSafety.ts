@@ -2388,15 +2388,20 @@ export interface BlankSlotParts {
 
 const NO_BLANK_SLOT_PARTS: BlankSlotParts = { original: new Set(), revised: new Set() };
 
-/** Whether the story part's last block-level child is a paragraph. */
-function endsWithBodyParagraph(partXml: string): boolean {
+/**
+ * Whether every block-level child of the story part is a paragraph. Lifecycle
+ * marking tracks paragraphs and runs; a block container (`w:sdt`,
+ * `w:customXml`) or a table (whose rows it does not track) would leave its
+ * own empty paragraph or rows on the side without the story.
+ */
+function holdsOnlyBodyParagraphs(partXml: string): boolean {
   const root = parseXml(partXml).documentElement;
   if (!root) return false;
   const blocks = directChildElements(root).filter((element) =>
     element.namespaceURI !== OOXML.W_NS ||
     !['bookmarkStart', 'bookmarkEnd', 'permStart', 'permEnd', 'proofErr'].includes(element.localName));
-  const last = blocks[blocks.length - 1];
-  return last !== undefined && last.namespaceURI === OOXML.W_NS && last.localName === 'p';
+  return blocks.length > 0 &&
+    blocks.every((element) => element.namespaceURI === OOXML.W_NS && element.localName === 'p');
 }
 
 /**
@@ -2423,11 +2428,10 @@ async function slotLifecycleStoryInput(
   const revisedBlank = blankSlotParts.revised.has(pair.revised.targetPath);
   if (originalBlank === revisedBlank) return undefined;
   if (pair.original.bindingClosure !== pair.revised.bindingClosure) return undefined;
-  // The story's last paragraph survives both Accept All and Reject All and is
-  // made to read as the blank story; one held in a block container (a content
-  // control, custom XML) would keep that container there, so such a story is
-  // left to the ordinary pairing and its checks.
-  if (!endsWithBodyParagraph(originalBlank ? pair.revised.xml : pair.original.xml)) return undefined;
+  // The story's paragraphs are tracked and its last one is made to read as the
+  // blank story. A story with a table or a block container is left to the
+  // ordinary pairing and its checks, which report what they cannot carry.
+  if (!holdsOnlyBodyParagraphs(originalBlank ? pair.revised.xml : pair.original.xml)) return undefined;
   const storyOriginalArchive = await originalArchive.clone();
   const storyRevisedArchive = await revisedArchive.clone();
   storyOriginalArchive.setDocumentXml(
