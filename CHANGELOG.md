@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A formatting-only change (bold, font size, alignment, paragraph-mark
+  formatting) in a header or footer paragraph that also holds a field such as
+  `PAGE`, a content control or a drawing is now tracked with `w:rPrChange` /
+  `w:pPrChange`, as in body text, instead of being listed in
+  `unrepresentedChanges`. This includes formatting on the field's own runs
+  and inside a content control, in default, first-page and even-page headers
+  and footers. A change to the field instruction, to a content control's own
+  properties, or adding or removing a field or content control is still
+  listed. (#1392)
+
 - Inserting or deleting a whole block-level content control (`w:sdt`) or
   custom XML element (`w:customXml`), in the body or in a table cell, no
   longer makes `compareDocuments` fail with

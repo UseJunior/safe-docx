@@ -1438,12 +1438,28 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
  * paragraph text and nested text-box stories, which are compared separately.
  * Field instructions and cached field results remain part of the scaffold.
  *
+ * With `ignoreTrackableFormatting`, the run and paragraph properties of the
+ * paragraphs that stay in the scaffold (those holding a field, a content
+ * control or a drawing) are left out too: the story comparison carries a
+ * change to them as `w:rPrChange` / `w:pPrChange`, exactly as for a plain
+ * paragraph. A paragraph that already carries formatting history keeps its
+ * properties (see `removeTrackableFormatting`). Only the eligibility gates
+ * use it; the projection inventory keeps
+ * the properties, so a formatting change the comparison dropped still fails
+ * the projection check.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
  * @see https://github.com/UseJunior/safe-docx/issues/998
+ * @see https://github.com/UseJunior/safe-docx/issues/1392
  */
-function ordinaryStoryScaffoldFingerprint(xml: string): string {
+function ordinaryStoryScaffoldFingerprint(
+  xml: string,
+  options: { ignoreTrackableFormatting?: boolean } = {},
+): string {
   const document = parseXml(xml);
   const root = document.documentElement.cloneNode(true) as Element;
   removeFormattingWhitespace(root);
@@ -1468,8 +1484,84 @@ function ordinaryStoryScaffoldFingerprint(xml: string): string {
   for (const paragraph of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p')).reverse()) {
     if (admittedPlainParagraphForScaffold(paragraph)) paragraph.parentNode?.removeChild(paragraph);
   }
+  if (options.ignoreTrackableFormatting) removeTrackableFormatting(root);
+  removeEmptyFormattingProperties(root);
   blankOrdinaryParagraphText(root);
   return canonicalNode(root);
+}
+
+/**
+ * Drop `w:rPr` / `w:pPr` elements that hold nothing: an empty property element
+ * applies no formatting, so it reads the same as no element. Rejecting a
+ * `w:rPrChange` whose recorded properties were empty leaves one behind.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.26
+ */
+function removeEmptyFormattingProperties(root: Element): void {
+  for (const propertyName of ['rPr', 'pPr']) {
+    for (const property of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, propertyName)).reverse()) {
+      if (property.attributes.length === 0 && property.childNodes.length === 0) {
+        property.parentNode?.removeChild(property);
+      }
+    }
+  }
+}
+
+/** The eligibility gates' scaffold: formatting the story comparison tracks is not scaffold. */
+const trackableFormatting = { ignoreTrackableFormatting: true } as const;
+
+/** Revision markup inside a property element: formatting history the paragraph already carries. */
+const PROPERTY_REVISION_CHILDREN = new Set([
+  'rPrChange',
+  'pPrChange',
+  'ins',
+  'del',
+  'moveFrom',
+  'moveTo',
+]);
+
+/**
+ * Remove the formatting that `w:rPrChange` (run properties, and the paragraph
+ * mark's run properties) and `w:pPrChange` (paragraph properties) can record.
+ * Content-control properties (`w:sdtPr`, `w:sdtEndPr`) and table properties
+ * are not touched, so a change to them stays a scaffold change.
+ *
+ * A paragraph that already carries formatting history (a revision record in
+ * its paragraph properties, paragraph-mark properties or any run's
+ * properties) keeps all of its formatting: a new formatting revision there
+ * would have to merge with the existing record, which the story comparison
+ * does not do, so a change to it stays a scaffold change and is listed.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ */
+function removeTrackableFormatting(root: Element): void {
+  const isW = (element: Element | null, localName: string): boolean =>
+    element !== null && element.namespaceURI === OOXML.W_NS && element.localName === localName;
+  for (const paragraph of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p'))) {
+    const paragraphProperties = directChildElements(paragraph).find((child) => isW(child, 'pPr'));
+    const markProperties = paragraphProperties
+      ? directChildElements(paragraphProperties).find((child) => isW(child, 'rPr'))
+      : undefined;
+    const runProperties = Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, 'rPr'))
+      .filter((properties) => isW(properties.parentElement, 'r'));
+    const properties = [paragraphProperties, markProperties, ...runProperties]
+      .filter((element): element is Element => element !== undefined);
+    const hasHistory = properties.some((element) => directChildElements(element).some(
+      (child) => child.namespaceURI === OOXML.W_NS && PROPERTY_REVISION_CHILDREN.has(child.localName),
+    ));
+    if (hasHistory) continue;
+    for (const element of runProperties) element.parentNode?.removeChild(element);
+    if (paragraphProperties) {
+      // `w:sectPr` is not formatting `w:pPrChange` records (CT_PPrBase).
+      for (const child of directChildElements(paragraphProperties)) {
+        if (!isW(child, 'sectPr')) paragraphProperties.removeChild(child);
+      }
+      if (directChildElements(paragraphProperties).length === 0) paragraph.removeChild(paragraphProperties);
+    }
+  }
 }
 
 function removeFormattingWhitespace(root: Element): void {
@@ -2349,8 +2441,8 @@ async function lifecycleAncillaryStoryInputs(
   const originalRestClosure = relationshipClosureFingerprint(originalRest.documentElement, originalTargets);
   const revisedRestClosure = relationshipClosureFingerprint(revisedRest.documentElement, revisedTargets);
   if (
-    ordinaryStoryScaffoldFingerprint(serializer.serializeToString(originalRest)) !==
-      ordinaryStoryScaffoldFingerprint(serializer.serializeToString(revisedRest)) ||
+    ordinaryStoryScaffoldFingerprint(serializer.serializeToString(originalRest), trackableFormatting) !==
+      ordinaryStoryScaffoldFingerprint(serializer.serializeToString(revisedRest), trackableFormatting) ||
     originalRestClosure === undefined ||
     originalRestClosure !== revisedRestClosure
   ) {
@@ -2590,8 +2682,8 @@ async function ancillaryStoryInputs(
       topologyMatches
       && pair.bindingClosureMatched
       && original.ordinaryContent !== pair.revised.ordinaryContent
-      && ordinaryStoryScaffoldFingerprint(original.xml)
-        === ordinaryStoryScaffoldFingerprint(pair.revised.xml)
+      && ordinaryStoryScaffoldFingerprint(original.xml, trackableFormatting)
+        === ordinaryStoryScaffoldFingerprint(pair.revised.xml, trackableFormatting)
     ) {
       const originalTargets = relationshipTargets(original.relationshipsXml);
       const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
@@ -3079,7 +3171,10 @@ export async function sectionAlignedOrdinaryStoryInputs(
     // The compared part must still be the revised part: the redline goes there.
     if (comparedIdentity(comparedPath) !== revisedIdentity(comparedPath)) return false;
     if (originalStory.ordinaryContent === revisedStory.ordinaryContent) return false;
-    if (ordinaryStoryScaffoldFingerprint(originalStory.xml) !== ordinaryStoryScaffoldFingerprint(revisedStory.xml)) {
+    if (
+      ordinaryStoryScaffoldFingerprint(originalStory.xml, trackableFormatting)
+        !== ordinaryStoryScaffoldFingerprint(revisedStory.xml, trackableFormatting)
+    ) {
       return false;
     }
     // Both stories must reference the same resolved targets (internal
