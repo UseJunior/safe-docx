@@ -97,6 +97,21 @@ describe('empty numbered paragraph detection (#1047)', () => {
     });
   });
 
+  test('before a table, the predicate agrees with accept-all on whether a mark-deleted list item survives', async ({ then }: AllureBddContext) => {
+    await then('a mark-deleted item still holding whitespace survives accept-all and is reported; one holding only deleted text is removed and is not', () => {
+      const deletedMark = `<w:pPr>${NUM_PR}<w:rPr><w:del w:id="5" w:author="A"/></w:rPr></w:pPr>`;
+      const deletedText = '<w:del w:id="6" w:author="A"><w:r><w:delText>gone</w:delText></w:r></w:del>';
+      const table = '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>last</w:t></w:r></w:p>';
+      for (const [inner, survives] of [[`${deletedText}<w:r><w:t xml:space="preserve"> </w:t></w:r>`, true], [deletedText, false]] as const) {
+        const doc = body(`<w:p><w:r><w:t>first</w:t></w:r></w:p><w:p>${deletedMark}${inner}</w:p>${table}`);
+        const item = paragraphs(doc)[1]!;
+        expect(isEmptyNumberedParagraph(item, STYLES, NUMBERING)).toBe(survives);
+        acceptChanges(doc);
+        expect(!!item.parentNode).toBe(survives);
+      }
+    });
+  });
+
   test('whitespace left in a numbered paragraph is empty-numbered; a detached paragraph is not', async ({ then }: AllureBddContext) => {
     await then('the predicate fires for whitespace and stops once the paragraph is removed', () => {
       const p = onlyParagraph('<w:r><w:t xml:space="preserve"> </w:t></w:r>');

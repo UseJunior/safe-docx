@@ -14,7 +14,7 @@ import { SessionManager, getRevisionContextForSession, type DocxSession } from '
 import { errorMessage } from '../error_utils.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
-import { replaceText, stripSearchTags } from './replace_text.js';
+import { applyReplaceTextToDocument, replaceText, stripSearchTags } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { resolveSessionForTool } from './session_resolution.js';
 import { cloneRevisionContext, preflightAiRevisionMutation } from './ai_revision_guard.js';
@@ -609,18 +609,42 @@ function executeStepOnDoc(doc: DocxDocument, step: NormalizedStep, ctx?: Revisio
   }, ctx);
 }
 
-function executeStepsOnDoc(
+function executeStepsOnDoc(doc: DocxDocument, steps: NormalizedStep[], ctx?: RevisionContext): void {
+  for (const step of steps) executeStepOnDoc(doc, step, ctx);
+}
+
+/**
+ * Run the batch on a copy of the document to find the empty numbered
+ * paragraphs its end state would have, before any step touches the session.
+ * replace_text steps go through replace_text's own plan
+ * (`applyReplaceTextToDocument`: the same matching, prefix/suffix trimming
+ * and formatting-tag parsing as the tool), so the preview and the real run
+ * leave the same text; insert_paragraph steps cannot empty an existing
+ * paragraph and only need to run for later anchors.
+ */
+function previewEmptyNumberedParagraphs(
   doc: DocxDocument,
   steps: NormalizedStep[],
-  ctx?: RevisionContext,
-  tracker?: EmptyNumberedParagraphTracker,
-): void {
+  ctx: RevisionContext | undefined,
+): EmptyNumberedFinding[] {
+  const tracker = new EmptyNumberedParagraphTracker();
   for (const step of steps) {
-    const paragraphId = step.operation === 'replace_text' ? (step.fields.target_paragraph_id as string) : null;
-    const before = tracker && paragraphId ? tracker.before(doc, paragraphId) : null;
-    executeStepOnDoc(doc, step, ctx);
-    if (tracker && paragraphId && before) tracker.after(doc, paragraphId, step.step_id, before);
+    if (step.operation !== 'replace_text') {
+      executeStepOnDoc(doc, step, ctx);
+      continue;
+    }
+    const paragraphId = step.fields.target_paragraph_id as string;
+    const before = tracker.before(doc, paragraphId);
+    applyReplaceTextToDocument(doc, {
+      target_paragraph_id: paragraphId,
+      old_string: step.fields.old_string as string,
+      new_string: step.fields.new_string as string,
+      instruction: step.fields.instruction as string,
+      normalize_first: step.fields.normalize_first as boolean | undefined,
+    }, ctx);
+    tracker.after(doc, paragraphId, step.step_id, before);
   }
+  return tracker.findings(doc);
 }
 
 /**
@@ -814,9 +838,7 @@ export async function batchEdit(
     // any step touches the session document (issue #1047).
     if (emptyNumberedPolicy === 'error') {
       const previewDoc = session.doc.fork();
-      const previewTracker = new EmptyNumberedParagraphTracker();
-      executeStepsOnDoc(previewDoc, steps, cloneRevisionContext(ctx), previewTracker);
-      const previewFindings = previewTracker.findings(previewDoc);
+      const previewFindings = previewEmptyNumberedParagraphs(previewDoc, steps, cloneRevisionContext(ctx));
       if (previewFindings.length > 0) {
         const refusal = emptyNumberedBatchError(previewDoc, previewFindings);
         return {
@@ -877,8 +899,9 @@ export async function batchEdit(
     }
 
     if (emptyNumberedFindings.length > 0 && emptyNumberedPolicy === 'error') {
-      // Unreachable while the preview above and the step executor agree on
-      // the end state; reported rather than ignored if they ever diverge.
+      // Unreachable while the preview runs replace_text's own plan (see
+      // previewEmptyNumberedParagraphs); reported rather than ignored if the
+      // two ever diverge.
       const refusal = emptyNumberedBatchError(session.doc, emptyNumberedFindings);
       return {
         success: false,

@@ -134,15 +134,36 @@ function hasFollowingSiblingParagraph(paragraph: Element): boolean {
 }
 
 /**
+ * True when the paragraph keeps a child once its tracked deletions are
+ * accepted: anything other than paragraph properties, range markers, and
+ * `w:del` / `w:moveFrom` content. Mirrors the accept-all resolver, which keeps
+ * a mark-deleted paragraph that has no following paragraph to merge into
+ * whenever it still owns such a child, whitespace runs included.
+ */
+function keepsChildrenOnAccept(paragraph: Element): boolean {
+  for (let n = paragraph.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType !== 1) continue;
+    const el = n as Element;
+    if (isW(el, W.pPr) || isW(el, W.del) || isW(el, W.moveFrom)) continue;
+    if (el.namespaceURI === OOXML.W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * True when accepting the paragraph's tracked mark deletion takes the
- * paragraph, and its label, away: the mark is deleted and the paragraph
- * either merges into a following paragraph or can be removed without
- * leaving its container invalid. A deleted mark on a table cell's only
- * paragraph does not: accept-all keeps that paragraph, empty.
+ * paragraph, and its label, away. With a following paragraph the paragraph
+ * merges into it. Without one (before a table, at the end of a cell or other
+ * container) accept-all removes it only when nothing but properties and
+ * markers is left and removal keeps the container valid; otherwise it keeps
+ * the paragraph, label included, as it does a table cell's only paragraph or
+ * a paragraph still holding whitespace.
  */
 function isRemovedOnAccept(paragraph: Element): boolean {
-  return isParagraphMarkTrackedDeleted(paragraph)
-    && (hasFollowingSiblingParagraph(paragraph) || canSafelyRemoveEmptyParagraph(paragraph));
+  if (!isParagraphMarkTrackedDeleted(paragraph)) return false;
+  if (hasFollowingSiblingParagraph(paragraph)) return true;
+  return !keepsChildrenOnAccept(paragraph) && canSafelyRemoveEmptyParagraph(paragraph);
 }
 
 /**

@@ -35,6 +35,7 @@ import {
   applyEmptyNumberedParagraphPolicy,
   invalidEmptyNumberedParagraphPolicyMessage,
   parseEmptyNumberedParagraphPolicy,
+  type EmptyNumberedParagraphPolicy,
 } from './empty_numbered_paragraph.js';
 
 /**
@@ -226,6 +227,233 @@ function invalidateDocumentCaches(doc: DocxDocument): void {
   doc.markMutated();
 }
 
+type ReplaceTextParams = Parameters<typeof replaceText>[1];
+
+type ReplaceTextPlan =
+  | { ok: false; response: ToolResponse }
+  | {
+      ok: true;
+      pid: string;
+      paraText: string;
+      newStr: string;
+      editWarnings: string[];
+      mutate: (doc: DocxDocument, activeCtx: RevisionContext | undefined) => void;
+    };
+
+function failed(code: string, message: string): ReplaceTextPlan {
+  return { ok: false, response: err(code, message) };
+}
+
+/**
+ * Resolve a replace_text request against `doc` (match the old text, parse the
+ * new text) and build the mutation that applies it. The tool runs the
+ * mutation on the session document; batch_edit's preview runs the same plan
+ * on a copy, so both apply identical replacement semantics (issue #1047).
+ */
+function planReplaceText(
+  doc: DocxDocument,
+  params: ReplaceTextParams,
+  emptyNumberedPolicy: EmptyNumberedParagraphPolicy,
+): ReplaceTextPlan {
+  const { target_paragraph_id: pid } = params;
+  const oldStr = stripSearchTags(params.old_string);
+  let newStr = params.new_string;
+  if (hasHyperlinkTags(newStr)) newStr = stripHyperlinkTags(newStr);
+
+  const beforeTextRaw = doc.getParagraphTextById(pid);
+  if (beforeTextRaw === null) {
+    return failed('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
+  }
+
+  const paraText = beforeTextRaw;
+  const findMode = params.clean_match ? 'clean' : 'default';
+  const textMatch = findUniqueSubstringMatch(paraText, oldStr, { mode: findMode });
+  if (textMatch.status === 'not_found') {
+    return failed('TEXT_NOT_FOUND', `Text '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' not found in paragraph ${pid}`);
+  }
+
+  if (textMatch.status === 'multiple') {
+    return failed('MULTIPLE_MATCHES', `Found ${textMatch.matchCount} matches for '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' in paragraph. Need unique match.`);
+  }
+
+  const matchedOldStr = textMatch.matchedText;
+  const matchStart = textMatch.start;
+  const matchEnd = textMatch.end;
+
+  const explicitAddProps: NonNullable<ReplacementPart['addRunProps']> = {};
+  if (params.bold !== undefined) explicitAddProps.bold = params.bold;
+  if (params.italic !== undefined) explicitAddProps.italic = params.italic;
+  if (params.underline !== undefined) explicitAddProps.underline = params.underline;
+  if (params.highlight !== undefined) explicitAddProps.highlight = params.highlight;
+  if (params.font_size !== undefined) explicitAddProps.fontSize = params.font_size * 2;
+  if (params.font_name !== undefined) explicitAddProps.fontName = params.font_name;
+  if (params.color !== undefined) explicitAddProps.color = params.color;
+
+  const hasMarkup = hasAnyMarkupTags(newStr);
+  let parsedSegments: ReturnType<typeof splitTaggedText> | null = null;
+
+  if (hasMarkup) {
+    try {
+      parsedSegments = splitTaggedText(newStr);
+    } catch (e: unknown) {
+      return failed(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
+    }
+  } else {
+    // Fix 2: Transfer document quote style to new_string for non-exact matches.
+    if (textMatch.mode !== 'exact' && textMatch.mode !== 'clean') {
+      newStr = applyDocumentQuoteStyle(matchedOldStr, newStr);
+    }
+  }
+
+  const expectedReplacementText = parsedSegments
+    ? parsedSegments.map((s) => s.text).join('')
+    : newStr;
+  const expectedAfterFullText =
+    paraText.slice(0, matchStart) + expectedReplacementText + paraText.slice(matchEnd);
+
+  // Filled by the last run of `mutate` (the preflight preview runs it on a
+  // copy first; the session run comes last and is the one reported).
+  const editWarnings: string[] = [];
+
+  const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
+    editWarnings.length = 0;
+    if (params.normalize_first) {
+      doc.mergeRunsOnly();
+    }
+
+    const pEl = doc.getParagraphElementById(pid);
+    if (!pEl) {
+      throw new Error(`Paragraph ID ${pid} not found in document`);
+    }
+    // A w:sym symbol character is part of the paragraph text the caller
+    // matched (issue #1046), so a range that removes one needs no warning.
+    const hiddenBefore = collectLiveHiddenConstructs(pEl);
+    // Scoped to the touched paragraph: only an edit that empties a
+    // paragraph which had visible content is reported (issue #1047).
+    const hadContentBefore = emptyNumberedPolicy !== 'ignore' && paragraphHasVisibleContent(pEl);
+    const applyEmptyNumberedPolicy = (): void => {
+      const outcome = applyEmptyNumberedParagraphPolicy({
+        doc,
+        paragraphId: pid,
+        paragraph: pEl,
+        hadContentBefore,
+        beforeText: paraText,
+        policy: emptyNumberedPolicy,
+        ctx: activeCtx,
+      });
+      if (outcome.kind !== 'none') editWarnings.push(outcome.message);
+    };
+    const reportRemovedHiddenConstructs = (): void => {
+      for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
+        editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
+      }
+    };
+    const verifyPostCondition = (): void => {
+      const actualAfterFullText = doc.getParagraphTextById(pid) ?? '';
+      if (actualAfterFullText !== expectedAfterFullText) {
+        throw new SafeDocxError(
+          'REPLACE_POSTCONDITION_FAILED',
+          `Post-condition failed for paragraph ${pid}: paragraph text after replacement did not match expected substitution.`,
+        );
+      }
+    };
+
+    const paraRuns = getParagraphRuns(pEl);
+    const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
+    const localShouldClearHighlight = params.clear_highlight || (allOverlappedRunsHighlighted && !hasHighlightTags(newStr) && isLikelyFieldPlaceholder(oldStr));
+
+    if (hasMarkup) {
+      const segs = parsedSegments ?? splitTaggedText(newStr);
+      const headerAddProps = segs.some((s) => s.header) ? findHeaderRoleModelAddRunProps(doc, pid) : null;
+      const parts: ReplacementPart[] = [];
+      for (const s of segs) {
+        if (!s.text) continue;
+        const segAddProps = mergeAddRunProps(mergeAddRunProps(segmentAddRunProps(s), explicitAddProps), s.header ? headerAddProps : null);
+        const clearHighlight = localShouldClearHighlight && !s.highlighting;
+        parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
+      }
+      if (activeCtx) {
+        // Formatting-only markup over text that is already a tracked
+        // insertion (e.g. a newly inserted table row) is recorded as a run
+        // property change in place, so it does not nest a delete/re-insert
+        // inside the existing insertion (issue #1225).
+        const formattedInPlace = parts.map((part) => part.text).join('') === matchedOldStr
+          && formatTrackedInsertionTextRange(
+            pEl,
+            matchStart,
+            matchEnd,
+            parts.map((part) => ({ length: part.text.length, addRunProps: part.addRunProps, clearHighlight: part.clearHighlight })),
+            activeCtx,
+          );
+        if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
+        invalidateDocumentCaches(doc);
+      } else {
+        doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
+      }
+      reportRemovedHiddenConstructs();
+      verifyPostCondition();
+      applyEmptyNumberedPolicy();
+      return;
+    }
+
+    const prefixLen = commonPrefixLength(matchedOldStr, newStr);
+    const suffixLen = commonSuffixLength(matchedOldStr, newStr, prefixLen);
+    const trimmedNewStr = newStr.slice(prefixLen, newStr.length - suffixLen);
+    const trimmedStart = matchStart + prefixLen;
+    const trimmedEnd = matchEnd - suffixLen;
+
+    if (trimmedStart >= trimmedEnd && trimmedNewStr.length === 0) {
+      verifyPostCondition();
+      return;
+    }
+
+    let trimmedReplace: string | ReplacementPart[];
+    if (localShouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
+      const { templateRun } = chooseContextTemplateRun(paraRuns, trimmedStart, trimmedEnd);
+      trimmedReplace = [{
+        text: trimmedNewStr,
+        templateRun: templateRun ?? undefined,
+        addRunProps: explicitAddProps,
+        clearHighlight: localShouldClearHighlight,
+      }];
+    } else {
+      trimmedReplace = trimmedNewStr;
+    }
+
+    if (activeCtx) {
+      replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx);
+      invalidateDocumentCaches(doc);
+    } else {
+      doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
+    }
+    reportRemovedHiddenConstructs();
+    doc.mergeRunsOnly({ preserveRsidIdentity: true });
+    verifyPostCondition();
+    applyEmptyNumberedPolicy();
+  };
+
+  return { ok: true, pid, paraText, newStr, editWarnings, mutate };
+}
+
+/**
+ * Apply a replace_text request to a document outside any session, with the
+ * tool's exact semantics and with the empty-numbered-paragraph policy off.
+ * batch_edit uses it to preview a batch on a copy. Throws when the request
+ * does not apply.
+ */
+export function applyReplaceTextToDocument(
+  doc: DocxDocument,
+  params: Pick<ReplaceTextParams, 'target_paragraph_id' | 'old_string' | 'new_string' | 'instruction' | 'normalize_first'>,
+  ctx: RevisionContext | undefined,
+): void {
+  const plan = planReplaceText(doc, params as ReplaceTextParams, 'ignore');
+  if (!plan.ok) {
+    const error = (plan.response as { error?: { code?: string; message?: string } }).error;
+    throw new Error(`${error?.code ?? 'EDIT_ERROR'}: ${error?.message ?? 'replace_text could not be applied'}`);
+  }
+  plan.mutate(doc, ctx);
+}
+
 export async function replaceText(
   manager: SessionManager,
   params: {
@@ -270,182 +498,9 @@ export async function replaceText(
     return await manager.mutateSession(session, async (session) => {
       const revisionCtx = await getRevisionContextForSession(session, ctx);
 
-      const { target_paragraph_id: pid } = params;
-      const oldStr = stripSearchTags(params.old_string);
-      let newStr = params.new_string;
-      if (hasHyperlinkTags(newStr)) newStr = stripHyperlinkTags(newStr);
-
-      const beforeTextRaw = session.doc.getParagraphTextById(pid);
-      if (beforeTextRaw === null) {
-        return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
-      }
-
-      const paraText = beforeTextRaw;
-      const findMode = params.clean_match ? 'clean' : 'default';
-      const textMatch = findUniqueSubstringMatch(paraText, oldStr, { mode: findMode });
-      if (textMatch.status === 'not_found') {
-        return err('TEXT_NOT_FOUND', `Text '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' not found in paragraph ${pid}`);
-      }
-
-      if (textMatch.status === 'multiple') {
-        return err('MULTIPLE_MATCHES', `Found ${textMatch.matchCount} matches for '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' in paragraph. Need unique match.`);
-      }
-
-      const matchedOldStr = textMatch.matchedText;
-      const matchStart = textMatch.start;
-      const matchEnd = textMatch.end;
-
-      const explicitAddProps: NonNullable<ReplacementPart['addRunProps']> = {};
-      if (params.bold !== undefined) explicitAddProps.bold = params.bold;
-      if (params.italic !== undefined) explicitAddProps.italic = params.italic;
-      if (params.underline !== undefined) explicitAddProps.underline = params.underline;
-      if (params.highlight !== undefined) explicitAddProps.highlight = params.highlight;
-      if (params.font_size !== undefined) explicitAddProps.fontSize = params.font_size * 2;
-      if (params.font_name !== undefined) explicitAddProps.fontName = params.font_name;
-      if (params.color !== undefined) explicitAddProps.color = params.color;
-
-      const hasMarkup = hasAnyMarkupTags(newStr);
-      let parsedSegments: ReturnType<typeof splitTaggedText> | null = null;
-
-      if (hasMarkup) {
-        try {
-          parsedSegments = splitTaggedText(newStr);
-        } catch (e: unknown) {
-          return err(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
-        }
-      } else {
-        // Fix 2: Transfer document quote style to new_string for non-exact matches.
-        if (textMatch.mode !== 'exact' && textMatch.mode !== 'clean') {
-          newStr = applyDocumentQuoteStyle(matchedOldStr, newStr);
-        }
-      }
-
-      const expectedReplacementText = parsedSegments
-        ? parsedSegments.map((s) => s.text).join('')
-        : newStr;
-      const expectedAfterFullText =
-        paraText.slice(0, matchStart) + expectedReplacementText + paraText.slice(matchEnd);
-
-      // Filled by the last run of `mutate` (the preflight preview runs it on a
-      // copy first; the session run comes last and is the one reported).
-      const editWarnings: string[] = [];
-
-      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
-        editWarnings.length = 0;
-        if (params.normalize_first) {
-          doc.mergeRunsOnly();
-        }
-
-        const pEl = doc.getParagraphElementById(pid);
-        if (!pEl) {
-          throw new Error(`Paragraph ID ${pid} not found in document`);
-        }
-        // A w:sym symbol character is part of the paragraph text the caller
-        // matched (issue #1046), so a range that removes one needs no warning.
-        const hiddenBefore = collectLiveHiddenConstructs(pEl);
-        // Scoped to the touched paragraph: only an edit that empties a
-        // paragraph which had visible content is reported (issue #1047).
-        const hadContentBefore = emptyNumberedPolicy !== 'ignore' && paragraphHasVisibleContent(pEl);
-        const applyEmptyNumberedPolicy = (): void => {
-          const outcome = applyEmptyNumberedParagraphPolicy({
-            doc,
-            paragraphId: pid,
-            paragraph: pEl,
-            hadContentBefore,
-            beforeText: paraText,
-            policy: emptyNumberedPolicy,
-            ctx: activeCtx,
-          });
-          if (outcome.kind !== 'none') editWarnings.push(outcome.message);
-        };
-        const reportRemovedHiddenConstructs = (): void => {
-          for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
-            editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
-          }
-        };
-        const verifyPostCondition = (): void => {
-          const actualAfterFullText = doc.getParagraphTextById(pid) ?? '';
-          if (actualAfterFullText !== expectedAfterFullText) {
-            throw new SafeDocxError(
-              'REPLACE_POSTCONDITION_FAILED',
-              `Post-condition failed for paragraph ${pid}: paragraph text after replacement did not match expected substitution.`,
-            );
-          }
-        };
-
-        const paraRuns = getParagraphRuns(pEl);
-        const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
-        const localShouldClearHighlight = params.clear_highlight || (allOverlappedRunsHighlighted && !hasHighlightTags(newStr) && isLikelyFieldPlaceholder(oldStr));
-
-        if (hasMarkup) {
-          const segs = parsedSegments ?? splitTaggedText(newStr);
-          const headerAddProps = segs.some((s) => s.header) ? findHeaderRoleModelAddRunProps(doc, pid) : null;
-          const parts: ReplacementPart[] = [];
-          for (const s of segs) {
-            if (!s.text) continue;
-            const segAddProps = mergeAddRunProps(mergeAddRunProps(segmentAddRunProps(s), explicitAddProps), s.header ? headerAddProps : null);
-            const clearHighlight = localShouldClearHighlight && !s.highlighting;
-            parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
-          }
-          if (activeCtx) {
-            // Formatting-only markup over text that is already a tracked
-            // insertion (e.g. a newly inserted table row) is recorded as a run
-            // property change in place, so it does not nest a delete/re-insert
-            // inside the existing insertion (issue #1225).
-            const formattedInPlace = parts.map((part) => part.text).join('') === matchedOldStr
-              && formatTrackedInsertionTextRange(
-                pEl,
-                matchStart,
-                matchEnd,
-                parts.map((part) => ({ length: part.text.length, addRunProps: part.addRunProps, clearHighlight: part.clearHighlight })),
-                activeCtx,
-              );
-            if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
-            invalidateDocumentCaches(doc);
-          } else {
-            doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
-          }
-          reportRemovedHiddenConstructs();
-          verifyPostCondition();
-          applyEmptyNumberedPolicy();
-          return;
-        }
-
-        const prefixLen = commonPrefixLength(matchedOldStr, newStr);
-        const suffixLen = commonSuffixLength(matchedOldStr, newStr, prefixLen);
-        const trimmedNewStr = newStr.slice(prefixLen, newStr.length - suffixLen);
-        const trimmedStart = matchStart + prefixLen;
-        const trimmedEnd = matchEnd - suffixLen;
-
-        if (trimmedStart >= trimmedEnd && trimmedNewStr.length === 0) {
-          verifyPostCondition();
-          return;
-        }
-
-        let trimmedReplace: string | ReplacementPart[];
-        if (localShouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
-          const { templateRun } = chooseContextTemplateRun(paraRuns, trimmedStart, trimmedEnd);
-          trimmedReplace = [{
-            text: trimmedNewStr,
-            templateRun: templateRun ?? undefined,
-            addRunProps: explicitAddProps,
-            clearHighlight: localShouldClearHighlight,
-          }];
-        } else {
-          trimmedReplace = trimmedNewStr;
-        }
-
-        if (activeCtx) {
-          replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx);
-          invalidateDocumentCaches(doc);
-        } else {
-          doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
-        }
-        reportRemovedHiddenConstructs();
-        doc.mergeRunsOnly({ preserveRsidIdentity: true });
-        verifyPostCondition();
-        applyEmptyNumberedPolicy();
-      };
+      const plan = planReplaceText(session.doc, params, emptyNumberedPolicy);
+      if (!plan.ok) return plan.response;
+      const { pid, paraText, newStr, editWarnings, mutate } = plan;
 
       const revisionPreflight = params.skip_ai_revision_preflight
         ? null

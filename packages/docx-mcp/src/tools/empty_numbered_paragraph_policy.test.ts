@@ -493,5 +493,37 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
         });
       },
     );
+
+    for (const mode of ['untracked', 'tracked'] as const) {
+      for (const newString of ['<b></b>', '<b> </b>']) {
+        test.openspec('error refuses the whole batch before any step is applied')(
+          `error, ${mode}: a formatting-tag replacement ${newString} that empties the item is refused before any step`,
+          async ({ given, when, then }: AllureBddContext) => {
+            const s = await given('a numbered list whose middle item ends with a space', () =>
+              openList(item(run('second obligation ')), mode),
+            );
+            const firstId = paragraphId(s.session, 'first obligation');
+            const secondId = paragraphId(s.session, 'second obligation');
+            const result = await when(`a batch whose second step replaces the item text with ${newString} runs with error`, () =>
+              batchEdit(s.mgr, {
+                file_path: s.inputPath,
+                on_empty_numbered_paragraph: 'error',
+                steps: [
+                  { step_id: 'reword-first', operation: 'replace_text', target_paragraph_id: firstId, old_string: 'first', new_string: 'initial', instruction: 'reword' },
+                  { step_id: 'empty-second', operation: 'replace_text', target_paragraph_id: secondId, old_string: 'second obligation', new_string: newString, instruction: 'empty item (b)' },
+                ],
+              }),
+            );
+            await then('it fails naming empty-second and no step was applied', () => {
+              assertFailure(result, 'EMPTY_NUMBERED_PARAGRAPH');
+              expect((result as { error: { message: string } }).error.message).toContain('No step was applied');
+              expect(s.session.doc.getParagraphTextById(firstId)).toBe('first obligation');
+              expect(s.session.doc.getParagraphTextById(secondId)).toBe('second obligation ');
+              expect(s.session.editCount).toBe(0);
+            });
+          },
+        );
+      }
+    }
   });
 });
