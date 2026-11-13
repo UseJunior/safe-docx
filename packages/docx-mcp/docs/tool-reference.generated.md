@@ -97,6 +97,7 @@ Single-agent front door for applying multiple edit steps (replace_text, insert_p
 | `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `steps` | `array<object>` | no | JSON array of edit steps. Each step needs step_id, operation, and operation-specific fields. |
 | `plan_file_path` | `string` | no | Path to a .json file containing an array of edit steps. Mutually exclusive with steps. |
+| `on_empty_numbered_paragraph` | `enum("warn", "error", "remove_paragraph", "ignore")` | no | What to do with paragraphs that replace_text steps leave numbered but empty, judged after the last step: "warn" (default) adds a warning carrying the step_id of the step that emptied the paragraph; "error" refuses the whole batch before any step is applied; "remove_paragraph" removes them once after the last step, so later steps can still anchor on them; "ignore" reports nothing. |
 
 ## `replace_text`
 
@@ -114,6 +115,7 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
 | `normalize_first` | `boolean` | no | Merge format-identical adjacent runs before searching. Useful when text is fragmented across runs. |
+| `on_empty_numbered_paragraph` | `enum("warn", "error", "remove_paragraph", "ignore")` | no | DOCX only. What to do when the edit leaves the target paragraph numbered but empty, so Word shows a bare list label: "warn" (default) adds a warning naming the paragraph; "error" refuses the edit and leaves the document unchanged; "remove_paragraph" also deletes the remaining whitespace and the paragraph (tracked when edits are tracked), unless a bookmark, comment, field, section break or table cell keeps it; "ignore" reports nothing. Only fires when the paragraph had visible content before the edit. |
 
 ## `insert_paragraph`
 
