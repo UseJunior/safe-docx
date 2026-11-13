@@ -1442,7 +1442,9 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
  * paragraphs that stay in the scaffold (those holding a field, a content
  * control or a drawing) are left out too: the story comparison carries a
  * change to them as `w:rPrChange` / `w:pPrChange`, exactly as for a plain
- * paragraph. Only the eligibility gates use it; the projection inventory keeps
+ * paragraph. A paragraph that already carries formatting history keeps its
+ * properties (see `removeTrackableFormatting`). Only the eligibility gates
+ * use it; the projection inventory keeps
  * the properties, so a formatting change the comparison dropped still fails
  * the projection check.
  *
@@ -1509,7 +1511,7 @@ function removeEmptyFormattingProperties(root: Element): void {
 /** The eligibility gates' scaffold: formatting the story comparison tracks is not scaffold. */
 const trackableFormatting = { ignoreTrackableFormatting: true } as const;
 
-/** Revision markup inside a property element: a difference there stays scaffold. */
+/** Revision markup inside a property element: formatting history the paragraph already carries. */
 const PROPERTY_REVISION_CHILDREN = new Set([
   'rPrChange',
   'pPrChange',
@@ -1521,10 +1523,15 @@ const PROPERTY_REVISION_CHILDREN = new Set([
 
 /**
  * Remove the formatting that `w:rPrChange` (run properties, and the paragraph
- * mark's run properties) and `w:pPrChange` (paragraph properties) can record,
- * keeping any revision markup already in those properties. Content-control
- * properties (`w:sdtPr`, `w:sdtEndPr`) and table properties are not touched,
- * so a change to them stays a scaffold change.
+ * mark's run properties) and `w:pPrChange` (paragraph properties) can record.
+ * Content-control properties (`w:sdtPr`, `w:sdtEndPr`) and table properties
+ * are not touched, so a change to them stays a scaffold change.
+ *
+ * A paragraph that already carries formatting history (a revision record in
+ * its paragraph properties, paragraph-mark properties or any run's
+ * properties) keeps all of its formatting: a new formatting revision there
+ * would have to merge with the existing record, which the story comparison
+ * does not do, so a change to it stays a scaffold change and is listed.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
@@ -1533,28 +1540,27 @@ const PROPERTY_REVISION_CHILDREN = new Set([
 function removeTrackableFormatting(root: Element): void {
   const isW = (element: Element | null, localName: string): boolean =>
     element !== null && element.namespaceURI === OOXML.W_NS && element.localName === localName;
-  const strip = (properties: Element, keep: (child: Element) => boolean): void => {
-    for (const child of directChildElements(properties)) {
-      if (!keep(child)) properties.removeChild(child);
+  for (const paragraph of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p'))) {
+    const paragraphProperties = directChildElements(paragraph).find((child) => isW(child, 'pPr'));
+    const markProperties = paragraphProperties
+      ? directChildElements(paragraphProperties).find((child) => isW(child, 'rPr'))
+      : undefined;
+    const runProperties = Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, 'rPr'))
+      .filter((properties) => isW(properties.parentElement, 'r'));
+    const properties = [paragraphProperties, markProperties, ...runProperties]
+      .filter((element): element is Element => element !== undefined);
+    const hasHistory = properties.some((element) => directChildElements(element).some(
+      (child) => child.namespaceURI === OOXML.W_NS && PROPERTY_REVISION_CHILDREN.has(child.localName),
+    ));
+    if (hasHistory) continue;
+    for (const element of runProperties) element.parentNode?.removeChild(element);
+    if (paragraphProperties) {
+      // `w:sectPr` is not formatting `w:pPrChange` records (CT_PPrBase).
+      for (const child of directChildElements(paragraphProperties)) {
+        if (!isW(child, 'sectPr')) paragraphProperties.removeChild(child);
+      }
+      if (directChildElements(paragraphProperties).length === 0) paragraph.removeChild(paragraphProperties);
     }
-    for (const attribute of Array.from(properties.attributes)) {
-      properties.removeAttributeNode(attribute);
-    }
-    if (directChildElements(properties).length === 0) properties.parentNode?.removeChild(properties);
-  };
-  const keepRevision = (child: Element): boolean =>
-    child.namespaceURI === OOXML.W_NS && PROPERTY_REVISION_CHILDREN.has(child.localName);
-  for (const properties of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'rPr'))) {
-    const parent = properties.parentElement;
-    if (isW(parent, 'r') || (isW(parent, 'pPr') && isW(parent!.parentElement, 'p'))) {
-      strip(properties, keepRevision);
-    }
-  }
-  for (const properties of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'pPr'))) {
-    if (!isW(properties.parentElement, 'p')) continue;
-    // The paragraph mark's run properties were handled above; what is left
-    // of them, and existing revision markup, stays in the fingerprint.
-    strip(properties, (child) => keepRevision(child) || isW(child, 'rPr') || isW(child, 'sectPr'));
   }
 }
 

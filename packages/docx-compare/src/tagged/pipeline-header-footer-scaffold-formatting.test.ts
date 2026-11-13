@@ -73,6 +73,10 @@ const contentControl = (value: string, rPr = '', sdtRPr = ''): string =>
   `<w:sdtContent>${text(value, rPr)}</w:sdtContent></w:sdt>`;
 const vmlShape = '<w:r><w:pict><v:rect id="mark1" style="width:12pt;height:12pt"/></w:pict></w:r>';
 const paragraph = (content: string, pPr = ''): string => `<w:p>${pPr}${content}</w:p>`;
+const PRIOR_RUN_REVISION =
+  '<w:rPrChange w:id="71" w:author="Prior" w:date="2026-11-01T00:00:00Z"><w:rPr><w:i/></w:rPr></w:rPrChange>';
+const PRIOR_PARAGRAPH_REVISION =
+  '<w:pPrChange w:id="72" w:author="Prior" w:date="2026-11-01T00:00:00Z"><w:pPr/></w:pPrChange>';
 
 /**
  * One section whose six header/footer parts (default, first and even of each
@@ -411,10 +415,86 @@ describe('scaffold changes beside formatting changes stay listed (#1392)', { tim
           expect(result.unrepresentedChanges).toEqual([
             expect.objectContaining({ scope: 'footer', kind: 'changed', role: 'default' }),
           ]);
-          const counts = (await formattingRevisions(result.document))[partPath({ kind: 'footer', role: 'default' })];
-          expect(counts).toEqual({ rPrChange: 0, pPrChange: 0 });
+          const footer = partPath({ kind: 'footer', role: 'default' });
+          expect((await formattingRevisions(result.document))[footer])
+            .toEqual((await formattingRevisions(revised))[footer]);
         });
         await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document));
+      },
+    );
+  }
+});
+
+/**
+ * Existing property revisions in the paragraph: the comparison never layers a
+ * second `w:rPrChange` / `w:pPrChange` onto a property element that already
+ * holds one (CT_RPr and CT_PPr allow one each, §17.13.5.29, §17.13.5.31).
+ */
+describe('formatting beside existing formatting revisions in a header or footer (#1392)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  const footer = partPath({ kind: 'footer', role: 'default' });
+  const compareFooter = async (originalStory: string, revisedStory: string) => {
+    const original = await storyPackage('Body', () => originalStory);
+    const revised = await storyPackage('Body', ({ kind, role }) =>
+      (kind === 'footer' && role === 'default' ? revisedStory : originalStory));
+    return { original, revised, result: await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS) };
+  };
+  const expectNoLayeredRevision = async (revised: Buffer, result: TaggedCompareResult): Promise<void> => {
+    const document = parseXml((await (await DocxArchive.load(result.document)).getFile(footer))!);
+    for (const name of ['rPrChange', 'pPrChange']) {
+      for (const record of Array.from(document.getElementsByTagNameNS(W_NS, name))) {
+        expect(record.getElementsByTagNameNS(W_NS, name)).toHaveLength(0);
+        const owner = record.parentNode as Element;
+        expect(Array.from(owner.childNodes).filter((child) => isW(child, name))).toHaveLength(1);
+      }
+    }
+    expect((await formattingRevisions(result.document))[footer]).toEqual((await formattingRevisions(revised))[footer]);
+    await assertSchema(result.document);
+  };
+
+  test.openspec('[SDX-CMP-STORY-06] Formatting beside a field, content control or drawing is tracked')(
+    'keeps one record when bold is added to a run whose existing revision already restores its old formatting on Reject All',
+    async ({ given, when, then }: AllureBddContext) => {
+      const originalStory = paragraph(text('Page ', `<w:rPr>${PRIOR_RUN_REVISION}</w:rPr>`) + pageField());
+      const revisedStory = paragraph(text('Page ', `<w:rPr><w:b/>${PRIOR_RUN_REVISION}</w:rPr>`) + pageField());
+      await given('a footer run with an existing w:rPrChange; the revision adds bold to it', () => undefined);
+      const { original, revised, result } = await when('the pair is compared', () => compareFooter(originalStory, revisedStory));
+      await then('no formatting revision is layered onto the existing one and the package is schema-valid', () =>
+        expectNoLayeredRevision(revised, result));
+      await then('Accept All shows the revised formatting and Reject All the original document rejected, with both appliers', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        for (const applier of ['ast', 'core'] as const) {
+          expect(await projectedStories(result.document, 'accept', applier)).toEqual(await projectedStories(revised, 'accept', applier));
+          expect(await projectedStories(result.document, 'reject', applier)).toEqual(await projectedStories(original, 'reject', applier));
+        }
+      });
+    },
+  );
+
+  const listedHistoryCases: ReadonlyArray<{ name: string; original: string; revised: string }> = [
+    {
+      name: 'bold added beside a field run that already carries a formatting revision',
+      original: paragraph(text('Page ') + pageField(`<w:rPr><w:sz w:val="18"/>${PRIOR_RUN_REVISION}</w:rPr>`)),
+      revised: paragraph(text('Page ', BOLD) + pageField(`<w:rPr><w:sz w:val="18"/>${PRIOR_RUN_REVISION}</w:rPr>`)),
+    },
+    {
+      name: 'bold added in a field paragraph whose properties already carry a formatting revision',
+      original: paragraph(text('Page ') + pageField(), `<w:pPr><w:jc w:val="right"/>${PRIOR_PARAGRAPH_REVISION}</w:pPr>`),
+      revised: paragraph(text('Page ', BOLD) + pageField(), `<w:pPr><w:jc w:val="right"/>${PRIOR_PARAGRAPH_REVISION}</w:pPr>`),
+    },
+  ];
+  for (const listedCase of listedHistoryCases) {
+    test.openspec('[SDX-CMP-STORY-06] Formatting beside a field, content control or drawing is tracked')(
+      `lists ${listedCase.name} instead of layering a second record`,
+      async ({ given, when, then }: AllureBddContext) => {
+        await given(`a default footer with ${listedCase.name}`, () => undefined);
+        const { revised, result } = await when('the pair is compared', () => compareFooter(listedCase.original, listedCase.revised));
+        await then('the default footer is listed', () => {
+          expect(result.unrepresentedChanges).toEqual([
+            expect.objectContaining({ scope: 'footer', kind: 'changed', role: 'default' }),
+          ]);
+        });
+        await then('no formatting revision is layered onto the existing one and the package is schema-valid', () =>
+          expectNoLayeredRevision(revised, result));
       },
     );
   }
