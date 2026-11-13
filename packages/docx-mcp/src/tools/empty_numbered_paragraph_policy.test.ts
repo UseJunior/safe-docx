@@ -385,6 +385,130 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
     );
   });
 
+  describe('reasons, partial batches and batch removal', () => {
+    test.openspec('An edit that leaves only whitespace in a list item is reported')(
+      'untracked: a blanked list item whose only marker is its paragraph-id bookmark gets the retry remedy',
+      async ({ given, when, then }: AllureBddContext) => {
+        const s = await given('a numbered list item that holds an internal _bk_ bookmark inside the paragraph', () =>
+          openList(item(`<w:bookmarkStart w:id="93" w:name="_bk_inner00001"/>${run('second obligation')}<w:bookmarkEnd w:id="93"/>`), 'untracked'),
+        );
+        const id = paragraphId(s.session, 'second obligation');
+        const results = await when('replace_text blanks its text under warn', async () => [
+          await replaceText(s.mgr, { file_path: s.inputPath, target_paragraph_id: id, old_string: 'second obligation', new_string: '', instruction: 'delete item (b)' }),
+        ]);
+        await then('the warning names no holder and tells the caller to retry with remove_paragraph', () => {
+          assertSuccess(results[0]!, 'replace_text');
+          const warnings = emptyNumberedWarnings(results[0]!);
+          expect(warnings).toHaveLength(1);
+          expect(warnings[0]).not.toContain('is kept because');
+          expect(warnings[0]).toContain('To delete the list item, repeat the edit with on_empty_numbered_paragraph: "remove_paragraph".');
+        });
+      },
+    );
+
+    const keepCases = [
+      { name: 'section properties', middle: item(run('second obligation')).replace('</w:numPr></w:pPr>', '</w:numPr><w:sectPr/></w:pPr>'), reason: 'section properties (w:sectPr)' },
+      { name: 'a resultless field', middle: item(run('second obligation') + '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> XE "second" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>'), reason: 'a field with no visible result' },
+      { name: 'a table cell', middle: `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>${item(run('second obligation'))}</w:tc></w:tr></w:tbl>`, reason: 'table cell\'s only paragraph' },
+    ];
+    for (const keep of keepCases) {
+      test.openspec('A list item kept for an anchor is reported with the reason')(
+        `untracked: a blanked list item kept for ${keep.name} names that reason`,
+        async ({ given, when, then }: AllureBddContext) => {
+          const s = await given(`a numbered list item kept for ${keep.name}`, () => openList(keep.middle, 'untracked'));
+          const id = paragraphId(s.session, 'second obligation');
+          const result = await when('replace_text blanks its complete text', () =>
+            replaceText(s.mgr, { file_path: s.inputPath, target_paragraph_id: id, old_string: 'second obligation', new_string: '', instruction: 'delete item' }),
+          );
+          await then('the warning names the reason', () => {
+            assertSuccess(result, 'replace_text');
+            const warnings = emptyNumberedWarnings(result);
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0]).toContain(keep.reason);
+          });
+        },
+      );
+    }
+
+    for (const policy of ['warn', 'remove_paragraph'] as const) {
+      test.openspec('A batch warning carries the step_id of the step that emptied the paragraph')(
+        `${policy}: a batch that stops on a failing step reports what its completed steps left, without removing it`,
+        async ({ given, when, then }: AllureBddContext) => {
+          const s = await given('a numbered list whose middle item ends with a space', () =>
+            openList(item(run('second obligation ')), 'untracked'),
+          );
+          const firstId = paragraphId(s.session, 'first obligation');
+          const secondId = paragraphId(s.session, 'second obligation');
+          const result = await when('step one empties the item and step three fails after step two makes its match ambiguous', () =>
+            batchEdit(s.mgr, {
+              file_path: s.inputPath,
+              on_empty_numbered_paragraph: policy,
+              steps: [
+                { step_id: 'drop-second', operation: 'replace_text', target_paragraph_id: secondId, old_string: 'second obligation', new_string: '', instruction: 'delete item (b)' },
+                { step_id: 'echo', operation: 'replace_text', target_paragraph_id: firstId, old_string: 'first', new_string: 'obligation', instruction: 'reword' },
+                { step_id: 'ambiguous', operation: 'replace_text', target_paragraph_id: firstId, old_string: 'obligation', new_string: 'duty', instruction: 'reword' },
+              ],
+            }),
+          );
+          await then('the batch fails at the third step, warns with drop-second, and leaves the item in place', () => {
+            expect(result.success).toBe(false);
+            expect((result as { failed_step_id?: string }).failed_step_id).toBe('ambiguous');
+            const entries = ((result as { warnings?: Array<{ step_id: string; warning: string }> }).warnings ?? []).filter((w) => /empty numbered paragraph/u.test(w.warning));
+            expect(entries.map((e) => e.step_id)).toEqual(['drop-second']);
+            expect(s.session.doc.getParagraphTextById(secondId)).toBe(' ');
+          });
+        },
+      );
+    }
+
+    test.openspec('remove_paragraph in a batch runs after the last step')(
+      'remove_paragraph, tracked batch: the emptied item is deleted as a tracked change and a kept item is reported',
+      async ({ given, when, then }: AllureBddContext) => {
+        const s = await given('a tracked list with an item ending in a space and an item holding a bookmark', () =>
+          openList(item(run('second obligation ')) + item(`<w:bookmarkStart w:id="92" w:name="_Ref300000003"/>${run('bookmarked obligation')}<w:bookmarkEnd w:id="92"/>`), 'tracked'),
+        );
+        const secondId = paragraphId(s.session, 'second obligation');
+        const keptId = paragraphId(s.session, 'bookmarked obligation');
+        const result = await when('a batch empties both with remove_paragraph', () =>
+          batchEdit(s.mgr, {
+            file_path: s.inputPath,
+            on_empty_numbered_paragraph: 'remove_paragraph',
+            steps: [
+              { step_id: 'drop-second', operation: 'replace_text', target_paragraph_id: secondId, old_string: 'second obligation', new_string: '', instruction: 'delete' },
+              { step_id: 'drop-kept', operation: 'replace_text', target_paragraph_id: keptId, old_string: 'bookmarked obligation', new_string: '', instruction: 'delete' },
+            ],
+          }),
+        );
+        await then('drop-second gets a tracked-removal notice, drop-kept a kept warning naming the bookmark, and accept-all leaves one empty item', async () => {
+          assertSuccess(result, 'batch_edit');
+          const warnings = result.warnings as Array<{ step_id: string; warning: string }>;
+          expect(warnings.find((w) => w.step_id === 'drop-second')?.warning).toContain('deleted as a tracked change');
+          expect(warnings.find((w) => w.step_id === 'drop-kept')?.warning).toContain('bookmark "_Ref300000003"');
+          const clean = await savedDocumentXml(s.mgr, s.inputPath, path.join(s.tmpDir, 'clean.docx'), 'clean');
+          expect(numberedTexts(clean)).toEqual(['first obligation', '', 'third obligation']);
+        });
+      },
+    );
+
+    test.openspec('ignore reports nothing')(
+      'ignore: a batch that empties a list item reports nothing',
+      async ({ given, when, then }: AllureBddContext) => {
+        const s = await given('a numbered list whose middle item ends with a space', () => openList(item(run('second obligation ')), 'untracked'));
+        const result = await when('a batch empties it with ignore', () =>
+          batchEdit(s.mgr, {
+            file_path: s.inputPath,
+            on_empty_numbered_paragraph: 'ignore',
+            steps: [{ step_id: 'drop-second', operation: 'replace_text', target_paragraph_id: paragraphId(s.session, 'second obligation'), old_string: 'second obligation', new_string: '', instruction: 'delete' }],
+          }),
+        );
+        await then('no warnings', () => {
+          assertSuccess(result, 'batch_edit');
+          expect(result.warnings).toBeUndefined();
+        });
+      },
+    );
+  });
+
   describe('batch_edit', () => {
     test.openspec('A batch warning carries the step_id of the step that emptied the paragraph')(
       'the warning carries the step_id of the step that emptied the list item',
@@ -490,6 +614,54 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
           expect((result as { empty_numbered_paragraphs?: Array<{ step_id: string }> }).empty_numbered_paragraphs?.map((f) => f.step_id)).toEqual(['drop-second']);
           expect(s.session.doc.getParagraphTextById(firstId)).toBe('first obligation');
           expect(s.session.editCount).toBe(0);
+        });
+      },
+    );
+
+    test.openspec('error refuses the whole batch before any step is applied')(
+      'error: a batch that inserts a paragraph and then empties a list item is refused with no paragraph inserted',
+      async ({ given, when, then }: AllureBddContext) => {
+        const s = await given('a numbered list whose middle item ends with a space', () => openList(item(run('second obligation ')), 'untracked'));
+        const firstId = paragraphId(s.session, 'first obligation');
+        const before = s.session.doc.getParagraphs().length;
+        const result = await when('a batch inserts a paragraph after item (a) and then blanks item (b), with error', () =>
+          batchEdit(s.mgr, {
+            file_path: s.inputPath,
+            on_empty_numbered_paragraph: 'error',
+            steps: [
+              { step_id: 'add-note', operation: 'insert_paragraph', positional_anchor_node_id: firstId, position: 'AFTER', new_string: 'inserted note', instruction: 'add a note' },
+              { step_id: 'drop-second', operation: 'replace_text', target_paragraph_id: paragraphId(s.session, 'second obligation'), old_string: 'second obligation', new_string: '', instruction: 'delete item (b)' },
+            ],
+          }),
+        );
+        await then('it fails naming drop-second and the document still has its original paragraphs', () => {
+          assertFailure(result, 'EMPTY_NUMBERED_PARAGRAPH');
+          expect((result as { empty_numbered_paragraphs?: Array<{ step_id: string }> }).empty_numbered_paragraphs?.map((f) => f.step_id)).toEqual(['drop-second']);
+          expect(s.session.doc.getParagraphs().length).toBe(before);
+          expect(s.session.editCount).toBe(0);
+        });
+      },
+    );
+
+    test.openspec('error refuses the whole batch before any step is applied')(
+      'error: a batch that inserts a paragraph and leaves every list item filled is applied',
+      async ({ given, when, then }: AllureBddContext) => {
+        const s = await given('a numbered list', () => openList(item(run('second obligation')), 'untracked'));
+        const firstId = paragraphId(s.session, 'first obligation');
+        const result = await when('a batch inserts a paragraph and rewords item (b), with error', () =>
+          batchEdit(s.mgr, {
+            file_path: s.inputPath,
+            on_empty_numbered_paragraph: 'error',
+            steps: [
+              { step_id: 'add-note', operation: 'insert_paragraph', positional_anchor_node_id: firstId, position: 'AFTER', new_string: 'inserted note', instruction: 'add a note' },
+              { step_id: 'reword-second', operation: 'replace_text', target_paragraph_id: paragraphId(s.session, 'second obligation'), old_string: 'second', new_string: 'next', instruction: 'reword item (b)' },
+            ],
+          }),
+        );
+        await then('both steps are applied and no empty-numbered warning is returned', () => {
+          assertSuccess(result, 'batch_edit');
+          expect(emptyNumberedWarnings(result)).toEqual([]);
+          expect(s.session.doc.getParagraphs().map((p) => p.textContent)).toContain('inserted note');
         });
       },
     );

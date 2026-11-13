@@ -104,10 +104,10 @@ function emptyNumberedRemedy(paragraph: Element): string {
   const holders = describeParagraphHolders(paragraph);
   if (holders.length > 0) return keptBecause(holders);
   const remaining = getParagraphText(paragraph);
-  const textHint = remaining.length > 0
-    ? ` To delete the list item, replace its remaining whitespace (${JSON.stringify(remaining)}) with an empty new_string,`
-    : ' To delete the list item,';
-  return `${textHint} or repeat the edit with on_empty_numbered_paragraph: "remove_paragraph".`;
+  const retry = 'repeat the edit with on_empty_numbered_paragraph: "remove_paragraph".';
+  return remaining.length > 0
+    ? ` To delete the list item, replace its remaining whitespace (${JSON.stringify(remaining)}) with an empty new_string, or ${retry}`
+    : ` To delete the list item, ${retry}`;
 }
 
 export type EmptyNumberedParagraphOutcome =
