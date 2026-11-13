@@ -9,6 +9,7 @@ import { testAllure } from '../testing/allure-test.js';
 import { acceptChanges, DocxArchive, parseXml, rejectChanges, serializeXml } from '@usejunior/docx-core';
 import { compareDocuments, formatUnrepresentedChangeWarnings } from '../index.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
+import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 
 const TEST_FEATURE = 'Block Container Revisions';
 const test = testAllure.epic('Document Comparison')
@@ -247,6 +248,38 @@ describe('block content-control revision publication', () => {
       ] as const) {
         await assertTrackedContainer(original, revised, kind);
       }
+    }
+  });
+});
+
+describe('block content-control formatting fidelity', () => {
+  const shadedTable = (fill: string, cellContent: string) => '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>'
+    + '<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="'
+    + fill + '"/></w:tcPr>' + cellContent + '</w:tc></w:tr></w:tbl>';
+  const documentXml = async (buffer: Buffer) => (await DocxArchive.load(buffer)).getDocumentXml();
+
+  test('still measures the table formatting of an empty control both documents hold', async () => {
+    const emptyControl = wrapControl('<w:p/>');
+    const originalXml = await documentXml(await buildDocxFromBodyXml(shadedTable('FF0000', emptyControl)));
+    const revisedXml = await documentXml(await buildDocxFromBodyXml(shadedTable('0000FF', emptyControl)));
+    const fidelity = compareSourceProjectedFormattingFidelity(originalXml, revisedXml, revisedXml);
+    expect(fidelity.reject.tableFormatting.divergent).toBeGreaterThan(0);
+    expect(fidelity.score).toBeLessThan(1);
+  });
+
+  test('skips only the placeholder paragraph a whole inserted or deleted container leaves in a cell', async () => {
+    const plain = await buildDocxFromBodyXml(shadedTable('FF0000', paragraph('Outside')));
+    const withBlock = await buildDocxFromBodyXml(shadedTable('FF0000', paragraph('Outside') + blockControl));
+    for (const [original, revised] of [[plain, withBlock], [withBlock, plain]] as const) {
+      const result = await compareDocuments(original, revised);
+      const fidelity = compareSourceProjectedFormattingFidelity(
+        await documentXml(original),
+        await documentXml(revised),
+        await documentXml(result.document),
+      );
+      expect(fidelity.accept.divergences).toEqual([]);
+      expect(fidelity.reject.divergences).toEqual([]);
+      expect(fidelity.score).toBe(1);
     }
   });
 });
