@@ -1448,17 +1448,28 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
  * the properties, so a formatting change the comparison dropped still fails
  * the projection check.
  *
+ * With `ignoreTrackableRows`, a row of a table placed directly in the story
+ * is left out when every paragraph in it is an admitted plain paragraph and
+ * the row carries no revision record: the story comparison tracks such a row
+ * when it is inserted or deleted with `w:trPr/w:ins` or `w:trPr/w:del`, as in
+ * the main body, under the same table-topology guard. A row holding a field,
+ * a content control, a drawing or a nested table stays in the scaffold, so
+ * inserting or deleting it is still listed. Only the eligibility gates use it.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @see https://github.com/UseJunior/safe-docx/issues/998
  * @see https://github.com/UseJunior/safe-docx/issues/1392
+ * @see https://github.com/UseJunior/safe-docx/issues/1393
  */
 function ordinaryStoryScaffoldFingerprint(
   xml: string,
-  options: { ignoreTrackableFormatting?: boolean } = {},
+  options: { ignoreTrackableFormatting?: boolean; ignoreTrackableRows?: boolean } = {},
 ): string {
   const document = parseXml(xml);
   const root = document.documentElement.cloneNode(true) as Element;
@@ -1484,6 +1495,7 @@ function ordinaryStoryScaffoldFingerprint(
   for (const paragraph of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p')).reverse()) {
     if (admittedPlainParagraphForScaffold(paragraph)) paragraph.parentNode?.removeChild(paragraph);
   }
+  if (options.ignoreTrackableRows) removeTrackableRows(root);
   if (options.ignoreTrackableFormatting) removeTrackableFormatting(root);
   removeEmptyFormattingProperties(root);
   blankOrdinaryParagraphText(root);
@@ -1508,8 +1520,46 @@ function removeEmptyFormattingProperties(root: Element): void {
   }
 }
 
-/** The eligibility gates' scaffold: formatting the story comparison tracks is not scaffold. */
-const trackableFormatting = { ignoreTrackableFormatting: true } as const;
+/** Revision records a table row can already carry in its row, cell or exception properties. */
+const ROW_REVISION_RECORDS = new Set([
+  'ins',
+  'del',
+  'trPrChange',
+  'tcPrChange',
+  'tblPrExChange',
+  'cellIns',
+  'cellDel',
+  'cellMerge',
+]);
+
+/**
+ * Remove each row of a table placed directly in the story root whose
+ * paragraphs were all removed as admitted plain paragraphs and which carries
+ * no revision record, so a story whose tables differ only by such rows reads
+ * as the same scaffold. Rows inside a nested table, a content control or a
+ * text box are not touched.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ */
+function removeTrackableRows(root: Element): void {
+  for (const table of directChildElements(root)) {
+    if (table.namespaceURI !== OOXML.W_NS || table.localName !== 'tbl') continue;
+    for (const row of directChildElements(table)) {
+      if (row.namespaceURI !== OOXML.W_NS || row.localName !== 'tr') continue;
+      const descendants = Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'));
+      if (descendants.some((element) =>
+        element.localName === 'p' || ROW_REVISION_RECORDS.has(element.localName))) continue;
+      table.removeChild(row);
+    }
+  }
+}
+
+/**
+ * The eligibility gates' scaffold: formatting the story comparison tracks,
+ * and plain table rows it tracks as inserted or deleted, are not scaffold.
+ */
+const trackableFormatting = { ignoreTrackableFormatting: true, ignoreTrackableRows: true } as const;
 
 /** Revision markup inside a property element: formatting history the paragraph already carries. */
 const PROPERTY_REVISION_CHILDREN = new Set([

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- A table row inserted into or deleted from a header or footer table, or a
+  table inside a header or footer text box, is now tracked as a whole row
+  (`w:trPr/w:ins`, `w:trPr/w:del`), as in body tables, instead of the header
+  or footer being listed in `unrepresentedChanges`. This covers default,
+  first-page and even-page headers and footers, rows beside a `PAGE` field
+  row, and a row whose cells merge within an unchanged grid, which is
+  replaced by a deleted and an inserted row. Header, footer and text-box
+  stories are now held to the main-body table-topology guard, so such a
+  merge inside a text box is no longer emitted as revisions wrapped around
+  cells. Inserting or
+  deleting a row that holds a field, content control, drawing or nested
+  table, or a whole table, is still listed. (#1393)
+
 - A formatting-only change (bold, font size, alignment, paragraph-mark
   formatting) in a header or footer paragraph that also holds a field such as
   `PAGE`, a content control or a drawing is now tracked with `w:rPrChange` /

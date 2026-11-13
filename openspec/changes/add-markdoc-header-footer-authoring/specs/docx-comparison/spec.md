@@ -44,7 +44,12 @@ run properties and paragraph properties of the paragraphs it keeps (those
 holding a field, content control or drawing), because `w:rPrChange` and
 `w:pPrChange` record a change to them; content-control properties and field
 instructions stay in it, and so does all formatting of a paragraph that
-already carries a formatting revision record. Field-state validation
+already carries a formatting revision record. The eligibility checks SHALL
+also leave out each row of a table placed directly in the story whose
+paragraphs are all admitted ordinary paragraphs and which carries no revision
+record, because the story comparison tracks such a row as inserted or deleted
+under the same table-topology guard as the main body; a row holding a field,
+content control, drawing or nested table stays in it. Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
@@ -65,8 +70,16 @@ MUST NOT be silently represented as an ordinary text edit.
 - **AND** a change to a field instruction, a content control's own properties, or the presence of a field or content control SHALL still be listed
 - **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL still be listed, never emitted as a nested or duplicate formatting revision
 
+#### Scenario: [SDX-CMP-STORY-07] Header and footer table rows are tracked as whole-row revisions
+- **GIVEN** a paired default, first or even header or footer, or a text box inside one, whose table gains or loses a row of ordinary paragraphs (at the start, in the middle or at the end, beside an edit to another row, or beside a row holding a `PAGE` field), or whose row skeleton changes within an unchanged grid
+- **WHEN** the packages are compared
+- **THEN** an inserted row SHALL carry `w:trPr/w:ins` and a deleted row `w:trPr/w:del`, and a matched row whose skeleton changed SHALL be replaced by a deleted and an inserted row (a vertical-merge band as a whole), as in the main body
+- **AND** accept-all SHALL recover the revised story and reject-all the original story, with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`
+- **AND** the story SHALL NOT remain in `unrepresentedChanges`, an unchanged field SHALL keep its structure without revision markup, and the emitted document SHALL validate against the vendored Transitional schema
+- **AND** inserting or deleting a row that holds a field, content control, drawing or nested table, or a whole table, SHALL still be listed
+
 #### Scenario: [SDX-CMP-STORY-05] Unsupported topology remains unrepresented
-- **GIVEN** selected stories with creation, deletion, rebinding, ambiguous pairing, structural table mutation, drawing/content-control mutation, or nested-story change outside the admitted subset
+- **GIVEN** selected stories with creation, deletion, rebinding, ambiguous pairing, structural table mutation outside the tracked table-row subset, drawing/content-control mutation, or nested-story change outside the admitted subset
 - **WHEN** comparison is attempted
 - **THEN** the engine SHALL return a typed unsupported-story diagnostic or retain a precise `unrepresentedChanges` entry
 - **AND** SHALL NOT publish a tracked artifact that claims to represent the unsupported change

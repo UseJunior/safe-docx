@@ -63,7 +63,7 @@ export interface TaggedTreeShadowInput {
   retainStatisticsMarkers?: boolean;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
-  /** @internal Main-body only; selected side stories keep their unrepresented contract. */
+  /** @internal The comparison pipeline guards every story it compares (#1393). */
   guardTableTopology?: boolean;
 }
 
@@ -503,8 +503,8 @@ export function buildTaggedTreePublication(
     minimumRevisionId: input.minimumRevisionId,
   });
   if (input.guardTableTopology) {
-    // Main body only: selected header/footer stories keep their own
-    // unrepresented-change contract for table topology.
+    // The comparison pipeline sets it for every story it compares: the main
+    // body and each header, footer or text-box story (#1393).
     replaceSkeletonChangedRows(constructed.tree);
     guardBodyTableTopology(constructed.tree);
   }

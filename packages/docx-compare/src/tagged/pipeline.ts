@@ -173,8 +173,6 @@ export interface StandaloneTaggedPackageOptions {
   bookmarkNameReservations?: Set<string>;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
-  /** @internal Selected story calls disable the main-body topology gate. */
-  guardTableTopology?: boolean;
   /**
    * @internal Redline a picture whose payload was replaced under unchanged
    * markup. Only the main-story comparison sets it: a nested story is spliced
@@ -489,7 +487,10 @@ export async function buildStandaloneTaggedPackage(
       revisionGrouping: options.revisionGrouping,
       retainStatisticsMarkers: true,
       minimumRevisionId: options.minimumRevisionId,
-      guardTableTopology: options.guardTableTopology ?? true,
+      // Every story, the main body and each header, footer or text-box story
+      // alike, is held to the table-topology guard, so a table row inserted,
+      // deleted or replaced there is tracked as in the body (#1393).
+      guardTableTopology: true,
     });
     return {
       taggedOriginalXml,
@@ -648,16 +649,14 @@ export async function buildStandaloneTaggedPackage(
   // trees would reject a faithful publication.
   const originalProjectionXml = rejectAllChanges(originalXml);
   const revisedProjectionXml = acceptAllChanges(revisedXml);
-  if (options.guardTableTopology ?? true) {
-    for (const [projection, expectedXml, actualXml] of [
-      ['reject', originalProjectionXml, rejectAllChanges(taggedXml)],
-      ['accept', revisedProjectionXml, acceptAllChanges(taggedXml)],
-    ] as const) {
-      const mismatch = findTableFootprintMismatch(bodyTableFootprint(expectedXml), bodyTableFootprint(actualXml));
-      if (mismatch) {
-        throw new UnsupportedTableTopologyComparisonError('projection', mismatch.tableIndex,
-          mismatch.rowIndex, mismatch.cellIndex, mismatch.columnIndex, { projection, mismatch });
-      }
+  for (const [projection, expectedXml, actualXml] of [
+    ['reject', originalProjectionXml, rejectAllChanges(taggedXml)],
+    ['accept', revisedProjectionXml, acceptAllChanges(taggedXml)],
+  ] as const) {
+    const mismatch = findTableFootprintMismatch(bodyTableFootprint(expectedXml), bodyTableFootprint(actualXml));
+    if (mismatch) {
+      throw new UnsupportedTableTopologyComparisonError('projection', mismatch.tableIndex,
+        mismatch.rowIndex, mismatch.cellIndex, mismatch.columnIndex, { projection, mismatch });
     }
   }
   const publicationSafety = (options.publicationSafetyEvaluator ?? evaluateSafetyChecks)(
@@ -1377,7 +1376,6 @@ async function compareDocumentsTaggedCore(
   options: AtomizerOptions,
   bookmarkNameReservations?: Set<string>,
   minimumRevisionId?: number,
-  guardTableTopology = true,
   representPicturePayloadSwaps = false,
 ): Promise<TaggedCompareResult> {
   const standalone = await buildStandaloneTaggedPackage(original, revised, {
@@ -1401,7 +1399,6 @@ async function compareDocumentsTaggedCore(
     formattingFidelityEvaluator: options.taggedTreeFormattingFidelityEvaluator,
     bookmarkNameReservations,
     minimumRevisionId,
-    guardTableTopology,
     representPicturePayloadSwaps,
   });
   return {
@@ -1463,9 +1460,8 @@ async function compareDocumentsTagged(
       bookmarkNameReservations,
       undefined,
       true,
-      true,
     )
-    : await compareDocumentsTaggedCore(original, revised, options, undefined, undefined, true, true);
+    : await compareDocumentsTaggedCore(original, revised, options, undefined, undefined, true);
   let sectionAligned: Awaited<ReturnType<typeof sectionAlignedOrdinaryStoryInputs>> | undefined;
   if (!preparedPlan) {
     // No text-box or topology-matched story to split out. A header/footer
@@ -1557,7 +1553,6 @@ async function compareDocumentsTagged(
       options,
       bookmarkNameReservations,
       nextPackageRevisionId,
-      false,
     );
     refuseUnreportedBlockContainer(result.unrepresentedChanges, story.partPath);
     if (story.ancillaryMode === 'inserted') {

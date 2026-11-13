@@ -416,9 +416,8 @@ describe('ordinary relationship-selected story comparison', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-07] selected story scaffold changes remain explicit')
-    .openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
-    'does not claim a structural table-row insertion as ordinary story text',
+  test.openspec('[SDX-CMP-STORY-07] Header and footer table rows are tracked as whole-row revisions')(
+    'tracks a structural table-row insertion with a whole-row revision',
     async () => {
       const row = (text: string): string => `<w:tr><w:tc><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc></w:tr>`;
       const original = await selectedHeaderFixture({
@@ -427,6 +426,27 @@ describe('ordinary relationship-selected story comparison', () => {
       const revised = await selectedHeaderFixture({
         storyContent: `<w:tbl>${row('One')}${row('Two')}</w:tbl>`,
       });
+      const result = await compareDocumentsAtomizer(original, revised);
+      const output = await selectedHeaderXml(result.document);
+      const rowMarkers = Array.from(parseXml(output).getElementsByTagNameNS(OOXML.W_NS, 'trPr'))
+        .flatMap((trPr) => Array.from(trPr.childNodes))
+        .filter((child) => child.nodeType === 1 && (child as Element).namespaceURI === OOXML.W_NS)
+        .map((child) => (child as Element).localName);
+
+      expect(rowMarkers).toEqual(['ins']);
+      expect(extractRoundTripComparisonText(acceptAllChanges(output))).toContain('Two');
+      expect(extractRoundTripComparisonText(rejectAllChanges(output))).not.toContain('Two');
+      expect(result.unrepresentedChanges).toBeUndefined();
+    },
+  );
+
+  test.openspec('[SDX-COMPTABLE-07] selected story scaffold changes remain explicit')
+    .openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
+    'does not claim a whole inserted table as ordinary story text',
+    async () => {
+      const table = '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>One</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+      const original = await selectedHeaderFixture({ storyContent: paragraph('Header') });
+      const revised = await selectedHeaderFixture({ storyContent: table + paragraph('Header') });
       const result = await compareDocumentsAtomizer(original, revised);
       const output = await selectedHeaderXml(result.document);
 
