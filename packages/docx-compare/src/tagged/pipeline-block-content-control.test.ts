@@ -447,6 +447,48 @@ describe('block customXml boundary moves (#1102)', () => {
     }
   }
 
+  // w:customXmlPr, like w:sdtPr, admits no revision particle: an aligned
+  // custom XML element whose properties differ publishes the revised
+  // properties whole and reports the difference, never w:ins/w:del inside them.
+  const withProperties = (value: string, inner: string, element = 'term') =>
+    `<w:customXml w:uri="urn:example:terms" w:element="${element}"><w:customXmlPr>`
+    + `<w:attr w:name="status" w:val="${value}"/></w:customXmlPr>${inner}</w:customXml>`;
+  const propertyCases = [
+    ['a nested element whose properties change as a paragraph moves into its container',
+      para('Moving text.') + custom(withProperties('old', para('Inside clause.'))),
+      custom(para('Moving text.') + withProperties('new', para('Inside clause.'))), 'changed', 1],
+    ['an element whose properties change while its text stays',
+      para('Outside.') + withProperties('old', para('Inside clause.')),
+      para('Outside.') + withProperties('new', para('Inside clause.')), 'changed', 0],
+    ['an element that gains properties while its text stays',
+      para('Outside.') + custom(para('Inside clause.'), 'term'),
+      para('Outside.') + withProperties('new', para('Inside clause.')), 'added', 0],
+  ] as const;
+
+  for (const [name, originalBody, revisedBody, kind, index] of propertyCases) {
+    for (const detectMoves of [false, true]) {
+      test(`${name} with detectMoves=${detectMoves}: publishes the revised w:customXmlPr and reports it`, async () => {
+        const { result, document, projections } = await compareAndProject(originalBody, revisedBody, detectMoves);
+        for (const properties of Array.from(document.getElementsByTagNameNS(W, 'customXmlPr'))) {
+          const revisions = ['ins', 'del'].flatMap((tag) => Array.from(properties.getElementsByTagNameNS(W, tag)));
+          expect(revisions, 'revision inside w:customXmlPr').toEqual([]);
+        }
+        const changes = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl');
+        expect(changes).toHaveLength(1);
+        expect(changes[0]).toMatchObject({
+          kind,
+          contentControl: { element: 'customXmlPr', index, customXmlElement: 'term', customXmlUri: 'urn:example:terms' },
+        });
+        expect(formatUnrepresentedChangeWarnings(changes)[0])
+          .toContain(`properties (w:customXmlPr) of custom XML element #${index + 1} (element "term"`);
+        for (const projection of projections) {
+          expect(projection.ast, `${projection.label} comparison acceptor`).toEqual(projection.expected);
+          expect(projection.native, `${projection.label} docx-core acceptor`).toEqual(projection.expected);
+        }
+      });
+    }
+  }
+
   // A container whose identity differs is a different container: no revision
   // can record a w:element, w:uri or w:sdtPr change, so its content is tracked
   // as leaving the original container and entering the revised one, and each

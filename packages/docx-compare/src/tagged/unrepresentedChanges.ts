@@ -56,7 +56,8 @@ function resolvedMarkupCompatibilityValue(element: Element, value: string): stri
  * property element as one opaque node and the serializer publishes the revised
  * properties whole. Nothing in the redline marks that difference; this walk of
  * the constructed tree is the only place it is disclosed. Side-only property
- * elements (a `w:sdtPr` present on one side) are reported the same way.
+ * elements (a `w:sdtPr` present on one side) are reported the same way, as
+ * are `w:customXmlPr` differences of a custom XML element (#1102).
  * So is a whole block `w:sdt` or `w:customXml` present on one side: its content
  * is tracked, but the container itself stays behind, emptied, in the Reject
  * All (or Accept All) projection.
@@ -107,10 +108,15 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
     if (uri) result.customXmlUri = uri;
     return result;
   };
-  const visit = (node: TaggedNode, control: ControlIdentity | undefined): void => {
+  const visit = (
+    node: TaggedNode,
+    control: ControlIdentity | undefined,
+    customXml: ControlIdentity | undefined,
+  ): void => {
     const revisedSide = node.tag !== 'original';
     const element = representative(node, revisedSide ? 'revised' : 'original')!;
     let current = control;
+    let currentCustomXml = customXml;
     if (element.namespaceURI === W_NS) {
       const name = localName(element);
       if (name === 'sdt') {
@@ -133,12 +139,15 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
           },
         });
       }
+      if (name === 'customXml') {
+        currentCustomXml = { ...customXmlIdentity(element), index: outputOrdinal.customXml };
+      }
       if (name === 'sdt' || name === 'customXml') outputOrdinal[name]++;
       if (node.children.length === 0) {
         outputOrdinal.sdt += element.getElementsByTagNameNS(W_NS, 'sdt').length;
         outputOrdinal.customXml += element.getElementsByTagNameNS(W_NS, 'customXml').length;
       }
-      if (name === 'sdtPr' || name === 'sdtEndPr') {
+      if (name === 'sdtPr' || name === 'sdtEndPr' || name === 'customXmlPr') {
         const kind: UnrepresentedChangeKind | null = node.tag === 'both'
           ? (subtreeSignature(node.original) === subtreeSignature(node.revised) ? null : 'changed')
           : node.tag === 'revised' ? 'added' : 'removed';
@@ -147,7 +156,9 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
             scope: 'contentControl',
             kind,
             sectionIndex,
-            contentControl: { ...(current ?? { index: Math.max(controlIndex, 0) }), element: name },
+            contentControl: name === 'customXmlPr'
+              ? { ...(currentCustomXml ?? { index: 0 }), element: name }
+              : { ...(current ?? { index: Math.max(controlIndex, 0) }), element: name },
           });
         }
         return;
@@ -156,9 +167,9 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
       // final w:sectPr follows every block, so counting it changes nothing.
       if (name === 'sectPr' && revisedSide) sectionIndex++;
     }
-    node.children.forEach((child) => visit(child, current));
+    node.children.forEach((child) => visit(child, current, currentCustomXml));
   };
-  visit(tree, undefined);
+  visit(tree, undefined, undefined);
   return changes;
 }
 

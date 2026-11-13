@@ -594,9 +594,18 @@ function isSectionProperties(element: WmlElement): boolean {
     element.localName === 'sectPr';
 }
 
+/**
+ * Container property elements carried as one opaque node: `w:sdtPr` and
+ * `w:sdtEndPr` (see above) and `w:customXmlPr`, whose `CT_CustomXmlPr` has no
+ * revision particle either, so a child-level diff of its `w:attr` children
+ * would emit `w:ins`/`w:del` where the schema admits none (#1102).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1102
+ */
 export function isContentControlProperties(element: WmlElement): boolean {
   return element.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
-    ['sdtPr', 'sdtEndPr'].includes(element.localName);
+    ['sdtPr', 'sdtEndPr', 'customXmlPr'].includes(element.localName);
 }
 
 /**
