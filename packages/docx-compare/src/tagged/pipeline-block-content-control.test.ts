@@ -348,6 +348,8 @@ describe('block customXml boundary moves (#1102)', () => {
   const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
   const para = (text: string) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
   const boldPara = (text: string) => `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const styledPara = (text: string) =>
+    `<w:p><w:pPr><w:spacing w:after="240"/><w:jc w:val="both"/></w:pPr><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
   const custom = (inner: string, element = 'clause') =>
     `<w:customXml w:uri="urn:example:terms" w:element="${element}">${inner}</w:customXml>`;
   const control = (inner: string, tag = 'party') =>
@@ -456,6 +458,11 @@ describe('block customXml boundary moves (#1102)', () => {
     ['the customXml element name changes as a paragraph moves into it', 'customXml',
       para('Before clause.') + custom(para('Inside clause.')) + para('After clause.'),
       custom(para('Before clause.') + para('Inside clause.'), 'term') + para('After clause.'),
+      'cx[clause]:', 'cx[term]:', 'element "clause"', 'element "term"'],
+    // Paragraph properties survive on the emptied container's placeholder paragraph.
+    ['the customXml element name changes around formatted paragraphs', 'customXml',
+      para('Outside.') + custom(styledPara('First inside.') + styledPara('Second inside.')),
+      para('Outside.') + custom(styledPara('First inside.') + styledPara('Second inside.'), 'term'),
       'cx[clause]:', 'cx[term]:', 'element "clause"', 'element "term"'],
     ['the content control tag changes as a paragraph moves into it', 'sdt',
       para('Before control.') + control(para('Inside clause.')) + para('After control.'),
