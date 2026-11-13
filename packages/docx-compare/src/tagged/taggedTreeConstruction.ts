@@ -642,6 +642,38 @@ function sameBlockContainer(left: WmlElement, right: WmlElement): boolean {
     properties(left) === properties(right);
 }
 
+/**
+ * Order-preserving pairs of a gap's same-identity block containers, as
+ * indices into the gap. A container pairs only with a container of the same
+ * identity (`sameBlockContainer`), and pairing it diffs its children rather
+ * than its runs, so a gap whose paragraphs hold complete fields can still
+ * pair its containers without pairing any field-holding paragraph. Left
+ * unpaired, every paragraph a container holds is deleted and reinserted and
+ * the container churns whole around a paragraph moving across its boundary.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1459
+ */
+function blockContainerPairs(
+  original: readonly WmlElement[],
+  revised: readonly WmlElement[],
+): Array<[number, number]> {
+  const containerIndices = (elements: readonly WmlElement[]): number[] =>
+    elements.flatMap((element, index) => isBlockContainer(element) ? [index] : []);
+  const originalIndices = containerIndices(original);
+  const revisedIndices = containerIndices(revised);
+  if (originalIndices.length === 0 || revisedIndices.length === 0) return [];
+  // Container similarity ignores numbering identities.
+  const none = new Map<WmlElement, string>();
+  return similarParagraphPairs(
+    originalIndices.map((index) => original[index]!),
+    revisedIndices.map((index) => revised[index]!),
+    none,
+    none,
+  ).map(([left, right]) => [originalIndices[left]!, revisedIndices[right]!]);
+}
+
 /** Minimum similarity for pairing two side-only siblings in a gap. */
 const GAP_PAIRING_SIMILARITY = 0.25;
 
@@ -1096,34 +1128,39 @@ function constructBoth(
     const originalGap = originalChildren.slice(gapOriginalStart, originalEnd);
     const revisedGap = revisedChildren.slice(gapRevisedStart, revisedEnd);
     const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-    // A table row whose fields all begin and end inside it is diffed cell by
-    // cell, so pairing it cannot split a field complex.
-    const fieldsCompleteWithin = (row: WmlElement): boolean => {
+    // An element whose fields all begin and end inside it cannot split a field
+    // complex by being paired: a table row is diffed cell by cell, and a block
+    // container child by child through this same guard.
+    const fieldsCompleteWithin = (element: WmlElement): boolean => {
       let depth = 0;
-      for (const fieldChar of Array.from(row.getElementsByTagNameNS(W, 'fldChar'))) {
+      for (const fieldChar of Array.from(element.getElementsByTagNameNS(W, 'fldChar'))) {
         const type = fieldChar.getAttributeNS(W, 'fldCharType');
         if (type === 'begin') depth++;
         else if (type === 'end' && --depth < 0) return false;
       }
       return depth === 0;
     };
-    const containsFieldControl = (elements: readonly WmlElement[]): boolean => elements.some((element) =>
-      isTableRow(element)
-        ? !fieldsCompleteWithin(element)
-        : element.getElementsByTagNameNS(W, 'fldChar').length > 0 ||
-          element.getElementsByTagNameNS(W, 'instrText').length > 0);
+    const holdsFieldControl = (element: WmlElement): boolean =>
+      !isTableRow(element) && !isBlockContainer(element) && (
+        element.getElementsByTagNameNS(W, 'fldChar').length > 0 ||
+        element.getElementsByTagNameNS(W, 'instrText').length > 0);
+    const gapElements = [...originalGap, ...revisedGap];
     // Field-context keys deliberately keep different complete fields out of
     // the LCS. Do not re-pair their individual runs through the generic fuzzy
     // gap matcher: that interleaves one source field with multiple revised
-    // fields and produces projection-invalid partial complexes.
-    const similarityPairs = containsFieldControl(originalGap) || containsFieldControl(revisedGap)
+    // fields and produces projection-invalid partial complexes. A gap whose
+    // fields each complete inside one element still pairs its block
+    // containers (#1459); a gap holding part of a field pairs nothing.
+    const similarityPairs = gapElements.some((element) => !fieldsCompleteWithin(element))
       ? []
-      : similarParagraphPairs(
-        originalGap,
-        revisedGap,
-        originalNumberingIdentities,
-        revisedNumberingIdentities,
-      );
+      : gapElements.some(holdsFieldControl)
+        ? blockContainerPairs(originalGap, revisedGap)
+        : similarParagraphPairs(
+          originalGap,
+          revisedGap,
+          originalNumberingIdentities,
+          revisedNumberingIdentities,
+        );
     for (const [localOriginal, localRevised] of similarityPairs) {
       const matchedOriginal = gapOriginalStart + localOriginal;
       const matchedRevised = gapRevisedStart + localRevised;
