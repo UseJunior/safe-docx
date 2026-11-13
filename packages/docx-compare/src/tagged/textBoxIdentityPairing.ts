@@ -15,6 +15,11 @@ export interface TextBoxPairingCandidate {
    * identity or its identity is not unique in either document.
    */
   identity: string | undefined;
+  /**
+   * The anchor identifiers `identity` is made of, one per stored spelling.
+   * Absent on candidates built by hand; read as no identifiers.
+   */
+  tokens?: string[];
   /** Canonical form of every stored copy, used to pair anonymous boxes. */
   content: string;
   /** How the box is stored: copy count, `mc:AlternateContent` twinning, balance. */
@@ -106,6 +111,7 @@ export function textBoxPairingCandidates(
     return {
       copies,
       identity: tokens.length > 0 ? tokens.join('|') : undefined,
+      tokens,
       content: copies.map(canonicalNode).join('\u0000'),
       storage: [
         copies.length,
@@ -125,6 +131,40 @@ function duplicatedIdentities(candidates: readonly TextBoxPairingCandidate[]): S
     seen.add(identity);
   }
   return duplicated;
+}
+
+function tokenCounts(candidates: readonly TextBoxPairingCandidate[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const { tokens = [] } of candidates) {
+    for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Is one box stored in fewer spellings than the other, with every identifier
+ * of the smaller storage present in the larger and unique in both documents?
+ *
+ * A VML-only box re-saved by a newer Word gains a DrawingML spelling beside
+ * its VML one inside `mc:AlternateContent`; a twinned box saved by an older
+ * writer loses one. The spelling both stores share keeps its identifier, so
+ * the box is the same box stored differently (#1383).
+ */
+function sameBoxStoredDifferently(
+  left: TextBoxPairingCandidate,
+  right: TextBoxPairingCandidate,
+  leftCounts: ReadonlyMap<string, number>,
+  rightCounts: ReadonlyMap<string, number>,
+): boolean {
+  if (left.storage === right.storage) return false;
+  const leftTokens = left.tokens ?? [];
+  const rightTokens = right.tokens ?? [];
+  if (leftTokens.length === 0 || rightTokens.length === 0) return false;
+  const [smaller, larger] = leftTokens.length <= rightTokens.length
+    ? [leftTokens, rightTokens]
+    : [rightTokens, leftTokens];
+  return smaller.every((token) =>
+    larger.includes(token) && leftCounts.get(token) === 1 && rightCounts.get(token) === 1);
 }
 
 function longestCommonSubsequence<T>(
@@ -171,6 +211,8 @@ function longestCommonSubsequence<T>(
  * identity, unidentified boxes match on identical content. A box with an
  * identity never pairs with a box carrying a different one, so two boxes that
  * swap places pair with themselves or not at all — never with each other.
+ * A box stored in a different number of spellings on the two sides pairs on
+ * the identifier of the spelling both stores share (`sameBoxStoredDifferently`).
  *
  * Boxes without a usable identity fall back to anchor position: inside one gap
  * between aligned boxes, equal numbers of unidentified boxes pair in order,
@@ -183,6 +225,7 @@ function longestCommonSubsequence<T>(
  * comparison, which tracks their anchor runs.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1031
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
  */
 export function pairTextBoxCandidates(
   original: readonly TextBoxPairingCandidate[],
@@ -197,11 +240,15 @@ export function pairTextBoxCandidates(
       ? candidate.identity
       : undefined;
 
+  const originalTokenCounts = tokenCounts(original);
+  const revisedTokenCounts = tokenCounts(revised);
   const anchors = longestCommonSubsequence(original, revised, (left, right) => {
     const leftIdentity = identity(left);
     const rightIdentity = identity(right);
     if (leftIdentity !== undefined || rightIdentity !== undefined) {
-      return leftIdentity === rightIdentity;
+      return leftIdentity === rightIdentity ||
+        (leftIdentity !== undefined && rightIdentity !== undefined &&
+          sameBoxStoredDifferently(left, right, originalTokenCounts, revisedTokenCounts));
     }
     return left.content === right.content;
   });

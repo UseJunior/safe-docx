@@ -127,6 +127,12 @@ export interface TextBoxStoryInput {
 export interface TextBoxStoryComparisonPlan {
   outerOriginal: Buffer;
   outerRevised: Buffer;
+  /**
+   * The original main document as the redline's Reject All shows it: a body
+   * box stored differently in the two documents (VML only, DrawingML only,
+   * or twinned in `mc:AlternateContent`) carries the revised storage around
+   * the original story (#1383).
+   */
   originalDocumentXml: string;
   revisedDocumentXml: string;
   stories: TextBoxStoryInput[];
@@ -269,7 +275,8 @@ function createPlaceholder(textBox: Element, index: number): void {
  * that — refuse VML the comparison handles perfectly well.
  *
  * Returns `undefined` when there is no VML `v:textbox` ancestor at all, which
- * is how a DrawingML (`wps:txbx`) box presents.
+ * is how a DrawingML (`wps:txbx`) box presents; `nearestDrawingMlShape` finds
+ * that box's host.
  *
  * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
  * @see https://github.com/UseJunior/safe-docx/issues/795
@@ -289,26 +296,53 @@ function nearestShape(textBox: Element): Element | undefined {
   return undefined;
 }
 
+const WORDPROCESSING_SHAPE_NS =
+  'http://schemas.microsoft.com/office/word/2010/wordprocessingShape';
+
 /**
- * Fingerprint the VML scaffold that hosts a story, with the story emptied out.
+ * The DrawingML shape hosting a story: the `wps:wsp` whose `wps:txbx` is the
+ * story's parent, as a text box Word writes without a VML twin presents.
  *
- * Returns `undefined` when `nearestShape` found **no VML host at all** — as a
- * DrawingML (`wps:txbx`) box does. That is not "an empty scaffold"; it is "no
- * scaffold this function can describe". For a *standalone* DrawingML box it
- * also means the box falls outside the subset `spec-compliance/CONFORMANCE.md`
- * (ECMA-PART4-14-9-1-1) claims to cover, so callers MUST fail closed on
- * `undefined` on either side rather than comparing the two results, exactly as
- * they do for `relationshipClosureFingerprint`: two `undefined`s are the
- * absence of a pairing, never a successful one. The DrawingML half of an
- * `mc:AlternateContent` twin returns `undefined` here too, but it *is* inside
- * the covered subset — `scaffoldPairingReason` below carves it out before this
- * verdict is reached.
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
+ */
+function nearestDrawingMlShape(textBox: Element): Element | undefined {
+  const host = textBox.parentNode;
+  if (
+    host?.nodeType !== 1 ||
+    (host as Element).namespaceURI !== WORDPROCESSING_SHAPE_NS ||
+    (host as Element).localName !== 'txbx'
+  ) {
+    return undefined;
+  }
+  const shape = host.parentNode;
+  return shape?.nodeType === 1 &&
+    (shape as Element).namespaceURI === WORDPROCESSING_SHAPE_NS &&
+    (shape as Element).localName === 'wsp'
+    ? shape as Element
+    : undefined;
+}
+
+/**
+ * Fingerprint the shape that hosts a story, with the story emptied out: the
+ * VML shape around a `v:textbox`, or the DrawingML `wps:wsp` around a
+ * `wps:txbx`.
+ *
+ * Returns `undefined` when neither host is there. That is not "an empty
+ * scaffold"; it is "no scaffold this function can describe", so callers MUST
+ * fail closed on `undefined` on either side rather than comparing the two
+ * results, exactly as they do for `relationshipClosureFingerprint`: two
+ * `undefined`s are the absence of a pairing, never a successful one. A
+ * standalone DrawingML box, which Word writes with no VML fallback, has its
+ * `wps:wsp` host and is inside the subset (#1383).
  *
  * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
  * @see https://github.com/UseJunior/safe-docx/issues/795
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
  */
 function scaffoldFingerprint(textBox: Element): string | undefined {
-  const shape = nearestShape(textBox);
+  const shape = nearestShape(textBox) ?? nearestDrawingMlShape(textBox);
   if (!shape) return undefined;
   const clone = shape.cloneNode(true) as Element;
   for (const nested of Array.from(
@@ -329,12 +363,10 @@ function scaffoldFingerprint(textBox: Element): string | undefined {
  * sitting in its twin.
  *
  * Failing closed on that would refuse the ordinary Word text box, so the
- * scaffold guard skips a copy inside `mc:AlternateContent` and leaves it at
- * today's behaviour. Deciding which copy of a twin is the rendered one — and
- * therefore which scaffold governs — is the `mc:AlternateContent`-aware story
- * walk's job, tracked separately in #794; this guard deliberately does not
- * pre-empt it. The exclusion is therefore enforced for a standalone DrawingML
- * box, which is what #795 reports, and the twinned case is left to #794.
+ * scaffold guard skips a copy inside `mc:AlternateContent`. Deciding which
+ * copy of a twin is the rendered one — and therefore which scaffold governs —
+ * is the `mc:AlternateContent`-aware story walk's job (#794). A standalone
+ * DrawingML box is fingerprinted by its `wps:wsp` host (#1383).
  *
  * @see https://github.com/UseJunior/safe-docx/issues/794
  * @see https://github.com/UseJunior/safe-docx/issues/795
@@ -537,17 +569,7 @@ function drawingShapeChange(
   if (drawingShapeFingerprint(originalContainer) === drawingShapeFingerprint(revisedContainer)) {
     return undefined;
   }
-  const insideStory = (element: Element): boolean => {
-    for (let node = element.parentNode; node && node !== revisedContainer; node = node.parentNode) {
-      const ancestor = node as Element;
-      if (ancestor.namespaceURI === OOXML.W_NS && ancestor.localName === 'txbxContent') return true;
-    }
-    return false;
-  };
-  const docPr = Array.from(
-    revisedContainer.getElementsByTagNameNS(WORDPROCESSING_DRAWING_NS, 'docPr'),
-  ).find((candidate) => !insideStory(candidate));
-  const name = docPr?.getAttribute('name') || nearestShape(revisedTextBox)?.getAttribute('id') || undefined;
+  const name = drawingName(revisedTextBox, revisedContainer);
   const visible =
     drawingShapeFingerprint(originalContainer, { withoutEditingSessionIds: true }) !==
     drawingShapeFingerprint(revisedContainer, { withoutEditingSessionIds: true });
@@ -597,6 +619,227 @@ function drawingRelationshipsAgree(
     return directChildElements(element).every(visit);
   };
   return visit(revisedContainer);
+}
+
+/**
+ * The run-level element storing every copy of one visual box — its
+ * `mc:AlternateContent` when the box is twinned, otherwise its drawing
+ * container — or `undefined` when that element stores anything else: another
+ * box, a second shape beside the box, or an `mc:AlternateContent` branch that
+ * holds more than the box's drawing.
+ */
+function textBoxStorageRoot(copies: readonly Element[]): Element | undefined {
+  let root: Element | undefined;
+  for (const copy of copies) {
+    const container = drawingContainer(copy);
+    if (!container || ownTextBoxes(container).length !== 1 || !isSoleDrawingShape(copy, container)) {
+      return undefined;
+    }
+    const branch = container.parentNode as Element | null;
+    let candidate = container;
+    if (
+      branch?.nodeType === 1 &&
+      branch.namespaceURI === MC_NS &&
+      (branch.localName === 'Choice' || branch.localName === 'Fallback')
+    ) {
+      const alternate = branch.parentNode as Element | null;
+      if (
+        alternate?.nodeType !== 1 ||
+        alternate.namespaceURI !== MC_NS ||
+        alternate.localName !== 'AlternateContent'
+      ) {
+        return undefined;
+      }
+      candidate = alternate;
+    }
+    if (root !== undefined && root !== candidate) return undefined;
+    root = candidate;
+  }
+  if (!root) return undefined;
+  const stored = ownTextBoxes(root);
+  if (stored.length !== copies.length || !stored.every((copy) => copies.includes(copy))) return undefined;
+  if (root.namespaceURI === MC_NS) {
+    const branchesHoldOnlyTheBox = directChildElements(root).every((branch) => {
+      const children = directChildElements(branch);
+      return branch.namespaceURI === MC_NS &&
+        (branch.localName === 'Choice' || branch.localName === 'Fallback') &&
+        children.length === 1 &&
+        copies.some((copy) => drawingContainer(copy) === children[0]);
+    });
+    if (!branchesHoldOnlyTheBox) return undefined;
+  }
+  return root;
+}
+
+/** The drawing vocabulary a stored copy is written in: `drawing`, `pict` or `object`. */
+function storageVocabulary(copy: Element): string | undefined {
+  return drawingContainer(copy)?.localName;
+}
+
+/** The name a reader sees for a box's drawing: its DrawingML `wp:docPr/@name`, else its VML shape `id`. */
+function drawingName(textBox: Element, container: Element): string | undefined {
+  const insideStory = (element: Element): boolean => {
+    for (let node = element.parentNode; node && node !== container; node = node.parentNode) {
+      const ancestor = node as Element;
+      if (ancestor.namespaceURI === OOXML.W_NS && ancestor.localName === 'txbxContent') return true;
+    }
+    return false;
+  };
+  const docPr = Array.from(
+    container.getElementsByTagNameNS(WORDPROCESSING_DRAWING_NS, 'docPr'),
+  ).find((candidate) => !insideStory(candidate));
+  return docPr?.getAttribute('name') || nearestShape(textBox)?.getAttribute('id') || undefined;
+}
+
+/**
+ * Can the original document carry `revisedRoot`'s VML shape templates? A
+ * template the two drawings share must read the same, because every shape
+ * whose `type` names it takes its geometry from it; a template only the
+ * revised drawing defines must not redefine one the original defines
+ * elsewhere.
+ */
+function storageTemplatesCarry(originalRoot: Element, revisedRoot: Element): boolean {
+  const originalTemplates = Array.from(originalRoot.getElementsByTagNameNS(VML_NS, 'shapetype'));
+  const revisedTemplates = Array.from(revisedRoot.getElementsByTagNameNS(VML_NS, 'shapetype'));
+  const originalById = new Map(originalTemplates.map((template) => [template.getAttribute('id') ?? '', canonicalNode(template)]));
+  const elsewhere = new Set(
+    Array.from(originalRoot.ownerDocument!.getElementsByTagNameNS(VML_NS, 'shapetype'))
+      .filter((template) => !originalTemplates.includes(template))
+      .map((template) => template.getAttribute('id') ?? ''),
+  );
+  const revisedById = new Map(revisedTemplates.map((template) => [template.getAttribute('id') ?? '', canonicalNode(template)]));
+  // A template the original drawing defines and the revised one drops must
+  // not be named by any shape outside the drawing, which would lose its
+  // geometry once the drawing is replaced.
+  const namedOutside = new Set(
+    Array.from(originalRoot.ownerDocument!.getElementsByTagName('*'))
+      .filter((element) => !isWithinElement(element, originalRoot))
+      .map((element) => element.getAttribute('type') ?? '')
+      .filter((type) => type.startsWith('#'))
+      .map((type) => type.slice(1)),
+  );
+  return revisedTemplates.every((template) => {
+    const id = template.getAttribute('id') ?? '';
+    const shared = originalById.get(id);
+    return shared !== undefined ? shared === canonicalNode(template) : !elsewhere.has(id);
+  }) && [...originalById].every(([id, template]) =>
+    revisedById.get(id) === template || !namedOutside.has(id));
+}
+
+function isWithinElement(element: Element, container: Element): boolean {
+  for (let node: Node | null = element; node; node = node.parentNode) {
+    if (node === container) return true;
+  }
+  return false;
+}
+
+
+interface TextBoxStorageAlignment {
+  /**
+   * Put the revised storage around the original stories in the original
+   * document: every stored copy takes the story of the original copy written
+   * in the same vocabulary, or the original's only copy.
+   */
+  apply(): void;
+  /** Every stored copy already reads the same on both sides. */
+  textUnchanged: boolean;
+  /**
+   * A copy written in a vocabulary both sides store has a different drawing
+   * (size, position, wrap), beyond Word's editing-session ids.
+   */
+  sharedChanged: boolean;
+  /**
+   * The drawing may read differently: `sharedChanged`, or a spelling (the
+   * DrawingML or the VML one) was added or dropped, which nothing on the
+   * other side can be compared with. Reported with the `drawing` scope.
+   */
+  visible: boolean;
+  /** The revised drawing a reader sees, for a `drawing` entry. */
+  renderedContainer: Element;
+  name?: string;
+}
+
+/**
+ * Align a box stored differently on the two sides — VML only, DrawingML only,
+ * or both inside `mc:AlternateContent` — or `undefined` when its storage
+ * cannot be carried across.
+ *
+ * Word reads the `mc:Choice` DrawingML copy and an older reader the
+ * `mc:Fallback` VML copy, so a box that gained or lost a spelling is still one
+ * box. The original side takes the revised storage around its own story, so
+ * the outer comparison sees one unchanged anchor and every stored copy of the
+ * box is compared with the original text: Word and an older reader show the
+ * same tracked text. The storage moves only when it stores this box alone,
+ * names relationships that mean the same in the original, neither brings nor
+ * takes away a VML template another box relies on, and every stored copy on
+ * each side says the same thing. A drawing change is `visible` when the
+ * spelling both sides store changed, or when a spelling was added or dropped,
+ * since the reader of that spelling may see a different drawing.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
+ */
+function textBoxStorageAlignment(
+  originalCopies: readonly Element[],
+  revisedCopies: readonly Element[],
+  renderedRevisedCopy: Element,
+  originalTargets: ReadonlyMap<string, string>,
+  revisedTargets: ReadonlyMap<string, string>,
+): TextBoxStorageAlignment | undefined {
+  const originalRoot = textBoxStorageRoot(originalCopies);
+  const revisedRoot = textBoxStorageRoot(revisedCopies);
+  if (!originalRoot || !revisedRoot) return undefined;
+  if (!drawingRelationshipsAgree(revisedRoot, originalTargets, revisedTargets)) return undefined;
+  if (!storageTemplatesCarry(originalRoot, revisedRoot)) return undefined;
+  // Copies of one box that say different things are different boxes to
+  // different readers; carrying one copy's story into the other spelling
+  // would change what one of them showed.
+  const consistent = (copies: readonly Element[]): boolean =>
+    new Set(copies.map((copy) => canonicalNode(copy))).size === 1;
+  if (!consistent(originalCopies) || !consistent(revisedCopies)) return undefined;
+  const sameVocabulary = (revisedCopy: Element): Element | undefined =>
+    originalCopies.find((copy) => storageVocabulary(copy) === storageVocabulary(revisedCopy));
+  if (!revisedCopies.some((copy) => sameVocabulary(copy) !== undefined)) return undefined;
+  const source = (revisedCopy: Element): Element =>
+    sameVocabulary(revisedCopy) ?? originalCopies[0]!;
+  const textUnchanged = revisedCopies.every((copy) =>
+    canonicalNode(copy) === canonicalNode(source(copy)) &&
+    relationshipClosureFingerprint(copy, revisedTargets) ===
+      relationshipClosureFingerprint(source(copy), originalTargets));
+  // The spelling both sides store is compared directly. A spelling only one
+  // side stores cannot be compared with anything: no rule maps every
+  // DrawingML property (placement, z-order, rotation, fill, ...) onto VML, so
+  // the reader that renders it may see a different drawing. Gaining or
+  // losing a spelling is therefore reported as a drawing change, never
+  // assumed to be a faithful re-save.
+  const sharedChanged = revisedCopies.some((copy) => {
+    const original = sameVocabulary(copy);
+    return original !== undefined &&
+      drawingShapeFingerprint(drawingContainer(original)!, { withoutEditingSessionIds: true }) !==
+        drawingShapeFingerprint(drawingContainer(copy)!, { withoutEditingSessionIds: true });
+  });
+  const vocabularies = (copies: readonly Element[]): string =>
+    [...new Set(copies.map((copy) => storageVocabulary(copy)))].sort().join('|');
+  const spellingChanged = vocabularies(originalCopies) !== vocabularies(revisedCopies);
+  const renderedContainer = drawingContainer(renderedRevisedCopy)!;
+  const name = drawingName(renderedRevisedCopy, renderedContainer) ??
+    revisedCopies.map((copy) => drawingName(copy, drawingContainer(copy)!)).find((candidate) => candidate);
+  return {
+    apply: () => {
+      const document = originalRoot.ownerDocument!;
+      const aligned = document.importNode(revisedRoot, true) as Element;
+      const alignedCopies = ownTextBoxes(aligned);
+      alignedCopies.forEach((copy, index) => replaceChildren(copy, source(revisedCopies[index]!)));
+      copyNamespaceDeclarations(revisedRoot.ownerDocument!.documentElement, document.documentElement);
+      originalRoot.parentNode!.replaceChild(aligned, originalRoot);
+    },
+    textUnchanged,
+    sharedChanged,
+    visible: sharedChanged || spellingChanged,
+    renderedContainer,
+    ...(name ? { name } : {}),
+  };
 }
 
 /**
@@ -1688,6 +1931,84 @@ function assertLifecycleStoriesAreSectionBound(
   };
 }
 
+/**
+ * Align every header/footer box the two parts store differently, in the
+ * original part. Header and footer boxes pair by visual position; a box that
+ * gained or lost a spelling (VML only, DrawingML only, or twinned in
+ * `mc:AlternateContent`) and keeps the identity of the spelling both sides
+ * store takes the revised storage around its original story, so its text is
+ * compared in every stored copy. A header or footer story is spliced into the
+ * revised part, so the revised storage is carried whether or not its text
+ * changed; a changed shared spelling, or a spelling only one side stores, is
+ * reported for the `drawing` scope, as any header/footer drawing change is
+ * (#1382). A box that names another identity, or whose storage cannot be
+ * carried, is refused: a header or footer cannot track a replaced box (#1384).
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
+ */
+function alignAncillaryTextBoxStorage(
+  originalXml: string,
+  revisedXml: string,
+  originalTargets: ReadonlyMap<string, string>,
+  revisedTargets: ReadonlyMap<string, string>,
+  partPath: string,
+): { xml: string; boxes: Array<{ visualIndex: number; visible: boolean; element: UnrepresentedDrawingChange['element']; name?: string }> } {
+  const originalDocument = parseXml(originalXml);
+  const revisedDocument = parseXml(revisedXml);
+  const originalGroups = textBoxGroups(originalDocument);
+  const revisedGroups = textBoxGroups(revisedDocument);
+  if (originalGroups.length !== revisedGroups.length) return { xml: originalXml, boxes: [] };
+  const rawIndexOf = (document: Document): Map<Element, number> =>
+    new Map(Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))
+      .map((copy, rawIndex) => [copy, rawIndex]));
+  const originalCandidates = textBoxPairingCandidates(originalGroups, rawIndexOf(originalDocument));
+  const revisedCandidates = textBoxPairingCandidates(revisedGroups, rawIndexOf(revisedDocument));
+  const boxes: Array<{ visualIndex: number; visible: boolean; element: UnrepresentedDrawingChange['element']; name?: string }> = [];
+  for (const [visualIndex, revised] of revisedCandidates.entries()) {
+    const original = originalCandidates[visualIndex]!;
+    if (original.storage === revised.storage) continue;
+    const refuse = (reason: string): never => {
+      throw new UnsupportedTextBoxRevisionError([{
+        index: visualIndex,
+        partPath,
+        reason,
+        originalParagraphId: textBoxParagraphId(original.copies[0]!),
+        revisedParagraphId: textBoxParagraphId(revised.copies[0]!),
+      }]);
+    };
+    const [smaller, larger] = (original.tokens ?? []).length <= (revised.tokens ?? []).length
+      ? [original.tokens ?? [], revised.tokens ?? []]
+      : [revised.tokens ?? [], original.tokens ?? []];
+    if (smaller.length === 0 || !smaller.every((token) => larger.includes(token))) {
+      refuse('the ancillary text-box scaffold names a different drawing (its anchor identity changed)');
+    }
+    const rendered = revisedGroups[visualIndex]!.selected;
+    const alignment = textBoxStorageAlignment(
+      original.copies,
+      revised.copies,
+      rendered,
+      originalTargets,
+      revisedTargets,
+    );
+    if (!alignment) {
+      refuse(DIVERGENT_STORAGE_SHAPE_REASON);
+      continue;
+    }
+    alignment.apply();
+    boxes.push({
+      visualIndex,
+      visible: alignment.visible,
+      element: alignment.renderedContainer.localName as UnrepresentedDrawingChange['element'],
+      ...(alignment.name !== undefined ? { name: alignment.name } : {}),
+    });
+  }
+  return boxes.length > 0
+    ? { xml: serializer.serializeToString(originalDocument), boxes }
+    : { xml: originalXml, boxes };
+}
+
 async function ancillaryStoryInputs(
   originalArchive: DocxArchive,
   revisedArchive: DocxArchive,
@@ -1740,16 +2061,28 @@ async function ancillaryStoryInputs(
   const drawingAccountedPartPaths: string[] = [];
   const drawingAlignedOriginalParts = new Map<string, string>();
   for (const pair of paired.pairs) {
+    // A box stored differently in the two parts takes the revised storage
+    // around its original story before anything is compared (#1383).
+    const storage = alignAncillaryTextBoxStorage(
+      pair.original.xml,
+      pair.revised.xml,
+      relationshipTargets(pair.original.relationshipsXml),
+      relationshipTargets(pair.revised.relationshipsXml),
+      pair.revised.targetPath,
+    );
+    const original = storage.boxes.length > 0
+      ? { ...pair.original, xml: storage.xml, textBoxes: partTextBoxes(storage.xml) }
+      : pair.original;
     if (
       topologyMatches
       && pair.bindingClosureMatched
-      && pair.original.ordinaryContent !== pair.revised.ordinaryContent
-      && ordinaryStoryScaffoldFingerprint(pair.original.xml)
+      && original.ordinaryContent !== pair.revised.ordinaryContent
+      && ordinaryStoryScaffoldFingerprint(original.xml)
         === ordinaryStoryScaffoldFingerprint(pair.revised.xml)
     ) {
-      const originalTargets = relationshipTargets(pair.original.relationshipsXml);
+      const originalTargets = relationshipTargets(original.relationshipsXml);
       const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
-      const originalRoot = parseXml(pair.original.xml).documentElement;
+      const originalRoot = parseXml(original.xml).documentElement;
       const revisedRoot = parseXml(pair.revised.xml).documentElement;
       const originalClosure = relationshipClosureFingerprint(originalRoot, originalTargets);
       const revisedClosure = relationshipClosureFingerprint(revisedRoot, revisedTargets);
@@ -1762,7 +2095,7 @@ async function ancillaryStoryInputs(
         const storyRevisedArchive = await revisedArchive.clone();
         storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
           originalDocumentXml,
-          partXmlWithRevisedTextBoxes(pair.original.xml, pair.revised.xml),
+          partXmlWithRevisedTextBoxes(original.xml, pair.revised.xml),
         ));
         storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
           revisedDocumentXml,
@@ -1770,7 +2103,7 @@ async function ancillaryStoryInputs(
         ));
         storyOriginalArchive.setFile(
           'word/_rels/document.xml.rels',
-          promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
+          promotedStoryRelationshipsXml(original.relationshipsXml, original.targetPath),
         );
         storyRevisedArchive.setFile(
           'word/_rels/document.xml.rels',
@@ -1794,11 +2127,11 @@ async function ancillaryStoryInputs(
         })));
       }
     }
-    const originalVisualOrdinals = partVisualTextBoxOrdinals(pair.original.xml);
+    const originalVisualOrdinals = partVisualTextBoxOrdinals(original.xml);
     const visualOrdinals = partVisualTextBoxOrdinals(pair.revised.xml);
-    if (pair.original.textBoxes.length !== pair.revised.textBoxes.length) {
+    if (original.textBoxes.length !== pair.revised.textBoxes.length) {
       const rawIndex = Math.min(
-        pair.original.textBoxes.length,
+        original.textBoxes.length,
         pair.revised.textBoxes.length,
       );
       throw new UnsupportedTextBoxRevisionError([{
@@ -1828,11 +2161,11 @@ async function ancillaryStoryInputs(
     // story comparison carries it, and `auditPicturePayloads` lists it in
     // `unrepresentedChanges` after the comparison, instead of the whole
     // comparison being refused (#1430).
-    const originalTargets = relationshipTargets(pair.original.relationshipsXml);
+    const originalTargets = relationshipTargets(original.relationshipsXml);
     const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
     const shapedBoxes: Array<{ index: number; change: DrawingShapeChange }> = [];
-    for (let index = 0; index < pair.original.textBoxes.length; index += 1) {
-      const originalTextBox = pair.original.textBoxes[index]!;
+    for (let index = 0; index < original.textBoxes.length; index += 1) {
+      const originalTextBox = original.textBoxes[index]!;
       const revisedTextBox = pair.revised.textBoxes[index]!;
       // A header or footer story is spliced into the revised part, so its
       // drawing is the revised one whether or not its text changed. Neither
@@ -1891,7 +2224,7 @@ async function ancillaryStoryInputs(
       storyOriginalArchive.setDocumentXml(
         storyDocumentXmlFromPart(
           originalDocumentXml,
-          pair.original.xml,
+          original.xml,
           index,
         ),
       );
@@ -1904,7 +2237,7 @@ async function ancillaryStoryInputs(
       );
       storyOriginalArchive.setFile(
         'word/_rels/document.xml.rels',
-        promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
+        promotedStoryRelationshipsXml(original.relationshipsXml, original.targetPath),
       );
       storyRevisedArchive.setFile(
         'word/_rels/document.xml.rels',
@@ -1919,21 +2252,23 @@ async function ancillaryStoryInputs(
         revised: await storyRevisedArchive.save(),
       });
     }
-    if (shapedBoxes.length > 0) {
-      const alignedXml = partXmlWithRevisedDrawings(
-        pair.original.xml,
-        pair.revised.xml,
-        shapedBoxes.map(({ index }) => index),
-      );
+    if (shapedBoxes.length > 0 || storage.boxes.length > 0) {
+      const alignedXml = shapedBoxes.length > 0
+        ? partXmlWithRevisedDrawings(
+          original.xml,
+          pair.revised.xml,
+          shapedBoxes.map(({ index }) => index),
+        )
+        : original.xml;
       if (alignedXml !== undefined) {
-        drawingAlignedOriginalParts.set(pair.original.targetPath, alignedXml);
+        drawingAlignedOriginalParts.set(original.targetPath, alignedXml);
         // The part's entry is represented when its stories and drawings are
         // all it changed: the stories are tracked (and projection-checked),
         // the drawings listed. A drawing that draws more than its box (a
         // group, another shape beside it) keeps the part's own entry too.
         if (
           shapedBoxes.every(({ index, change }) =>
-            isSoleDrawingShape(pair.original.textBoxes[index]!, change.originalContainer) &&
+            isSoleDrawingShape(original.textBoxes[index]!, change.originalContainer) &&
             isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer) &&
             shapeTemplatesAgree(change.originalContainer, change.revisedContainer)) &&
           canonicalNode(
@@ -1950,7 +2285,9 @@ async function ancillaryStoryInputs(
           })));
         }
       }
-      const reported = new Set<number>();
+      const reports: Array<{ visualIndex: number; element: UnrepresentedDrawingChange['element']; name?: string }> =
+        storage.boxes.filter(({ visible }) => visible);
+      const reported = new Set(reports.map(({ visualIndex }) => visualIndex));
       for (const { index } of shapedBoxes) {
         const visualIndex = visualOrdinals[index] ?? index;
         if (reported.has(visualIndex)) continue;
@@ -1962,6 +2299,10 @@ async function ancillaryStoryInputs(
           .filter((box) => (visualOrdinals[box.index] ?? box.index) === visualIndex)
           .map((box) => box.change.name)
           .find((candidate) => candidate !== undefined);
+        reports.push({ visualIndex, element: change.element, ...(name !== undefined ? { name } : {}) });
+      }
+      reports.sort((left, right) => left.visualIndex - right.visualIndex);
+      for (const { visualIndex, element, name } of reports) {
         for (const binding of pair.revised.bindings) {
           drawingChanges.push({
             scope: 'drawing',
@@ -1972,7 +2313,7 @@ async function ancillaryStoryInputs(
               story: binding.kind,
               partPath: pair.revised.targetPath,
               index: visualIndex,
-              element: change.element,
+              element,
               ...(name !== undefined ? { name } : {}),
             },
           });
@@ -2440,6 +2781,81 @@ export async function deletedAncillaryStoryOutputPaths(
 }
 
 /**
+ * Align every paired body box the two documents store differently, in the
+ * original document, and say what it changed.
+ *
+ * A box paired across storage shapes (`sameBoxStoredDifferently`) whose text
+ * changed, or whose spelling both sides store did not change, takes the
+ * revised storage around its original story (`textBoxStorageAlignment`), so
+ * its text is tracked inside the box in every stored copy and a re-save by a
+ * newer Word — the same box, now twinned — shows no text revision. The added
+ * or dropped spelling is listed with the `drawing` scope, as any drawing the
+ * redline carries without markup is (#1382). A box whose shared spelling
+ * alone changed, or whose storage cannot be carried, stays a native
+ * replacement in the outer comparison.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
+ */
+function alignBodyTextBoxStorage(
+  originalDocument: Document,
+  revisedDocument: Document,
+  originalTargets: ReadonlyMap<string, string>,
+  revisedTargets: ReadonlyMap<string, string>,
+): { aligned: boolean; drawingChanges: UnrepresentedChange[]; originalDocumentXml?: string } {
+  const rawIndexOf = (document: Document): Map<Element, number> =>
+    new Map(Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))
+      .map((copy, rawIndex) => [copy, rawIndex]));
+  const revisedGroups = textBoxGroups(revisedDocument);
+  const originalCandidates = textBoxPairingCandidates(
+    textBoxGroups(originalDocument),
+    rawIndexOf(originalDocument),
+  );
+  const revisedCandidates = textBoxPairingCandidates(revisedGroups, rawIndexOf(revisedDocument));
+  const visualOrdinals = visualTextBoxOrdinals(revisedDocument);
+  const revisedRawIndex = rawIndexOf(revisedDocument);
+  const drawingChanges: UnrepresentedChange[] = [];
+  let aligned = false;
+  for (const [originalIndex, revisedIndex] of pairTextBoxCandidates(originalCandidates, revisedCandidates).pairs) {
+    const original = originalCandidates[originalIndex]!;
+    const revised = revisedCandidates[revisedIndex]!;
+    // Only a box the two documents identify as the same box is re-stored;
+    // anonymous boxes paired by position alone stay native replacements.
+    if (original.storage === revised.storage || !original.tokens?.length || !revised.tokens?.length) continue;
+    const rendered = revisedGroups.find((group) => revised.copies.includes(group.selected))?.selected
+      ?? revised.copies[0]!;
+    const alignment = textBoxStorageAlignment(
+      original.copies,
+      revised.copies,
+      rendered,
+      originalTargets,
+      revisedTargets,
+    );
+    if (!alignment || (alignment.textUnchanged && alignment.sharedChanged)) continue;
+    alignment.apply();
+    aligned = true;
+    if (!alignment.visible) continue;
+    const rawIndex = revisedRawIndex.get(rendered)!;
+    drawingChanges.push({
+      scope: 'drawing',
+      kind: 'changed',
+      sectionIndex: sectionIndexOf(alignment.renderedContainer),
+      drawing: {
+        story: 'body',
+        partPath: 'word/document.xml',
+        index: visualOrdinals[rawIndex] ?? rawIndex,
+        element: alignment.renderedContainer.localName as UnrepresentedDrawingChange['element'],
+        ...(alignment.name !== undefined ? { name: alignment.name } : {}),
+      },
+    });
+  }
+  return aligned
+    ? { aligned, drawingChanges, originalDocumentXml: serializer.serializeToString(originalDocument) }
+    : { aligned, drawingChanges };
+}
+
+/**
  * Split supported changed VML text boxes into independent WordprocessingML
  * stories and neutralize them for the outer-body comparison.
  *
@@ -2472,6 +2888,12 @@ export async function prepareTextBoxStoryComparison(
   );
   const originalDocument = parseXml(originalDocumentXml);
   const revisedDocument = parseXml(revisedDocumentXml);
+  const storage = alignBodyTextBoxStorage(
+    originalDocument,
+    revisedDocument,
+    originalRelationshipTargets,
+    revisedRelationshipTargets,
+  );
   const originalTextBoxes = Array.from(
     originalDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
   );
@@ -2495,7 +2917,14 @@ export async function prepareTextBoxStoryComparison(
     textBoxGroups(revisedDocument),
     revisedRawIndex,
   );
-  const pairing = pairTextBoxCandidates(originalCandidates, revisedCandidates);
+  const identityPairing = pairTextBoxCandidates(originalCandidates, revisedCandidates);
+  // A box still stored differently after `alignBodyTextBoxStorage` keeps its
+  // native redline: the outer comparison tracks it as replaced (#1383).
+  const pairing = {
+    ...identityPairing,
+    pairs: identityPairing.pairs.filter(([originalIndex, revisedIndex]) =>
+      originalCandidates[originalIndex]!.storage === revisedCandidates[revisedIndex]!.storage),
+  };
   if (pairing.ambiguousStorage) {
     throw new UnsupportedTextBoxRevisionError([{
       index: Math.min(
@@ -2510,13 +2939,6 @@ export async function prepareTextBoxStoryComparison(
   for (const [originalIndex, revisedIndex] of pairing.pairs) {
     const originalCandidate = originalCandidates[originalIndex]!;
     const revisedCandidate = revisedCandidates[revisedIndex]!;
-    if (originalCandidate.storage !== revisedCandidate.storage) {
-      throw new UnsupportedTextBoxRevisionError([{
-        index: Math.min(originalIndex, revisedIndex),
-        partPath: 'word/document.xml',
-        reason: DIVERGENT_STORAGE_SHAPE_REASON,
-      }]);
-    }
     for (const [offset, originalCopy] of originalCandidate.copies.entries()) {
       pairedCopies.push([originalCopy, revisedCandidate.copies[offset]!]);
     }
@@ -2758,13 +3180,19 @@ export async function prepareTextBoxStoryComparison(
     if (alignedShapeCopies.has(index)) alignShape(originalIndex, index);
   }
   const stories: TextBoxStoryInput[] = [...ancillary.stories, ...bodyStories];
-  const allDrawingChanges = [...ancillary.drawingChanges, ...drawingChanges];
+  const allDrawingChanges = [
+    ...ancillary.drawingChanges,
+    ...[...storage.drawingChanges, ...drawingChanges]
+      .sort((left, right) => left.drawing!.index - right.drawing!.index),
+  ];
 
   if (
     stories.length === 0 &&
     !ancillary.validateProjection &&
     !unpairedTextBoxes &&
-    allDrawingChanges.length === 0
+    allDrawingChanges.length === 0 &&
+    !storage.aligned &&
+    ancillary.drawingAccountedPartPaths.length === 0
   ) {
     return undefined;
   }
@@ -2786,7 +3214,7 @@ export async function prepareTextBoxStoryComparison(
   return {
     outerOriginal: await outerOriginalArchive.save(),
     outerRevised: await outerRevisedArchive.save(),
-    originalDocumentXml,
+    originalDocumentXml: storage.originalDocumentXml ?? originalDocumentXml,
     revisedDocumentXml,
     stories,
     validateAncillaryProjection: ancillary.validateProjection,

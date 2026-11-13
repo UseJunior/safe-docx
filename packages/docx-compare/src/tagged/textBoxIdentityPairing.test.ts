@@ -3,6 +3,7 @@
  * fallback only for boxes that carry no usable identity.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1031
+ * @see https://github.com/UseJunior/safe-docx/issues/1383
  */
 
 import { describe, expect } from 'vitest';
@@ -25,6 +26,7 @@ const test = testAllure
 const box = (identity: string | undefined, content: string, storage = '1:plain:balanced'): TextBoxPairingCandidate => ({
   copies: [],
   identity,
+  tokens: identity?.split('|') ?? [],
   content,
   storage,
 });
@@ -86,6 +88,35 @@ describe('text-box identity pairing', () => {
       ));
     await then('the gap is reported rather than guessed at', () => {
       expect(pairing.ambiguousStorage).toEqual({ original: 0, revised: 0 });
+    });
+  });
+
+  test('a box stored in another number of spellings pairs on the spelling both store', async ({ when, then }: AllureBddContext) => {
+    const pairing = await when('a VML-only box is re-saved twinned, and a twinned box saved as DrawingML only', () =>
+      pairTextBoxCandidates(
+        [box('vml:a', 'A'), box('dml:2|vml:b', 'B', '2:twinned:balanced')],
+        [box('dml:1|vml:a', 'A', '2:twinned:balanced'), box('dml:2', 'B')],
+      ));
+    await then('each box pairs with itself (#1383)', () => {
+      expect(pairing.pairs).toEqual([[0, 0], [1, 1]]);
+    });
+  });
+
+  test('a shared spelling does not pair boxes stored alike, or a spelling reused elsewhere', async ({ when, then }: AllureBddContext) => {
+    const sameStorage = await when('two twinned boxes share only their VML id', () =>
+      pairTextBoxCandidates(
+        [box('dml:1|vml:a', 'A', '2:twinned:balanced')],
+        [box('dml:9|vml:a', 'A', '2:twinned:balanced')],
+      ));
+    const reused = await when('the shared VML id names two boxes in the revised document', () =>
+      pairTextBoxCandidates(
+        [box('vml:a', 'A')],
+        [box('dml:1|vml:a', 'A', '2:twinned:balanced'), box('vml:a', 'A2')],
+      ));
+    await then('neither pairs on the partial identity', () => {
+      expect(sameStorage.pairs).toEqual([]);
+      // Only the box carrying exactly the original identity pairs.
+      expect(reused.pairs).toEqual([[0, 1]]);
     });
   });
 
