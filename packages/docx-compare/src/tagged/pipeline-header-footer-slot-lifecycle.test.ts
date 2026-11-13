@@ -51,6 +51,8 @@ const test = testAllure
 const W_NS = OOXML.W_NS;
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PKG_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+// Each case compares, applies twice per applier and runs the schema gate.
+const LOAD_SENSITIVE_TIMEOUT_MS = 30_000;
 const COMPARE_OPTIONS = { author: 'Comparison', date: new Date('2026-11-13T00:00:00.000Z') };
 const PAGE_SETUP =
   '<w:pgSz w:w="12240" w:h="15840"/>' +
@@ -253,7 +255,7 @@ async function expectSlotRedline(
   await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document));
 }
 
-describe('header/footer attached to or dropped from a surviving section (#1394)', () => {
+describe('header/footer attached to or dropped from a surviving section (#1394)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   test.openspec('[SDX-CMP-SLOTLIFE-01] A header or footer attached to a surviving section is tracked as inserted content')(
     'tracks a default footer added to a one-section document that had none',
     async ({ given, when, then }: AllureBddContext) => {
