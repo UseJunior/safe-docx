@@ -18,7 +18,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-25` | w:r run content model excludes revision wrappers | 5 | 1 | 17.3.2.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
-| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts |
+| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts; packages/docx-compare/src/tagged/pipeline-header-footer-text-box-lifecycle.test.ts |
 | `ECMA-PART4-19-1-2-11` | VML image data relationship (v:imagedata) | 5 | 4 | 19.1.2.11 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts |
 | `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts |
 | `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts |
@@ -247,7 +247,7 @@ bodies and re-emits them across comment and footnote projections.
 - **Part / Section:** Part 4 § 14.9.1.1
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent`
-- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts
+- **Verified by:** packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts; packages/docx-compare/src/tagged/pipeline-header-footer-text-box-lifecycle.test.ts
 
 Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
 WordprocessingML-content container inside a drawing object. It prohibits
@@ -346,6 +346,18 @@ refused, as a changed one is; a picture, an object or a nested box in it is
 carried and marked with the box. Anonymous boxes paired by position whose
 storage shapes disagree are tracked as replaced; where their counts differ as
 well, so that position cannot pair them, they are still refused.
+
+**Inserted and deleted header and footer text boxes are inside the subset
+too.** Boxes in a header or footer part pair by the same anchor identity. When
+one has no counterpart — or a pair is stored differently with no identifier in
+common, or its drawing changed under the same identity — the whole part is
+compared as one story: the box stays whole there, its anchor run is tracked as
+inserted or deleted, and every paragraph and text run of its story is marked
+with the same revision kind, in every stored copy. A paired box whose text
+changed is compared as its own story inside that part. The rest of the part
+must differ only in plain paragraph text under the same relationships, and
+the part's section topology and bindings must match; otherwise the comparison
+is refused.
 
 ### ECMA-PART4-19-1-2-11 — VML image data relationship (v:imagedata)
 

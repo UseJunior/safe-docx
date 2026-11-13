@@ -1151,7 +1151,7 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
     });
   });
 
-  test('fails closed when a side-only story replaces a corresponding section', async ({
+  test('tracks a header box whose anchor identity changed as replaced, across a renamed part', async ({
     given,
     when,
     then,
@@ -1163,33 +1163,26 @@ describe('VML text-box story comparison (#713)', { timeout: LOAD_SENSITIVE_TIMEO
         shapeId: 'shape1',
       }),
     );
-    const revised = await given('a non-pairable replacement in the same section', () =>
+    const revised = await given('the same slot naming another part, whose box has another identity', () =>
       selectedHeaderFixture({
         text: 'Revised header',
         target: 'header9.xml',
         shapeId: 'shape9',
       }),
     );
-    let failure: unknown;
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, {}));
 
-    await when('relationship-aware classification refuses to guess', async () => {
-      try {
-        await compareDocumentsAtomizer(original, revised, {
-        });
-      } catch (error) {
-        failure = error;
-      }
-    });
-
-    await then('a typed non-content-bearing diagnostic identifies the selected part', () => {
-      expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect((failure as UnsupportedTextBoxRevisionError).changes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            reason: expect.stringContaining('scaffold'),
-          }),
-        ]),
-      );
+    await then('the old box is tracked as deleted and the new one as inserted (#1384)', async () => {
+      const header = (await (await DocxArchive.load(result.document)).getFile('word/header9.xml'))!;
+      const boxTexts = (xml: string): string[] =>
+        Array.from(parseXml(xml).getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))
+          .map((box) => Array.from(box.getElementsByTagNameNS(OOXML.W_NS, 't'))
+            .map((text) => text.textContent ?? '').join(''));
+      expect(boxTexts(acceptAllChanges(header))).toEqual(['Revised header']);
+      expect(boxTexts(rejectAllChanges(header))).toEqual(['Original header']);
+      expect(textBoxText(header, 0)).toBe('Original header');
+      expect(textBoxText(header, 1)).toBe('Revised header');
     });
   });
 });

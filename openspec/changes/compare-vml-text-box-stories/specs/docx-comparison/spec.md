@@ -49,6 +49,16 @@ The system SHALL compare the paragraph content of `w:txbxContent` as an independ
 - **AND** two identified boxes that swap order SHALL NOT be paired with each other
 - **AND** accepting all changes SHALL recover the revised document and rejecting all changes the original
 
+#### Scenario: [SDX-TXBX-11] Inserted or deleted header/footer text box is a tracked object lifecycle
+
+- **GIVEN** a default, first-page or even-page header or footer part whose text boxes do not pair one for one in order by anchor identity
+- **AND** the part's section topology and bindings match, and outside the unpaired boxes it differs only in plain paragraph text under the same relationships
+- **WHEN** in-place comparison runs
+- **THEN** a box with no counterpart, or a pair stored differently with no identifier in common, SHALL be tracked in that part as an inserted or deleted anchor run
+- **AND** every paragraph mark and text run of its story, in every stored copy, SHALL carry the same revision kind
+- **AND** a paired box whose text changed SHALL carry its text revisions inside the box
+- **AND** accepting all changes SHALL recover the revised part and rejecting all changes the original, through both acceptors
+
 #### Scenario: [SDX-TXBX-05] Verifier coverage is explicit for nested stories
 
 - **GIVEN** a successful comparison containing a supported changed text-box story

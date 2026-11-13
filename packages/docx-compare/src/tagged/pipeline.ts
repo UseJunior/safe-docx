@@ -1623,6 +1623,7 @@ async function compareDocumentsTagged(
       document: result.document,
       original: story.original,
       revised: story.revised,
+      placeholder: story.placeholder,
     })),
   );
   // Unpaired body text boxes stay whole in the outer comparison, which tracks
@@ -1632,6 +1633,7 @@ async function compareDocumentsTagged(
     options.author ?? 'Comparison',
     options.date ?? new Date(),
     Math.max(nextPackageRevisionId, await firstAvailablePackageRevisionId(assembled)),
+    textBoxPlan.lifecycleAncillaryPartPaths,
   );
   const document = lifecycle.document;
   const comparedArchive = await DocxArchive.load(document);

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- A header or footer that gains or loses a text box no longer makes
+  `compareDocuments` fail with `UnsupportedTextBoxRevisionError` ("inserted
+  or deleted ancillary text-box topology is not supported"). Boxes in a
+  header/footer part now pair by anchor identity, as in the main document;
+  a box with no counterpart is tracked in that part as an inserted or
+  deleted anchor run, with every paragraph and run of its story marked the
+  same way, in every stored copy, while a paired box's text edit stays
+  tracked inside the box. This covers default, first-page and even-page
+  headers and footers. A header/footer box whose anchor identity changed,
+  or a DrawingML-only box against a VML-only box with no identifier in
+  common, is now tracked as replaced instead of refused. (#1384)
+
 - A text box stored only as DrawingML (`wps:txbx` with no VML fallback) no
   longer makes `compareDocuments` fail with `UnsupportedTextBoxRevisionError`
   ("the containing VML shape scaffold could not be paired"), in the main
