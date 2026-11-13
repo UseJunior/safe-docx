@@ -8,6 +8,8 @@ function describeScope(change: UnrepresentedChange): string {
       control?.tag !== undefined ? `tag "${control.tag}"` : undefined,
       control?.alias !== undefined ? `alias "${control.alias}"` : undefined,
       control?.id !== undefined ? `id ${control.id}` : undefined,
+      control?.customXmlElement !== undefined ? `element "${control.customXmlElement}"` : undefined,
+      control?.customXmlUri !== undefined ? `namespace "${control.customXmlUri}"` : undefined,
     ].filter((part) => part !== undefined);
     if (control?.element === 'sdt' || control?.element === 'customXml') {
       const noun = control.element === 'sdt' ? 'block content control' : 'block custom XML element';

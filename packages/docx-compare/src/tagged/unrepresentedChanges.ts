@@ -98,6 +98,15 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
     if (alias !== undefined) result.alias = alias;
     return result;
   };
+  // A custom XML element is named by `w:element` within the `w:uri` namespace.
+  const customXmlIdentity = (container: Element): Pick<ControlIdentity, 'customXmlElement' | 'customXmlUri'> => {
+    const result: Pick<ControlIdentity, 'customXmlElement' | 'customXmlUri'> = {};
+    const name = container.getAttributeNS(W_NS, 'element');
+    const uri = container.getAttributeNS(W_NS, 'uri');
+    if (name) result.customXmlElement = name;
+    if (uri) result.customXmlUri = uri;
+    return result;
+  };
   const visit = (node: TaggedNode, control: ControlIdentity | undefined): void => {
     const revisedSide = node.tag !== 'original';
     const element = representative(node, revisedSide ? 'revised' : 'original')!;
@@ -118,7 +127,7 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
           kind: node.tag === 'revised' ? 'added' : 'removed',
           sectionIndex,
           contentControl: {
-            ...(name === 'sdt' ? identity(node, outputOrdinal.sdt) : {}),
+            ...(name === 'sdt' ? identity(node, outputOrdinal.sdt) : customXmlIdentity(element)),
             index: outputOrdinal[container],
             element: container,
           },

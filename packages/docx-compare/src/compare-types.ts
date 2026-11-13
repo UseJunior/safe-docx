@@ -158,6 +158,13 @@ export interface UnrepresentedContentControlChange {
   id?: string;
   tag?: string;
   alias?: string;
+  /**
+   * For a whole `w:customXml` container, its `w:element` and `w:uri`, which
+   * name it: a container renamed between the documents is reported as the
+   * original element removed and the revised element added.
+   */
+  customXmlElement?: string;
+  customXmlUri?: string;
 }
 
 /**
