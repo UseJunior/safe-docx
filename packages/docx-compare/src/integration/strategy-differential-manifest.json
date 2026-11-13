@@ -583,8 +583,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 25451,
-            "sha256": "b4c1556d3a8c43398bb0b619ca22fbdd92fe056cf0d99728939b5801fd1a6ff1",
+            "bytes": 29013,
+            "sha256": "95f22b5856693eee3ef87da723a3a40825245d9ac433b03bb0eada787aa8a629",
             "kind": "xml"
           },
           {
@@ -2776,8 +2776,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 227039,
-            "sha256": "8faef1d85a422d4cae6f3fd623276728debdcd2b96eb71ba89dee4e6750030d4",
+            "bytes": 243119,
+            "sha256": "97a14de1a6c02c3c49933dabf33e23c3997a8ab3c56f250669580718601730bd",
             "kind": "xml"
           },
           {
@@ -4396,8 +4396,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 128379,
-            "sha256": "dbc6749e1a785caa8c5d55ba83eb9aed9998407efa372dc0d1ea125394839de5",
+            "bytes": 128771,
+            "sha256": "4d7ee2bf01368ab40a2a4ba7913dd32965a7d686dff2abcdcce6fe4a218734b8",
             "kind": "xml"
           },
           {
@@ -4751,8 +4751,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 74524,
-            "sha256": "33b37cb3663916246cf2cb0e193715c72364bfad4a03b5a5d3ce7a46f1ba9a3c",
+            "bytes": 75008,
+            "sha256": "9a67d22b8f4af6bc31908721f6c84e953f6434742af1c36ff0fe4360b95abd4a",
             "kind": "xml"
           },
           {

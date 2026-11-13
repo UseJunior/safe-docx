@@ -99,8 +99,9 @@ import {
 import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { coalesceProjectionEquivalentBookmarkSplits } from './bookmarkSplitCoalescing.js';
-import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds, separateRepeatedNoteReferences } from './noteReferenceIdentity.js';
+import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds } from './noteReferenceIdentity.js';
 import { alignedInlineNoteAnchorPair } from './inlineFootnoteAnchorPair.js';
+import { markLifecycleNoteBodies, separateNoteReferencesInLifecycleOrder } from './noteLifecycleMarking.js';
 import {
   collectBookmarkReferenceNamesInXml,
   collectWordPartBookmarkNames,
@@ -546,8 +547,18 @@ export async function buildStandaloneTaggedPackage(
     }
   }
   const noteReferenceSourceIds = new Map<'footnote' | 'endnote', Map<string, string>>();
-  taggedXml = await separateRepeatedNoteReferences(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
+  taggedXml = await separateNoteReferencesInLifecycleOrder(resultArchive, taggedXml, noteReferenceSourceIds, stabilizedNoteKinds);
   resultArchive.setDocumentXml(taggedXml);
+  const noteLifecycleMarks = await markLifecycleNoteBodies({
+    archive: resultArchive,
+    documentXml: taggedXml,
+    revisedDocumentXml: await revisedArchive.getDocumentXml(),
+    originalDocumentXml: await originalArchive.getDocumentXml(),
+    noteReferenceSourceIds,
+    author: options.author,
+    date: options.date,
+    minimumRevisionId: options.minimumRevisionId,
+  });
   const rootCommentIds = await collectStoryReferenceIds(
     resultArchive,
     taggedXml,
@@ -566,6 +577,7 @@ export async function buildStandaloneTaggedPackage(
     mergeSourceSide: 'original',
     noteMergeResults,
     noteReferenceSourceIds,
+    noteLifecycleMarks,
   });
   const finalAuxiliarySidecars = {
     footnotesXmls: [await resultArchive.getFile('word/footnotes.xml')],
