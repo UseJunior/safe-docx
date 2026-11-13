@@ -348,6 +348,13 @@ function buildParagraphUnit(
   return unit;
 }
 
+/** The sole paragraph of a block `w:sdt`/`w:customXml`, as Accept/Reject leave an emptied one. */
+function isEmptiedContainerPlaceholder(paragraph: Element): boolean {
+  const parent = paragraph.parentNode as Element | null;
+  if (!parent || !['w:sdtContent', 'w:customXml'].includes(parent.tagName)) return false;
+  return childElements(parent).filter((sibling) => sibling.tagName !== 'w:customXmlPr').length === 1;
+}
+
 function collectParagraphUnits(
   container: Element,
   chain: TableChainLevel[],
@@ -360,10 +367,13 @@ function collectParagraphUnits(
       // empty body. With no text, direct paragraph properties, or table
       // context, it carries no formatting dimension to compare; section
       // properties are measured independently below.
+      // Likewise the placeholder paragraph a reader keeps in a block container
+      // whose content Accept/Reject removed: the emptied container is
+      // reported as a `contentControl` unrepresented change (#1386).
       if (
         unit.text.length > 0 ||
         unit.pPrProps.size > 0 ||
-        unit.tableChain.length > 0
+        (unit.tableChain.length > 0 && !isEmptiedContainerPlaceholder(child))
       ) {
         out.push(unit);
       }

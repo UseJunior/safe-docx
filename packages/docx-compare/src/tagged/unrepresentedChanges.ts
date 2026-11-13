@@ -12,6 +12,8 @@ import type {
   UnrepresentedContentControlChange,
 } from '../compare-types.js';
 import { representative, subtreeSignature, type TaggedNode } from './taggedTree.js';
+import { isBlockContainer } from './blockContainer.js';
+import { UnsupportedBlockContainerRevisionError } from './taggedTreeSerializer.js';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import {
@@ -55,15 +57,23 @@ function resolvedMarkupCompatibilityValue(element: Element, value: string): stri
  * properties whole. Nothing in the redline marks that difference; this walk of
  * the constructed tree is the only place it is disclosed. Side-only property
  * elements (a `w:sdtPr` present on one side) are reported the same way.
+ * So is a whole block `w:sdt` or `w:customXml` present on one side: its content
+ * is tracked, but the container itself stays behind, emptied, in the Reject
+ * All (or Accept All) projection.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
  * @see https://github.com/UseJunior/safe-docx/issues/1095
+ * @see https://github.com/UseJunior/safe-docx/issues/1386
  */
 export function collectContentControlPropertyChanges(tree: TaggedNode): UnrepresentedChange[] {
   type ControlIdentity = Omit<UnrepresentedContentControlChange, 'element'>;
   const changes: UnrepresentedChange[] = [];
   let sectionIndex = 0;
   let controlIndex = -1;
+  // Containers stay live in the redline whichever side holds them, so a whole
+  // inserted or deleted one is named by its ordinal in the comparison output.
+  const outputOrdinal = { sdt: 0, customXml: 0 };
   const isNamed = (candidate: Element, name: string): boolean =>
     candidate.namespaceURI === W_NS && localName(candidate) === name;
   const propertiesOf = (control: Element | undefined): Element | undefined =>
@@ -98,6 +108,27 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
         if (revisedSide) controlIndex++;
         current = identity(node, Math.max(controlIndex, 0));
       }
+      if (node.tag !== 'both' && isBlockContainer(element)) {
+        // A whole inserted or deleted block container stays live while its
+        // content is tracked (#1386): no revision particle can wrap it, so
+        // Reject All (insertion) or Accept All (deletion) leaves it empty.
+        const container = name === 'sdt' ? 'sdt' : 'customXml';
+        changes.push({
+          scope: 'contentControl',
+          kind: node.tag === 'revised' ? 'added' : 'removed',
+          sectionIndex,
+          contentControl: {
+            ...(name === 'sdt' ? identity(node, outputOrdinal.sdt) : {}),
+            index: outputOrdinal[container],
+            element: container,
+          },
+        });
+      }
+      if (name === 'sdt' || name === 'customXml') outputOrdinal[name]++;
+      if (node.children.length === 0) {
+        outputOrdinal.sdt += element.getElementsByTagNameNS(W_NS, 'sdt').length;
+        outputOrdinal.customXml += element.getElementsByTagNameNS(W_NS, 'customXml').length;
+      }
       if (name === 'sdtPr' || name === 'sdtEndPr') {
         const kind: UnrepresentedChangeKind | null = node.tag === 'both'
           ? (subtreeSignature(node.original) === subtreeSignature(node.revised) ? null : 'changed')
@@ -120,6 +151,32 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
   };
   visit(tree, undefined);
   return changes;
+}
+
+/** A whole block container present in one document only (see `collectContentControlPropertyChanges`). */
+export function wholeBlockContainerChange(
+  changes: readonly UnrepresentedChange[] | undefined,
+): UnrepresentedChange | undefined {
+  return changes?.find((change) => change.scope === 'contentControl'
+    && (change.contentControl?.element === 'sdt' || change.contentControl?.element === 'customXml'));
+}
+
+/**
+ * Refuse a whole block container inserted into or deleted from a story whose
+ * unrepresented changes are not published (text boxes, header/footer parts,
+ * notes), so its emptied container is never left unreported (#1386).
+ */
+export function refuseUnreportedBlockContainer(
+  changes: readonly UnrepresentedChange[] | undefined,
+  partPath: string,
+): void {
+  const change = wholeBlockContainerChange(changes);
+  if (!change) return;
+  throw new UnsupportedBlockContainerRevisionError(
+    change.kind === 'added' ? 'insert' : 'delete',
+    change.contentControl!.element as 'sdt' | 'customXml',
+    partPath,
+  );
 }
 
 interface StorySlot {
