@@ -36,6 +36,8 @@ interface NoteSpec {
   link?: { text: string; id: string; target: string };
   /** Comment text; the comment anchors the plain-text run. */
   comment?: string;
+  /** Plain text standing where the hyperlink would be. */
+  unlinked?: string;
 }
 
 const BASE: NoteSpec = {
@@ -57,7 +59,8 @@ function noteBody(kind: NoteKind, spec: NoteSpec): string {
     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
     `<w:r><w:t>${escapeText(spec.fieldResult)}</w:t></w:r>` +
     '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
-  const link = spec.link === undefined ? '' :
+  const link = spec.link === undefined
+    ? (spec.unlinked === undefined ? '' : `<w:r><w:t>${escapeText(spec.unlinked)}</w:t></w:r>`) :
     `<w:hyperlink r:id="${spec.link.id}"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>` +
     `<w:t>${escapeText(spec.link.text)}</w:t></w:r></w:hyperlink>`;
   return `<w:p><w:pPr><w:pStyle w:val="${style}Text"/></w:pPr>` +
@@ -318,6 +321,20 @@ describe('a note holding a field, hyperlink or comment is compared in place', ()
       expect(entries).toHaveLength(1);
       expect(textOf(entries[0]!, ['delText'])).toContain('the archived filing');
       expect(hyperlinkTargets(notesXml, relsXml)).toEqual(['https://example.com/archive']);
+      await expectProjections('footnote', original, revised, compared);
+      await expectSchemaValid(compared, 'footnote');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })(
+    'tracks a note whose only change unlinks its hyperlink',
+    async () => {
+      const spec = { ...BASE, fieldResult: undefined, comment: undefined };
+      const original = await notedDocx('footnote', spec);
+      const revised = await notedDocx('footnote', { ...spec, link: undefined, unlinked: BASE.link!.text });
+      const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+      expect((await noteView(compared, 'footnote', rejectAllChanges)).hyperlinks).toEqual(['https://example.com/filing']);
+      expect((await noteView(compared, 'footnote', acceptAllChanges)).hyperlinks).toEqual([]);
       await expectProjections('footnote', original, revised, compared);
       await expectSchemaValid(compared, 'footnote');
     },

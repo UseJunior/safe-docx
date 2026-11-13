@@ -58,6 +58,37 @@ function prepareDefinition(entry: Element): string {
   return serializer.serializeToString(root);
 }
 
+const INLINE_REFERENCE_ELEMENTS = new Set([
+  'hyperlink',
+  'fldChar',
+  'instrText',
+  'fldSimple',
+  'commentRangeStart',
+  'commentRangeEnd',
+  'commentReference',
+]);
+
+/**
+ * Hyperlink targets, field structure and comment anchors in document order.
+ * Text and formatting alone cannot show a retargeted or unlinked hyperlink, a
+ * changed field instruction or a re-anchored comment, so an unchanged-looking
+ * definition is passed through only when these agree as well.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1389
+ */
+function inlineReferenceSignature(xml: string): string {
+  return JSON.stringify(Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, '*'))
+    .filter((element) => INLINE_REFERENCE_ELEMENTS.has(element.localName))
+    .map((element) => [
+      element.localName,
+      Array.from(element.attributes)
+        .filter((attribute) => !attribute.name.startsWith('xmlns'))
+        .map((attribute) => `${attribute.namespaceURI ?? ''}:${attribute.localName}=${attribute.value}`)
+        .sort(),
+      element.localName === 'instrText' ? element.textContent ?? '' : '',
+    ]));
+}
+
 /**
  * Compare one corresponding footnote or endnote definition as an independent
  * Word story.
@@ -79,6 +110,7 @@ export function compareNoteDefinitions(
   const revisedXml = prepareDefinition(revisedEntry);
   if (
     extractRoundTripComparisonText(originalXml) === extractRoundTripComparisonText(revisedXml) &&
+    inlineReferenceSignature(originalXml) === inlineReferenceSignature(revisedXml) &&
     compareSourceProjectedFormattingFidelity(originalXml, revisedXml, revisedXml).reject.score === 1
   ) {
     const unchangedBody = parseXml(revisedXml).getElementsByTagName('w:body').item(0);
