@@ -8,9 +8,8 @@
   into or out of the container is tracked, instead of the whole container
   being deleted and reinserted with both emptied containers listed in
   `unrepresentedChanges`. The same holds when the moving paragraph itself
-  holds a field. A field that begins inside such a container and ends outside
-  it (or the reverse) no longer makes `compareDocuments` fail its
-  field-structure check. (#1459)
+  holds a complete field. A container whose field begins inside it and ends
+  outside it (or the reverse) is still not paired. (#1459)
 
 - A formatting-only change (bold, font size, alignment, paragraph-mark
   formatting) in a header or footer paragraph that also holds a field such as

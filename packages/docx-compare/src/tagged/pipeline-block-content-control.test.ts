@@ -17,6 +17,7 @@ import {
 import { compareDocuments, formatUnrepresentedChangeWarnings } from '../index.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
+import { TaggedPublicationSafetyError } from './pipeline.js';
 
 const TEST_FEATURE = 'Block Container Revisions';
 const test = testAllure.epic('Document Comparison')
@@ -571,16 +572,28 @@ describe('block customXml boundary moves (#1102)', () => {
       + `${fieldSeparate}${run('Section')}</w:p>`;
     const closesField = `<w:p>${run('1.1 continued')}${fieldEnd}${run(' after.')}</w:p>`;
     const moving = 'Moving text.';
-    // Each paragraph's shape plus its field characters and instructions in order.
+    // Each paragraph's containers, then its text, field characters and field
+    // instructions interleaved in document order (adjacent text merged, so
+    // run splitting does not matter but a result moving past a field
+    // character does).
     const fieldShape = (xml: string) => {
       const texts = shape(xml);
       return Array.from(parseXml(xml).getElementsByTagNameNS(W, 'p')).map((p, index) => {
-        const tokens = Array.from(p.getElementsByTagNameNS(W, '*'))
-          .filter((element) => ['fldChar', 'instrText', 'delInstrText'].includes(element.localName))
-          .map((element) => element.localName === 'fldChar'
-            ? element.getAttributeNS(W, 'fldCharType')
-            : `${element.localName}(${(element.textContent ?? '').trim()})`);
-        return `${texts[index]}{${tokens.join(',')}}`;
+        const tokens: string[] = [];
+        let text = '';
+        for (const element of Array.from(p.getElementsByTagNameNS(W, '*'))) {
+          if (element.localName === 't') {
+            text += element.textContent ?? '';
+            if (tokens.at(-1)?.startsWith('"')) tokens[tokens.length - 1] = `"${tokens.at(-1)!.slice(1, -1)}${element.textContent ?? ''}"`;
+            else tokens.push(`"${element.textContent ?? ''}"`);
+          } else if (element.localName === 'fldChar') {
+            tokens.push(`{${element.getAttributeNS(W, 'fldCharType')}}`);
+          } else if (['instrText', 'delInstrText'].includes(element.localName)) {
+            tokens.push(`${element.localName}(${(element.textContent ?? '').trim()})`);
+          }
+        }
+        const containers = texts[index]!.slice(0, texts[index]!.length - text.length);
+        return `${containers}${tokens.join('')}`;
       });
     };
     const fieldPairedCases = [
@@ -659,26 +672,12 @@ describe('block customXml boundary moves (#1102)', () => {
       }
     }
 
-    // A field that crosses the container boundary, or a moving paragraph that
-    // holds a field, still lets the containers pair. Unpaired, the container
-    // would churn whole, and the deleted half of a crossing field could not be
-    // tracked: the comparison failed its field-structure check.
+    // A moving paragraph that holds a complete field still lets the
+    // containers pair; only that paragraph is tracked, as a whole.
     const movingField = `<w:p>${run('Moving, see ')}${field('REF _Ref1459 \\h', 'Section 1.1')}</w:p>`;
     const movingPage = `<w:p>${run('Moving, page ')}${field('PAGE', '3')}</w:p>`;
     const unchanged = para('Unchanged clause.');
     const fieldTrackedCases = [
-      ['a field begins inside the customXml container and ends after it', [
-        para(moving) + custom(unchanged + opensField) + closesField,
-        custom(para(moving) + unchanged + opensField) + closesField,
-      ], 1],
-      ['a field begins before the content control and ends inside it', [
-        opensField + control(closesField + unchanged + para(moving)) + para('After control.'),
-        opensField + control(closesField + unchanged) + para(moving) + para('After control.'),
-      ], 0],
-      ['a field crossing the customXml boundary has its opening paragraph edited', [
-        para(moving) + custom(unchanged + opensField) + closesField,
-        custom(para(moving) + unchanged + opensField.replace('Held clause, see ', 'Held clause, now see ')) + closesField,
-      ], 1],
       ['a paragraph holding a REF field moves into the customXml container', [
         movingField + custom(unchanged) + para('After clause.'),
         custom(movingField + unchanged) + para('After clause.'),
@@ -691,7 +690,7 @@ describe('block customXml boundary moves (#1102)', () => {
 
     for (const [name, [originalBody, revisedBody], customCount] of fieldTrackedCases) {
       for (const detectMoves of [false, true]) {
-        fieldTest(`${name} with detectMoves=${detectMoves} pairs the container and keeps every field whole`, async () => {
+        fieldTest(`${name} with detectMoves=${detectMoves} pairs the container and tracks the field paragraph whole`, async () => {
           const { result, document, projections, fidelity, xml } =
             await compareAndProject(originalBody, revisedBody, detectMoves, fieldShape);
           expect(fidelity.accept.divergences).toEqual([]);
@@ -712,6 +711,34 @@ describe('block customXml boundary moves (#1102)', () => {
             expect(collectStrictFieldStructureIssues(astProject(xml)), `${label} comparison acceptor fields`).toEqual([]);
             expect(collectStrictFieldStructureIssues(serializeXml(native)), `${label} docx-core acceptor fields`).toEqual([]);
           }
+        });
+      }
+    }
+
+    // A gap holding part of a field pairs nothing, so a container whose field
+    // crosses its boundary stays on the whole-container path, as before
+    // #1459. That path cannot yet track the deleted half of such a field, so
+    // the comparison fails closed on its field-structure check rather than
+    // publishing a split field.
+    const crossingCases = [
+      ['a field begins inside the customXml container and ends after it', [
+        para(moving) + custom(unchanged + opensField) + closesField,
+        custom(para(moving) + unchanged + opensField) + closesField,
+      ]],
+      ['a field begins before the content control and ends inside it', [
+        opensField + control(closesField + unchanged + para(moving)) + para('After control.'),
+        opensField + control(closesField + unchanged) + para(moving) + para('After control.'),
+      ]],
+    ] as const;
+
+    for (const [name, [originalBody, revisedBody]] of crossingCases) {
+      for (const detectMoves of [false, true]) {
+        fieldTest(`${name} with detectMoves=${detectMoves} is not paired and fails closed`, async () => {
+          const original = await buildDocxFromBodyXml(originalBody);
+          const revised = await buildDocxFromBodyXml(revisedBody);
+          const failure = await compareDocuments(original, revised, { detectMoves }).then(() => undefined, (error: unknown) => error);
+          expect(failure).toBeInstanceOf(TaggedPublicationSafetyError);
+          expect((failure as TaggedPublicationSafetyError).failedChecks).toEqual(['fieldStructure']);
         });
       }
     }
