@@ -120,6 +120,11 @@ export interface TextBoxStoryInput {
    * (see `deletedAncillaryStoryOutputPaths`).
    */
   selectedSlots?: ReadonlyArray<Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role'>>;
+  /**
+   * The placeholder token a header/footer box compared inside its whole part
+   * is found by in the compared part (#1384). Absent for every other story.
+   */
+  placeholder?: string;
   original: Buffer;
   revised: Buffer;
 }
@@ -248,18 +253,29 @@ function replaceChildren(target: Element, source: Element): void {
   }
 }
 
-function placeholderToken(index: number): string {
-  return `__safe_docx_text_box_story_${index}__`;
+function placeholderToken(index: number, prefix = '__safe_docx_text_box_story_'): string {
+  return `${prefix}${index}__`;
 }
 
-function createPlaceholder(textBox: Element, index: number): void {
+/**
+ * A placeholder prefix that occurs in none of `xmls`, so a token can never
+ * match text a document already holds.
+ */
+function collisionFreePlaceholderPrefix(xmls: readonly string[]): string {
+  for (let attempt = 0; ; attempt += 1) {
+    const prefix = `__safe_docx_text_box_story_${attempt === 0 ? '' : `${attempt}_`}`;
+    if (xmls.every((xml) => !xml.includes(prefix))) return prefix;
+  }
+}
+
+function createPlaceholder(textBox: Element, index: number, token = placeholderToken(index)): void {
   while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
   const document = textBox.ownerDocument!;
   const paragraph = document.createElementNS(OOXML.W_NS, 'w:p');
   const run = document.createElementNS(OOXML.W_NS, 'w:r');
   const text = document.createElementNS(OOXML.W_NS, 'w:t');
   text.appendChild(
-    document.createTextNode(placeholderToken(index)),
+    document.createTextNode(token),
   );
   run.appendChild(text);
   paragraph.appendChild(run);
@@ -2186,7 +2202,8 @@ async function lifecycleAncillaryStoryInputs(
   }
 
   const stories: TextBoxStoryInput[] = [];
-  const placeholders: Array<[original: Element, revised: Element, index: number]> = [];
+  const placeholders: Array<[original: Element, revised: Element, token: string]> = [];
+  const placeholderPrefix = collisionFreePlaceholderPrefix([pair.original.xml, pair.revised.xml]);
   for (const [originalGroup, revisedGroup] of kept) {
     for (const [offset, originalCopy] of originalGroup.entries()) {
       const revisedCopy = revisedGroup[offset]!;
@@ -2231,22 +2248,24 @@ async function lifecycleAncillaryStoryInputs(
         'word/_rels/document.xml.rels',
         promotedStoryRelationshipsXml(pair.revised.relationshipsXml, partPath),
       );
+      const placeholder = placeholderToken(index, placeholderPrefix);
       stories.push({
         index,
         visualIndex: revisedOrdinals[index] ?? index,
         partPath,
         container: 'textBox',
+        placeholder,
         original: await storyOriginalArchive.save(),
         revised: await storyRevisedArchive.save(),
       });
-      placeholders.push([originalCopy, revisedCopy, index]);
+      placeholders.push([originalCopy, revisedCopy, placeholder]);
     }
   }
   // Both sides carry the revised raw index, so the part comparison sees one
   // unchanged placeholder and the splice finds it by that token.
-  for (const [originalCopy, revisedCopy, index] of placeholders) {
-    createPlaceholder(originalCopy, index);
-    createPlaceholder(revisedCopy, index);
+  for (const [originalCopy, revisedCopy, placeholder] of placeholders) {
+    createPlaceholder(originalCopy, 0, placeholder);
+    createPlaceholder(revisedCopy, 0, placeholder);
   }
 
   // Outside the replaced boxes, the part must differ only where an ordinary
@@ -2261,7 +2280,22 @@ async function lifecycleAncillaryStoryInputs(
       const run = anchorRun(cloneCopies[rawIndex]!);
       if (run) runs.add(run);
     }
-    for (const run of runs) run.parentNode?.removeChild(run);
+    for (const run of runs) {
+      // A wrapper the anchor alone filled (a box already tracked in the
+      // source) goes with it, so it does not read as a scaffold change.
+      let parent = run.parentNode as Element | null;
+      parent?.removeChild(run);
+      while (
+        parent &&
+        parent.namespaceURI === OOXML.W_NS &&
+        REVISION_WRAPPER_NAMES.has(parent.localName) &&
+        directChildElements(parent).length === 0
+      ) {
+        const next = parent.parentNode as Element | null;
+        next?.removeChild(parent);
+        parent = next;
+      }
+    }
     return clone;
   };
   const originalRest = withoutReplacedAnchors(originalDocument, replacedOriginal);
@@ -3570,6 +3604,8 @@ export async function assembleTextBoxStoryComparison(
     /** The story's original and revised sides, for a tracked placeholder. */
     original?: Buffer;
     revised?: Buffer;
+    /** The token a header/footer box story is found by (#1384). */
+    placeholder?: string;
   }>,
 ): Promise<Buffer> {
   const outerArchive = await DocxArchive.load(outerCompared);
@@ -3627,11 +3663,7 @@ export async function assembleTextBoxStoryComparison(
     }
     // A header/footer compared whole around an inserted or deleted box holds
     // its paired boxes as placeholders, found by token like body boxes (#1384).
-    const token = placeholderToken(storyResult.index);
-    if (
-      Array.from(targetDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))
-        .some((textBox) => (textBox.textContent ?? '') === token)
-    ) {
+    if (storyResult.placeholder !== undefined) {
       await spliceBodyTextBoxStory(targetDocument, outerArchive, storyResult, storyBody);
       outerArchive.setFile(
         storyResult.partPath,
@@ -3758,10 +3790,11 @@ async function spliceBodyTextBoxStory(
     partPath: string;
     original?: Buffer;
     revised?: Buffer;
+    placeholder?: string;
   },
   comparedStoryBody: Element,
 ): Promise<void> {
-  const token = placeholderToken(storyResult.index);
+  const token = storyResult.placeholder ?? placeholderToken(storyResult.index);
   // A box whose only text is a nested placeholder reads as the token too, so
   // a placeholder is a box with the token and no box inside it (#1380).
   const occurrences = Array.from(

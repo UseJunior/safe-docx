@@ -1569,6 +1569,7 @@ async function compareDocumentsTagged(
       document: result.document,
       original: story.original,
       revised: story.revised,
+      placeholder: story.placeholder,
     })),
   );
   // Unpaired body text boxes stay whole in the outer comparison, which tracks

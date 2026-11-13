@@ -494,6 +494,59 @@ describe('a header or footer that gains or loses a text box (#1384)', { timeout:
     });
   }
 
+  test('tracks a header box the revised document already holds as a tracked insertion, beside an unchanged box', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const slot = { kind: 'header', role: 'default' } as const;
+    const prior = (run: string): string =>
+      `<w:ins w:id="900" w:author="Prior" w:date="2026-11-01T00:00:00Z">${run}</w:ins>`;
+    const original = await given('a header with one box', () => storyPackage([
+      { ...slot, content: `<w:p>${vmlBox(['Kept'], 'kept')}${textRun('Head')}</w:p>` },
+    ], ORIGINAL_BODY));
+    const revised = await given('the header with a second box inside an existing tracked insertion', () => storyPackage([
+      { ...slot, content: `<w:p>${vmlBox(['Kept'], 'kept')}${prior(vmlBox(BOX, 'added'))}${textRun('Head')}</w:p>` },
+    ], REVISED_BODY));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the added box reads as inserted and both projections hold', async () => {
+      const boxes = trackedBoxes(await partXml(result.document, partPath(slot)));
+      expect(boxes.map((box) => box.anchor)).toEqual(['none', 'ins']);
+      expect(boxes[1]!.paragraphs.map((paragraph) => paragraph.mark)).toEqual(['ins', 'ins']);
+      await assertProjections(original, revised, result.document, [partPath(slot)]);
+    });
+  });
+
+  for (const lifecycle of [false, true]) {
+    test(`keeps a box whose text reads like a placeholder token apart from the compared box${lifecycle ? ', beside an inserted box' : ''}`, async ({
+      given, when, then,
+    }: AllureBddContext) => {
+      const slot = { kind: 'header', role: 'default' } as const;
+      const literal = vmlBox(['__safe_docx_text_box_story_1__'], 'literal');
+      const original = await given('a header whose first box holds token-like text and whose second box reads Old', () => storyPackage([
+        { ...slot, content: `<w:p>${literal}${vmlBox(['Notice: Old'], 'edited')}${textRun('Head')}</w:p>` },
+      ], ORIGINAL_BODY));
+      const revised = await given('the second box edited to New', () => storyPackage([
+        {
+          ...slot,
+          content: `<w:p>${literal}${vmlBox(['Notice: New'], 'edited')}${textRun('Head')}</w:p>` +
+            (lifecycle ? `<w:p>${vmlBox(BOX, 'added')}</w:p>` : ''),
+        },
+      ], REVISED_BODY));
+      const result = await when('the documents are compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+      await then('the token-like box is untouched and the edit lands in the edited box', async () => {
+        const output = await partXml(result.document, partPath(slot));
+        const boxes = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'txbxContent'));
+        expect(textOf(boxes[0]!)).toBe('__safe_docx_text_box_story_1__');
+        expect(Array.from(boxes[1]!.getElementsByTagNameNS(W_NS, 'delText')).map((text) => text.textContent).join(''))
+          .toBe('Old');
+        await assertProjections(original, revised, result.document, [partPath(slot)]);
+      });
+    });
+  }
+
   test('refuses a footer box inserted with a footnote reference in its story, naming the box', async ({
     given, when, then,
   }: AllureBddContext) => {
