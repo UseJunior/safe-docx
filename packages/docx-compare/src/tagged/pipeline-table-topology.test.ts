@@ -254,19 +254,6 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-08] unsupported unmatched table shape fails closed')(
-    'rejects a side-only block container around a whole table in either direction', async () => {
-      const wrapped = `<w:sdt><w:sdtPr/><w:sdtContent>${table(1, [row(['Inside'])])}</w:sdtContent></w:sdt>`;
-      const plain = await docx(paragraph('Outside'));
-      const contained = await docx(paragraph('Outside') + wrapped);
-      for (const [before, after] of [[plain, contained], [contained, plain]] as const) {
-        await expect(compareDocuments(before, after)).rejects.toMatchObject({
-          name: 'UnsupportedTableTopologyComparisonError', feature: 'tableContainer', tableIndex: 0,
-        });
-      }
-    },
-  );
-
   test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
     'rejects a changed pending cell-topology revision even when geometry is unchanged', async () => {
       const original = await docx(table(1, [row(['A'])]));

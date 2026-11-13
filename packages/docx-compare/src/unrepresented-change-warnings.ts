@@ -9,6 +9,10 @@ function describeScope(change: UnrepresentedChange): string {
       control?.alias !== undefined ? `alias "${control.alias}"` : undefined,
       control?.id !== undefined ? `id ${control.id}` : undefined,
     ].filter((part) => part !== undefined);
+    if (control?.element === 'sdt' || control?.element === 'customXml') {
+      const noun = control.element === 'sdt' ? 'block content control' : 'block custom XML element';
+      return `${noun} (w:${control.element} #${control.index + 1}${identity.length > 0 ? `, ${identity.join(', ')}` : ''})`;
+    }
     const ordinal = control ? `content control #${control.index + 1}` : 'content control';
     const element = control?.element ?? 'sdtPr';
     return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
@@ -37,6 +41,11 @@ function describeScope(change: UnrepresentedChange): string {
   return change.role ? `${change.role} ${change.scope}` : change.scope;
 }
 
+function isWholeContainer(change: UnrepresentedChange): boolean {
+  return change.scope === 'contentControl'
+    && (change.contentControl?.element === 'sdt' || change.contentControl?.element === 'customXml');
+}
+
 /**
  * Render one caller-facing warning per unrepresented change.
  *
@@ -51,7 +60,11 @@ export function formatUnrepresentedChangeWarnings(
   changes: readonly UnrepresentedChange[] | undefined,
 ): string[] {
   if (!changes || changes.length === 0) return [];
-  return changes.map((change) =>
+  return changes.map((change) => isWholeContainer(change)
+    ? `Unrepresented change: ${change.kind} ${describeScope(change)} in section ${change.sectionIndex + 1} ` +
+      `(sectionIndex ${change.sectionIndex}): the redline tracks its content, but the container itself takes no ` +
+      `revision, so ${change.kind === 'added' ? 'Reject All' : 'Accept All'} leaves it empty. Review that part manually.`
+    :
     `Unrepresented change: ${change.kind} ${describeScope(change)} in section ${change.sectionIndex + 1} ` +
     `(sectionIndex ${change.sectionIndex}) has no tracked-change markup in the redline; ` +
     (change.scope === 'drawing'

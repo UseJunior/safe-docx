@@ -18,6 +18,7 @@ import {
 import { computeNumberingIdentities, numberingListMembership } from './numberingIntegration.js';
 import { detectParagraphJoins } from './paragraphJoinDetection.js';
 import { rowShape } from './tableTopologyGuard.js';
+import { isBlockContainer } from './blockContainer.js';
 import {
   isTableLevelPropertyElement,
   tableLevelPropertyOf,
@@ -1315,6 +1316,9 @@ interface TaggedMoveCandidate<T extends OriginalNode | RevisedNode> {
 }
 
 function moveCandidateIsSafe(node: OriginalNode | RevisedNode): boolean {
+  // A whole block container is tracked through its content's insertion and
+  // deletion marks (#1386); a move would need w:moveFrom/w:moveTo around it.
+  if (isBlockContainer(node.node)) return false;
   const blockedAncestors = new Set(['tbl', 'txbxContent', 'footnote', 'endnote']);
   for (let current: Element | null = node.node; current; current = current.parentElement) {
     if (blockedAncestors.has(current.localName)) return false;
