@@ -258,13 +258,19 @@ function placeholderToken(index: number, prefix = '__safe_docx_text_box_story_')
 }
 
 /**
- * A placeholder prefix that occurs in none of `xmls`, so a token can never
- * match text a document already holds.
+ * A placeholder prefix that occurs in none of `documents`, so a token can
+ * never match text a document already holds. The splice reads a box's text
+ * as its `textContent`, so the prefix is checked against the parsed text
+ * (entities decoded, runs and paragraphs joined) as well as the markup.
  */
-function collisionFreePlaceholderPrefix(xmls: readonly string[]): string {
+function collisionFreePlaceholderPrefix(documents: readonly Document[]): string {
+  const haystacks = documents.flatMap((document) => [
+    serializer.serializeToString(document),
+    document.documentElement.textContent ?? '',
+  ]);
   for (let attempt = 0; ; attempt += 1) {
     const prefix = `__safe_docx_text_box_story_${attempt === 0 ? '' : `${attempt}_`}`;
-    if (xmls.every((xml) => !xml.includes(prefix))) return prefix;
+    if (haystacks.every((haystack) => !haystack.includes(prefix))) return prefix;
   }
 }
 
@@ -2203,7 +2209,7 @@ async function lifecycleAncillaryStoryInputs(
 
   const stories: TextBoxStoryInput[] = [];
   const placeholders: Array<[original: Element, revised: Element, token: string]> = [];
-  const placeholderPrefix = collisionFreePlaceholderPrefix([pair.original.xml, pair.revised.xml]);
+  const placeholderPrefix = collisionFreePlaceholderPrefix([originalDocument, revisedDocument]);
   for (const [originalGroup, revisedGroup] of kept) {
     for (const [offset, originalCopy] of originalGroup.entries()) {
       const revisedCopy = revisedGroup[offset]!;

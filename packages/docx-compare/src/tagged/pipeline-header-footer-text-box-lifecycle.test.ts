@@ -517,12 +517,22 @@ describe('a header or footer that gains or loses a text box (#1384)', { timeout:
     });
   });
 
-  for (const lifecycle of [false, true]) {
-    test(`keeps a box whose text reads like a placeholder token apart from the compared box${lifecycle ? ', beside an inserted box' : ''}`, async ({
+  const TOKEN_LIKE_BOXES: ReadonlyArray<readonly [label: string, box: string]> = [
+    ['', vmlBox(['__safe_docx_text_box_story_1__'], 'literal')],
+    [' (written with a character reference)', vmlBox(['&#95;_safe_docx_text_box_story_1__'], 'literal')],
+    [' (split across runs)', vmlBox(['__safe_docx_text_box', '_story_1__'], 'literal').replace(
+      '</w:t></w:r></w:p><w:p w14:paraId="20000002" w14:textId="20000002"><w:r><w:t xml:space="preserve">',
+      '</w:t></w:r><w:r><w:t xml:space="preserve">',
+    )],
+  ];
+  for (const [lifecycle, [spelling, literal]] of [
+    [false, TOKEN_LIKE_BOXES[0]!],
+    ...TOKEN_LIKE_BOXES.map((entry) => [true, entry] as const),
+  ] as const) {
+    test(`keeps a box whose text reads like a placeholder token${spelling} apart from the compared box${lifecycle ? ', beside an inserted box' : ''}`, async ({
       given, when, then,
     }: AllureBddContext) => {
       const slot = { kind: 'header', role: 'default' } as const;
-      const literal = vmlBox(['__safe_docx_text_box_story_1__'], 'literal');
       const original = await given('a header whose first box holds token-like text and whose second box reads Old', () => storyPackage([
         { ...slot, content: `<w:p>${literal}${vmlBox(['Notice: Old'], 'edited')}${textRun('Head')}</w:p>` },
       ], ORIGINAL_BODY));
