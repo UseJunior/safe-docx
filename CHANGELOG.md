@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A formatting-only change (bold, font size, alignment, paragraph-mark
+  formatting) in a header or footer paragraph that also holds a field such as
+  `PAGE`, a content control or a drawing is now tracked with `w:rPrChange` /
+  `w:pPrChange`, as in body text, instead of being listed in
+  `unrepresentedChanges`. This includes formatting on the field's own runs
+  and inside a content control, in default, first-page and even-page headers
+  and footers. A change to the field instruction, to a content control's own
+  properties, or adding or removing a field or content control is still
+  listed. (#1392)
+
 - A header or footer that gains or loses a text box no longer makes
   `compareDocuments` fail with `UnsupportedTextBoxRevisionError` ("inserted
   or deleted ancillary text-box topology is not supported"). Boxes in a
