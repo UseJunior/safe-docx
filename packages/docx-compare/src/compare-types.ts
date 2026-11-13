@@ -142,9 +142,11 @@ export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 export interface UnrepresentedContentControlChange {
   /**
    * Zero-based document-order ordinal among the revised document's content
-   * controls. For a whole container (`element` `sdt` or `customXml`) or a
-   * custom XML element's properties (`customXmlPr`), its ordinal among the
-   * comparison output's elements of that name.
+   * controls. For a whole container (`element` `sdt` or `customXml`), its
+   * ordinal among the comparison output's elements of that name. For a
+   * custom XML element's properties (`customXmlPr`), the ordinal of the
+   * enclosing `w:customXml` among the comparison output's `w:customXml`
+   * elements.
    */
   index: number;
   /**
