@@ -38,6 +38,8 @@ interface NoteSpec {
   comment?: string;
   /** Plain text standing where the hyperlink would be. */
   unlinked?: string;
+  /** Field instruction; defaults to a REF to `_Ref1`. */
+  instruction?: string;
 }
 
 const BASE: NoteSpec = {
@@ -55,7 +57,7 @@ function noteBody(kind: NoteKind, spec: NoteSpec): string {
   const style = kind === 'footnote' ? 'Footnote' : 'Endnote';
   const field = spec.fieldResult === undefined ? '' :
     '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-    '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\h </w:instrText></w:r>' +
+    `<w:r><w:instrText xml:space="preserve">${spec.instruction ?? ' REF _Ref1 \\h '}</w:instrText></w:r>` +
     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
     `<w:r><w:t>${escapeText(spec.fieldResult)}</w:t></w:r>` +
     '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
@@ -321,6 +323,34 @@ describe('a note holding a field, hyperlink or comment is compared in place', ()
       expect(entries).toHaveLength(1);
       expect(textOf(entries[0]!, ['delText'])).toContain('the archived filing');
       expect(hyperlinkTargets(notesXml, relsXml)).toEqual(['https://example.com/archive']);
+      await expectProjections('footnote', original, revised, compared);
+      await expectSchemaValid(compared, 'footnote');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' })(
+    'tracks a note whose only change is its field instruction',
+    async () => {
+      const spec = { ...BASE, comment: undefined, link: undefined };
+      const original = await notedDocx('footnote', spec);
+      const revised = await notedDocx('footnote', { ...spec, instruction: ' PAGEREF _Ref1 \\h ' });
+      const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+      expect((await noteView(compared, 'footnote', acceptAllChanges)).instructions).toEqual(['PAGEREF _Ref1 \\h']);
+      expect((await noteView(compared, 'footnote', rejectAllChanges)).instructions).toEqual(['REF _Ref1 \\h']);
+      await expectProjections('footnote', original, revised, compared);
+      await expectSchemaValid(compared, 'footnote');
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' })(
+    'tracks a note whose only change adds a comment',
+    async () => {
+      const spec = { ...BASE, fieldResult: undefined, link: undefined, comment: undefined };
+      const original = await notedDocx('footnote', spec);
+      const revised = await notedDocx('footnote', { ...spec, comment: 'New reviewer note.' });
+      const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+      expect((await noteView(compared, 'footnote', acceptAllChanges)).commentAnchors).toEqual([1]);
+      expect((await noteView(compared, 'footnote', rejectAllChanges)).commentAnchors).toEqual([0]);
       await expectProjections('footnote', original, revised, compared);
       await expectSchemaValid(compared, 'footnote');
     },
