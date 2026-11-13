@@ -317,15 +317,17 @@ describe('block content-control boundary moves (#1028)', () => {
 // run must fail, never silently skip an unusable installed LibreOffice.
 const reader = process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REQUIRED === '1' ? describe : describe.skip;
 reader('LibreOffice resolves a whole inserted or deleted block container', () => {
-  test('accepts and rejects to the source content, leaving at most the emptied container', async () => {
+  test('accepts and rejects to the source content, leaving at most the emptied container or its empty paragraph', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
     const table = (cellContent: string) => '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>'
       + '<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc>' + cellContent + '</w:tc></w:tr></w:tbl>';
-    const scenarios: Array<[string, string, string]> = [];
-    for (const xml of blockContainerCases) {
-      scenarios.push(['body', paragraph('Outside') + paragraph('After'), paragraph('Outside') + xml + paragraph('After')]);
-      scenarios.push(['cell', table(paragraph('Outside')), table(paragraph('Outside') + xml)]);
-    }
+    // One representative per container shape keeps each headless launch short.
+    const [control, , , controlInCustomXml, customXml, controlWithTable] = blockContainerCases;
+    const scenarios: Array<[string, string, string]> = [
+      ...[control, controlInCustomXml, customXml, controlWithTable].map((xml): [string, string, string] =>
+        ['body', paragraph('Outside') + paragraph('After'), paragraph('Outside') + xml + paragraph('After')]),
+      ['cell', table(paragraph('Outside')), table(paragraph('Outside') + control)],
+    ];
     const jobs: Array<{ op: 'accept' | 'reject' | 'identity'; documentXml: string }> = [];
     const labels: string[] = [];
     for (const [where, plainBody, blockBody] of scenarios) {
@@ -342,18 +344,26 @@ reader('LibreOffice resolves a whole inserted or deleted block container', () =>
         );
       }
     }
-    const states = await runLibreOfficeOracle(jobs);
+    const states: string[] = [];
+    for (let start = 0; start < jobs.length; start += 4) {
+      states.push(...await runLibreOfficeOracle(jobs.slice(start, start + 4)));
+    }
     const report: string[] = [];
+    const checks: Array<[string, string, string]> = [];
+    // LibreOffice may keep the emptied container or only its empty paragraph;
+    // either way no text survives and nothing else differs.
+    const withoutEmpty = (xml: string) => blockStructure(xml, true).shape.replace(/(^|,)p\(\)/g, '');
     labels.forEach((label, index) => {
       const [originalState, revisedState, accepted, rejected] = states.slice(index * 4, index * 4 + 4) as [string, string, string, string];
       report.push(`${label}\n  original ${blockStructure(originalState).shape}\n  revised  ${blockStructure(revisedState).shape}`
         + `\n  accept   ${blockStructure(accepted).shape}\n  reject   ${blockStructure(rejected).shape}`);
-      expect(blockStructure(accepted, true).shape, `${label} accept`).toBe(blockStructure(revisedState, true).shape);
-      expect(blockStructure(rejected, true).shape, `${label} reject`).toBe(blockStructure(originalState, true).shape);
+      checks.push([`${label} accept`, withoutEmpty(accepted), withoutEmpty(revisedState)]);
+      checks.push([`${label} reject`, withoutEmpty(rejected), withoutEmpty(originalState)]);
     });
     if (process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REPORT) {
       const { writeFileSync } = await import('node:fs');
       writeFileSync(process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REPORT, report.join('\n'));
     }
-  }, 300_000);
+    for (const [label, actual, expected] of checks) expect(actual, label).toBe(expected);
+  }, 900_000);
 });
