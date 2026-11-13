@@ -182,7 +182,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
 
   const docDefaults = stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.docDefaults).item(0);
   const rPrDefault = docDefaults ? getFirstChild(docDefaults, OOXML.W_NS, W.rPrDefault) : null;
-  const docDefaultsRPr = rPrDefault ? getFirstChild(rPrDefault, OOXML.W_NS, W.rPr) : null;
+  const docDefaultsRPr = currentRPr(rPrDefault ? getFirstChild(rPrDefault, OOXML.W_NS, W.rPr) : null);
   const tableStyleRPrs: Element[] = [];
   let defaultTableStyleId: string | null = null;
   let defaultParagraphStyleId: string | null = null;
@@ -194,12 +194,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
     const nameEl = getFirstChild(st, OOXML.W_NS, W.name);
     const basedOnEl = getFirstChild(st, OOXML.W_NS, W.basedOn);
     const styleType = getWAttr(st, 'type');
-    // getFirstChild searches descendants. A table style nests further pPr /
-    // rPr / tblPr inside each w:tblStylePr, so its own properties must be read
-    // from direct children, or a style without its own rPr would take the
-    // first conditional's as if it applied to the whole table.
-    const styleChild = (localName: string): Element | null =>
-      styleType === 'table' ? ownChild(st, localName) : getFirstChild(st, OOXML.W_NS, localName);
+    const styleChild = (localName: string): Element | null => ownChild(st, localName);
     const pPr = styleChild(W.pPr);
     const rPr = styleChild(W.rPr);
 
@@ -211,7 +206,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
       name,
       basedOn,
       pPr: pPr ?? null,
-      rPr: (styleType === 'table' ? currentRPr(rPr) : rPr) ?? null,
+      rPr: currentRPr(rPr) ?? null,
     };
     if (styleType === 'table') {
       if (def.rPr) tableStyleRPrs.push(def.rPr);
