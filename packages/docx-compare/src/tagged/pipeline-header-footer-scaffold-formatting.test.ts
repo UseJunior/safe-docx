@@ -141,7 +141,7 @@ function propertySignature(properties: Element | undefined, skip: readonly strin
     return `${element.localName}[${attributes}](${children})`;
   };
   return Array.from(properties.childNodes)
-    .filter((child): child is Element => child.nodeType === 1 && !skip.includes(child.localName))
+    .filter((child): child is Element => child.nodeType === 1 && !skip.includes((child as Element).localName))
     .map(describe).join('');
 }
 
@@ -268,12 +268,12 @@ async function expectTrackedFormatting(
     }
   });
   await then('the formatting-fidelity check scores every header and footer 1 in both projections', async () => {
-    const [originalArchive, revisedArchive, comparedArchive] = await Promise.all(
+    const archives = await Promise.all(
       [original, revised, result.document].map((buffer) => DocxArchive.load(buffer)),
     );
     for (const slot of SLOTS) {
       const [originalXml, revisedXml, comparedXml] = await Promise.all(
-        [originalArchive, revisedArchive, comparedArchive].map(async (archive) => (await archive.getFile(partPath(slot)))!),
+        archives.map(async (archive) => (await archive.getFile(partPath(slot)))!),
       );
       const fidelity = compareSourceProjectedFormattingFidelity(originalXml!, revisedXml!, comparedXml!);
       expect(fidelity.accept.divergences, partPath(slot)).toEqual([]);
