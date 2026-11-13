@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Document properties can be chosen or left out (#1201). `docx-markdoc
+  create` reads three new frontmatter keys: `modified` (the
+  `dcterms:modified` date, which used to always equal `date`),
+  `last-modified-by`, and `application` (the `Application` in
+  `docProps/app.xml`; `application: none` leaves it out, and without the key
+  it stays `safe-docx`). `author` remains the `dc:creator`. The summary line
+  names the dates it wrote and says when they are the fixed 2006-01-01
+  default because the frontmatter has no `date`. A new certificate check,
+  `checks.properties`, reads the properties back from the DOCX against the
+  frontmatter, with a negative control. Sources without the new keys build
+  the same bytes as before. `generateDocx` accepts the same properties as
+  `meta.modifiedIso`, `meta.lastModifiedBy` and `meta.application` (null
+  omits it), and now refuses meta values that are not W3CDTF dates or hold
+  characters XML cannot carry. The Safe-DOCX MCP server gains
+  `get_document_properties` and `set_document_properties` for existing DOCX
+  files: a closed set of core properties (title, subject, creator, keywords,
+  description, category, content_status, language, last_modified_by,
+  revision, created, modified) and extended properties (application,
+  app_version, company, manager, template). A write changes only the named
+  elements, creates a missing `docProps` part with its relationship and
+  content-type override, and is listed in the save report's non-revision
+  change manifest, because document properties have no tracked-change form.
+
 - A `w:sym` symbol character (a Wingdings checkbox or bullet, common in legal
   forms) is now part of the paragraph text. `read_file` and `grep` show it,
   and `replace_text`, `add_comment` and `add_footnote` can address it.

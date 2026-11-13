@@ -54,8 +54,10 @@ Use the alternate contract below whenever a primitive/tool mutates relationships
 | `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | Adds root comment body text to `comments.xml` and always writes author metadata to `people.xml`. May also trigger comment-part bootstrap (`comments.xml`, `commentsExtended.xml`, relationships, content types) when the package lacks comment infrastructure, and writes to `commentsExtended.xml` for threaded replies. Companion body-story `w:commentReference` row is in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 | `delete_comment` | `packages/docx-mcp/src/tools/delete_comment.ts` | Removes comment/reply body text from `comments.xml` and threaded-comment companion metadata from `commentsExtended.xml` alongside the Table A body-story reference deletion. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 | `add_footnote` | `packages/docx-mcp/src/tools/add_footnote.ts` | May trigger footnote-part bootstrap and companion package registration when the document has no footnote infrastructure yet. Companion reference/text row is in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+| `document_properties.ts` — `setDocumentProperties` | `packages/docx-core/src/primitives/document_properties.ts` | Sets or removes named elements of the Core Properties part (`docProps/core.xml`) and the Extended File Properties part (`docProps/app.xml`), keeping every other element; when a part is missing and a value is set in it, creates the part, adds its package relationship to `_rels/.rels`, and adds its `[Content_Types].xml` override. OOXML has no tracked-change form for document properties. | The primitive itself records nothing; `set_document_properties` records each effective write in the session's non-revision change manifest. |
+| `set_document_properties` | `packages/docx-mcp/src/tools/set_document_properties.ts` | Core and extended document properties from a closed set, through `setDocumentProperties` (see the row above). A write whose values already hold changes nothing and records nothing. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 
-No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement, header/footer part creation, image-part insertion, or `core.xml` / `app.xml` metadata editing. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation.
+No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement, header/footer part creation, or image-part insertion. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation. `core.xml` / `app.xml` metadata editing is the `set_document_properties` row above.
 
 ### Non-revision change manifest (implemented in [#122](https://github.com/UseJunior/safe-docx/issues/122))
 
@@ -66,7 +68,8 @@ package parts mutated without a tracked-change wrapper. The `save` report surfac
 the manifest as `non_revision_changes` (omitted when empty), so package-level
 mutations are accounted for alongside the tracked revisions list rather than
 landing silently. The dual-surface tools that record entries are `add_comment`,
-`delete_comment`, and `add_footnote`; the write surface of every tool is
+`delete_comment`, and `add_footnote`; the pure package-mutation tool
+`set_document_properties` records one entry per effective write. The write surface of every tool is
 classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
 (`surface`: `revisionable` | `package-mutation` | `internal`, plus
 `emitsNonRevisionChanges`).
@@ -208,6 +211,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `bookmarks.ts` — Internal / non-contract utilities
 - `comments.ts` — Table A and Table B
 - `document.ts` — Internal / non-contract utilities
+- `document_properties.ts` — Table B
 - `document_view.ts` — Internal / non-contract utilities
 - `dom-helpers.ts` — Internal / non-contract utilities
 - `errors.ts` — Internal / non-contract utilities
@@ -255,6 +259,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `format_section.ts` — Table A
 - `insert_section_break.ts` — Table A
 - `get_sections.ts` — Internal / non-contract utilities
+- `get_document_properties.ts` — Internal / non-contract utilities
 - `get_comments.ts` — Internal / non-contract utilities
 - `get_file_status.ts` — Internal / non-contract utilities
 - `get_footnotes.ts` — Internal / non-contract utilities
@@ -272,6 +277,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `replace_text.ts` — Table A
 - `save.ts` — Table A
 - `session_resolution.ts` — Internal / non-contract utilities
+- `set_document_properties.ts` — Table B
 - `tag_parser.ts` — Internal / non-contract utilities
 - `types.ts` — Internal / non-contract utilities
 - `update_footnote.ts` — Table A

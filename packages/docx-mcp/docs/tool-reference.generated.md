@@ -51,6 +51,18 @@ Read DOCX main-document sections in document order. Returns zero-based session-r
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 
+## `get_document_properties`
+
+Read DOCX document properties: core properties from the Core Properties part (docProps/core.xml: title, subject, creator, keywords, description, category, content_status, language, identifier, version, last_modified_by, revision, created, modified, last_printed) and extended properties from the Extended File Properties part (docProps/app.xml: application, app_version, company, manager, template). Each value is the element text, or null when the element or the part is absent; core_part and app_part name the parts (null when the package has none). Read-only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+
 ## `grep`
 
 Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.
@@ -233,6 +245,20 @@ Insert a tracked DOCX section break after a stable direct-body paragraph. The ne
 | `break_type` | `enum("nextPage", "nextColumn", "continuous", "evenPage", "oddPage")` | yes | OOXML start behavior for the following section. |
 | `inherit_properties` | `boolean` | no | Whether the following section retains current non-relationship properties. Default: true. Header/footer references are always preserved. |
 | `new_section` | `object` | no | Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements. |
+
+## `set_document_properties`
+
+Set or remove DOCX document properties from a closed set: core (title, subject, creator, keywords, description, category, content_status, language, last_modified_by, revision, created, modified) and extended (application, app_version, company, manager, template). A string sets a property, null removes its element, and an omitted key is left unchanged. created and modified must be W3CDTF dates (e.g. 2026-01-02 or 2026-01-02T03:04:05Z) and are written with xsi:type="dcterms:W3CDTF"; revision is a non-negative integer; app_version has the form XX.YYYY. Only the named elements change: other elements, namespaces and extensions in the parts are kept. A document without docProps/core.xml or docProps/app.xml gets the part, its package relationship and its content-type override when a value is set in it. Surface: package-mutation — document properties have no tracked-change form, so an effective change is untracked and listed in the save report non-revision change manifest. A call whose values already hold reports changed=false and records no edit. DOCX only.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+| `core` | `object` | no | Core properties (docProps/core.xml). identifier, version and last_printed are read-only. |
+| `app` | `object` | no | Extended properties (docProps/app.xml). |
 
 ## `accept_changes`
 

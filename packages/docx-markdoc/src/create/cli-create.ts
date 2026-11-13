@@ -376,6 +376,26 @@ async function sameFile(a: string, b: string): Promise<boolean> {
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /**
+ * The document-properties entry of the CLI summary. Without a frontmatter
+ * `date`, it says the created date (and the modified date, unless `modified`
+ * chose one) is the fixed 2006 default, so a document is not delivered with
+ * it unawares.
+ */
+export function propertiesSummary(created: CreatedDocument): string {
+  const { values } = created.certificate.checks.properties;
+  const application = values['app.application'];
+  const createdIso = values['core.created'];
+  const modifiedIso = values['core.modified'];
+  const sameDates = modifiedIso === createdIso;
+  const dates = created.certificate.frontmatter.date === undefined
+    ? sameDates
+      ? `created and modified ${createdIso} (no frontmatter date; set date: to choose them)`
+      : `created ${createdIso} (no frontmatter date; set date: to choose it), modified ${modifiedIso}`
+    : `created ${createdIso}${sameDates ? '' : `, modified ${modifiedIso}`}`;
+  return `properties ok (${dates}; application ${application === null ? 'omitted' : JSON.stringify(application)}; negative control ok)`;
+}
+
+/**
  * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
  * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
  */
@@ -670,6 +690,7 @@ async function createLocked(
         : []),
       ...(checks.crossReferences ? [crossReferenceSummary(checks.crossReferences)] : []),
       'deterministic',
+      propertiesSummary(created),
       `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
       `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
       ...(checks.roundTrip.paragraphLayout ? [`paragraph layout ok (${plural(checks.roundTrip.paragraphLayout.paragraphs.actual, 'paragraph')}; ${controlsSummary({ 'read-back': checks.readback.layouts?.negativeControlDetected ?? 'not applicable', 'changed layout': checks.roundTrip.paragraphLayout.negativeControls.changedLayout, 'dropped paragraph': checks.roundTrip.paragraphLayout.negativeControls.droppedParagraph, 'moved layout': checks.roundTrip.paragraphLayout.negativeControls.movedLayout })})`] : []),

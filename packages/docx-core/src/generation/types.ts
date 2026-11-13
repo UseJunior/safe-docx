@@ -60,9 +60,22 @@ export type DocumentDefaultsSpec = {
 
 export type DocumentMetaSpec = {
   title?: string;
+  /** Written as `dc:creator`. */
   author?: string;
-  /** ISO-8601 timestamp used for docProps dates. Generation never reads the clock. */
+  /**
+   * W3CDTF (ISO 8601) timestamp written as `dcterms:created`, and as
+   * `dcterms:modified` unless `modifiedIso` is set. Generation never reads the clock.
+   */
   createdIso?: string;
+  /** W3CDTF (ISO 8601) timestamp written as `dcterms:modified` in place of `createdIso`. */
+  modifiedIso?: string;
+  /** Written as `cp:lastModifiedBy`; absent, the element is not written. */
+  lastModifiedBy?: string;
+  /**
+   * `Application` in docProps/app.xml. Absent, it is `safe-docx` (the bytes
+   * of earlier releases); null leaves the element out.
+   */
+  application?: string | null;
 };
 
 export const THEME_COLOR_SLOTS = [

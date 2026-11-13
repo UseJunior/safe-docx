@@ -709,6 +709,72 @@ allocates IDs against every existing relationship in the destination part,
 sets the external mode explicitly, and reuses an existing relationship only
 when both hyperlink type and external destination match.
 
+## [ECMA-PART2-8-2] Core Properties part location and media type
+
+```yaml
+edition: 5
+part: 2
+section: "8.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties
+verifiedBy: packages/docx-core/src/primitives/document_properties.ts; packages/docx-core/src/primitives/document_properties.test.ts; packages/docx-mcp/src/tools/document_properties.test.ts
+```
+
+A package contains at most one Core Properties part, referenced by a core
+properties relationship from the package, with the Core Properties part media
+type. Its root `coreProperties` holds non-repeatable core property elements
+(`CT_CoreProperties` is an `xsd:all`, so their order carries no meaning).
+safe-docx locates the part through `_rels/.rels` by relationship type, never
+by a fixed path, and edits only the named elements, keeping every other
+element and namespace declaration. When a write sets a value in a package
+without the part, safe-docx creates `docProps/core.xml` with one package
+relationship and one `[Content_Types].xml` override of the core-properties
+media type.
+
+## [ECMA-PART2-8-3-4-3] dcterms:created and dcterms:modified as W3CDTF dates
+
+```yaml
+edition: 5
+part: 2
+section: "8.3.4.3"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties
+verifiedBy: packages/docx-core/src/primitives/document_properties.ts; packages/docx-core/src/primitives/document_properties.test.ts; packages/docx-core/src/generation/generation-document-properties.test.ts
+```
+
+The `created` and `modified` core property elements come from the DCMI terms
+namespace, have no child elements or `xml:lang`, and carry
+`xsi:type="dcterms:W3CDTF"`, with `dcterms` declared as the prefix of
+`http://purl.org/dc/terms/`. safe-docx accepts only W3CDTF values (`YYYY`,
+`YYYY-MM`, `YYYY-MM-DD`, or a date with a time and zone, every field in
+range) for these elements, writes them with the `dcterms` prefix and the
+`xsi:type`, and refuses a part that binds `dcterms` to another namespace
+rather than rewriting the binding. Generation writes them from the spec and
+never reads the clock.
+
+## [ECMA-PART1-22-2] Extended File Properties part
+
+```yaml
+edition: 5
+part: 1
+section: "22.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd#type:CT_Properties
+verifiedBy: packages/docx-core/src/primitives/document_properties.ts; packages/docx-core/src/primitives/document_properties.test.ts; packages/docx-core/src/generation/generation-document-properties.test.ts
+```
+
+Extended properties are non-repeatable elements of the Extended File
+Properties part's `Properties` root. §22.2 lets each one be omitted, and lets
+it be empty only where its schema type admits an empty value: a string
+property such as `Company` can be empty, an integer statistic such as `Pages`
+cannot, and `AppVersion` has the form `XX.YYYY` (§22.2.2.2). safe-docx reads
+and writes `Application`, `AppVersion`, `Company`, `Manager` and `Template` in
+the root's own namespace and prefix (transitional or strict), writes only
+non-empty values and refuses an `AppVersion` of any other form, keeps every
+other element (statistics, heading pairs, titles of parts) untouched, creates
+a missing part in the strict namespace when the main document relationship is
+strict (§15.2.12.3), and lets generation omit `Application`.
+
 ## [ECMA-PART1-17-5-2-29] w:sdt block-level structured document tag
 
 ```yaml

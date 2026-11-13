@@ -25,6 +25,8 @@ import { closeFile } from './tools/close_file.js';
 import { formatLayout } from './tools/format_layout.js';
 import { formatNumbering } from './tools/format_numbering.js';
 import { formatSection } from './tools/format_section.js';
+import { getDocumentProperties } from './tools/get_document_properties.js';
+import { setDocumentProperties } from './tools/set_document_properties.js';
 import { insertSectionBreakTool } from './tools/insert_section_break.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { acceptAiEdits } from './tools/accept_ai_edits.js';
@@ -177,6 +179,10 @@ export async function dispatchToolCall(
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'get_sections');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'get_sections');
       return await getSections(sessions, args as Parameters<typeof getSections>[1]);
+    case 'get_document_properties':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'get_document_properties');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'get_document_properties');
+      return await getDocumentProperties(sessions, args as Parameters<typeof getDocumentProperties>[1]);
     case 'batch_edit':
       return await batchEdit(sessions, args as Parameters<typeof batchEdit>[1]);
     case 'replace_text':
@@ -213,6 +219,10 @@ export async function dispatchToolCall(
         sessions,
         args as Parameters<typeof insertSectionBreakTool>[1],
       );
+    case 'set_document_properties':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'set_document_properties');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'set_document_properties');
+      return await setDocumentProperties(sessions, args as Parameters<typeof setDocumentProperties>[1]);
     case 'accept_changes':
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
     case 'accept_ai_edits':

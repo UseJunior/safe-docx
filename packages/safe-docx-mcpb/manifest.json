@@ -37,6 +37,10 @@
       "description": "Inspect DOCX sections, page setup, header/footer references, and page-number settings."
     },
     {
+      "name": "get_document_properties",
+      "description": "Read DOCX core and extended document properties (title, author, dates, application, company)."
+    },
+    {
       "name": "batch_edit",
       "description": "Validate, conflict-check, and apply multiple edit steps in one call."
     },
@@ -71,6 +75,10 @@
     {
       "name": "insert_section_break",
       "description": "Insert a tracked DOCX section break after a stable main-body paragraph."
+    },
+    {
+      "name": "set_document_properties",
+      "description": "Set or remove DOCX core and extended document properties from a closed set (untracked package mutation)."
     },
     {
       "name": "format_numbering",
