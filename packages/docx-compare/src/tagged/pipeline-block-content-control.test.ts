@@ -344,6 +344,199 @@ describe('block content-control boundary moves (#1028)', () => {
   }
 });
 
+describe('block customXml boundary moves (#1102)', () => {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const para = (text: string) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const boldPara = (text: string) => `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const styledPara = (text: string) =>
+    `<w:p><w:pPr><w:spacing w:after="240"/><w:jc w:val="both"/></w:pPr><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const custom = (inner: string, element = 'clause') =>
+    `<w:customXml w:uri="urn:example:terms" w:element="${element}">${inner}</w:customXml>`;
+  const control = (inner: string, tag = 'party') =>
+    `<w:sdt><w:sdtPr><w:tag w:val="${tag}"/><w:id w:val="7"/></w:sdtPr><w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+  const intoCustom = [
+    boldPara('Before clause.') + custom(para('Inside clause.')) + para('After clause.'),
+    custom(boldPara('Before clause.') + para('Inside clause.')) + para('After clause, amended.'),
+  ] as const;
+  const trailingOutOfCustom = [
+    para('Lead paragraph.') + custom(para('Inside clause.') + para('Leaving clause.')),
+    para('Lead paragraph.') + custom(para('Inside clause.')) + para('Leaving clause.'),
+  ] as const;
+  // A paragraph moves into a content control nested in a customXml container.
+  const intoNestedControl = [
+    custom(para('Before control.') + control(para('Inside clause.'))) + para('After clause.'),
+    custom(control(para('Before control.') + para('Inside clause.'))) + para('After clause.'),
+  ] as const;
+  // A paragraph leaves a customXml container nested in a content control.
+  const outOfNestedCustom = [
+    control(custom(para('Inside clause.') + para('Leaving clause.'))),
+    control(custom(para('Inside clause.')) + para('Leaving clause.')),
+  ] as const;
+  // Each paragraph's text, prefixed by its enclosing containers (outermost
+  // first) and their identity: the customXml element name, the sdt tag.
+  const shape = (xml: string) => Array.from(parseXml(xml).getElementsByTagNameNS(W, 'p')).map((p) => {
+    const containers: string[] = [];
+    for (let node = p.parentNode; node; node = node.parentNode) {
+      const element = node as Element;
+      if (element.localName === 'customXml') containers.unshift(`cx[${element.getAttributeNS(W, 'element')}]`);
+      if (element.localName === 'sdt') {
+        const tag = element.getElementsByTagNameNS(W, 'tag')[0]?.getAttributeNS(W, 'val') ?? '';
+        containers.unshift(`sdt[${tag}]`);
+      }
+    }
+    const text = Array.from(p.getElementsByTagNameNS(W, 't')).map((t) => t.textContent).join('');
+    return [...containers, text].join(':');
+  });
+  // Text inside tracked insertions and deletions.
+  const trackedText = (document: Document): string[] => ['ins', 'del'].flatMap((tag) =>
+    Array.from(document.getElementsByTagNameNS(W, tag))
+      .flatMap((wrapper) => [...Array.from(wrapper.getElementsByTagNameNS(W, 't')),
+        ...Array.from(wrapper.getElementsByTagNameNS(W, 'delText'))])
+      .map((text) => text.textContent ?? ''));
+  const pairedCases = [
+    ['a paragraph moves into the customXml container', intoCustom, 1],
+    ['a paragraph moves into the customXml container (reverse direction)', [intoCustom[1], intoCustom[0]], 1],
+    ['a trailing paragraph leaves the customXml container', trailingOutOfCustom, 1],
+    ['a trailing paragraph leaves the customXml container (reverse direction)', [trailingOutOfCustom[1], trailingOutOfCustom[0]], 1],
+    ['a paragraph moves into a content control nested in a customXml container', intoNestedControl, 1],
+    ['a paragraph leaves a customXml container nested in a content control', outOfNestedCustom, 1],
+  ] as const;
+
+  async function compareAndProject(originalBody: string, revisedBody: string, detectMoves: boolean) {
+    const original = await buildDocxFromBodyXml(originalBody);
+    const revised = await buildDocxFromBodyXml(revisedBody);
+    const result = await compareDocuments(original, revised, { detectMoves });
+    await assertSchema(result.document);
+    const xml = await (await DocxArchive.load(result.document)).getDocumentXml();
+    const originalXml = await (await DocxArchive.load(original)).getDocumentXml();
+    const revisedXml = await (await DocxArchive.load(revised)).getDocumentXml();
+    const projections = ([
+      ['accept', acceptAllChanges, acceptChanges, revisedXml],
+      ['reject', rejectAllChanges, rejectChanges, originalXml],
+    ] as const).map(([label, astProject, nativeProject, expected]) => {
+      const native = parseXml(xml);
+      nativeProject(native);
+      return { label, ast: shape(astProject(xml)), native: shape(serializeXml(native)), expected: shape(expected) };
+    });
+    const fidelity = compareSourceProjectedFormattingFidelity(originalXml, revisedXml, xml);
+    return { result, xml, document: parseXml(xml), projections, fidelity };
+  }
+
+  for (const [name, [originalBody, revisedBody], customCount] of pairedCases) {
+    for (const detectMoves of [false, true]) {
+      test(`${name} with detectMoves=${detectMoves} pairs the container and tracks only the moved paragraph`, async () => {
+        const { result, document, projections, fidelity } = await compareAndProject(originalBody, revisedBody, detectMoves);
+        expect(fidelity.accept.divergences).toEqual([]);
+        expect(fidelity.reject.divergences).toEqual([]);
+        for (const tag of ['ins', 'del', 'moveFrom', 'moveTo']) {
+          for (const wrapper of Array.from(document.getElementsByTagNameNS(W, tag))) {
+            if (wrapper.parentNode && (wrapper.parentNode as Element).localName === 'rPr') continue;
+            const blockChildren = Array.from(wrapper.childNodes).filter((child) => child.nodeType === 1
+              && ['sdt', 'customXml', 'p', 'tbl'].includes((child as Element).localName));
+            expect(blockChildren, `${tag} wraps block content`).toHaveLength(0);
+          }
+        }
+        expect(document.getElementsByTagNameNS(W, 'customXml')).toHaveLength(customCount);
+        expect(trackedText(document).filter((text) => text.includes('Inside')), 'unchanged inner paragraph').toEqual([]);
+        expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl')).toEqual([]);
+        for (const projection of projections) {
+          expect(projection.ast, `${projection.label} comparison acceptor`).toEqual(projection.expected);
+          expect(projection.native, `${projection.label} docx-core acceptor`).toEqual(projection.expected);
+        }
+      });
+    }
+  }
+
+  // w:customXmlPr, like w:sdtPr, admits no revision particle: an aligned
+  // custom XML element whose properties differ publishes the revised
+  // properties whole and reports the difference, never w:ins/w:del inside them.
+  const withProperties = (value: string, inner: string, element = 'term') =>
+    `<w:customXml w:uri="urn:example:terms" w:element="${element}"><w:customXmlPr>`
+    + `<w:attr w:name="status" w:val="${value}"/></w:customXmlPr>${inner}</w:customXml>`;
+  const propertyCases = [
+    ['a nested element whose properties change as a paragraph moves into its container',
+      para('Moving text.') + custom(withProperties('old', para('Inside clause.'))),
+      custom(para('Moving text.') + withProperties('new', para('Inside clause.'))), 'changed', 1],
+    ['an element whose properties change while its text stays',
+      para('Outside.') + withProperties('old', para('Inside clause.')),
+      para('Outside.') + withProperties('new', para('Inside clause.')), 'changed', 0],
+    ['an element that gains properties while its text stays',
+      para('Outside.') + custom(para('Inside clause.'), 'term'),
+      para('Outside.') + withProperties('new', para('Inside clause.')), 'added', 0],
+  ] as const;
+
+  for (const [name, originalBody, revisedBody, kind, index] of propertyCases) {
+    for (const detectMoves of [false, true]) {
+      test(`${name} with detectMoves=${detectMoves}: publishes the revised w:customXmlPr and reports it`, async () => {
+        const { result, document, projections } = await compareAndProject(originalBody, revisedBody, detectMoves);
+        for (const properties of Array.from(document.getElementsByTagNameNS(W, 'customXmlPr'))) {
+          const revisions = ['ins', 'del'].flatMap((tag) => Array.from(properties.getElementsByTagNameNS(W, tag)));
+          expect(revisions, 'revision inside w:customXmlPr').toEqual([]);
+        }
+        const changes = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl');
+        expect(changes).toHaveLength(1);
+        expect(changes[0]).toMatchObject({
+          kind,
+          contentControl: { element: 'customXmlPr', index, customXmlElement: 'term', customXmlUri: 'urn:example:terms' },
+        });
+        expect(formatUnrepresentedChangeWarnings(changes)[0])
+          .toContain(`properties (w:customXmlPr) of custom XML element #${index + 1} (element "term"`);
+        for (const projection of projections) {
+          expect(projection.ast, `${projection.label} comparison acceptor`).toEqual(projection.expected);
+          expect(projection.native, `${projection.label} docx-core acceptor`).toEqual(projection.expected);
+        }
+      });
+    }
+  }
+
+  // A container whose identity differs is a different container: no revision
+  // can record a w:element, w:uri or w:sdtPr change, so its content is tracked
+  // as leaving the original container and entering the revised one, and each
+  // emptied container is reported by name.
+  const renamedCases = [
+    ['the customXml element name changes', 'customXml',
+      para('Outside.') + custom(para('Inside text.')), para('Outside.') + custom(para('Inside text.'), 'term'),
+      'cx[clause]:', 'cx[term]:', 'element "clause"', 'element "term"'],
+    ['the customXml element name changes as a paragraph moves into it', 'customXml',
+      para('Before clause.') + custom(para('Inside clause.')) + para('After clause.'),
+      custom(para('Before clause.') + para('Inside clause.'), 'term') + para('After clause.'),
+      'cx[clause]:', 'cx[term]:', 'element "clause"', 'element "term"'],
+    // Paragraph properties survive on the emptied container's placeholder paragraph.
+    ['the customXml element name changes around formatted paragraphs', 'customXml',
+      para('Outside.') + custom(styledPara('First inside.') + styledPara('Second inside.')),
+      para('Outside.') + custom(styledPara('First inside.') + styledPara('Second inside.'), 'term'),
+      'cx[clause]:', 'cx[term]:', 'element "clause"', 'element "term"'],
+    ['the content control tag changes as a paragraph moves into it', 'sdt',
+      para('Before control.') + control(para('Inside clause.')) + para('After control.'),
+      control(para('Before control.') + para('Inside clause.'), 'signer') + para('After control.'),
+      'sdt[party]:', 'sdt[signer]:', 'tag "party"', 'tag "signer"'],
+  ] as const;
+
+  for (const [name, container, originalBody, revisedBody, removedShell, addedShell, removedName, addedName] of renamedCases) {
+    test(`${name}: tracks the content out of one container and into the other, reporting both by name`, async () => {
+      const { result, document, projections } = await compareAndProject(originalBody, revisedBody, false);
+      expect(document.getElementsByTagNameNS(W, container)).toHaveLength(2);
+      const changes = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl');
+      expect(changes.map((change) => [change.kind, change.contentControl?.element])).toEqual([
+        ['removed', container], ['added', container],
+      ]);
+      const warnings = formatUnrepresentedChangeWarnings(changes);
+      expect(warnings[0]).toContain(removedName);
+      expect(warnings[0]).toContain('Accept All leaves it empty');
+      expect(warnings[1]).toContain(addedName);
+      expect(warnings[1]).toContain('Reject All leaves it empty');
+      for (const projection of projections) {
+        // The projection keeps the other side's container, emptied, as one empty paragraph.
+        const shell = projection.label === 'accept' ? removedShell : addedShell;
+        for (const actual of [projection.ast, projection.native]) {
+          expect(actual.filter((entry) => entry === shell), `${projection.label} emptied container`).toHaveLength(1);
+          expect(actual.filter((entry) => entry !== shell), `${projection.label} projection`).toEqual(projection.expected);
+        }
+      }
+    });
+  }
+});
+
 // Explicit opt-in, as in noteLifecycleBodyMarks.test.ts: a requested reader
 // run must fail, never silently skip an unusable installed LibreOffice.
 const reader = process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REQUIRED === '1' ? describe : describe.skip;

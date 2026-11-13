@@ -594,34 +594,50 @@ function isSectionProperties(element: WmlElement): boolean {
     element.localName === 'sectPr';
 }
 
+/**
+ * Container property elements carried as one opaque node: `w:sdtPr` and
+ * `w:sdtEndPr` (see above) and `w:customXmlPr`, whose `CT_CustomXmlPr` has no
+ * revision particle either, so a child-level diff of its `w:attr` children
+ * would emit `w:ins`/`w:del` where the schema admits none (#1102).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1102
+ */
 export function isContentControlProperties(element: WmlElement): boolean {
   return element.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' &&
-    ['sdtPr', 'sdtEndPr'].includes(element.localName);
+    ['sdtPr', 'sdtEndPr', 'customXmlPr'].includes(element.localName);
 }
 
 /**
- * Pair one block-level content control across a boundary move so paragraphs
- * entering or leaving it are tracked at paragraph level inside and outside the
- * control, rather than wrapping the whole control in a run-level revision.
+ * Pair one block-level container (`w:sdt` content control or `w:customXml`
+ * element) across a boundary move so paragraphs entering or leaving it are
+ * tracked at paragraph level inside and outside the container, rather than
+ * tracking the whole container as deleted and inserted.
+ *
+ * Two containers are the same container when their name, attributes (for
+ * `w:customXml`, `w:uri` and `w:element`) and property elements (`w:sdtPr`
+ * and `w:sdtEndPr`, or `w:customXmlPr`) agree. No revision particle can record
+ * a change to any of these, so a container whose identity differs stays
+ * unpaired: its content is tracked as deleted from the original container and
+ * inserted into the revised one, and each emptied container is reported
+ * through `unrepresentedChanges`.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @see https://github.com/UseJunior/safe-docx/issues/1028
+ * @see https://github.com/UseJunior/safe-docx/issues/1102
  */
-function sameBlockContentControl(left: WmlElement, right: WmlElement): boolean {
+function sameBlockContainer(left: WmlElement, right: WmlElement): boolean {
   const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-  const isBlock = (sdt: WmlElement): boolean => childElements(sdt)
-    .filter((child) => child.namespaceURI === W && child.localName === 'sdtContent')
-    .flatMap((content) => childElements(content))
-    .some((child) => child.namespaceURI === W && ['p', 'tbl'].includes(child.localName));
-  const properties = (sdt: WmlElement): string => childElements(sdt)
-    .filter((child) => child.namespaceURI === W && ['sdtPr', 'sdtEndPr'].includes(child.localName))
+  const propertyNames = left.localName === 'sdt' ? ['sdtPr', 'sdtEndPr'] : ['customXmlPr'];
+  const properties = (container: WmlElement): string => childElements(container)
+    .filter((child) => child.namespaceURI === W && propertyNames.includes(child.localName))
     .map((child) => subtreeSignature(child))
     .join('|');
   return left.namespaceURI === W && right.namespaceURI === W &&
-    left.localName === 'sdt' && right.localName === 'sdt' &&
-    isBlock(left) && isBlock(right) &&
+    left.localName === right.localName &&
+    isBlockContainer(left) && isBlockContainer(right) &&
     semanticAttributeSignature(left) === semanticAttributeSignature(right) &&
     properties(left) === properties(right);
 }
@@ -836,7 +852,7 @@ function paragraphSimilarity(
   originalNumberingIdentities: ReadonlyMap<WmlElement, string>,
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): number {
-  if (sameBlockContentControl(left, right)) return 1;
+  if (sameBlockContainer(left, right)) return 1;
   if (isTableRow(left) && isTableRow(right)) {
     return similarRows(left, right, false) ? rowSimilarity(left, right) : 0;
   }

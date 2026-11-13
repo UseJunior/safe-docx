@@ -431,12 +431,13 @@ function collectParagraphUnits(
       // context, it carries no formatting dimension to compare; section
       // properties are measured independently below.
       // Likewise the placeholder paragraph a reader keeps in a block container
-      // whose content Accept/Reject removed: the emptied container is
-      // reported as a `contentControl` unrepresented change (#1386).
+      // whose content Accept/Reject removed, whatever paragraph properties it
+      // keeps: the emptied container is reported as a `contentControl`
+      // unrepresented change (#1386, #1102).
+      const placeholder = unit.text.length === 0 && isEmptiedContainerPlaceholder(child);
       if (
-        unit.text.length > 0 ||
-        unit.pPrProps.size > 0 ||
-        (unit.tableChain.length > 0 && !isEmptiedContainerPlaceholder(child))
+        !placeholder &&
+        (unit.text.length > 0 || unit.pPrProps.size > 0 || unit.tableChain.length > 0)
       ) {
         out.push(unit);
       }

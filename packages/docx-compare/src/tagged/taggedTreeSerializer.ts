@@ -2531,13 +2531,14 @@ function emitNode(
       }
       if (
         childElement?.namespaceURI === W_NS &&
-        ['sdtPr', 'sdtEndPr'].includes(childElement.localName) &&
+        ['sdtPr', 'sdtEndPr', 'customXmlPr'].includes(childElement.localName) &&
         child.tag !== 'both'
       ) {
-        // CT_SdtBlock/CT_SdtRun carry w:sdtPr outside any revision particle, so
-        // a side-only property element cannot be wrapped. Keep the revised
-        // properties live; the difference is reported through
-        // unrepresentedChanges (#1095).
+        // CT_SdtBlock/CT_SdtRun carry w:sdtPr (and CT_CustomXml* their
+        // w:customXmlPr) outside any revision particle, so a side-only
+        // property element cannot be wrapped. Keep the revised properties
+        // live; the difference is reported through unrepresentedChanges
+        // (#1095, #1102).
         if (child.tag === 'revised') emitted.push(cloneElement(childElement));
         continue;
       }

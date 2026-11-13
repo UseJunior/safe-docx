@@ -143,7 +143,10 @@ export interface UnrepresentedContentControlChange {
   /**
    * Zero-based document-order ordinal among the revised document's content
    * controls. For a whole container (`element` `sdt` or `customXml`), its
-   * ordinal among the comparison output's elements of that name.
+   * ordinal among the comparison output's elements of that name. For a
+   * custom XML element's properties (`customXmlPr`), the ordinal of the
+   * enclosing `w:customXml` among the comparison output's `w:customXml`
+   * elements.
    */
   index: number;
   /**
@@ -153,11 +156,19 @@ export interface UnrepresentedContentControlChange {
    * can wrap the container itself, so Reject All of an added one (Accept All
    * of a removed one) leaves it empty, holding one empty paragraph.
    */
-  element: 'sdtPr' | 'sdtEndPr' | 'sdt' | 'customXml';
+  element: 'sdtPr' | 'sdtEndPr' | 'customXmlPr' | 'sdt' | 'customXml';
   /** `w:id`, `w:tag` and `w:alias` from the control's `w:sdtPr` (revised side first), when present. */
   id?: string;
   tag?: string;
   alias?: string;
+  /**
+   * For a whole `w:customXml` container or its `w:customXmlPr`, the
+   * container's `w:element` and `w:uri` (revised side for properties), which
+   * name it: a container renamed between the documents is reported as the
+   * original element removed and the revised element added.
+   */
+  customXmlElement?: string;
+  customXmlUri?: string;
 }
 
 /**

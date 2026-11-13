@@ -8,12 +8,15 @@ function describeScope(change: UnrepresentedChange): string {
       control?.tag !== undefined ? `tag "${control.tag}"` : undefined,
       control?.alias !== undefined ? `alias "${control.alias}"` : undefined,
       control?.id !== undefined ? `id ${control.id}` : undefined,
+      control?.customXmlElement !== undefined ? `element "${control.customXmlElement}"` : undefined,
+      control?.customXmlUri !== undefined ? `namespace "${control.customXmlUri}"` : undefined,
     ].filter((part) => part !== undefined);
     if (control?.element === 'sdt' || control?.element === 'customXml') {
       const noun = control.element === 'sdt' ? 'block content control' : 'block custom XML element';
       return `${noun} (w:${control.element} #${control.index + 1}${identity.length > 0 ? `, ${identity.join(', ')}` : ''})`;
     }
-    const ordinal = control ? `content control #${control.index + 1}` : 'content control';
+    const noun = control?.element === 'customXmlPr' ? 'custom XML element' : 'content control';
+    const ordinal = control ? `${noun} #${control.index + 1}` : noun;
     const element = control?.element ?? 'sdtPr';
     return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
   }
