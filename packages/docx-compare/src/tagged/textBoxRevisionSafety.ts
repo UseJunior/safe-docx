@@ -144,6 +144,12 @@ export interface TextBoxStoryComparisonPlan {
    * with `markTrackedTextBoxLifecycles` (#1031).
    */
   hasUnpairedTextBoxes: boolean;
+  /**
+   * Header and footer parts compared whole because a text box was inserted
+   * into or deleted from them; the caller marks those boxes' stories with
+   * `markTrackedTextBoxLifecycles` (#1384).
+   */
+  lifecycleAncillaryPartPaths?: string[];
   representedAncillaryChanges: Array<{
     scope: 'header' | 'footer';
     kind: 'added' | 'changed' | 'removed';
@@ -2009,6 +2015,302 @@ function alignAncillaryTextBoxStorage(
     : { xml: originalXml, boxes };
 }
 
+/** The run that anchors a text box: the nearest `w:r` above its story. */
+function anchorRun(textBox: Element): Element | undefined {
+  for (let node = textBox.parentNode; node?.nodeType === 1; node = node.parentNode) {
+    const element = node as Element;
+    if (element.namespaceURI === OOXML.W_NS && element.localName === 'r') return element;
+  }
+  return undefined;
+}
+
+/** The anchor run with every story emptied: the drawing and its run properties. */
+function anchorRunFingerprint(textBox: Element): string | undefined {
+  const run = anchorRun(textBox);
+  if (!run) return undefined;
+  const clone = run.cloneNode(true) as Element;
+  for (const story of Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))) {
+    while (story.firstChild) story.removeChild(story.firstChild);
+  }
+  return canonicalNode(clone);
+}
+
+function isInsideAny(element: Element, containers: ReadonlySet<Element>): boolean {
+  for (let node = element.parentNode; node?.nodeType === 1; node = node.parentNode) {
+    if (containers.has(node as Element)) return true;
+  }
+  return false;
+}
+
+/**
+ * The comparison inputs of a header or footer part that gains or loses a text
+ * box, or `undefined` when its boxes pair one for one in order (the
+ * positional path in `ancillaryStoryInputs` handles those).
+ *
+ * Boxes pair by anchor identity, as in the body (#1031). A box with no
+ * counterpart, one stored differently with no identifier in common (#1383),
+ * or one whose drawing changed under the same identity, stays whole in a
+ * comparison of the entire part, which tracks its anchor run as inserted or
+ * deleted; `markTrackedTextBoxLifecycles` then marks every paragraph of its
+ * story the same way. A paired box whose text changed is compared as its own
+ * story and found again in the compared part by its placeholder token, since
+ * the compared part holds the deleted and the inserted boxes together and
+ * raw positions match neither input. Everything else in the part must share
+ * the admitted scaffold and relationship closure, as for a topology-matched
+ * ordinary story.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @see https://github.com/UseJunior/safe-docx/issues/1384
+ */
+async function lifecycleAncillaryStoryInputs(
+  pair: PairedAncillaryStory,
+  topologyMatches: boolean,
+  originalArchive: DocxArchive,
+  revisedArchive: DocxArchive,
+  originalDocumentXml: string,
+  revisedDocumentXml: string,
+): Promise<TextBoxStoryInput[] | undefined> {
+  const originalDocument = parseXml(pair.original.xml);
+  const revisedDocument = parseXml(pair.revised.xml);
+  const originalCopies = Array.from(originalDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'));
+  const revisedCopies = Array.from(revisedDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'));
+  const originalRawIndex = new Map(originalCopies.map((copy, rawIndex) => [copy, rawIndex]));
+  const revisedRawIndex = new Map(revisedCopies.map((copy, rawIndex) => [copy, rawIndex]));
+  const originalCandidates = textBoxPairingCandidates(textBoxGroups(originalDocument), originalRawIndex);
+  const revisedCandidates = textBoxPairingCandidates(textBoxGroups(revisedDocument), revisedRawIndex);
+  const pairing = pairTextBoxCandidates(originalCandidates, revisedCandidates);
+  if (
+    originalCandidates.length === revisedCandidates.length &&
+    pairing.pairs.length === revisedCandidates.length &&
+    pairing.pairs.every(([originalIndex, revisedIndex]) => originalIndex === revisedIndex)
+  ) {
+    return undefined;
+  }
+  const partPath = pair.revised.targetPath;
+  const originalOrdinals = visualTextBoxOrdinals(originalDocument);
+  const revisedOrdinals = visualTextBoxOrdinals(revisedDocument);
+  const refuse = (
+    side: 'original' | 'revised',
+    copy: Element | undefined,
+    reason: string,
+  ): never => {
+    const rawIndex = copy
+      ? (side === 'original' ? originalRawIndex : revisedRawIndex).get(copy) ?? 0
+      : 0;
+    throw new UnsupportedTextBoxRevisionError([{
+      index: (side === 'original' ? originalOrdinals : revisedOrdinals)[rawIndex] ?? rawIndex,
+      partPath,
+      reason,
+      ...(copy
+        ? side === 'original'
+          ? { originalParagraphId: textBoxParagraphId(copy) }
+          : { revisedParagraphId: textBoxParagraphId(copy) }
+        : {}),
+    }]);
+  };
+  if (pairing.ambiguousStorage) {
+    refuse(
+      'revised',
+      revisedCandidates[pairing.ambiguousStorage.revised]?.copies[0],
+      DIVERGENT_STORAGE_SHAPE_REASON,
+    );
+  }
+  const pairedOriginal = new Set(pairing.pairs.map(([originalIndex]) => originalIndex));
+  const firstUnpaired = revisedCandidates.find((_, index) =>
+    !pairing.pairs.some(([, revisedIndex]) => revisedIndex === index));
+  if (!topologyMatches || !pair.bindingClosureMatched) {
+    refuse(
+      firstUnpaired ? 'revised' : 'original',
+      firstUnpaired?.copies[0] ??
+        originalCandidates.find((_, index) => !pairedOriginal.has(index))?.copies[0],
+      'inserted or deleted ancillary text-box topology is not supported',
+    );
+  }
+
+  // A pair whose storage or drawing differs is replaced whole, as is every
+  // box inside a replaced box's story.
+  const kept: Array<[original: Element[], revised: Element[]]> = [];
+  for (const [originalIndex, revisedIndex] of pairing.pairs) {
+    const original = originalCandidates[originalIndex]!;
+    const revised = revisedCandidates[revisedIndex]!;
+    if (
+      original.storage !== revised.storage ||
+      original.copies.some((copy, offset) =>
+        anchorRunFingerprint(copy) === undefined ||
+        anchorRunFingerprint(copy) !== anchorRunFingerprint(revised.copies[offset]!))
+    ) {
+      continue;
+    }
+    kept.push([original.copies, revised.copies]);
+  }
+  const keptOriginal = new Set(kept.flatMap(([copies]) => copies));
+  const keptRevised = new Set(kept.flatMap(([, copies]) => copies));
+  const replacedOriginal = new Set(originalCopies.filter((copy) => !keptOriginal.has(copy)));
+  const replacedRevised = new Set(revisedCopies.filter((copy) => !keptRevised.has(copy)));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [index, [originalGroup, revisedGroup]] of kept.entries()) {
+      if (
+        originalGroup.some((copy) => isInsideAny(copy, replacedOriginal)) ||
+        revisedGroup.some((copy) => isInsideAny(copy, replacedRevised))
+      ) {
+        for (const copy of originalGroup) replacedOriginal.add(copy);
+        for (const copy of revisedGroup) replacedRevised.add(copy);
+        kept.splice(index, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  const originalTargets = relationshipTargets(pair.original.relationshipsXml);
+  const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
+  for (const [side, replaced, targets] of [
+    ['original', replacedOriginal, originalTargets],
+    ['revised', replacedRevised, revisedTargets],
+  ] as const) {
+    for (const copy of replaced) {
+      if (isInsideAny(copy, replaced)) continue;
+      const verb = side === 'original' ? 'deleted' : 'inserted';
+      const reason =
+        unsupportedStoryReason(copy, { allowNestedTextBoxes: true }) ??
+        (anchorRun(copy) === undefined ? 'its drawing has no anchor run' : undefined) ??
+        (relationshipClosureFingerprint(copy, targets) === undefined
+          ? 'its relationship closure could not be resolved'
+          : undefined);
+      if (reason) refuse(side, copy, `${verb} ancillary text box: ${reason}`);
+    }
+  }
+
+  const stories: TextBoxStoryInput[] = [];
+  const placeholders: Array<[original: Element, revised: Element, index: number]> = [];
+  for (const [originalGroup, revisedGroup] of kept) {
+    for (const [offset, originalCopy] of originalGroup.entries()) {
+      const revisedCopy = revisedGroup[offset]!;
+      const originalClosure = relationshipClosureFingerprint(originalCopy, originalTargets);
+      const revisedClosure = relationshipClosureFingerprint(revisedCopy, revisedTargets);
+      if (
+        canonicalNode(originalCopy) === canonicalNode(revisedCopy) &&
+        originalClosure === revisedClosure
+      ) {
+        continue;
+      }
+      const reason =
+        unsupportedStoryReason(originalCopy) ??
+        unsupportedStoryReason(revisedCopy) ??
+        (originalClosure === undefined || revisedClosure === undefined
+          ? 'the ancillary text-box relationship closure could not be resolved'
+          : undefined) ??
+        scaffoldPairingReason(
+          originalCopy,
+          revisedCopy,
+          'the ancillary VML shape scaffold could not be paired',
+        );
+      if (reason) refuse('revised', revisedCopy, reason);
+      const index = revisedRawIndex.get(revisedCopy)!;
+      const storyOriginalArchive = await originalArchive.clone();
+      const storyRevisedArchive = await revisedArchive.clone();
+      storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPart(
+        originalDocumentXml,
+        pair.original.xml,
+        originalRawIndex.get(originalCopy)!,
+      ));
+      storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPart(
+        revisedDocumentXml,
+        pair.revised.xml,
+        index,
+      ));
+      storyOriginalArchive.setFile(
+        'word/_rels/document.xml.rels',
+        promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
+      );
+      storyRevisedArchive.setFile(
+        'word/_rels/document.xml.rels',
+        promotedStoryRelationshipsXml(pair.revised.relationshipsXml, partPath),
+      );
+      stories.push({
+        index,
+        visualIndex: revisedOrdinals[index] ?? index,
+        partPath,
+        container: 'textBox',
+        original: await storyOriginalArchive.save(),
+        revised: await storyRevisedArchive.save(),
+      });
+      placeholders.push([originalCopy, revisedCopy, index]);
+    }
+  }
+  // Both sides carry the revised raw index, so the part comparison sees one
+  // unchanged placeholder and the splice finds it by that token.
+  for (const [originalCopy, revisedCopy, index] of placeholders) {
+    createPlaceholder(originalCopy, index);
+    createPlaceholder(revisedCopy, index);
+  }
+
+  // Outside the replaced boxes, the part must differ only where an ordinary
+  // story may: plain paragraph text under the same relationships.
+  const withoutReplacedAnchors = (document: Document, replaced: ReadonlySet<Element>): Document => {
+    const clone = parseXml(serializer.serializeToString(document));
+    const cloneCopies = Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'));
+    const sourceCopies = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'));
+    const runs = new Set<Element>();
+    for (const [rawIndex, copy] of sourceCopies.entries()) {
+      if (!replaced.has(copy) || isInsideAny(copy, replaced)) continue;
+      const run = anchorRun(cloneCopies[rawIndex]!);
+      if (run) runs.add(run);
+    }
+    for (const run of runs) run.parentNode?.removeChild(run);
+    return clone;
+  };
+  const originalRest = withoutReplacedAnchors(originalDocument, replacedOriginal);
+  const revisedRest = withoutReplacedAnchors(revisedDocument, replacedRevised);
+  const originalRestClosure = relationshipClosureFingerprint(originalRest.documentElement, originalTargets);
+  const revisedRestClosure = relationshipClosureFingerprint(revisedRest.documentElement, revisedTargets);
+  if (
+    ordinaryStoryScaffoldFingerprint(serializer.serializeToString(originalRest)) !==
+      ordinaryStoryScaffoldFingerprint(serializer.serializeToString(revisedRest)) ||
+    originalRestClosure === undefined ||
+    originalRestClosure !== revisedRestClosure
+  ) {
+    refuse(
+      firstUnpaired ? 'revised' : 'original',
+      firstUnpaired?.copies[0] ?? [...replacedOriginal][0],
+      'the header/footer around an inserted or deleted text box changed outside its plain paragraph text',
+    );
+  }
+
+  const storyOriginalArchive = await originalArchive.clone();
+  const storyRevisedArchive = await revisedArchive.clone();
+  storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
+    originalDocumentXml,
+    serializer.serializeToString(originalDocument),
+  ));
+  storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
+    revisedDocumentXml,
+    serializer.serializeToString(revisedDocument),
+  ));
+  storyOriginalArchive.setFile(
+    'word/_rels/document.xml.rels',
+    promotedStoryRelationshipsXml(pair.original.relationshipsXml, pair.original.targetPath),
+  );
+  storyRevisedArchive.setFile(
+    'word/_rels/document.xml.rels',
+    promotedStoryRelationshipsXml(pair.revised.relationshipsXml, partPath),
+  );
+  // The part story goes first: the box stories are spliced into its result.
+  return [{
+    index: 0,
+    visualIndex: 0,
+    partPath,
+    container: 'ancillaryPart',
+    ancillaryMode: 'ordinary',
+    original: await storyOriginalArchive.save(),
+    revised: await storyRevisedArchive.save(),
+  }, ...stories];
+}
+
 async function ancillaryStoryInputs(
   originalArchive: DocxArchive,
   revisedArchive: DocxArchive,
@@ -2022,6 +2324,7 @@ async function ancillaryStoryInputs(
   drawingChanges: UnrepresentedChange[];
   drawingAccountedPartPaths: string[];
   drawingAlignedOriginalParts: Map<string, string>;
+  lifecyclePartPaths: string[];
 }> {
   const [originalState, revisedState] = await Promise.all([
     selectedAncillaryState(originalArchive),
@@ -2036,6 +2339,7 @@ async function ancillaryStoryInputs(
       drawingChanges: [],
       drawingAccountedPartPaths: [],
       drawingAlignedOriginalParts: new Map(),
+      lifecyclePartPaths: [],
     };
   }
   const topologyMatches = ordinaryStoryTopologyMatches(originalState, revisedState);
@@ -2060,7 +2364,28 @@ async function ancillaryStoryInputs(
   const drawingChanges: UnrepresentedChange[] = [];
   const drawingAccountedPartPaths: string[] = [];
   const drawingAlignedOriginalParts = new Map<string, string>();
+  const lifecyclePartPaths: string[] = [];
   for (const pair of paired.pairs) {
+    const lifecycle = await lifecycleAncillaryStoryInputs(
+      pair,
+      topologyMatches,
+      originalArchive,
+      revisedArchive,
+      originalDocumentXml,
+      revisedDocumentXml,
+    );
+    if (lifecycle) {
+      stories.push(...lifecycle);
+      lifecyclePartPaths.push(pair.revised.targetPath);
+      representedChanges.push(...pair.revised.bindings.map((binding) => ({
+        scope: binding.kind,
+        kind: 'changed' as const,
+        sectionIndex: binding.sectionOrdinal,
+        role: binding.role,
+        partPath: pair.revised.targetPath,
+      })));
+      continue;
+    }
     // A box stored differently in the two parts takes the revised storage
     // around its original story before anything is compared (#1383).
     const storage = alignAncillaryTextBoxStorage(
@@ -2170,9 +2495,10 @@ async function ancillaryStoryInputs(
       // A header or footer story is spliced into the revised part, so its
       // drawing is the revised one whether or not its text changed. Neither
       // can be tracked there, so both are listed (#1382).
-      // Header/footer boxes pair by position, so a drawing that now carries
-      // another anchor identity is a different box, whose insertion or
-      // deletion a header or footer cannot track yet (#1384).
+      // Boxes reach this path only when identity pairing matched them in
+      // order; a box with another identity is replaced by
+      // `lifecycleAncillaryStoryInputs` (#1384), so this guards only a pair
+      // whose identifiers differ in a way pairing still accepted.
       const shapeChange = drawingShapeChange(originalTextBox, revisedTextBox);
       const replacedDrawing = shapeChange !== undefined &&
         copyIdentityTokens(originalTextBox).join('|') !== copyIdentityTokens(revisedTextBox).join('|');
@@ -2398,6 +2724,7 @@ async function ancillaryStoryInputs(
     drawingChanges,
     drawingAccountedPartPaths,
     drawingAlignedOriginalParts,
+    lifecyclePartPaths,
     representedChanges: [
       ...representedChanges,
       ...insertedPartStories.flatMap((story) =>
@@ -3220,6 +3547,7 @@ export async function prepareTextBoxStoryComparison(
     validateAncillaryProjection: ancillary.validateProjection,
     hasAncillaryTextBoxStories: ancillary.hasTextBoxStories,
     hasUnpairedTextBoxes: unpairedTextBoxes,
+    lifecycleAncillaryPartPaths: ancillary.lifecyclePartPaths,
     representedAncillaryChanges: ancillary.representedChanges,
     drawingChanges: allDrawingChanges,
     drawingAccountedPartPaths: ancillary.drawingAccountedPartPaths,
@@ -3297,6 +3625,20 @@ export async function assembleTextBoxStoryComparison(
       await spliceBodyTextBoxStory(targetDocument, outerArchive, storyResult, storyBody);
       continue;
     }
+    // A header/footer compared whole around an inserted or deleted box holds
+    // its paired boxes as placeholders, found by token like body boxes (#1384).
+    const token = placeholderToken(storyResult.index);
+    if (
+      Array.from(targetDocument.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'))
+        .some((textBox) => (textBox.textContent ?? '') === token)
+    ) {
+      await spliceBodyTextBoxStory(targetDocument, outerArchive, storyResult, storyBody);
+      outerArchive.setFile(
+        storyResult.partPath,
+        serializer.serializeToString(targetDocument),
+      );
+      continue;
+    }
     const target = targetDocument
       .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')
       .item(storyResult.index);
@@ -3367,6 +3709,7 @@ async function reboundSideStoryBody(
   side: Buffer,
   outerArchive: DocxArchive,
   visualIndex: number,
+  partPath: string,
 ): Promise<Element> {
   const archive = await DocxArchive.load(side);
   const body = parseXml(await archive.getDocumentXml())
@@ -3376,7 +3719,7 @@ async function reboundSideStoryBody(
   await remapComparedStoryRelationshipIds(
     archive,
     outerArchive,
-    'word/document.xml',
+    partPath,
     body,
     visualIndex,
   );
@@ -3392,7 +3735,9 @@ function replaceStoryContent(target: Element, storyBody: Element): void {
 }
 
 /**
- * Splice one compared body text-box story back into the outer comparison.
+ * Splice one compared text-box story back into the outer comparison, or
+ * into a header/footer part compared whole around an inserted or deleted
+ * box (#1384).
  *
  * The story is found by its placeholder token, not by raw position: once
  * unpaired boxes stay in the outer comparison, the compared body holds the
@@ -3427,7 +3772,9 @@ async function spliceBodyTextBoxStory(
   const kept = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) === undefined);
   const tracked = occurrences.filter((textBox) => anchorRevisionWrapper(textBox) !== undefined);
   const sideBody = async (side: Buffer | undefined): Promise<Element | undefined> =>
-    side ? reboundSideStoryBody(side, outerArchive, storyResult.visualIndex) : undefined;
+    side
+      ? reboundSideStoryBody(side, outerArchive, storyResult.visualIndex, storyResult.partPath)
+      : undefined;
   const trackedBodies = new Map<Element, Element | undefined>();
   for (const textBox of tracked) {
     trackedBodies.set(
@@ -3456,7 +3803,8 @@ async function spliceBodyTextBoxStory(
 
 /**
  * Mark the story of every body text box whose anchor the outer comparison
- * tracked as inserted or deleted.
+ * tracked as inserted or deleted, and of every such box in a header/footer
+ * part listed in `ancillaryPartPaths` (#1384).
  *
  * A box with no counterpart in the other document stays whole in the outer
  * comparison, which wraps its anchor run in `w:ins` or `w:del`. Its story is a
@@ -3480,26 +3828,39 @@ export async function markTrackedTextBoxLifecycles(
   author: string,
   date: Date,
   minimumRevisionId = 0,
+  ancillaryPartPaths: readonly string[] = [],
 ): Promise<{ document: Buffer; insertedParagraphs: number; deletedParagraphs: number }> {
   const archive = await DocxArchive.load(compared);
-  const document = parseXml(await archive.getDocumentXml());
-  const trackedBoxes = Array.from(
+  // A moved anchor carries the same story on both sides of the move, so
+  // its story is not an insertion or a deletion and stays unmarked. A
+  // nested box is marked when its own anchor, inside the enclosing story,
+  // is tracked (#1380); a nested box inside a tracked enclosing box is
+  // marked with that box's paragraphs instead.
+  const trackedBoxesOf = (document: Document): Element[] => Array.from(
     document.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
   ).filter((textBox) => {
-    // A moved anchor carries the same story on both sides of the move, so
-    // its story is not an insertion or a deletion and stays unmarked. A
-    // nested box is marked when its own anchor, inside the enclosing story,
-    // is tracked (#1380); a nested box inside a tracked enclosing box is
-    // marked with that box's paragraphs instead.
     const wrapper = anchorRevisionWrapper(textBox, { withinStory: true });
     return wrapper === 'ins' || wrapper === 'del';
   });
-  if (trackedBoxes.length === 0) {
+  // The body, and each header/footer part compared whole around an inserted
+  // or deleted box (#1384).
+  const stories: Array<{ path: string; document: Document; trackedBoxes: Element[] }> = [];
+  for (const path of ['word/document.xml', ...ancillaryPartPaths]) {
+    const xml = path === 'word/document.xml'
+      ? await archive.getDocumentXml()
+      : await archive.getFile(path);
+    if (xml === null) continue;
+    const document = parseXml(xml);
+    const trackedBoxes = trackedBoxesOf(document);
+    if (trackedBoxes.length > 0) stories.push({ path, document, trackedBoxes });
+  }
+  if (stories.length === 0) {
     return { document: compared, insertedParagraphs: 0, deletedParagraphs: 0 };
   }
   const preservedRoots: Element[] = [];
+  const marked = new Set(stories.map(({ path }) => path));
   for (const path of archive.listFiles()) {
-    if (!/^word\/.*\.xml$/u.test(path) || path === 'word/document.xml') continue;
+    if (!/^word\/.*\.xml$/u.test(path) || marked.has(path)) continue;
     const xml = await archive.getFile(path);
     if (!xml) continue;
     try {
@@ -3508,23 +3869,30 @@ export async function markTrackedTextBoxLifecycles(
       // Non-WordprocessingML extension parts are irrelevant to revision IDs.
     }
   }
-  const state = createRevisionIdState([document.documentElement, ...preservedRoots]);
+  const state = createRevisionIdState([
+    ...stories.map(({ document }) => document.documentElement),
+    ...preservedRoots,
+  ]);
   state.nextId = Math.max(state.nextId, minimumRevisionId);
   const dateString = formatDate(date);
-  const rendered = new Set(textBoxGroups(document).map((group) => group.selected));
   let insertedParagraphs = 0;
   let deletedParagraphs = 0;
-  for (const textBox of trackedBoxes) {
-    const markerTag = anchorRevisionWrapper(textBox) === 'ins' ? 'w:ins' : 'w:del';
-    const paragraphs = Array.from(textBox.getElementsByTagNameNS(OOXML.W_NS, 'p'));
-    for (const paragraph of paragraphs) {
-      markLifecycleParagraph(paragraph, markerTag, author, dateString, state);
+  for (const { path, document, trackedBoxes } of stories) {
+    const rendered = new Set(textBoxGroups(document).map((group) => group.selected));
+    for (const textBox of trackedBoxes) {
+      const markerTag = anchorRevisionWrapper(textBox) === 'ins' ? 'w:ins' : 'w:del';
+      const paragraphs = Array.from(textBox.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+      for (const paragraph of paragraphs) {
+        markLifecycleParagraph(paragraph, markerTag, author, dateString, state);
+      }
+      if (!rendered.has(textBox)) continue;
+      if (markerTag === 'w:ins') insertedParagraphs += paragraphs.length;
+      else deletedParagraphs += paragraphs.length;
     }
-    if (!rendered.has(textBox)) continue;
-    if (markerTag === 'w:ins') insertedParagraphs += paragraphs.length;
-    else deletedParagraphs += paragraphs.length;
+    const xml = serializer.serializeToString(document);
+    if (path === 'word/document.xml') archive.setDocumentXml(xml);
+    else archive.setFile(path, xml);
   }
-  archive.setDocumentXml(serializer.serializeToString(document));
   return { document: await archive.save(), insertedParagraphs, deletedParagraphs };
 }
 

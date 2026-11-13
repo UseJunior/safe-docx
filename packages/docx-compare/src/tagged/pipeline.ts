@@ -1578,6 +1578,7 @@ async function compareDocumentsTagged(
     options.author ?? 'Comparison',
     options.date ?? new Date(),
     Math.max(nextPackageRevisionId, await firstAvailablePackageRevisionId(assembled)),
+    textBoxPlan.lifecycleAncillaryPartPaths,
   );
   const document = lifecycle.document;
   const comparedArchive = await DocxArchive.load(document);
