@@ -16,6 +16,7 @@ import {
   getParagraphRuns,
   hasHighlightTags,
   hasHyperlinkTags,
+  paragraphHasVisibleContent,
   replaceParagraphTextRange,
   stripHyperlinkTags,
   stripAllInlineTags,
@@ -30,6 +31,11 @@ import {
   hasHeaderTags,
   collectUnknownMarkupTagWarnings,
 } from './tag_parser.js';
+import {
+  applyEmptyNumberedParagraphPolicy,
+  invalidEmptyNumberedParagraphPolicyMessage,
+  parseEmptyNumberedParagraphPolicy,
+} from './empty_numbered_paragraph.js';
 
 /**
  * Other constructs the paragraph text does not show and a range can take out
@@ -239,6 +245,13 @@ export async function replaceText(
     font_name?: string;
     color?: string;
     /**
+     * What to do when the edit leaves the target paragraph numbered but
+     * empty (issue #1047): "warn" (default), "error", "remove_paragraph" or
+     * "ignore". batch_edit passes "ignore" and applies the policy itself at
+     * the end of the batch.
+     */
+    on_empty_numbered_paragraph?: string;
+    /**
      * Internal (not exposed in the MCP tool schema): set by batch_edit, which
      * preflights the whole step sequence once instead of per step.
      */
@@ -247,6 +260,10 @@ export async function replaceText(
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
   try {
+    const emptyNumberedPolicy = parseEmptyNumberedParagraphPolicy(params.on_empty_numbered_paragraph);
+    if (!emptyNumberedPolicy) {
+      return err('INVALID_PARAMS', invalidEmptyNumberedParagraphPolicyMessage(params.on_empty_numbered_paragraph));
+    }
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'replace_text' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
@@ -326,6 +343,21 @@ export async function replaceText(
         // A w:sym symbol character is part of the paragraph text the caller
         // matched (issue #1046), so a range that removes one needs no warning.
         const hiddenBefore = collectLiveHiddenConstructs(pEl);
+        // Scoped to the touched paragraph: only an edit that empties a
+        // paragraph which had visible content is reported (issue #1047).
+        const hadContentBefore = emptyNumberedPolicy !== 'ignore' && paragraphHasVisibleContent(pEl);
+        const applyEmptyNumberedPolicy = (): void => {
+          const outcome = applyEmptyNumberedParagraphPolicy({
+            doc,
+            paragraphId: pid,
+            paragraph: pEl,
+            hadContentBefore,
+            beforeText: paraText,
+            policy: emptyNumberedPolicy,
+            ctx: activeCtx,
+          });
+          if (outcome.kind !== 'none') editWarnings.push(outcome.message);
+        };
         const reportRemovedHiddenConstructs = (): void => {
           for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
             editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
@@ -375,6 +407,7 @@ export async function replaceText(
           }
           reportRemovedHiddenConstructs();
           verifyPostCondition();
+          applyEmptyNumberedPolicy();
           return;
         }
 
@@ -411,6 +444,7 @@ export async function replaceText(
         reportRemovedHiddenConstructs();
         doc.mergeRunsOnly({ preserveRsidIdentity: true });
         verifyPostCondition();
+        applyEmptyNumberedPolicy();
       };
 
       const revisionPreflight = params.skip_ai_revision_preflight
