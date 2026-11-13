@@ -398,6 +398,28 @@ describe('header/footer attached to or dropped from a surviving section (#1394)'
     },
   );
 
+  test.openspec('[SDX-CMP-SLOTLIFE-01] A header or footer attached to a surviving section is tracked as inserted content')(
+    'tracks a default footer attached to a section that lists its other references header, footer, header, footer',
+    async ({ given, when, then }: AllureBddContext) => {
+      const parts = [
+        story('rIdHd', 'header', 'header1.xml', paragraph('Header')),
+        story('rIdHf', 'header', 'header2.xml', paragraph('First header')),
+        story('rIdFf', 'footer', 'footer2.xml', paragraph('First footer')),
+      ];
+      const footer = story('rIdFd', 'footer', 'footer1.xml', paragraph('Last Updated October 2025'));
+      const [original, revised] = await given('a title-page section without a default footer; the revision adds one between its references', () =>
+        Promise.all([
+          packageWith(paragraph('Body'),
+            ref('header', 'rIdHd') + ref('header', 'rIdHf', 'first') + ref('footer', 'rIdFf', 'first') + '<w:titlePg/>', parts),
+          packageWith(paragraph('Body, revised'),
+            ref('header', 'rIdHd') + ref('footer', 'rIdFd') + ref('header', 'rIdHf', 'first') + ref('footer', 'rIdFf', 'first') +
+              '<w:titlePg/>', [...parts, footer]),
+        ]));
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await expectSlotRedline({ then }, original, revised, result);
+    },
+  );
+
   for (const direction of ['attached', 'dropped'] as const) {
     test.openspec('[SDX-CMP-SLOTLIFE-01] A header or footer attached to a surviving section is tracked as inserted content')(
       `tracks a header ${direction} with its own paragraph-property history, leaving a plain blank story where there is none`,

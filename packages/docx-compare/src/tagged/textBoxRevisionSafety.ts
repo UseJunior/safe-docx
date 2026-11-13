@@ -1787,11 +1787,26 @@ function ordinarySectionTopologyFingerprints(documentXml: string): string[] {
     .filter((section) => !hasAncestorLocalName(section, 'sectPrChange'))
     .map((section) => {
       const clone = withoutFormattingWhitespace(section.cloneNode(true) as Element);
-      for (const reference of [
+      const references = [
         ...Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'headerReference')),
         ...Array.from(clone.getElementsByTagNameNS(OOXML.W_NS, 'footerReference')),
-      ]) {
+      ];
+      for (const reference of references) {
         reference.setAttributeNS(RELATIONSHIPS_NS, 'r:id', '__selected_story__');
+      }
+      // The references are one unordered choice group in CT_SectPr, so their
+      // order is not part of the topology (#1394).
+      const anchor = references.length > 0 ? references[0]! : undefined;
+      if (anchor) {
+        const placeholder = clone.ownerDocument!.createComment('references');
+        clone.insertBefore(placeholder, directChildElements(clone).find((child) => references.includes(child)) ?? anchor);
+        for (const reference of references) reference.parentNode?.removeChild(reference);
+        const key = (reference: Element): string =>
+          `${reference.localName}:${reference.getAttributeNS(OOXML.W_NS, 'type') ?? reference.getAttribute('w:type') ?? ''}`;
+        for (const reference of references.sort((left, right) => key(left).localeCompare(key(right)))) {
+          clone.insertBefore(reference, placeholder);
+        }
+        clone.removeChild(placeholder);
       }
       return canonicalNode(clone);
     });
