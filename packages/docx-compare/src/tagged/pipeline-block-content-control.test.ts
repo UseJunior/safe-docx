@@ -6,7 +6,14 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect } from 'vitest';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
-import { acceptChanges, DocxArchive, parseXml, rejectChanges, serializeXml } from '@usejunior/docx-core';
+import {
+  acceptChanges,
+  collectStrictFieldStructureIssues,
+  DocxArchive,
+  parseXml,
+  rejectChanges,
+  serializeXml,
+} from '@usejunior/docx-core';
 import { compareDocuments, formatUnrepresentedChangeWarnings } from '../index.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
@@ -402,7 +409,12 @@ describe('block customXml boundary moves (#1102)', () => {
     ['a paragraph leaves a customXml container nested in a content control', outOfNestedCustom, 1],
   ] as const;
 
-  async function compareAndProject(originalBody: string, revisedBody: string, detectMoves: boolean) {
+  async function compareAndProject(
+    originalBody: string,
+    revisedBody: string,
+    detectMoves: boolean,
+    project: (xml: string) => string[] = shape,
+  ) {
     const original = await buildDocxFromBodyXml(originalBody);
     const revised = await buildDocxFromBodyXml(revisedBody);
     const result = await compareDocuments(original, revised, { detectMoves });
@@ -416,7 +428,7 @@ describe('block customXml boundary moves (#1102)', () => {
     ] as const).map(([label, astProject, nativeProject, expected]) => {
       const native = parseXml(xml);
       nativeProject(native);
-      return { label, ast: shape(astProject(xml)), native: shape(serializeXml(native)), expected: shape(expected) };
+      return { label, ast: project(astProject(xml)), native: project(serializeXml(native)), expected: project(expected) };
     });
     const fidelity = compareSourceProjectedFormattingFidelity(originalXml, revisedXml, xml);
     return { result, xml, document: parseXml(xml), projections, fidelity };
@@ -535,6 +547,175 @@ describe('block customXml boundary moves (#1102)', () => {
       }
     });
   }
+
+  // A block container holding a field pairs across a boundary move: pairing
+  // it diffs its children through the same field guard, so no paragraph
+  // holding a field is fuzzily paired and no field complex is split (#1459).
+  describe('a block container holding a field (#1459)', () => {
+    const fieldTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
+    const fieldBegin = '<w:r><w:fldChar w:fldCharType="begin"/></w:r>';
+    const fieldInstruction = (instruction: string) =>
+      `<w:r><w:instrText xml:space="preserve"> ${instruction} </w:instrText></w:r>`;
+    const fieldSeparate = '<w:r><w:fldChar w:fldCharType="separate"/></w:r>';
+    const fieldEnd = '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    const run = (text: string) => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const field = (instruction: string, result: string) =>
+      fieldBegin + fieldInstruction(instruction) + fieldSeparate + run(result) + fieldEnd;
+    const refPara = `<w:p>${run('Held clause, see ')}${field('REF _Ref1459 \\h', 'Section 1.1')}${run('.')}</w:p>`;
+    const pagePara = `<w:p>${run('Held clause on page ')}${field('PAGE', '3')}</w:p>`;
+    // One REF field whose result runs across two paragraphs of the container.
+    const spanningPair = `<w:p>${run('Held clause, see ')}${fieldBegin}${fieldInstruction('REF _Ref1459 \\h')}`
+      + `${fieldSeparate}${run('Section')}</w:p><w:p>${run('1.1 continued')}${fieldEnd}${run(' held.')}</w:p>`;
+    // The halves of a field that crosses the container boundary.
+    const opensField = `<w:p>${run('Held clause, see ')}${fieldBegin}${fieldInstruction('REF _Ref1459 \\h')}`
+      + `${fieldSeparate}${run('Section')}</w:p>`;
+    const closesField = `<w:p>${run('1.1 continued')}${fieldEnd}${run(' after.')}</w:p>`;
+    const moving = 'Moving text.';
+    // Each paragraph's shape plus its field characters and instructions in order.
+    const fieldShape = (xml: string) => {
+      const texts = shape(xml);
+      return Array.from(parseXml(xml).getElementsByTagNameNS(W, 'p')).map((p, index) => {
+        const tokens = Array.from(p.getElementsByTagNameNS(W, '*'))
+          .filter((element) => ['fldChar', 'instrText', 'delInstrText'].includes(element.localName))
+          .map((element) => element.localName === 'fldChar'
+            ? element.getAttributeNS(W, 'fldCharType')
+            : `${element.localName}(${(element.textContent ?? '').trim()})`);
+        return `${texts[index]}{${tokens.join(',')}}`;
+      });
+    };
+    const fieldPairedCases = [
+      ['a paragraph moves into a customXml container holding a REF field', [
+        para(moving) + custom(refPara) + para('After clause.'),
+        custom(para(moving) + refPara) + para('After clause.'),
+      ], 1],
+      ['a paragraph leaves a customXml container holding a REF field', [
+        custom(para(moving) + refPara) + para('After clause.'),
+        para(moving) + custom(refPara) + para('After clause.'),
+      ], 1],
+      ['a trailing paragraph leaves a customXml container holding a PAGE field', [
+        para('Lead paragraph.') + custom(pagePara + para(moving)),
+        para('Lead paragraph.') + custom(pagePara) + para(moving),
+      ], 1],
+      ['a trailing paragraph moves into a customXml container holding a PAGE field', [
+        para('Lead paragraph.') + custom(pagePara) + para(moving),
+        para('Lead paragraph.') + custom(pagePara + para(moving)),
+      ], 1],
+      ['a paragraph moves into a content control holding a REF field', [
+        para(moving) + control(refPara) + para('After control.'),
+        control(para(moving) + refPara) + para('After control.'),
+      ], 0],
+      ['a trailing paragraph leaves a content control holding a PAGE field', [
+        control(pagePara + para(moving)) + para('After control.'),
+        control(pagePara) + para(moving) + para('After control.'),
+      ], 0],
+      ['a paragraph moves into a content control holding a REF field nested in a customXml container', [
+        custom(para(moving) + control(refPara)) + para('After clause.'),
+        custom(control(para(moving) + refPara)) + para('After clause.'),
+      ], 1],
+      ['a paragraph moves into a customXml container whose field spans two of its paragraphs', [
+        para(moving) + custom(spanningPair) + para('After clause.'),
+        custom(para(moving) + spanningPair) + para('After clause.'),
+      ], 1],
+      ['a trailing paragraph leaves a content control whose field spans two of its paragraphs', [
+        control(spanningPair + para(moving)) + para('After control.'),
+        control(spanningPair) + para(moving) + para('After control.'),
+      ], 0],
+    ] as const;
+
+    for (const [name, [originalBody, revisedBody], customCount] of fieldPairedCases) {
+      for (const detectMoves of [false, true]) {
+        fieldTest(`${name} with detectMoves=${detectMoves} pairs the container and leaves the field untracked`, async () => {
+          const { result, document, projections, fidelity } =
+            await compareAndProject(originalBody, revisedBody, detectMoves, fieldShape);
+          expect(fidelity.accept.divergences).toEqual([]);
+          expect(fidelity.reject.divergences).toEqual([]);
+          for (const tag of ['ins', 'del', 'moveFrom', 'moveTo']) {
+            for (const wrapper of Array.from(document.getElementsByTagNameNS(W, tag))) {
+              if (wrapper.parentNode && (wrapper.parentNode as Element).localName === 'rPr') continue;
+              const tracked = Array.from(wrapper.getElementsByTagNameNS(W, '*'))
+                .filter((element) => ['sdt', 'customXml', 'p', 'tbl', 'fldChar', 'instrText', 'delInstrText']
+                  .includes(element.localName));
+              expect(tracked.map((element) => element.localName), `${tag} wraps block content or a field`).toEqual([]);
+            }
+          }
+          expect(document.getElementsByTagNameNS(W, 'customXml')).toHaveLength(customCount);
+          expect(trackedText(document).filter((text) => text.trim() && !moving.includes(text)), 'tracked text').toEqual([]);
+          expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl')).toEqual([]);
+          for (const projection of projections) {
+            expect(projection.ast, `${projection.label} comparison acceptor`).toEqual(projection.expected);
+            expect(projection.native, `${projection.label} docx-core acceptor`).toEqual(projection.expected);
+          }
+          const xml = serializeXml(document);
+          for (const [label, astProject, nativeProject] of [
+            ['accept', acceptAllChanges, acceptChanges],
+            ['reject', rejectAllChanges, rejectChanges],
+          ] as const) {
+            const native = parseXml(xml);
+            nativeProject(native);
+            expect(collectStrictFieldStructureIssues(astProject(xml)), `${label} comparison acceptor fields`).toEqual([]);
+            expect(collectStrictFieldStructureIssues(serializeXml(native)), `${label} docx-core acceptor fields`).toEqual([]);
+          }
+        });
+      }
+    }
+
+    // A field that crosses the container boundary, or a moving paragraph that
+    // holds a field, still lets the containers pair. Unpaired, the container
+    // would churn whole, and the deleted half of a crossing field could not be
+    // tracked: the comparison failed its field-structure check.
+    const movingField = `<w:p>${run('Moving, see ')}${field('REF _Ref1459 \\h', 'Section 1.1')}</w:p>`;
+    const movingPage = `<w:p>${run('Moving, page ')}${field('PAGE', '3')}</w:p>`;
+    const unchanged = para('Unchanged clause.');
+    const fieldTrackedCases = [
+      ['a field begins inside the customXml container and ends after it', [
+        para(moving) + custom(unchanged + opensField) + closesField,
+        custom(para(moving) + unchanged + opensField) + closesField,
+      ], 1],
+      ['a field begins before the content control and ends inside it', [
+        opensField + control(closesField + unchanged + para(moving)) + para('After control.'),
+        opensField + control(closesField + unchanged) + para(moving) + para('After control.'),
+      ], 0],
+      ['a field crossing the customXml boundary has its opening paragraph edited', [
+        para(moving) + custom(unchanged + opensField) + closesField,
+        custom(para(moving) + unchanged + opensField.replace('Held clause, see ', 'Held clause, now see ')) + closesField,
+      ], 1],
+      ['a paragraph holding a REF field moves into the customXml container', [
+        movingField + custom(unchanged) + para('After clause.'),
+        custom(movingField + unchanged) + para('After clause.'),
+      ], 1],
+      ['a paragraph holding a PAGE field leaves the content control', [
+        control(unchanged + movingPage) + para('After control.'),
+        control(unchanged) + movingPage + para('After control.'),
+      ], 0],
+    ] as const;
+
+    for (const [name, [originalBody, revisedBody], customCount] of fieldTrackedCases) {
+      for (const detectMoves of [false, true]) {
+        fieldTest(`${name} with detectMoves=${detectMoves} pairs the container and keeps every field whole`, async () => {
+          const { result, document, projections, fidelity, xml } =
+            await compareAndProject(originalBody, revisedBody, detectMoves, fieldShape);
+          expect(fidelity.accept.divergences).toEqual([]);
+          expect(fidelity.reject.divergences).toEqual([]);
+          expect(document.getElementsByTagNameNS(W, 'customXml')).toHaveLength(customCount);
+          expect(trackedText(document).filter((text) => text.includes('Unchanged')), 'unchanged paragraph').toEqual([]);
+          expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl')).toEqual([]);
+          for (const projection of projections) {
+            expect(projection.ast, `${projection.label} comparison acceptor`).toEqual(projection.expected);
+            expect(projection.native, `${projection.label} docx-core acceptor`).toEqual(projection.expected);
+          }
+          for (const [label, astProject, nativeProject] of [
+            ['accept', acceptAllChanges, acceptChanges],
+            ['reject', rejectAllChanges, rejectChanges],
+          ] as const) {
+            const native = parseXml(xml);
+            nativeProject(native);
+            expect(collectStrictFieldStructureIssues(astProject(xml)), `${label} comparison acceptor fields`).toEqual([]);
+            expect(collectStrictFieldStructureIssues(serializeXml(native)), `${label} docx-core acceptor fields`).toEqual([]);
+          }
+        });
+      }
+    }
+  });
 });
 
 // Explicit opt-in, as in noteLifecycleBodyMarks.test.ts: a requested reader

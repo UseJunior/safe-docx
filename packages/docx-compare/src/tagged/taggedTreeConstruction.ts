@@ -642,6 +642,41 @@ function sameBlockContainer(left: WmlElement, right: WmlElement): boolean {
     properties(left) === properties(right);
 }
 
+/**
+ * Order-preserving pairs of a gap's same-identity block containers, as
+ * indices into the gap. A container pairs only with a container of the same
+ * identity (`sameBlockContainer`), and pairing it diffs its children rather
+ * than its runs, so a gap whose paragraphs hold field characters can still
+ * pair its containers without pairing any field-holding paragraph. Left
+ * unpaired, every paragraph a container holds is deleted and reinserted: the
+ * container churns whole around the moved paragraph, and when a field crosses
+ * the container boundary its deleted half's field characters are hoisted out
+ * of `w:del`, so Accept All keeps two begins and publication fails its
+ * field-structure check.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1459
+ */
+function blockContainerPairs(
+  original: readonly WmlElement[],
+  revised: readonly WmlElement[],
+): Array<[number, number]> {
+  const containerIndices = (elements: readonly WmlElement[]): number[] =>
+    elements.flatMap((element, index) => isBlockContainer(element) ? [index] : []);
+  const originalIndices = containerIndices(original);
+  const revisedIndices = containerIndices(revised);
+  if (originalIndices.length === 0 || revisedIndices.length === 0) return [];
+  // Container similarity ignores numbering identities.
+  const none = new Map<WmlElement, string>();
+  return similarParagraphPairs(
+    originalIndices.map((index) => original[index]!),
+    revisedIndices.map((index) => revised[index]!),
+    none,
+    none,
+  ).map(([left, right]) => [originalIndices[left]!, revisedIndices[right]!]);
+}
+
 /** Minimum similarity for pairing two side-only siblings in a gap. */
 const GAP_PAIRING_SIMILARITY = 0.25;
 
@@ -1107,17 +1142,20 @@ function constructBoth(
       }
       return depth === 0;
     };
+    // A block container is not field control itself: pairing it diffs its
+    // children through this same guard (#1459).
     const containsFieldControl = (elements: readonly WmlElement[]): boolean => elements.some((element) =>
-      isTableRow(element)
+      !isBlockContainer(element) && (isTableRow(element)
         ? !fieldsCompleteWithin(element)
         : element.getElementsByTagNameNS(W, 'fldChar').length > 0 ||
-          element.getElementsByTagNameNS(W, 'instrText').length > 0);
+          element.getElementsByTagNameNS(W, 'instrText').length > 0));
     // Field-context keys deliberately keep different complete fields out of
     // the LCS. Do not re-pair their individual runs through the generic fuzzy
     // gap matcher: that interleaves one source field with multiple revised
-    // fields and produces projection-invalid partial complexes.
+    // fields and produces projection-invalid partial complexes. Such a gap
+    // still pairs its block containers.
     const similarityPairs = containsFieldControl(originalGap) || containsFieldControl(revisedGap)
-      ? []
+      ? blockContainerPairs(originalGap, revisedGap)
       : similarParagraphPairs(
         originalGap,
         revisedGap,
