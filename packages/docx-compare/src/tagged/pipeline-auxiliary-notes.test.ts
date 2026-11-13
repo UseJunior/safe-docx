@@ -261,13 +261,16 @@ describe('pipeline auxiliary note publication', () => {
     });
   });
 
-  test('field and relationship-bearing definitions retain the collision-safe fallback', () => {
+  test('nested note references and non-hyperlink relationships retain the collision-safe fallback', () => {
     const parseEntry = (content: string) => new DOMParser().parseFromString(
       `<w:footnote xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${content}</w:footnote>`,
       'application/xml',
     ).documentElement as unknown as Element;
-    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p>'))).toBe(true);
-    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(true);
+    // Fields, hyperlinks and comment anchors compare in place (#1389).
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p>'))).toBe(false);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:hyperlink r:id="rId7"><w:r><w:t>source</w:t></w:r></w:hyperlink></w:p>'))).toBe(false);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:commentRangeStart w:id="3"/><w:r><w:t>noted</w:t></w:r><w:commentRangeEnd w:id="3"/><w:r><w:commentReference w:id="3"/></w:r></w:p>'))).toBe(false);
+    expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:footnoteReference w:id="4"/></w:r></w:p>'))).toBe(true);
     expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:drawing r:embed="rId8"/></w:p>'))).toBe(true);
     expect(noteDefinitionRequiresCollisionSafeFallback(parseEntry('<w:p><w:r><w:t>plain</w:t></w:r></w:p>'))).toBe(false);
   });

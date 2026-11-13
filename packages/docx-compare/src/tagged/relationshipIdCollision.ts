@@ -518,3 +518,120 @@ export async function importReferencedRelationships(
   resultArchive.setFile(relsPath, serializer.serializeToString(relsDoc));
   return imported;
 }
+
+/** A relationship a story entry needs in the result owner part's table. */
+interface PlannedStoryRelationship {
+  id: string;
+  type: string;
+  target: string;
+  targetMode: string | null;
+  /** Owner part whose relationship table defines `target` before the import. */
+  sourceOwnerPart: string;
+}
+
+/** Relationship identifiers a story entry was rewritten to, and how to land them. */
+export interface StoryRelationshipImportPlan {
+  /** Source relationship id to the id it carries in the result owner part. */
+  mapping: ReadonlyMap<string, string>;
+  /** Write the relationships the rewritten entry needs into the result package. */
+  commit(): Promise<void>;
+}
+
+/**
+ * Rewrite the relationship references inside `root`, a story entry copied from
+ * `sourceOwnerPart` of `sourceArchive`, so they resolve against
+ * `resultOwnerPart` of `resultArchive`.
+ *
+ * Relationship ids are local to their owning part, so an entry moved between
+ * packages must be re-expressed against the destination part's table: an id
+ * whose relationship the destination already declares with the same type,
+ * target and mode is reused, so unchanged hyperlinks compare equal; any other
+ * id gets a fresh id unused by both tables. `root` is rewritten immediately;
+ * the destination table is only written by `commit`, so a caller that abandons
+ * the rewritten entry leaves the result package untouched. Internal targets
+ * are copied with their closure by {@link importRelationshipTarget} on commit.
+ *
+ * @conformance ECMA-376 edition 5, Part 2 § 6.5.3.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1389
+ */
+export async function planStoryRelationshipImport(
+  root: Element,
+  sourceArchive: DocxArchive,
+  sourceOwnerPart: string,
+  resultArchive: DocxArchive,
+  resultOwnerPart: string,
+): Promise<StoryRelationshipImportPlan> {
+  const referenced = new Set<string>();
+  const collect = (element: Element): void => {
+    for (let i = 0; i < element.attributes.length; i++) {
+      const attribute = element.attributes.item(i)!;
+      if (isRelationshipReference(attribute) && attribute.value) referenced.add(attribute.value);
+    }
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1) collect(child as Element);
+    }
+  };
+  collect(root);
+  const [sourceRels, resultRels] = await Promise.all([
+    readRelationships(sourceArchive, sourceOwnerPart),
+    readRelationships(resultArchive, resultOwnerPart),
+  ]);
+  const taken = new Set<string>([...sourceRels.keys(), ...resultRels.keys()]);
+  let nextOrdinal = 1;
+  const allocateId = (): string => {
+    let candidate = `rId${nextOrdinal++}`;
+    while (taken.has(candidate)) candidate = `rId${nextOrdinal++}`;
+    taken.add(candidate);
+    return candidate;
+  };
+  const sameOwnerDirectory = posix.dirname(sourceOwnerPart) === posix.dirname(resultOwnerPart);
+  const mapping = new Map<string, string>();
+  const planned: PlannedStoryRelationship[] = [];
+  for (const id of referenced) {
+    const source = sourceRels.get(id);
+    // A dangling source reference stays as authored; publication gates judge it.
+    if (!source) continue;
+    const reusable = [...resultRels.values()].find((held) =>
+      sameRelationship(held, source) &&
+      (source.targetMode === 'External' || sameOwnerDirectory));
+    if (reusable) {
+      mapping.set(id, reusable.id);
+      continue;
+    }
+    const nextId = allocateId();
+    mapping.set(id, nextId);
+    planned.push({ ...source, id: nextId, sourceOwnerPart });
+  }
+  remapRelationshipAttributes(root, mapping);
+  return {
+    mapping,
+    async commit(): Promise<void> {
+      if (planned.length === 0) return;
+      const relsPath = relsPathFor(resultOwnerPart);
+      const relsXml = await resultArchive.getFile(relsPath);
+      const relsDoc = parseXml(
+        relsXml ??
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<Relationships xmlns="${PACKAGE_REL_NS}"></Relationships>`,
+      );
+      const relsRoot = relsDoc.documentElement;
+      if (!relsRoot) throw new Error(`Relationship table '${relsPath}' has no root element`);
+      for (const entry of planned) {
+        const target = await importRelationshipTarget(
+          sourceArchive,
+          entry.sourceOwnerPart,
+          entry,
+          resultArchive,
+          resultOwnerPart,
+        );
+        const element = relsDoc.createElementNS(PACKAGE_REL_NS, 'Relationship');
+        element.setAttribute('Id', entry.id);
+        element.setAttribute('Type', entry.type);
+        element.setAttribute('Target', target);
+        if (entry.targetMode) element.setAttribute('TargetMode', entry.targetMode);
+        relsRoot.appendChild(element);
+      }
+      resultArchive.setFile(relsPath, serializer.serializeToString(relsDoc));
+    },
+  };
+}
