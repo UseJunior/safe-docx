@@ -371,11 +371,30 @@ async function normalizeReadableStorySlots(
     }
   };
 
+  // Slots of one side that show the same thing (one inherited part, or
+  // blank) and face one part on the other side share one new part, so the
+  // two parts are selected by the same slots and pair as one story.
+  const sharedParts = new Map<string, { partPath: string; relationshipId: string }>();
   const slots: NormalizedStorySlot[] = [];
   for (const slot of pending) {
     const state = slot.side === 'original' ? originalState : revisedState;
+    const shareKey = JSON.stringify([slot.side, slot.kind, slot.source ?? null, slot.counterpart ?? null]);
+    const shared = sharedParts.get(shareKey);
+    if (shared) {
+      insertStoryReference(state.sections[slot.sectionOrdinal]!, slot.kind, slot.role, shared.relationshipId);
+      slots.push({
+        side: slot.side,
+        sectionOrdinal: slot.sectionOrdinal,
+        kind: slot.kind,
+        role: slot.role,
+        partPath: shared.partPath,
+        copiedFrom: slot.source,
+      });
+      continue;
+    }
     const partPath = allocatePath(slot.kind);
     const relationshipId = allocateId();
+    sharedParts.set(shareKey, { partPath, relationshipId });
     const otherArchive = slot.side === 'original' ? revisedState.archive : originalState.archive;
     let partXml = blankStoryXml(
       slot.kind,

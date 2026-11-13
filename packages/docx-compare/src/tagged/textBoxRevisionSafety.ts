@@ -2388,6 +2388,17 @@ export interface BlankSlotParts {
 
 const NO_BLANK_SLOT_PARTS: BlankSlotParts = { original: new Set(), revised: new Set() };
 
+/** Whether the story part's last block-level child is a paragraph. */
+function endsWithBodyParagraph(partXml: string): boolean {
+  const root = parseXml(partXml).documentElement;
+  if (!root) return false;
+  const blocks = directChildElements(root).filter((element) =>
+    element.namespaceURI !== OOXML.W_NS ||
+    !['bookmarkStart', 'bookmarkEnd', 'permStart', 'permEnd', 'proofErr'].includes(element.localName));
+  const last = blocks[blocks.length - 1];
+  return last !== undefined && last.namespaceURI === OOXML.W_NS && last.localName === 'p';
+}
+
 /**
  * A pair whose one side is a blank slot story is a whole insertion or
  * deletion of the other side's story, whatever its scaffold: the slot shows
@@ -2412,6 +2423,11 @@ async function slotLifecycleStoryInput(
   const revisedBlank = blankSlotParts.revised.has(pair.revised.targetPath);
   if (originalBlank === revisedBlank) return undefined;
   if (pair.original.bindingClosure !== pair.revised.bindingClosure) return undefined;
+  // The story's last paragraph survives both Accept All and Reject All and is
+  // made to read as the blank story; one held in a block container (a content
+  // control, custom XML) would keep that container there, so such a story is
+  // left to the ordinary pairing and its checks.
+  if (!endsWithBodyParagraph(originalBlank ? pair.revised.xml : pair.original.xml)) return undefined;
   const storyOriginalArchive = await originalArchive.clone();
   const storyRevisedArchive = await revisedArchive.clone();
   storyOriginalArchive.setDocumentXml(
@@ -4213,10 +4229,25 @@ function trackFinalParagraphPropertiesAgainstBlank(
     element.namespaceURI === OOXML.W_NS && names.includes(element.localName);
   // Moves `formatting` into a `<changeName><priorName/></changeName>` record
   // appended to `container`: for a deletion the current state is blank, for
-  // an insertion the prior state is.
+  // an insertion the prior state is. A record the story already carries keeps
+  // its own history on the side that has the story: an insertion's prior
+  // state becomes blank, a deletion's current state does.
   const track = (container: Element, formatting: Element[], changeName: string, priorName: string): void => {
+    const existing = directChildElements(container).find((element) => isW(element, changeName));
+    if (existing) {
+      if (markerTag === 'w:del') {
+        for (const element of formatting) container.removeChild(element);
+        return;
+      }
+      const prior = directChildElements(existing).find((element) => isW(element, priorName));
+      if (prior) {
+        while (prior.firstChild) prior.removeChild(prior.firstChild);
+      } else {
+        existing.appendChild(document.createElementNS(OOXML.W_NS, `w:${priorName}`));
+      }
+      return;
+    }
     if (formatting.length === 0) return;
-    if (directChildElements(container).some((element) => isW(element, changeName))) return;
     const change = document.createElementNS(OOXML.W_NS, `w:${changeName}`);
     change.setAttributeNS(OOXML.W_NS, 'w:id', String(allocateRevisionId(state)));
     change.setAttributeNS(OOXML.W_NS, 'w:author', author);

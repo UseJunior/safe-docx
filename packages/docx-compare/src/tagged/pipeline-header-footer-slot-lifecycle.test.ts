@@ -67,7 +67,8 @@ const paragraph = (text: string): string => `<w:p><w:r><w:t>${text}</w:t></w:r><
 const ref = (kind: Kind, id: string, role: Role = 'default'): string =>
   `<w:${kind}Reference w:type="${role}" r:id="${id}"/>`;
 const sectionEnd = (text: string, references: string): string =>
-  `<w:p><w:pPr><w:sectPr>${references}${PAGE_SETUP}</w:sectPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  `<w:p><w:pPr><w:sectPr>${references.replace('<w:titlePg/>', '')}${PAGE_SETUP}` +
+  `${references.includes('<w:titlePg/>') ? '<w:titlePg/>' : ''}</w:sectPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
 const vmlBox = (text: string): string =>
   '<w:p><w:r><w:pict><v:shape id="box1" style="width:200pt;height:40pt"><v:textbox><w:txbxContent>' +
   `${paragraph(text)}</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`;
@@ -137,16 +138,54 @@ async function shownAfterDocxCore(buffer: Buffer, mode: 'accept' | 'reject'): Pr
   return shownPages((await document.toBuffer()).buffer);
 }
 
+/**
+ * The gate validates `word/document.xml`; each header/footer part's blocks
+ * (CT_HdrFtr holds the same block-level content as a body) are validated as
+ * a document body of their own.
+ */
 async function assertSchema(buffer: Buffer): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'sdx-1394-'));
   try {
-    const path = join(directory, 'compared.docx');
-    await writeFile(path, buffer);
-    const check = spawnSync(process.execPath, [schemaScript, path], { encoding: 'utf8' });
+    const paths = [join(directory, 'compared.docx')];
+    await writeFile(paths[0]!, buffer);
+    const archive = await DocxArchive.load(buffer);
+    for (const part of archive.listFiles().filter((name) => /^word\/(header|footer)[^/]*\.xml$/u.test(name))) {
+      const xml = (await archive.getFile(part))!;
+      const asDocument = xml
+        .replace(/<w:(hdr|ftr)(\s[^>]*)?>/u, (_match, _root, attributes = '') => `<w:document${attributes}><w:body>`)
+        .replace(/<\/w:(hdr|ftr)>\s*$/u, '</w:body></w:document>');
+      const path = join(directory, `${part.replace(/\W/gu, '_')}.xml`);
+      await writeFile(path, asDocument);
+      paths.push(path);
+    }
+    const check = spawnSync(process.execPath, [schemaScript, ...paths], { encoding: 'utf8' });
     expect(check.status, check.stdout + check.stderr).toBe(0);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+/** `w:spacing/@w:after` values in the default header the package selects, after a projection by either applier. */
+async function headerSpacing(buffer: Buffer, mode: 'accept' | 'reject', applier: 'ast' | 'core'): Promise<string[]> {
+  let projected = buffer;
+  let project: Projection = (xml) => xml;
+  if (applier === 'core') {
+    const document = await DocxDocument.load(buffer);
+    if (mode === 'accept') await document.acceptChanges();
+    else await document.rejectChanges();
+    projected = (await document.toBuffer()).buffer;
+  } else {
+    project = mode === 'accept' ? acceptAllChanges : rejectAllChanges;
+  }
+  const archive = await DocxArchive.load(projected);
+  const bindings = resolveEffectiveStoryBindings({
+    documentXml: project(await archive.getDocumentXml()),
+    relationshipsXml: await archive.getFile('word/_rels/document.xml.rels'),
+  });
+  const path = pageStorySlots(bindings).find(({ slot }) => slot.kind === 'header')?.slot.targetPath;
+  if (!path) return [];
+  return Array.from(parseXml(project((await archive.getFile(path))!)).getElementsByTagNameNS(W_NS, 'spacing'))
+    .map((element) => element.getAttributeNS(W_NS, 'after') ?? '');
 }
 
 /** Tracked revisions in the story parts the compared package selects. */
@@ -356,6 +395,69 @@ describe('header/footer attached to or dropped from a surviving section (#1394)'
       });
     },
   );
+
+  for (const direction of ['attached', 'dropped'] as const) {
+    test.openspec('[SDX-CMP-SLOTLIFE-01] A header or footer attached to a surviving section is tracked as inserted content')(
+      `tracks a header ${direction} with its own paragraph-property history, leaving a plain blank story where there is none`,
+      async ({ given, when, then }: AllureBddContext) => {
+        const header = story('rIdH', 'header', 'header1.xml',
+          '<w:p><w:pPr><w:spacing w:after="2000"/><w:pPrChange w:id="30" w:author="Prior" w:date="2026-01-01T00:00:00Z">' +
+          '<w:pPr><w:spacing w:after="1000"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t>History</w:t></w:r></w:p>');
+        const withHeader = await packageWith(paragraph('Body'), ref('header', 'rIdH'), [header]);
+        const withoutHeader = await packageWith(paragraph('Body, revised'), '', []);
+        const [original, revised] = await given(`a header whose paragraph spacing carries a tracked change, ${direction}`, () =>
+          direction === 'attached' ? [withoutHeader, withHeader] : [withHeader, withoutHeader]);
+        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+        await expectSlotRedline({ then }, original, revised, result);
+        await then('the side without the header shows a paragraph with no spacing, with both appliers', async () => {
+          const blankSide = direction === 'attached' ? 'reject' : 'accept';
+          expect(await headerSpacing(result.document, blankSide, 'ast')).toEqual([]);
+          expect(await headerSpacing(result.document, blankSide, 'core')).toEqual([]);
+        });
+      },
+    );
+  }
+
+  test.openspec('[SDX-CMP-SLOTLIFE-01] A header or footer attached to a surviving section is tracked as inserted content')(
+    'tracks one boxed header attached to the default and first-page slots of one section and the default slot of the next',
+    async ({ given, when, then }: AllureBddContext) => {
+      const header = story('rIdH', 'header', 'header1.xml', vmlBox('Boxed notice') + paragraph('Shared header'));
+      const [original, revised] = await given('two sections with no header; the revision gives both one shared header', () =>
+        Promise.all([
+          packageWith(sectionEnd('One', '<w:titlePg/>') + paragraph('Two'), '', []),
+          packageWith(
+            sectionEnd('One', ref('header', 'rIdH') + ref('header', 'rIdH', 'first') + '<w:titlePg/>') + paragraph('Two, revised'),
+            ref('header', 'rIdH'),
+            [header],
+          ),
+        ]));
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await expectSlotRedline({ then }, original, revised, result);
+      await then('the box text is inserted once, in the shared part', async () => {
+        expect(await textBoxText(result.document, acceptAllChanges)).toBe('Boxed notice');
+        expect(await textBoxText(result.document, rejectAllChanges)).toBe('');
+      });
+    },
+  );
+
+  test('reports, rather than tracks, a header attached with its last paragraph inside a content control', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const header = story('rIdH', 'header', 'header1.xml',
+      '<w:sdt><w:sdtPr/><w:sdtContent><w:p><w:pPr><w:spacing w:after="2000"/></w:pPr><w:r><w:t>Control</w:t></w:r></w:p>' +
+      '</w:sdtContent></w:sdt>');
+    const [original, revised] = await given('one section with no header; the revision adds one held in a content control', () =>
+      Promise.all([
+        packageWith(paragraph('Body'), '', []),
+        packageWith(paragraph('Body'), ref('header', 'rIdH'), [header]),
+      ]));
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('the added header is listed as unrepresented', () => {
+      expect(result.unrepresentedChanges).toEqual([
+        { scope: 'header', kind: 'added', sectionIndex: 0, role: 'default' },
+      ]);
+    });
+  });
 
   test('a slot change the redline still cannot carry is reported against the documents as given', async ({
     given, when, then,
