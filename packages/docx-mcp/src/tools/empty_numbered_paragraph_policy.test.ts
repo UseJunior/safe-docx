@@ -264,7 +264,10 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
       async ({ given, when, then }: AllureBddContext) => {
         const s = await given('a numbered list in tracked mode', () => openList(item(run('second obligation')), 'tracked'));
         const id = paragraphId(s.session, 'second obligation');
-        const before = (await s.session.doc.toBuffer({ cleanBookmarks: false })).buffer;
+        // Package bytes carry zip timestamps, so compare the main part.
+        const documentPart = async (): Promise<string | null> =>
+          (await DocxArchive.load((await s.session.doc.toBuffer({ cleanBookmarks: false })).buffer)).getFile('word/document.xml');
+        const before = await documentPart();
         const editCount = s.session.editCount;
         const result = await when('replace_text with error would leave the item holding a space', () =>
           replaceText(s.mgr, { file_path: s.inputPath, target_paragraph_id: id, old_string: 'second obligation', new_string: ' ', instruction: 'empty item (b)', on_empty_numbered_paragraph: 'error' }),
@@ -274,7 +277,7 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
           expect((result as { error: { message: string } }).error.message).toContain(id);
           const current = s.session;
           expect(current.editCount).toBe(editCount);
-          expect((await current.doc.toBuffer({ cleanBookmarks: false })).buffer.equals(before)).toBe(true);
+          expect(await documentPart()).toBe(before);
           expect(current.doc.getParagraphTextById(id)).toBe('second obligation');
         });
       },
