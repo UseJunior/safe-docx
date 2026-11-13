@@ -428,7 +428,11 @@ describe('scaffold changes beside formatting changes stay listed (#1392)', { tim
 /**
  * Existing property revisions in the paragraph: the comparison never layers a
  * second `w:rPrChange` / `w:pPrChange` onto a property element that already
- * holds one (CT_RPr and CT_PPr allow one each, §17.13.5.29, §17.13.5.31).
+ * holds one (CT_RPr, CT_ParaRPr and CT_PPr allow one each, §17.13.5.31,
+ * §17.13.5.30, §17.13.5.29). The change is tracked, not listed: a text run
+ * becomes a deleted copy with the original properties and an inserted copy
+ * with the revised ones, and a run that cannot be repeated (a field run) or
+ * paragraph properties keep the original's record (#1461).
  */
 describe('formatting beside existing formatting revisions in a header or footer (#1392)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   const footer = partPath({ kind: 'footer', role: 'default' });
@@ -438,63 +442,80 @@ describe('formatting beside existing formatting revisions in a header or footer 
       (kind === 'footer' && role === 'default' ? revisedStory : originalStory));
     return { original, revised, result: await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS) };
   };
-  const expectNoLayeredRevision = async (revised: Buffer, result: TaggedCompareResult): Promise<void> => {
+  const expectNoLayeredRevision = async (result: TaggedCompareResult): Promise<void> => {
     const document = parseXml((await (await DocxArchive.load(result.document)).getFile(footer))!);
     for (const name of ['rPrChange', 'pPrChange']) {
       for (const record of Array.from(document.getElementsByTagNameNS(W_NS, name))) {
-        expect(record.getElementsByTagNameNS(W_NS, name)).toHaveLength(0);
+        expect(record.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(0);
+        expect(record.getElementsByTagNameNS(W_NS, 'pPrChange')).toHaveLength(0);
         const owner = record.parentNode as Element;
         expect(Array.from(owner.childNodes).filter((child) => isW(child, name))).toHaveLength(1);
       }
     }
-    expect((await formattingRevisions(result.document))[footer]).toEqual((await formattingRevisions(revised))[footer]);
     await assertSchema(result.document);
   };
 
-  test.openspec('[SDX-CMP-STORY-06] Formatting beside a field, content control or drawing is tracked')(
-    'keeps one record when bold is added to a run whose existing revision already restores its old formatting on Reject All',
-    async ({ given, when, then }: AllureBddContext) => {
-      const originalStory = paragraph(text('Page ', `<w:rPr>${PRIOR_RUN_REVISION}</w:rPr>`) + pageField());
-      const revisedStory = paragraph(text('Page ', `<w:rPr><w:b/>${PRIOR_RUN_REVISION}</w:rPr>`) + pageField());
-      await given('a footer run with an existing w:rPrChange; the revision adds bold to it', () => undefined);
-      const { original, revised, result } = await when('the pair is compared', () => compareFooter(originalStory, revisedStory));
-      await then('no formatting revision is layered onto the existing one and the package is schema-valid', () =>
-        expectNoLayeredRevision(revised, result));
-      await then('Accept All shows the revised formatting and Reject All the original document rejected, with both appliers', async () => {
-        expect(result.unrepresentedChanges).toBeUndefined();
-        for (const applier of ['ast', 'core'] as const) {
-          expect(await projectedStories(result.document, 'accept', applier)).toEqual(await projectedStories(revised, 'accept', applier));
-          expect(await projectedStories(result.document, 'reject', applier)).toEqual(await projectedStories(original, 'reject', applier));
-        }
-      });
+  const historyCases: ReadonlyArray<{ name: string; original: string; revised: string }> = [
+    {
+      name: 'bold added to a text run that already carries a formatting revision, beside a field',
+      original: paragraph(text('Page ', `<w:rPr>${PRIOR_RUN_REVISION}</w:rPr>`) + pageField()),
+      revised: paragraph(text('Page ', `<w:rPr><w:b/>${PRIOR_RUN_REVISION}</w:rPr>`) + pageField()),
     },
-  );
-
-  const listedHistoryCases: ReadonlyArray<{ name: string; original: string; revised: string }> = [
+    {
+      name: 'bold added to a text run that already carries a formatting revision, in a plain paragraph',
+      original: paragraph(text('Page ', `<w:rPr>${PRIOR_RUN_REVISION}</w:rPr>`)),
+      revised: paragraph(text('Page ', `<w:rPr><w:b/>${PRIOR_RUN_REVISION}</w:rPr>`)),
+    },
     {
       name: 'bold added beside a field run that already carries a formatting revision',
       original: paragraph(text('Page ') + pageField(`<w:rPr><w:sz w:val="18"/>${PRIOR_RUN_REVISION}</w:rPr>`)),
       revised: paragraph(text('Page ', BOLD) + pageField(`<w:rPr><w:sz w:val="18"/>${PRIOR_RUN_REVISION}</w:rPr>`)),
     },
     {
+      name: 'bold added to field runs that already carry a formatting revision',
+      original: paragraph(text('Page ') + pageField(`<w:rPr><w:sz w:val="18"/>${PRIOR_RUN_REVISION}</w:rPr>`)),
+      revised: paragraph(text('Page ') + pageField(`<w:rPr><w:b/><w:sz w:val="18"/>${PRIOR_RUN_REVISION}</w:rPr>`)),
+    },
+    {
       name: 'bold added in a field paragraph whose properties already carry a formatting revision',
       original: paragraph(text('Page ') + pageField(), `<w:pPr><w:jc w:val="right"/>${PRIOR_PARAGRAPH_REVISION}</w:pPr>`),
       revised: paragraph(text('Page ', BOLD) + pageField(), `<w:pPr><w:jc w:val="right"/>${PRIOR_PARAGRAPH_REVISION}</w:pPr>`),
     },
+    {
+      name: 'alignment changed in a field paragraph whose properties already carry a formatting revision',
+      original: paragraph(text('Page ') + pageField(), `<w:pPr><w:jc w:val="right"/>${PRIOR_PARAGRAPH_REVISION}</w:pPr>`),
+      revised: paragraph(text('Page ') + pageField(), `<w:pPr><w:jc w:val="center"/>${PRIOR_PARAGRAPH_REVISION}</w:pPr>`),
+    },
   ];
-  for (const listedCase of listedHistoryCases) {
+  for (const historyCase of historyCases) {
     test.openspec('[SDX-CMP-STORY-06] Formatting beside a field, content control or drawing is tracked')(
-      `lists ${listedCase.name} instead of layering a second record`,
+      `tracks ${historyCase.name} without layering a second record`,
       async ({ given, when, then }: AllureBddContext) => {
-        await given(`a default footer with ${listedCase.name}`, () => undefined);
-        const { revised, result } = await when('the pair is compared', () => compareFooter(listedCase.original, listedCase.revised));
-        await then('the default footer is listed', () => {
-          expect(result.unrepresentedChanges).toEqual([
-            expect.objectContaining({ scope: 'footer', kind: 'changed', role: 'default' }),
-          ]);
+        await given(`a default footer with ${historyCase.name}`, () => undefined);
+        const { original, revised, result } = await when('the pair is compared', () =>
+          compareFooter(historyCase.original, historyCase.revised));
+        await then('the footer is not listed and the package is schema-valid with one record per property element', async () => {
+          expect(result.unrepresentedChanges).toBeUndefined();
+          await expectNoLayeredRevision(result);
         });
-        await then('no formatting revision is layered onto the existing one and the package is schema-valid', () =>
-          expectNoLayeredRevision(revised, result));
+        await then('the footer carries a revision by this comparison or the original record', async () => {
+          const document = parseXml((await (await DocxArchive.load(result.document)).getFile(footer))!);
+          const authors = ['ins', 'del', 'rPrChange', 'pPrChange'].flatMap((name) =>
+            Array.from(document.getElementsByTagNameNS(W_NS, name)).map((record) => record.getAttributeNS(W_NS, 'author')));
+          expect(authors.length).toBeGreaterThan(0);
+        });
+        await then('Accept All shows the revised formatting and Reject All the original document rejected, with both appliers', async () => {
+          for (const applier of ['ast', 'core'] as const) {
+            const accepted = await projectedStories(result.document, 'accept', applier);
+            const rejected = await projectedStories(result.document, 'reject', applier);
+            expect(accepted).toEqual(await projectedStories(revised, 'accept', applier));
+            expect(rejected).toEqual(await projectedStories(original, 'reject', applier));
+            expect(accepted[footer]).not.toEqual(rejected[footer]);
+          }
+        });
+        await then('the field structure is the revised one', async () => {
+          expect(await fieldStructure(result.document)).toEqual(await fieldStructure(revised));
+        });
       },
     );
   }

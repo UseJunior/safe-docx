@@ -63,7 +63,7 @@ MUST NOT be silently represented as an ordinary text edit.
 - **AND** accept-all SHALL recover the revised formatting and reject-all the original formatting, with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`
 - **AND** the story SHALL NOT remain in `unrepresentedChanges`
 - **AND** a change to a field instruction, a content control's own properties, or the presence of a field or content control SHALL still be listed
-- **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL still be listed, never emitted as a nested or duplicate formatting revision
+- **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL also be tracked, with at most one formatting revision per property element and never a nested or duplicate one, while reject-all SHALL recover the original document's rejected formatting
 
 #### Scenario: [SDX-CMP-STORY-05] Unsupported topology remains unrepresented
 - **GIVEN** selected stories with creation, deletion, rebinding, ambiguous pairing, structural table mutation, drawing/content-control mutation, or nested-story change outside the admitted subset
