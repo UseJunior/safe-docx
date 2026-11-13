@@ -215,6 +215,9 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
 
       await then('the original-based terminal rebuild rejects the malformed note entry', async () => {
         await expect(rejection).rejects.toBeInstanceOf(AncillaryStorySafetyError);
+        // The edited note is compared in place (#1389), so the original's
+        // stray field markers land in the one compared definition, which
+        // keeps the revised side's collision-safe id.
         await expect(rejection).rejects.toMatchObject({
           issues: expect.arrayContaining([
             expect.objectContaining({
@@ -222,12 +225,12 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
               locator: expect.objectContaining({
                 locatorType: 'note_entry',
                 normalizedPartPath: 'word/footnotes.xml',
-                entryId: '1',
+                entryId: '2',
               }),
             }),
             expect.objectContaining({
               code: 'FIELD_STRAY_END',
-              locator: expect.objectContaining({ entryId: '1' }),
+              locator: expect.objectContaining({ entryId: '2' }),
             }),
           ]),
         });

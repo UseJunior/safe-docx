@@ -78,19 +78,25 @@ async function notedDocx(kind: NoteKind, spec: NoteSpec, closing = 'Notice terms
   const docx = await buildSyntheticDocx({
     paragraphs: ['The parties agree to the terms below.', closing],
     ...(kind === 'footnote' ? { footnoteOnParagraph: 0 } : { endnoteOnParagraph: 0 }),
-    bookmarkOnParagraph: { paragraph: 1, name: '_Ref1' },
     ...(spec.comment === undefined ? {} : { commentOnParagraph: 1, commentText: spec.comment }),
   });
   const archive = await DocxArchive.load(docx);
-  if (spec.comment !== undefined) {
-    // Move the fixture's body comment anchor into the note.
-    const body = parseXml(await archive.getDocumentXml());
-    for (const element of Array.from(body.getElementsByTagNameNS(W, '*'))) {
-      if (['commentRangeStart', 'commentRangeEnd'].includes(element.localName)) element.parentNode!.removeChild(element);
-      if (element.localName === 'commentReference') element.parentNode!.parentNode!.removeChild(element.parentNode!);
-    }
-    archive.setDocumentXml(body.toString());
+  const body = parseXml(await archive.getDocumentXml());
+  // Move the fixture's body comment anchor into the note.
+  for (const element of Array.from(body.getElementsByTagNameNS(W, '*'))) {
+    if (['commentRangeStart', 'commentRangeEnd'].includes(element.localName)) element.parentNode!.removeChild(element);
+    if (element.localName === 'commentReference') element.parentNode!.parentNode!.removeChild(element.parentNode!);
   }
+  // The REF field's target bookmark spans the second paragraph's text.
+  const target = body.getElementsByTagNameNS(W, 'p')[1]!;
+  const start = body.createElementNS(W, 'w:bookmarkStart');
+  start.setAttributeNS(W, 'w:id', '100');
+  start.setAttributeNS(W, 'w:name', '_Ref1');
+  const end = body.createElementNS(W, 'w:bookmarkEnd');
+  end.setAttributeNS(W, 'w:id', '100');
+  target.insertBefore(start, target.firstChild);
+  target.appendChild(end);
+  archive.setDocumentXml(body.toString());
   const part = `word/${kind}s.xml`;
   const notes = (await archive.getFile(part))!
     .replace(`<w:${kind}s xmlns:w=`, `<w:${kind}s xmlns:r="${R}" xmlns:w=`)
@@ -369,10 +375,15 @@ reader('LibreOffice binds a note compared in place on both projections', () => {
           links: Array.from(body.getElementsByTagNameNS(T, 'a')).map(a => a.getAttributeNS(X, 'href')),
         };
       });
+      // LibreOffice cannot even load-and-save an unmodified source whose
+      // comment range sits in a note (identity conversion produces no
+      // output), so the reader check covers fields and hyperlinks; comment
+      // binding is checked through both acceptors above.
+      const LINKED = { ...BASE, comment: undefined };
       const pairs: Array<[Buffer, Buffer]> = [];
       for (const kind of ['footnote', 'endnote'] as const) {
         pairs.push(
-          [await notedDocx(kind, BASE), await notedDocx(kind, { ...BASE, word: 'payment' }, 'Notice terms appear in Section 4.2 today.')],
+          [await notedDocx(kind, LINKED), await notedDocx(kind, { ...LINKED, word: 'payment' }, 'Notice terms appear in Section 4.2 today.')],
           [await notedDocx(kind, { ...BASE, comment: undefined }), await notedDocx(kind, { ...BASE, comment: undefined, fieldResult: 'Section 4.3' })],
           [await notedDocx(kind, { ...BASE, comment: undefined }), await notedDocx(kind, { ...BASE, comment: undefined, link: { ...BASE.link!, text: 'the official filing' } })],
           [await notedDocx(kind, { ...BASE, comment: undefined }), await notedDocx(kind, { ...BASE, comment: undefined, link: undefined })],
