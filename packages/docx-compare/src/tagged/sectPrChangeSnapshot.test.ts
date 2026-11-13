@@ -238,7 +238,7 @@ describe('w:sectPrChange snapshots are CT_SectPrBase (#944)', () => {
     ]);
   });
 
-  test('a dropped reference the snapshot cannot carry is reported through unrepresentedChanges', async () => {
+  test('a reference the snapshot cannot carry is kept live and its story tracked as deleted content', async () => {
     const original = await packageWithStories(
       paragraph('Body'),
       `<w:sectPr>${REFERENCES}<w:footerReference w:type="even" r:id="${EVEN_FOOTER.id}"/>${PORTRAIT}</w:sectPr>`,
@@ -255,16 +255,24 @@ describe('w:sectPrChange snapshots are CT_SectPrBase (#944)', () => {
     const documentXml = await archive.getDocumentXml();
 
     expect(snapshotStoryReferences(documentXml)).toBe(0);
-    // Both projections keep the revised, relationship-bound references.
-    const expected = ['0:footer:default=word/footer1.xml', '0:header:default=word/header1.xml'];
+    // Both projections keep the revised references plus a live even-footer
+    // reference to a part whose content is a tracked deletion: the section
+    // keeps selecting an even footer, blank after Accept All (#1394).
+    const expected = [
+      '0:footer:default=word/footer1.xml',
+      '0:footer:even=word/footer3.xml',
+      '0:header:default=word/header1.xml',
+    ];
     expect((await resolvedBindings(archive, acceptAllChanges(documentXml))).sort()).toEqual(expected);
     expect((await resolvedBindings(archive, rejectAllChanges(documentXml))).sort()).toEqual(expected);
     expect((await resolvedBindings(archive, nativeProjection(documentXml, rejectChanges))).sort())
       .toEqual(expected);
+    const evenFooter = (await archive.getFile('word/footer3.xml'))!;
+    expect(acceptAllChanges(evenFooter)).not.toContain('<w:t');
+    expect(rejectAllChanges(evenFooter)).toContain('<w:t');
     await expectSchemaValidPackages(result.document);
     expect(result.unrepresentedChanges).toEqual([
       { scope: 'section', kind: 'changed', sectionIndex: 0 },
-      { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'even' },
     ]);
   });
 
@@ -322,8 +330,10 @@ describe('sections that differ only in header/footer references emit no w:sectPr
       revisedSectPr: `<w:sectPr>${PORTRAIT}</w:sectPr>`,
       originalParts: [FOOTER],
       revisedParts: [],
-      unrepresentedChanges: [{ scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' }],
-      liveBindings: [],
+      // The section keeps a live reference to a footer whose content is a
+      // tracked deletion (#1394), so the difference is represented.
+      unrepresentedChanges: undefined,
+      liveBindings: ['0:footer:default=word/footer2.xml'],
     },
     {
       label: 'footer reference added',
@@ -331,7 +341,8 @@ describe('sections that differ only in header/footer references emit no w:sectPr
       revisedSectPr: `<w:sectPr><w:footerReference w:type="default" r:id="${FOOTER.id}"/>${PORTRAIT}</w:sectPr>`,
       originalParts: [],
       revisedParts: [FOOTER],
-      unrepresentedChanges: [{ scope: 'footer', kind: 'added', sectionIndex: 0, role: 'default' }],
+      // The added footer's content is a tracked insertion (#1394).
+      unrepresentedChanges: undefined,
       liveBindings: ['0:footer:default=word/footer1.xml'],
     },
     {
@@ -348,7 +359,7 @@ describe('sections that differ only in header/footer references emit no w:sectPr
   ];
 
   for (const scenario of cases) {
-    test(`body section, ${scenario.label}: no w:sectPrChange, formatChanges 0, difference still disclosed`, async () => {
+    test(`body section, ${scenario.label}: no w:sectPrChange, formatChanges 0, difference tracked or disclosed`, async () => {
       const original = await packageWithStories(paragraph('Body'), scenario.originalSectPr, scenario.originalParts);
       const revised = await packageWithStories(paragraph('Body'), scenario.revisedSectPr, scenario.revisedParts);
 
@@ -397,10 +408,15 @@ describe('sections that differ only in header/footer references emit no w:sectPr
     const documentXml = await archive.getDocumentXml();
 
     expect(sectPrChangeCount(documentXml)).toBe(0);
-    expect(result.unrepresentedChanges).toEqual([
-      { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-    ]);
-    expect(await resolvedBindings(archive, nativeProjection(documentXml, rejectChanges))).toEqual([]);
+    // The break keeps a live reference to a footer whose content is a tracked
+    // deletion, so Reject All shows the footer and Accept All a blank one
+    // (#1394).
+    expect(result.unrepresentedChanges).toBeUndefined();
+    expect(await resolvedBindings(archive, nativeProjection(documentXml, rejectChanges)))
+      .toEqual(['0:footer:default=word/footer2.xml']);
+    const footer = (await archive.getFile('word/footer2.xml'))!;
+    expect(rejectAllChanges(footer)).toContain('<w:t');
+    expect(acceptAllChanges(footer)).not.toContain('<w:t');
     await expectSchemaValidPackages(result.document);
   });
 
@@ -473,9 +489,10 @@ describe('sections that differ only in header/footer references emit no w:sectPr
     expect(snapshot.getAttributeNS(OOXML.W_NS, 'w')).toBe('12240');
     expect(rejectAllChanges(documentXml)).toContain('w:w="12240"');
     expect(acceptAllChanges(documentXml)).toContain('w:orient="landscape"');
+    // The dropped footer is tracked as deleted content (#1394); the page
+    // setup change is still listed beside its w:sectPrChange.
     expect(result.unrepresentedChanges).toEqual([
       { scope: 'section', kind: 'changed', sectionIndex: 0 },
-      { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
     ]);
     await expectSchemaValidPackages(result.document);
   });

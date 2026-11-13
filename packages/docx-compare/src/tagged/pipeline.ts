@@ -51,6 +51,7 @@ import {
   compareTexts,
 } from './trackChangesAcceptorAst.js';
 import { detectUnrepresentedChanges, subtractRepresentedPackageChanges } from './unrepresentedChanges.js';
+import { normalizeExplicitStorySlots } from './storySlotNormalization.js';
 import { auditPicturePayloads, payloadSwappedRelationshipIds } from './picturePayload.js';
 import {
   type NumberingIntegrationOptions,
@@ -116,6 +117,7 @@ import {
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
+  type BlankSlotParts,
   deletedAncillaryStoryOutputPaths,
   markDeletedAncillaryStoryParagraphs,
   markInsertedAncillaryStoryParagraphs,
@@ -821,13 +823,29 @@ async function canonicalizeRelationshipReferences(
     relationshipSemanticsById(sourceArchive),
     relationshipSemanticsById(assembledArchive),
   ]);
-  const assembledBySemantics = new Map([...assembledById].map(([id, semantics]) => [semantics, id]));
+  // The first id wins: the assembled table lists the revised package's own
+  // relationships before those imported from the original.
+  const assembledBySemantics = new Map<string, string>();
+  for (const [id, semantics] of assembledById) {
+    if (!assembledBySemantics.has(semantics)) assembledBySemantics.set(semantics, id);
+  }
+  const sourceSemanticsCount = new Map<string, number>();
+  for (const semantics of sourceById.values()) {
+    sourceSemanticsCount.set(semantics, (sourceSemanticsCount.get(semantics) ?? 0) + 1);
+  }
   const document = parseXml(xml);
   for (const element of Array.from(document.getElementsByTagName('*'))) {
     for (const attribute of Array.from(element.attributes)) {
       if (attribute.namespaceURI !== OFFICE_RELATIONSHIP_NS) continue;
       const semantics = sourceById.get(attribute.value);
-      const canonicalId = semantics ? assembledBySemantics.get(semantics) : undefined;
+      // Two relationships of one source with the same semantics (identical
+      // header/footer parts, as a copied slot story is, #1394) stay two
+      // bindings: each keeps its id where the assembled package holds it.
+      const canonicalId = !semantics
+        ? undefined
+        : (sourceSemanticsCount.get(semantics) ?? 0) > 1 && assembledById.get(attribute.value) === semantics
+          ? attribute.value
+          : assembledBySemantics.get(semantics);
       if (canonicalId) element.setAttributeNS(OFFICE_RELATIONSHIP_NS, attribute.name, canonicalId);
     }
   }
@@ -1378,9 +1396,10 @@ async function compareDocumentsTagged(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions,
+  blankSlotParts?: BlankSlotParts,
 ): Promise<TaggedCompareResult> {
   await assertTransitionalComparisonInputs(original, revised);
-  const preparedPlan = await prepareTextBoxStoryComparison(original, revised);
+  const preparedPlan = await prepareTextBoxStoryComparison(original, revised, blankSlotParts);
   const [originalArchive, revisedArchive] = await Promise.all([
     DocxArchive.load(original),
     DocxArchive.load(revised),
@@ -1464,6 +1483,7 @@ async function compareDocumentsTagged(
   const compareStory = async (story: TextBoxStoryInput): Promise<void> => {
     if (
       story.ancillaryMode === 'inserted' &&
+      !story.slotLifecycle &&
       (rejectedSelectedStoryPaths.has(story.partPath) ||
         rejectedComparedStoryPaths.has(story.partPath))
     ) {
@@ -1471,6 +1491,7 @@ async function compareDocumentsTagged(
     }
     if (
       story.ancillaryMode === 'deleted' &&
+      !story.slotLifecycle &&
       !deletedStoryOutputPaths.has(story)
     ) {
       return;
@@ -1499,6 +1520,7 @@ async function compareDocumentsTagged(
         options.author ?? 'Comparison',
         options.date ?? new Date(),
         nextPackageRevisionId,
+        { blankFinalParagraph: story.slotLifecycle },
       );
       const insertionRanges = marked.markedParagraphs;
       result = {
@@ -1521,6 +1543,7 @@ async function compareDocumentsTagged(
         options.author ?? 'Comparison',
         options.date ?? new Date(),
         nextPackageRevisionId,
+        { blankFinalParagraph: story.slotLifecycle },
       );
       const deletionRanges = marked.markedParagraphs;
       result = {
@@ -1790,10 +1813,21 @@ export async function compareDocumentsAtomizer(
     revisedBytes: revised.length,
   });
   try {
+    // A header/footer attached to or dropped from a section that both
+    // documents keep is compared as the slot's content (#1394).
+    const normalized = await normalizeExplicitStorySlots(original, revised);
+    const blankSlotParts: BlankSlotParts = {
+      original: new Set(normalized.slots
+        .filter((slot) => slot.side === 'original' && slot.copiedFrom === undefined)
+        .map((slot) => slot.partPath)),
+      revised: new Set(normalized.slots
+        .filter((slot) => slot.side === 'revised' && slot.copiedFrom === undefined)
+        .map((slot) => slot.partPath)),
+    };
     return await withPicturePayloadAudit(
-      original,
-      revised,
-      await compareDocumentsTagged(original, revised, options),
+      normalized.original,
+      normalized.revised,
+      await compareDocumentsTagged(normalized.original, normalized.revised, options, blankSlotParts),
     );
   } catch (error) {
     // A raw xmldom ParseError names no part; find and name it (#1024).
