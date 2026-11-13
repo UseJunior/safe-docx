@@ -81,7 +81,7 @@ describe('safe-docx compare command', () => {
     });
   });
 
-  test('reports a footer the revised document drops from a surviving section as unrepresented (#944)', async ({
+  test('tracks a footer the revised document drops from a surviving section, with no warning (#1394)', async ({
     given,
     when,
     then,
@@ -101,12 +101,12 @@ describe('safe-docx compare command', () => {
       result = await runCompareCommand({ originalPath, revisedPath });
     });
 
-    await then('the dropped footer is reported with a warning', () => {
-      expect(result.unrepresented_changes).toEqual([
-        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-      ]);
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings![0]).toContain('removed default footer in section 1');
+    // CT_SectPrBase cannot carry the footer reference (#944), so the section
+    // keeps a footer whose content is a tracked deletion: nothing is left
+    // unrepresented to warn about.
+    await then('the dropped footer is tracked, so nothing is reported', () => {
+      expect(result.unrepresented_changes).toBeUndefined();
+      expect(result.warnings ?? []).toHaveLength(0);
     });
   });
 });

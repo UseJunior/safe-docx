@@ -218,7 +218,7 @@ describe('docx-comparison CLI unrepresented changes (#1029)', () => {
     });
   });
 
-  test('reports a footer dropped from a surviving section as unrepresented (#944)', async ({
+  test('reports no unrepresented change for a footer dropped from a surviving section (#1394)', async ({
     given,
     when,
     then,
@@ -241,13 +241,12 @@ describe('docx-comparison CLI unrepresented changes (#1029)', () => {
     if ('help' in result && result.help) throw new Error('expected a run result');
 
     // A w:sectPrChange snapshot (CT_SectPrBase) cannot carry the footer
-    // reference, so no revision can reselect the footer on reject (#944).
-    await then('the dropped footer is reported with a warning', () => {
-      expect(result.unrepresented_changes).toEqual([
-        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-      ]);
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings![0]).toContain('removed default footer in section 1');
+    // reference (#944), so the section keeps a footer whose content is a
+    // tracked deletion: nothing is left to warn about.
+    await then('the dropped footer is tracked, so no warning is printed', () => {
+      expect(result.unrepresented_changes).toBeUndefined();
+      expect(result.warnings ?? []).toHaveLength(0);
+      expect((result.stats as { deletions: number }).deletions).toBeGreaterThan(0);
     });
   });
 });
