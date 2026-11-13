@@ -496,11 +496,23 @@ reader('LibreOffice binds a note compared in place on both projections', () => {
       const project = (xml: string) => Array.from(parseXml(xml).getElementsByTagName('*'))
         .filter(n => n.namespaceURI === T && ['p', 'h'].includes(n.localName) && !hasOdfNoteAncestor(n, T))
         .map(n => n.textContent);
+      // LibreOffice refreshes a REF field's displayed result when it accepts
+      // or rejects, but not on a plain load, so a field contributes its
+      // target bookmark rather than its cached text.
+      const shownText = (node: Node): string => {
+        if (node.nodeType === 3) return node.nodeValue ?? '';
+        if (node.nodeType !== 1) return '';
+        const element = node as Element;
+        if (element.namespaceURI === T && ['bookmark-ref', 'reference-ref'].includes(element.localName)) {
+          return `[ref ${element.getAttributeNS(T, 'ref-name')}]`;
+        }
+        return Array.from(element.childNodes).map(shownText).join('');
+      };
       const notes = (xml: string) => Array.from(parseXml(xml).getElementsByTagNameNS(T, 'note')).map(n => {
         const body = n.getElementsByTagNameNS(T, 'note-body')[0]!;
         return {
           kind: n.getAttributeNS(T, 'note-class'),
-          body: body.textContent,
+          body: shownText(body),
           links: Array.from(body.getElementsByTagNameNS(T, 'a')).map(a => a.getAttributeNS(X, 'href')),
         };
       });
@@ -532,6 +544,7 @@ reader('LibreOffice binds a note compared in place on both projections', () => {
       for (let i = 0; i < pairs.length; i++) {
         const [originalState, revisedState, accepted, rejected] = states.slice(i * 4, i * 4 + 4) as [string, string, string, string];
         expect(notes(originalState)).toHaveLength(1);
+        expect(notes(originalState)[0]!.body).toContain('[ref _Ref1]');
         expect(notes(accepted), `pair ${i} accept`).toEqual(notes(revisedState));
         expect(notes(rejected), `pair ${i} reject`).toEqual(notes(originalState));
         expect(project(accepted)).toEqual(project(revisedState));
