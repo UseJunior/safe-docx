@@ -58,35 +58,58 @@ function prepareDefinition(entry: Element): string {
   return serializer.serializeToString(root);
 }
 
-const INLINE_REFERENCE_ELEMENTS = new Set([
-  'hyperlink',
+const INLINE_REFERENCE_CONTAINERS = new Set(['hyperlink', 'fldSimple']);
+const INLINE_REFERENCE_MARKERS = new Set([
   'fldChar',
   'instrText',
-  'fldSimple',
   'commentRangeStart',
   'commentRangeEnd',
   'commentReference',
 ]);
 
 /**
- * Hyperlink targets, field structure and comment anchors in document order.
- * Text and formatting alone cannot show a retargeted or unlinked hyperlink, a
- * changed field instruction or a re-anchored comment, so an unchanged-looking
- * definition is passed through only when these agree as well.
+ * Hyperlinks, field structure and comment anchors placed among the
+ * definition's text, in document order. Text and formatting alone cannot show
+ * a retargeted, unlinked or moved hyperlink, a changed or moved field, or a
+ * re-anchored comment, so an unchanged-looking definition is passed through
+ * only when these agree as well. Adjacent text merges, so run splits alone do
+ * not count as a difference.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1389
  */
 function inlineReferenceSignature(xml: string): string {
-  return JSON.stringify(Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, '*'))
-    .filter((element) => INLINE_REFERENCE_ELEMENTS.has(element.localName))
-    .map((element) => [
-      element.localName,
-      Array.from(element.attributes)
-        .filter((attribute) => !attribute.name.startsWith('xmlns'))
-        .map((attribute) => `${attribute.namespaceURI ?? ''}:${attribute.localName}=${attribute.value}`)
-        .sort(),
-      element.localName === 'instrText' ? element.textContent ?? '' : '',
-    ]));
+  const tokens: string[] = [];
+  const attributesOf = (element: Element): string[] => Array.from(element.attributes)
+    .filter((attribute) => !attribute.name.startsWith('xmlns'))
+    .map((attribute) => `${attribute.namespaceURI ?? ''}:${attribute.localName}=${attribute.value}`)
+    .sort();
+  const pushText = (text: string): void => {
+    const last = tokens.length - 1;
+    if (last >= 0 && tokens[last]!.startsWith('T:')) tokens[last] += text;
+    else tokens.push(`T:${text}`);
+  };
+  const visit = (element: Element): void => {
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue;
+      const node = child as Element;
+      const name = node.namespaceURI === W_NS ? node.localName : '';
+      if (name === 't' || name === 'delText') {
+        pushText(node.textContent ?? '');
+      } else if (INLINE_REFERENCE_MARKERS.has(name)) {
+        tokens.push(JSON.stringify([name, attributesOf(node), name === 'instrText' ? node.textContent ?? '' : '']));
+      } else if (INLINE_REFERENCE_CONTAINERS.has(name)) {
+        tokens.push(JSON.stringify(['open', name, attributesOf(node)]));
+        visit(node);
+        tokens.push(JSON.stringify(['close', name]));
+      } else {
+        if (name === 'p') tokens.push('P');
+        visit(node);
+      }
+    }
+  };
+  const root = parseXml(xml).documentElement;
+  if (root) visit(root);
+  return JSON.stringify(tokens);
 }
 
 /**

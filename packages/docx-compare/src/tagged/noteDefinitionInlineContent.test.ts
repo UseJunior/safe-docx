@@ -40,6 +40,8 @@ interface NoteSpec {
   unlinked?: string;
   /** Field instruction; defaults to a REF to `_Ref1`. */
   instruction?: string;
+  /** Raw paragraph content after the note's own reference mark; replaces everything else. */
+  raw?: string;
 }
 
 const BASE: NoteSpec = {
@@ -65,8 +67,10 @@ function noteBody(kind: NoteKind, spec: NoteSpec): string {
     ? (spec.unlinked === undefined ? '' : `<w:r><w:t>${escapeText(spec.unlinked)}</w:t></w:r>`) :
     `<w:hyperlink r:id="${spec.link.id}"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>` +
     `<w:t>${escapeText(spec.link.text)}</w:t></w:r></w:hyperlink>`;
-  return `<w:p><w:pPr><w:pStyle w:val="${style}Text"/></w:pPr>` +
-    `<w:r><w:rPr><w:rStyle w:val="${style}Reference"/></w:rPr><w:${ref}/></w:r>` +
+  const mark = `<w:p><w:pPr><w:pStyle w:val="${style}Text"/></w:pPr>` +
+    `<w:r><w:rPr><w:rStyle w:val="${style}Reference"/></w:rPr><w:${ref}/></w:r>`;
+  if (spec.raw !== undefined) return `${mark}${spec.raw}</w:p>`;
+  return mark +
     '<w:r><w:t xml:space="preserve"> See </w:t></w:r>' + field +
     (spec.comment === undefined ? '' : '<w:commentRangeStart w:id="1"/>') +
     `<w:r><w:t xml:space="preserve"> for the ${escapeText(spec.word)} terms</w:t></w:r>` +
@@ -177,7 +181,30 @@ async function noteView(docx: Buffer, kind: NoteKind, project: (xml: string) => 
     instructions: entries.map(entry => textOf(entry, ['instrText']).trim()),
     hyperlinks: hyperlinkTargets(projected, relsXml),
     commentAnchors: entries.map(entry => entry.getElementsByTagNameNS(W, 'commentReference').length),
+    placement: entries.map(placementOf),
   };
+}
+
+/** The text each hyperlink, comment range and field result covers, in order. */
+function placementOf(entry: Element): string[] {
+  const spans: string[] = [];
+  const open: Array<{ kind: string; text: string }> = [];
+  for (const element of Array.from(entry.getElementsByTagNameNS(W, '*'))) {
+    if (element.localName === 't') for (const span of open) span.text += element.textContent ?? '';
+    if (element.localName === 'commentRangeStart') open.push({ kind: 'comment', text: '' });
+    if (element.localName === 'fldChar' && element.getAttributeNS(W, 'fldCharType') === 'separate') open.push({ kind: 'field', text: '' });
+    const closing = element.localName === 'commentRangeEnd' ? 'comment'
+      : element.localName === 'fldChar' && element.getAttributeNS(W, 'fldCharType') === 'end' ? 'field' : undefined;
+    if (closing) {
+      const index = open.findIndex(span => span.kind === closing);
+      if (index >= 0) spans.push(`${closing}:${open.splice(index, 1)[0]!.text}`);
+    }
+  }
+  for (const link of Array.from(entry.getElementsByTagNameNS(W, 'hyperlink'))) {
+    const text = textOf(link, ['t']);
+    if (text !== '') spans.push(`link:${text}`);
+  }
+  return spans;
 }
 
 /**
@@ -355,6 +382,31 @@ describe('a note holding a field, hyperlink or comment is compared in place', ()
       await expectSchemaValid(compared, 'footnote');
     },
   );
+
+  const run = (text: string): string => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const link = (text: string): string => `<w:hyperlink r:id="${BASE.link!.id}">${run(text)}</w:hyperlink>`;
+  const fieldOver = (text: string): string => '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    `${run(text)}<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  const commentOver = (text: string): string => `<w:commentRangeStart w:id="1"/>${run(text)}<w:commentRangeEnd w:id="1"/>` +
+    '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r>';
+  for (const [label, comment, originalRaw, revisedRaw] of [
+    ['hyperlink', undefined, run(' See ') + link('the public') + run(' filing.'), run(' See the ') + link('public filing') + run('.')],
+    ['comment range', 'Check.', run(' See ') + commentOver('the public') + run(' filing.'), run(' See the ') + commentOver('public filing') + run('.')],
+    ['REF field result', undefined, run(' See ') + fieldOver('Section 4.2') + run(' today.'), run(' See ') + fieldOver('Section 4.2 today') + run('.')],
+  ] as const) {
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' })(
+      `tracks a note whose ${label} moves over the same text`,
+      async () => {
+        const original = await notedDocx('footnote', { ...BASE, comment, raw: originalRaw });
+        const revised = await notedDocx('footnote', { ...BASE, comment, raw: revisedRaw });
+        const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+        expect((await noteView(original, 'footnote')).placement).not.toEqual((await noteView(revised, 'footnote')).placement);
+        await expectProjections('footnote', original, revised, compared);
+        await expectSchemaValid(compared, 'footnote');
+      },
+    );
+  }
 
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })(
     'tracks a note whose only change unlinks its hyperlink',
