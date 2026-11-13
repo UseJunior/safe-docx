@@ -10,6 +10,8 @@ export * from './namespaces.js';
 export * from './numbering.js';
 export * from './paragraph_numbering.js';
 export * from './paragraph_list_numbering.js';
+export * from './empty_numbered_paragraph.js';
+export { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 export * from './semantic_tags.js';
 export * from './serialize_markdown.js';
 export * from './serialize_html.js';
