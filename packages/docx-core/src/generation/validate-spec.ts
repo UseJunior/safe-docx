@@ -28,6 +28,7 @@ import { isWordBookmarkName } from './bookmark-names.js';
 import { GenerationSpecError } from './errors.js';
 import { WML_SCHEMA_ENUM_SETS, type WmlSchemaEnumType } from './schema-enum-domains.js';
 import { FOOTNOTE_REFERENCE_STYLE_ID, FOOTNOTE_TEXT_STYLE_ID } from '../primitives/footnote-shapes.js';
+import { DocumentPropertiesError, validateDocumentPropertyValue } from '../primitives/document_properties.js';
 import type {
   BlockSpec,
   BorderSpec,
@@ -134,6 +135,7 @@ export function validateSpec(spec: DocumentSpec): void {
     throw new GenerationSpecError('empty_sections', '/sections', 'DocumentSpec.sections must contain at least one section');
   }
 
+  validateMeta(spec);
   validateTheme(spec);
   validateCompatibility(spec);
   if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
@@ -354,6 +356,44 @@ function validateTextReferenceTarget(bookmark: string, target: ParagraphSpec, pa
 
 /** The opt-in compatibility settings generation can write, each a boolean. */
 const COMPATIBILITY_SETTINGS: ReadonlySet<string> = new Set(['doNotExpandShiftReturn']);
+
+/** The docProps fields each meta key is written as, so one validator checks both generation and editing. */
+const META_PROPERTIES = {
+  title: ['core', 'title'],
+  author: ['core', 'creator'],
+  createdIso: ['core', 'created'],
+  modifiedIso: ['core', 'modified'],
+  lastModifiedBy: ['core', 'lastModifiedBy'],
+  application: ['app', 'application'],
+} as const;
+
+/**
+ * Document-property values: strings XML can carry, W3CDTF dates for
+ * `createdIso` and `modifiedIso`, and `application` a string or null (null
+ * leaves the element out). An empty string writes nothing, as it always did,
+ * except for `application`, where it is refused: pass null to leave it out.
+ */
+function validateMeta(spec: DocumentSpec): void {
+  const meta = spec.meta;
+  if (meta === undefined) return;
+  if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) {
+    throw new GenerationSpecError('invalid_value', '/meta', 'meta must be an object');
+  }
+  for (const [key, value] of Object.entries(meta)) {
+    const property = META_PROPERTIES[key as keyof typeof META_PROPERTIES];
+    if (!property) throw new GenerationSpecError('invalid_value', `/meta/${key}`, `Unsupported meta field '${key}'`);
+    if (value === undefined || (value === '' && key !== 'application')) continue;
+    if (value === null && key !== 'application') {
+      throw new GenerationSpecError('invalid_value', `/meta/${key}`, `${key} must be a string; leave it out for none`);
+    }
+    try {
+      validateDocumentPropertyValue(property[0], property[1], value);
+    } catch (error) {
+      if (!(error instanceof DocumentPropertiesError)) throw error;
+      throw new GenerationSpecError('invalid_value', `/meta/${key}`, error.message.replace(`${property[0]}.${property[1]}`, key));
+    }
+  }
+}
 
 function validateCompatibility(spec: DocumentSpec): void {
   if (spec.compatibility === undefined) return;

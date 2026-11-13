@@ -29,7 +29,7 @@ export const RUNNING_TEXT_KEYS = [
 ] as const;
 
 /** Every frontmatter key the creation grammar admits, in the order diagnostics list them. */
-export const CREATION_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(['title', 'author', 'date', ...RUNNING_TEXT_KEYS, 'fill-ins', 'heading-numbers']);
+export const CREATION_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(['title', 'author', 'date', 'modified', 'last-modified-by', 'application', ...RUNNING_TEXT_KEYS, 'fill-ins', 'heading-numbers']);
 
 /** `header-align`, `footer-align` and `page-number-align` values. */
 export const RUNNING_TEXT_ALIGNMENTS = ['left', 'center', 'right'] as const;
@@ -154,8 +154,16 @@ const LEGACY_HINTS: Array<[RegExp, string]> = [
 
 export type CreationFrontmatter = {
   title?: string;
+  /** Written as the document's `dc:creator`. */
   author?: string;
+  /** Written as `dcterms:created`, and as `dcterms:modified` unless `modified` is set. Absent, both are 2006-01-01T00:00:00Z (`CREATION_EPOCH_ISO`). */
   date?: string;
+  /** Written as `dcterms:modified` in place of `date`; never earlier than `date`. */
+  modified?: string;
+  /** Written as `cp:lastModifiedBy`. */
+  lastModifiedBy?: string;
+  /** docProps/app.xml `Application`: absent, `safe-docx`; null (frontmatter `application: none`) leaves it out. */
+  application?: string | null;
   /** The first section's running header text. */
   header?: string;
   headerAlign?: RunningTextAlignment;
@@ -234,15 +242,24 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
     } else if (key === 'header-first' || key === 'footer-first') {
       if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be the first page's text, or none.`);
       result[key === 'header-first' ? 'headerFirst' : 'footerFirst'] = value;
-    } else if (key === 'date') {
+    } else if (key === 'date' || key === 'modified') {
       if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?Z)?$/.test(value) || Number.isNaN(Date.parse(value))) {
-        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `date must be YYYY-MM-DD or a UTC ISO timestamp, got '${value}'.`);
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be YYYY-MM-DD or a UTC ISO timestamp, got '${value}'.`);
       }
-      result.date = value;
+      result[key] = value;
+    } else if (key === 'last-modified-by') {
+      if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must not be empty.`);
+      result.lastModifiedBy = value;
+    } else if (key === 'application') {
+      if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', 'application must be the application name, or none to leave it out.');
+      result.application = value === 'none' ? null : value;
     } else {
       if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must not be empty.`);
       (result as Record<string, string>)[key] = value;
     }
+  }
+  if (result.date !== undefined && result.modified !== undefined && compareCreationTimestamps(result.modified, result.date) < 0) {
+    throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `modified (${result.modified}) must not be earlier than date (${result.date}).`);
   }
   const problem = checkRunningTextKeys({
     header: result.header,
@@ -259,6 +276,31 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
   }, { pageNumbers: 'page-numbers: true', footer: 'footer: …', header: 'header: …' }, 'frontmatter');
   if (problem) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${problem}.`);
   return result;
+}
+
+/** A frontmatter `date` or `modified` as the timestamp written to docProps: a bare date is midnight UTC. */
+export function creationTimestamp(value: string): string {
+  return value.includes('T') ? value : `${value}T00:00:00Z`;
+}
+
+/**
+ * Order two `date` / `modified` values without losing precision. Both are
+ * UTC and fixed-width up to the seconds, so those compare as text; any
+ * fractional digits then compare zero-padded to the same length (Date.parse
+ * would round them to milliseconds).
+ */
+export function compareCreationTimestamps(left: string, right: string): number {
+  const split = (value: string): [string, string] => {
+    const [seconds, fraction = ''] = creationTimestamp(value).replace(/Z$/u, '').split('.');
+    return [seconds!, fraction];
+  };
+  const [leftSeconds, leftFraction] = split(left);
+  const [rightSeconds, rightFraction] = split(right);
+  if (leftSeconds !== rightSeconds) return leftSeconds < rightSeconds ? -1 : 1;
+  const width = Math.max(leftFraction.length, rightFraction.length);
+  const a = leftFraction.padEnd(width, '0');
+  const b = rightFraction.padEnd(width, '0');
+  return a === b ? 0 : a < b ? -1 : 1;
 }
 
 /** The closed value set of each running-text key that takes a word. */

@@ -584,7 +584,8 @@ template:
 ```bash
 docx-markdoc create consent.mdoc outbound/draft --replace
 # created consent.docx: 26 paragraphs, 2 section(s); readback ok (negative control ok);
-# footers ok (negative control ok); deterministic; brownfield ok (26 anchored);
+# footers ok (negative control ok); deterministic; properties ok (created 2026-01-02T00:00:00Z;
+# application "safe-docx"; negative control ok); brownfield ok (26 anchored);
 # round trip ok (26 paragraphs; negative controls ok); pdf passed (2 pages); pdf words ok (201 source words)
 ```
 
@@ -652,6 +653,38 @@ house.json` overrides any of `font`, `sizePt`, `spacingAfterPt`,
 `lineSpacing`, `marginsIn`, `titleSizePt`, `signatureTabIn` and `justify`.
 The default is Times New Roman 11pt on all four font channels, 8pt after,
 1.15 lines and 1" margins.
+
+The frontmatter also sets the document properties a reader sees in Word's
+File > Properties. Building never reads the clock, so the same source always
+builds the same bytes:
+
+| Key | Written as | Default |
+| --- | --- | --- |
+| `title` | `dc:title` | the first `#` heading |
+| `author` | `dc:creator` | none |
+| `date` | `dcterms:created`, and `dcterms:modified` unless `modified` is set | 2006-01-01T00:00:00Z |
+| `modified` | `dcterms:modified`; not earlier than `date` | `date` |
+| `last-modified-by` | `cp:lastModifiedBy` | none |
+| `application` | `Application` in `docProps/app.xml`; `none` leaves it out | `safe-docx` |
+
+```markdoc
+---
+author: Jane Roe
+date: 2026-01-02
+modified: 2026-02-03T09:00:00Z
+last-modified-by: Outside Counsel
+application: none
+---
+```
+
+The summary line names the dates it wrote. Without `date`, it says that both
+are the fixed 2006 default, for example `properties ok (created and modified
+2006-01-01T00:00:00Z (no frontmatter date; set date: to choose them);
+application "safe-docx"; negative control ok)`. The certificate's
+`checks.properties` reads the properties back from the DOCX and compares them
+with the frontmatter, with a negative control. To change the properties of a
+document that already exists, use the Safe-DOCX MCP tool
+`set_document_properties`.
 
 Before anything is published, every build checks its own output. Besides the
 package, determinism, read-back and brownfield-import checks:

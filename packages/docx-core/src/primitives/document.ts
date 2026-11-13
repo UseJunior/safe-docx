@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 import { DocxZip, ZIP_EPOCH } from './zip.js';
+import {
+  readDocumentProperties,
+  setDocumentProperties,
+  type DocumentProperties,
+  type DocumentPropertiesMutation,
+  type DocumentPropertiesMutationResult,
+} from './document_properties.js';
 import { attributeXmlParseError, parseXml, serializeXml } from './xml.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
@@ -1517,6 +1524,22 @@ export class DocxDocument {
     if (result.changed) {
       this.markMutated();
     }
+    return result;
+  }
+
+  /** Read the core (`docProps/core.xml`) and extended (`docProps/app.xml`) document properties. */
+  async getDocumentProperties(): Promise<DocumentProperties> {
+    return readDocumentProperties(this.zip);
+  }
+
+  /**
+   * Set or remove core and extended document properties. Document properties
+   * have no tracked-change form, so the write is a package mutation: callers
+   * that account for untracked changes must record it themselves.
+   */
+  async setDocumentProperties(mutation: DocumentPropertiesMutation): Promise<DocumentPropertiesMutationResult> {
+    const result = await setDocumentProperties(this.zip, mutation);
+    if (result.changed) this.markMutated();
     return result;
   }
 
