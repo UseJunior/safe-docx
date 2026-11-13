@@ -364,10 +364,26 @@ function hasParagraphMarkRevision(paragraph: Element, revision: 'w:ins' | 'w:del
 }
 
 /**
+ * Whether a paragraph sits in a table row, inside `container`, whose row
+ * revision marker (`w:trPr/w:ins` or `w:trPr/w:del`) removes the row with the
+ * projection. The final paragraph of a deleted cell keeps an unmarked
+ * paragraph mark, so the row marker is what tracks it.
+ */
+function inTrackedRow(paragraph: Element, container: Element, revision: 'w:ins' | 'w:del'): boolean {
+  for (let node = paragraph.parentNode as Element | null; node && node !== container; node = node.parentNode as Element | null) {
+    if (node.tagName !== 'w:tr') continue;
+    const trPr = findChildByTagName(node, 'w:trPr');
+    if (trPr && findChildByTagName(trPr, revision)) return true;
+  }
+  return false;
+}
+
+/**
  * Stamp every block `w:sdt`/`w:customXml` of a tracked candidate whose
- * paragraphs all carry a `revision` paragraph mark: the whole inserted (or
- * deleted) container of #1386. Reject All (or Accept All) removes its content
- * but keeps the container, emptied, with one placeholder paragraph.
+ * paragraphs all carry a `revision` paragraph mark, or sit in a row tracked
+ * with that revision: the whole inserted (or deleted) container of #1386.
+ * Reject All (or Accept All) removes its content but keeps the container,
+ * emptied, with one placeholder paragraph.
  */
 function markWholeTrackedContainers(candidateXml: string, revision: 'w:ins' | 'w:del'): string {
   const root = parseDocumentXml(candidateXml);
@@ -380,7 +396,8 @@ function markWholeTrackedContainers(candidateXml: string, revision: 'w:ins' | 'w
     if (!isBlockContainer(container)) continue;
     const paragraphs = Array.from(container.getElementsByTagName('w:p'));
     if (paragraphs.length === 0) continue;
-    if (!paragraphs.every((paragraph) => hasParagraphMarkRevision(paragraph, revision))) continue;
+    if (!paragraphs.every((paragraph) => hasParagraphMarkRevision(paragraph, revision)
+      || inTrackedRow(paragraph, container, revision))) continue;
     container.setAttribute(EMPTIED_CONTAINER_MARKER, revision);
     marked = true;
   }

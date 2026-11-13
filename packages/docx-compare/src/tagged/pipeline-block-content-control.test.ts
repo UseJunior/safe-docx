@@ -269,17 +269,21 @@ describe('block content-control formatting fidelity', () => {
 
   test('skips only the placeholder paragraph a whole inserted or deleted container leaves in a cell', async () => {
     const plain = await buildDocxFromBodyXml(shadedTable('FF0000', paragraph('Outside')));
-    const withBlock = await buildDocxFromBodyXml(shadedTable('FF0000', paragraph('Outside') + blockControl));
-    for (const [original, revised] of [[plain, withBlock], [withBlock, plain]] as const) {
-      const result = await compareDocuments(original, revised);
-      const fidelity = compareSourceProjectedFormattingFidelity(
-        await documentXml(original),
-        await documentXml(revised),
-        await documentXml(result.document),
-      );
-      expect(fidelity.accept.divergences).toEqual([]);
-      expect(fidelity.reject.divergences).toEqual([]);
-      expect(fidelity.score).toBe(1);
+    // A plain control, and one holding a paragraph and a table: the final
+    // paragraph of a deleted cell is tracked by its row marker, not its mark.
+    for (const xml of [blockControl, blockContainerCases[5]!]) {
+      const withBlock = await buildDocxFromBodyXml(shadedTable('FF0000', paragraph('Outside') + xml));
+      for (const [original, revised] of [[plain, withBlock], [withBlock, plain]] as const) {
+        const result = await compareDocuments(original, revised);
+        const fidelity = compareSourceProjectedFormattingFidelity(
+          await documentXml(original),
+          await documentXml(revised),
+          await documentXml(result.document),
+        );
+        expect(fidelity.accept.divergences).toEqual([]);
+        expect(fidelity.reject.divergences).toEqual([]);
+        expect(fidelity.score).toBe(1);
+      }
     }
   });
 });
