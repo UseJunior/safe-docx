@@ -44,3 +44,4 @@
 - [x] 6.3 Update the Markdoc README and capability boundary documentation with syntax, shared-story behavior, and non-goals.
 - [x] 6.4 Run the mandatory build, lint, test, spec-coverage, and conformance gates.
 - [ ] 6.5 Obtain Claude Fable implementation review, resolve all findings, merge, and run post-merge smoke verification.
+- [x] 6.6 Track formatting-only changes in header/footer paragraphs that hold a field, content control or drawing with `w:rPrChange`/`w:pPrChange` instead of listing them (#1392).

@@ -38,7 +38,13 @@ establish story identity.
 Ordinary selected-story comparison SHALL preserve the story root, relationship
 closure, fields, tables, drawings, content controls, and nested story scaffold.
 Its structural fingerprint SHALL blank admitted ordinary paragraph text and
-nested text-box content before equality checks, and field-state validation
+nested text-box content before equality checks. For the comparison's
+eligibility checks it SHALL also leave out the run properties, paragraph-mark
+run properties and paragraph properties of the paragraphs it keeps (those
+holding a field, content control or drawing), because `w:rPrChange` and
+`w:pPrChange` record a change to them; content-control properties and field
+instructions stay in it, and so does all formatting of a paragraph that
+already carries a formatting revision record. Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
@@ -49,6 +55,15 @@ MUST NOT be silently represented as an ordinary text edit.
 - **WHEN** comparison completes
 - **THEN** the complete field structure and cached-result policy SHALL remain valid
 - **AND** only the neighboring text change SHALL receive revision markup
+
+#### Scenario: [SDX-CMP-STORY-06] Formatting beside a field, content control or drawing is tracked
+- **GIVEN** a paired default, first or even header or footer paragraph holding a field, a content control or a drawing, whose only change is run formatting (including on the field's own runs or inside the content control), paragraph-mark formatting or paragraph properties
+- **WHEN** the packages are compared
+- **THEN** the change SHALL be tracked with `w:rPrChange` or `w:pPrChange` inside the story part
+- **AND** accept-all SHALL recover the revised formatting and reject-all the original formatting, with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`
+- **AND** the story SHALL NOT remain in `unrepresentedChanges`
+- **AND** a change to a field instruction, a content control's own properties, or the presence of a field or content control SHALL still be listed
+- **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL still be listed, never emitted as a nested or duplicate formatting revision
 
 #### Scenario: [SDX-CMP-STORY-05] Unsupported topology remains unrepresented
 - **GIVEN** selected stories with creation, deletion, rebinding, ambiguous pairing, structural table mutation, drawing/content-control mutation, or nested-story change outside the admitted subset
