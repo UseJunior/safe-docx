@@ -43,8 +43,11 @@ eligibility checks it SHALL also leave out the run properties, paragraph-mark
 run properties and paragraph properties of the paragraphs it keeps (those
 holding a field, content control or drawing), because `w:rPrChange` and
 `w:pPrChange` record a change to them; content-control properties and field
-instructions stay in it, and so does all formatting of a paragraph that
-already carries a formatting revision record. Field-state validation
+instructions stay in it, and so does all formatting of a paragraph whose
+mark is already inserted, deleted or moved. A paragraph that already carries
+a `w:rPrChange` or `w:pPrChange` record is compared like any other; the new
+formatting revision is layered without nesting or duplicating a record.
+Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
