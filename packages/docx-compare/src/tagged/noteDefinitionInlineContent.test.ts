@@ -190,7 +190,8 @@ function placementOf(entry: Element): string[] {
   const spans: string[] = [];
   const open: Array<{ kind: string; text: string }> = [];
   for (const element of Array.from(entry.getElementsByTagNameNS(W, '*'))) {
-    if (element.localName === 't') for (const span of open) span.text += element.textContent ?? '';
+    const content = contentOf(element);
+    if (content !== '') for (const span of open) span.text += content;
     if (element.localName === 'commentRangeStart') open.push({ kind: 'comment', text: '' });
     if (element.localName === 'fldChar' && element.getAttributeNS(W, 'fldCharType') === 'separate') open.push({ kind: 'field', text: '' });
     const closing = element.localName === 'commentRangeEnd' ? 'comment'
@@ -201,10 +202,18 @@ function placementOf(entry: Element): string[] {
     }
   }
   for (const link of Array.from(entry.getElementsByTagNameNS(W, 'hyperlink'))) {
-    const text = textOf(link, ['t']);
+    const text = Array.from(link.getElementsByTagNameNS(W, '*')).map(contentOf).join('');
     if (text !== '') spans.push(`link:${text}`);
   }
   return spans;
+}
+
+/** What one element displays: its text, a line break or a symbol. */
+function contentOf(element: Element): string {
+  if (element.localName === 't') return element.textContent ?? '';
+  if (element.localName === 'br') return '\n';
+  if (element.localName === 'sym') return `[sym ${element.getAttributeNS(W, 'char')}]`;
+  return '';
 }
 
 /**
@@ -394,6 +403,10 @@ describe('a note holding a field, hyperlink or comment is compared in place', ()
     ['hyperlink', undefined, run(' See ') + link('the public') + run(' filing.'), run(' See the ') + link('public filing') + run('.')],
     ['comment range', 'Check.', run(' See ') + commentOver('the public') + run(' filing.'), run(' See the ') + commentOver('public filing') + run('.')],
     ['REF field result', undefined, run(' See ') + fieldOver('Section 4.2') + run(' today.'), run(' See ') + fieldOver('Section 4.2 today') + run('.')],
+    ['hyperlink end', undefined, run(' See ') + link('the filing') + '<w:r><w:br/></w:r>' + run('Next.'),
+      run(' See ') + `<w:hyperlink r:id="${BASE.link!.id}">${run('the filing')}<w:r><w:br/></w:r></w:hyperlink>` + run('Next.')],
+    ['hyperlink start', undefined, run(' See ') + '<w:r><w:sym w:font="Symbol" w:char="F0B7"/></w:r>' + link('the filing') + run('.'),
+      run(' See ') + `<w:hyperlink r:id="${BASE.link!.id}"><w:r><w:sym w:font="Symbol" w:char="F0B7"/></w:r>${run('the filing')}</w:hyperlink>` + run('.')],
   ] as const) {
     test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' })(
       `tracks a note whose ${label} moves over the same text`,
@@ -407,6 +420,23 @@ describe('a note holding a field, hyperlink or comment is compared in place', ()
       },
     );
   }
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' })(
+    'tracks nothing when a note only splits its field instruction across runs',
+    async () => {
+      const split = run(' See ') + '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+        '<w:r><w:instrText xml:space="preserve"> REF _Ref1</w:instrText></w:r><w:r><w:instrText xml:space="preserve"> \\h </w:instrText></w:r>' +
+        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>${run('Section 4.2')}<w:r><w:fldChar w:fldCharType="end"/></w:r>` + run(' applies.');
+      const original = await notedDocx('footnote', { ...BASE, comment: undefined, raw: run(' See ') + fieldOver('Section 4.2') + run(' applies.') });
+      const revised = await notedDocx('footnote', { ...BASE, comment: undefined, raw: split });
+      const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+      const { notesXml } = await notePart(compared, 'footnote');
+      const entries = userEntries(notesXml, 'footnote');
+      expect(entries).toHaveLength(1);
+      expect(Array.from(entries[0]!.getElementsByTagNameNS(W, '*')).filter(e => ['ins', 'del'].includes(e.localName))).toHaveLength(0);
+      await expectProjections('footnote', original, revised, compared);
+    },
+  );
 
   test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })(
     'tracks a note whose only change unlinks its hyperlink',
