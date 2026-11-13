@@ -4222,6 +4222,34 @@
       ]
     },
     {
+      "id": "ECMA-PART1-22-2",
+      "title": "Extended File Properties part",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "22.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd#type:CT_Properties",
+      "claimRationale": "Extended properties are non-repeatable elements of the Extended File\nProperties part's `Properties` root. §22.2 lets each one be omitted, and lets\nit be empty only where its schema type admits an empty value: a string\nproperty such as `Company` can be empty, an integer statistic such as `Pages`\ncannot, and `AppVersion` has the form `XX.YYYY` (§22.2.2.2). safe-docx reads\nand writes `Application`, `AppVersion`, `Company`, `Manager` and `Template` in\nthe root's own namespace and prefix (transitional or strict), writes only\nnon-empty values and refuses an `AppVersion` of any other form, keeps every\nother element (statistics, heading pairs, titles of parts) untouched, creates\na missing part in the strict namespace when the main document relationship is\nstrict (§15.2.12.3), and lets generation omit `Application`.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/document_properties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/document_properties.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-document-properties.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART2-6-5-2-3",
       "title": "part Relationships part ownership and naming",
       "classification": "targeted",
@@ -4274,6 +4302,62 @@
         {
           "kind": "source",
           "path": "packages/docx-markdoc/src/import.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART2-8-2",
+      "title": "Core Properties part location and media type",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 2,
+        "section": "8.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties",
+      "claimRationale": "A package contains at most one Core Properties part, referenced by a core\nproperties relationship from the package, with the Core Properties part media\ntype. Its root `coreProperties` holds non-repeatable core property elements\n(`CT_CoreProperties` is an `xsd:all`, so their order carries no meaning).\nsafe-docx locates the part through `_rels/.rels` by relationship type, never\nby a fixed path, and edits only the named elements, keeping every other\nelement and namespace declaration. When a write sets a value in a package\nwithout the part, safe-docx creates `docProps/core.xml` with one package\nrelationship and one `[Content_Types].xml` override of the core-properties\nmedia type.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/document_properties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/document_properties.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/document_properties.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART2-8-3-4-3",
+      "title": "dcterms:created and dcterms:modified as W3CDTF dates",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 2,
+        "section": "8.3.4.3"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties",
+      "claimRationale": "The `created` and `modified` core property elements come from the DCMI terms\nnamespace, have no child elements or `xml:lang`, and carry\n`xsi:type=\"dcterms:W3CDTF\"`, with `dcterms` declared as the prefix of\n`http://purl.org/dc/terms/`. safe-docx accepts only W3CDTF values (`YYYY`,\n`YYYY-MM`, `YYYY-MM-DD`, or a date with a time and zone, every field in\nrange) for these elements, writes them with the `dcterms` prefix and the\n`xsi:type`, and refuses a part that binds `dcterms` to another namespace\nrather than rewriting the binding. Generation writes them from the spec and\nnever reads the clock.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/document_properties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/document_properties.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-document-properties.test.ts"
         }
       ]
     },
@@ -4388,6 +4472,19 @@
   ],
   "schemaDeclarations": [
     {
+      "id": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties",
+      "schemaPath": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd",
+      "conformanceClass": "opc",
+      "targetNamespace": "http://schemas.openxmlformats.org/package/2006/metadata/core-properties",
+      "kind": "type",
+      "name": "CT_CoreProperties",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_CoreProperties"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships",
       "schemaPath": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd",
       "conformanceClass": "opc",
@@ -4441,6 +4538,19 @@
           "declaredType": "CT_TxbxContent",
           "minOccurs": "1",
           "maxOccurs": "1"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd#type:CT_Properties",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties",
+      "kind": "type",
+      "name": "CT_Properties",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Properties"
         }
       ]
     },

@@ -413,8 +413,9 @@ describe('Traceability: running headers in created documents', () => {
       ]);
       const zip = await JSZip.loadAsync(created.docx);
       expect(Object.keys(zip.files).filter((name) => /header/u.test(name))).toEqual([]);
-      // The certificate gains no header keys: its checks and controls are the ones it had.
-      expect(Object.keys(created.certificate.checks)).toEqual(['package', 'determinism', 'readback', 'footers', 'footnotes', 'roundTrip', 'brownfield']);
+      // The certificate gains no header keys: its checks and controls are the ones it had
+      // (properties, the document-properties read-back, is recorded for every document).
+      expect(Object.keys(created.certificate.checks)).toEqual(['package', 'determinism', 'readback', 'footers', 'footnotes', 'roundTrip', 'brownfield', 'properties']);
       expect(Object.keys(created.certificate.checks.roundTrip.negativeControls)).toEqual(['deletedWord', 'deletedParagraph', 'deletedTableCell', 'deletedFooterText']);
       expect(created.certificate.headers).toBeUndefined();
       expect(created.lowering.spec.sections.every((section) => section.headers === undefined && section.titlePg === undefined)).toBe(true);

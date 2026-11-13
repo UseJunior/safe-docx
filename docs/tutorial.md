@@ -250,6 +250,7 @@ Visual review remains appropriate for material documents because Safe Docx is no
 | Delete an ordinary DOCX body paragraph | `replace_text` with the complete text and an empty `new_string` |
 | Remove or repair direct DOCX paragraph numbering | `format_numbering` |
 | Inspect, split, or change DOCX sections | `get_sections`, `insert_section_break`, `format_section` |
+| Read or change DOCX document properties (title, author, dates, application) | `get_document_properties`, `set_document_properties` |
 | Apply several edits together | `batch_edit` |
 | Convert DOCX to ODT | `convert_to_odt` |
 | Convert DOCX to Markdown | `export` with `format="markdown"` |

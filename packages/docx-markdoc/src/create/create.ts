@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
-import { bookmarkNameForSlug, checkGeneratedPackage, generateDocx } from '@usejunior/docx-core';
+import Markdoc from '@markdoc/markdoc';
+import { DocxZip, bookmarkNameForSlug, checkGeneratedPackage, generateDocx, readDocumentProperties, type DocumentProperties } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { requireMarkdoc } from '../markdoc.js';
 import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, sourceCrossReferenceForm, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
-import { lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FirstPageProjection, type FooterProjection } from './lower.js';
+import { CREATION_EPOCH_ISO, lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FirstPageProjection, type FooterProjection } from './lower.js';
 import { readCreatedDocx, type CreationReadback } from './readback.js';
+import { creationTimestamp, parseCreationFrontmatter, type CreationFrontmatter } from './validate.js';
 
 export type CreationCheck = { passed: boolean; detail?: string };
 
@@ -66,6 +68,17 @@ export type CreationCertificate = {
       references: { expected: number; actual: number; mismatches: string[]; negativeControlDetected: boolean | 'not applicable' };
     };
     brownfield: CreationCheck & { anchoredParagraphs: number };
+    /**
+     * The document properties read back from docProps/core.xml and
+     * docProps/app.xml, against the values the frontmatter calls for, read
+     * straight from it (never from the lowering): `dc:creator` (author),
+     * `dcterms:created` (date), `dcterms:modified` (modified, else date),
+     * `cp:lastModifiedBy`, `Application` (absent or a name), and `dc:title`
+     * when the frontmatter sets one. Without a `date` both dates are
+     * 2006-01-01T00:00:00Z. The negative control changes the expected
+     * Application.
+     */
+    properties: CreationCheck & { values: Record<string, string | null>; negativeControlDetected: boolean };
     /**
      * Present when the source or the DOCX has a cross-reference: each REF
      * field's instruction (bookmark name and number switch, or none for a
@@ -728,6 +741,42 @@ export function creationTextMirror(readback: CreationReadback, label = 'document
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1162
  */
+/** The document properties a source's frontmatter calls for, by `core.<name>` / `app.<name>`. */
+export function expectedCreationProperties(frontmatter: CreationFrontmatter): Record<string, string | null> {
+  const created = frontmatter.date ? creationTimestamp(frontmatter.date) : CREATION_EPOCH_ISO;
+  return {
+    ...(frontmatter.title ? { 'core.title': frontmatter.title } : {}),
+    'core.creator': frontmatter.author ?? null,
+    'core.created': created,
+    'core.modified': frontmatter.modified ? creationTimestamp(frontmatter.modified) : created,
+    'core.lastModifiedBy': frontmatter.lastModifiedBy ?? null,
+    'app.application': frontmatter.application === undefined ? 'safe-docx' : frontmatter.application,
+  };
+}
+
+function propertyMismatches(expected: Record<string, string | null>, actual: DocumentProperties): string[] {
+  return Object.entries(expected).flatMap(([key, value]) => {
+    const [part, name] = key.split('.') as ['core' | 'app', string];
+    const read = (actual[part] as Record<string, string | null>)[name] ?? null;
+    return read === value ? [] : [`${key}: expected ${JSON.stringify(value)}, read ${JSON.stringify(read)}`];
+  });
+}
+
+/** The read-back document properties against the frontmatter, with a negative control on Application. */
+function propertiesCheck(frontmatter: CreationFrontmatter, actual: DocumentProperties): CreationCertificate['checks']['properties'] {
+  const expected = expectedCreationProperties(frontmatter);
+  const mismatches = propertyMismatches(expected, actual);
+  const application = expected['app.application'];
+  const negativeControlDetected = propertyMismatches({ ...expected, 'app.application': application === null ? 'safe-docx' : `${application}x` }, actual).length > 0;
+  const passed = mismatches.length === 0 && negativeControlDetected;
+  return {
+    passed,
+    values: expected,
+    negativeControlDetected,
+    ...(passed ? {} : { detail: mismatches.length > 0 ? mismatches.join('; ') : 'a negative control was not detected' }),
+  };
+}
+
 export async function createDocumentFromMarkdoc(source: string, options: CreateDocumentOptions = {}): Promise<CreatedDocument> {
   const transform = options.transformLowering ?? ((value: CreationLowering) => value);
   const lowering = transform(lowerCreationMarkdoc(source, options.profile));
@@ -773,6 +822,10 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
     ...referenceMismatches,
     ...(footnoteControl === false || referenceControl === false ? ['a negative control was not detected'] : []),
   ];
+
+  // The expected properties come from the source's own frontmatter, never from the lowering.
+  const sourceFrontmatter = parseCreationFrontmatter(Markdoc.parse(source).attributes.frontmatter as string | undefined);
+  const properties = propertiesCheck(sourceFrontmatter, await readDocumentProperties(await DocxZip.load(docx)));
 
   const text = creationTextMirror(readback, options.mirrorLabel);
   const checks: CreationCertificate['checks'] = {
@@ -826,6 +879,7 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
       anchoredParagraphs: anchored,
       ...(anchored === editable ? {} : { detail: `import anchored ${anchored} paragraphs; read-back has ${editable} anchorable paragraphs` }),
     },
+    properties,
     ...(crossReferences ? { crossReferences } : {}),
   };
   const certificate: CreationCertificate = {
