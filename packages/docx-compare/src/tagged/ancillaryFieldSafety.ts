@@ -72,6 +72,11 @@ export interface AncillaryFieldSafetyInput {
   noteReferenceSourceIds?: ReadonlyMap<'footnote' | 'endnote', ReadonlyMap<string, string>>;
   /** Final note IDs whose bodies were marked as an inserted or deleted note. */
   noteLifecycleMarks?: ReadonlyMap<'footnote' | 'endnote', ReadonlyMap<string, 'inserted' | 'deleted'>>;
+  /**
+   * Pre-normalization IDs of base-side definitions that carry an in-place
+   * definition comparison, each mapped to its merge-source counterpart's ID.
+   */
+  reconciledNotePairs?: ReadonlyMap<'footnote' | 'endnote', ReadonlyMap<string, string>>;
 }
 
 interface InternalFieldRange {
@@ -245,6 +250,7 @@ function inventoryEligibleFields(
   normalizedPartPath: string,
   entryId: string | undefined,
   allowedKinds: ReadonlySet<SupportedComplexField>,
+  canonicalForm: 'subtree' | 'projection' = 'subtree',
 ): InternalFieldRange[] {
   const document = parseXml(xml);
   const paragraphs = Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'p'));
@@ -319,10 +325,18 @@ function inventoryEligibleFields(
       const start = paragraphChildren.indexOf(field.beginChild);
       const end = paragraphChildren.indexOf(field.endChild);
       if (start < 0 || end < start) continue;
-      const canonical = paragraphChildren
-        .slice(start, end + 1)
-        .map(canonicalNode)
-        .join('');
+      const slice = paragraphChildren.slice(start, end + 1);
+      // A projection of a definition compared in place may split one source
+      // run where a word changed; it must keep the instruction and result.
+      const canonical = canonicalForm === 'subtree'
+        ? slice.map(canonicalNode).join('')
+        : JSON.stringify([
+          field.instruction.trim().replace(/\s+/gu, ' '),
+          slice.flatMap((child) => [
+            ...(child.namespaceURI === OOXML.W_NS && child.localName === 't' ? [child] : []),
+            ...Array.from(child.getElementsByTagNameNS(OOXML.W_NS, 't')),
+          ]).map((text) => text.textContent ?? '').join(''),
+        ]);
       inventory.push({
         locator: {
           locatorType: 'field_range',
@@ -575,6 +589,7 @@ async function evaluateAncillaryFieldSafetyUnsafe(
         .filter((id): id is string => id !== undefined),
     );
     const allowed = new Set<SupportedComplexField>(['REF', 'PAGEREF']);
+    let counterpartEntries: Map<string, Element> | undefined;
 
     for (const entry of finalEntries) {
       const sourceId = input.noteReferenceSourceIds?.get(note.storyKind)?.get(entry.id) ?? entry.id;
@@ -604,6 +619,61 @@ async function evaluateAncillaryFieldSafetyUnsafe(
           code: 'NOTE_ENTRY_PROVENANCE_MISSING',
           detail: `Final note entry '${entry.id}' has no assembly source provenance`,
           locator,
+        });
+        continue;
+      }
+      // A definition compared in place holds both sides' content as tracked
+      // changes (#1389). Each side's fields must survive in that side's
+      // projection: Accept against the base definition, Reject against its
+      // merge-source counterpart.
+      const counterpartId = provenance === 'base'
+        ? input.reconciledNotePairs?.get(note.storyKind)?.get(sourceId)
+        : undefined;
+      if (counterpartId !== undefined && counterpartEntries === undefined) {
+        counterpartEntries = sourceXml === null
+          ? new Map()
+          : entryMap(inspectNotePart(sourceXml, note.path, note.root, note.entry, input.mergeSourceSide).entries);
+      }
+      const counterpartEntry = counterpartId === undefined ? undefined : counterpartEntries?.get(counterpartId);
+      if (counterpartId !== undefined) {
+        const baseProject = input.baseSide === 'revised' ? acceptAllChanges : rejectAllChanges;
+        const sourceProject = input.baseSide === 'revised' ? rejectAllChanges : acceptAllChanges;
+        const finalXml = serializer.serializeToString(entry.element);
+        const sideComparisons = [
+          compareInventories(
+            inventoryEligibleFields(baseProject(serializer.serializeToString(sourceEntry)), note.path, entry.id, allowed, 'projection'),
+            inventoryEligibleFields(baseProject(finalXml), note.path, entry.id, allowed, 'projection'),
+            input.baseSide,
+            'base',
+          ),
+          counterpartEntry
+            ? compareInventories(
+              inventoryEligibleFields(sourceProject(serializer.serializeToString(counterpartEntry)), note.path, entry.id, allowed, 'projection'),
+              inventoryEligibleFields(sourceProject(finalXml), note.path, entry.id, allowed, 'projection'),
+              input.mergeSourceSide,
+              'imported',
+            )
+            : {
+              issues: [{
+                category: 'canonical_evidence' as const,
+                code: 'NOTE_ENTRY_PROVENANCE_MISSING',
+                detail: `Compared note entry '${entry.id}' has no ${input.mergeSourceSide} counterpart '${counterpartId}'`,
+                locator,
+              }],
+              ranges: [],
+            },
+        ];
+        for (const comparison of sideComparisons) {
+          issues.push(...comparison.issues);
+          ranges.push(...comparison.ranges);
+        }
+        stories.push({
+          storyKind: note.storyKind,
+          normalizedPartPath: note.path,
+          entryId: entry.id,
+          sourceSide,
+          provenance,
+          strictFieldStructure: 'passed',
         });
         continue;
       }

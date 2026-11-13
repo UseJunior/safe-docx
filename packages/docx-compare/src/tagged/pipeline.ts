@@ -74,6 +74,7 @@ import {
 } from './auxiliaryIdCollision.js';
 import {
   importReferencedRelationships,
+  planStoryRelationshipImport,
   renumberCollidingRelationshipIds,
 } from './relationshipIdCollision.js';
 import {
@@ -246,6 +247,8 @@ async function reconcileTaggedNotes(options: {
   baseSide?: 'original' | 'revised';
   baseNotesArchive?: DocxArchive;
   stabilizedNoteKinds: Set<'footnote' | 'endnote'>;
+  /** Receives each reconciled definition: kept (target) id to discarded id. */
+  reconciledNotePairs?: Map<string, string>;
 }): Promise<string> {
   const { kind } = options;
   const part = `word/${kind}s.xml`;
@@ -296,11 +299,45 @@ async function reconcileTaggedNotes(options: {
     // Superseded bodies remain until complete-package orphan-note pruning;
     // flattening changed anchor properties would lose their Reject semantics.
     if (!stablePair) continue;
-    const comparedChildren = compareNoteDefinitions(originalEntry, revisedEntry, {
-      author: options.author,
-      date: options.date,
-      formatDetection: options.formatDetection,
-    });
+    // The definition that does not come from the result's own package names
+    // its hyperlinks by its own part's relationship ids. Re-express them
+    // against the result's note relationships first, so an unchanged
+    // hyperlink compares equal and a deleted one still resolves (#1389).
+    const importedSide = targetId === pair.revisedId ? 'original' : 'revised';
+    const importedEntry = (importedSide === 'original' ? originalEntry : revisedEntry)
+      .cloneNode(true) as Element;
+    const relationshipImport = await planStoryRelationshipImport(
+      importedEntry,
+      importedSide === 'original' ? options.originalArchive : options.revisedArchive,
+      part,
+      options.resultArchive,
+      part,
+    );
+    let comparedChildren: Element[];
+    try {
+      comparedChildren = compareNoteDefinitions(
+        importedSide === 'original' ? importedEntry : originalEntry,
+        importedSide === 'revised' ? importedEntry : revisedEntry,
+        {
+          author: options.author,
+          date: options.date,
+          formatDetection: options.formatDetection,
+        },
+      );
+    } catch (error) {
+      // A definition whose in-place comparison fails its own Accept/Reject
+      // projection check keeps the separate-definition redline, which still
+      // tracks every change; the result package is left untouched.
+      debugTaggedComparison('note definition comparison declined', {
+        kind,
+        originalId: pair.originalId,
+        revisedId: pair.revisedId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    await relationshipImport.commit();
+    options.reconciledNotePairs?.set(targetId, discardedId);
     while (resultEntry.firstChild) resultEntry.removeChild(resultEntry.firstChild);
     for (const child of comparedChildren) {
       resultEntry.appendChild(result.doc.importNode(child, true));
@@ -506,7 +543,10 @@ export async function buildStandaloneTaggedPackage(
 
   const resultArchive = await revisedArchive.clone();
   const stabilizedNoteKinds = new Set<'footnote' | 'endnote'>();
+  const reconciledNotePairs = new Map<'footnote' | 'endnote', Map<string, string>>();
   for (const kind of ['footnote', 'endnote'] as const) {
+    const reconciled = new Map<string, string>();
+    reconciledNotePairs.set(kind, reconciled);
     taggedXml = await reconcileTaggedNotes({
       kind,
       originalArchive,
@@ -517,6 +557,7 @@ export async function buildStandaloneTaggedPackage(
       date: options.date,
       formatDetection: options.formatDetection,
       stabilizedNoteKinds,
+      reconciledNotePairs: reconciled,
     });
   }
   resultArchive.setDocumentXml(taggedXml);
@@ -580,6 +621,7 @@ export async function buildStandaloneTaggedPackage(
     noteMergeResults,
     noteReferenceSourceIds,
     noteLifecycleMarks,
+    reconciledNotePairs,
   });
   const finalAuxiliarySidecars = {
     footnotesXmls: [await resultArchive.getFile('word/footnotes.xml')],
@@ -1913,14 +1955,25 @@ function noteDefinitionPairRequiresCollisionSafeFallback(
   return false;
 }
 
+/**
+ * Whether a footnote or endnote definition must keep the separate-definition
+ * fallback instead of an in-place definition comparison.
+ *
+ * Fields, hyperlinks and comment anchors are ordinary inline content of a note
+ * story, so the definition comparison tracks the words that change around or
+ * inside them like it does in the main story. A hyperlink's `r:id` is
+ * re-expressed against the result's note relationships before the comparison
+ * (see {@link planStoryRelationshipImport}). Nested note references and every
+ * other relationship-bearing element (pictures, embedded objects) keep the
+ * fallback.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
+ * @see https://github.com/UseJunior/safe-docx/issues/1389
+ */
 export function noteDefinitionRequiresCollisionSafeFallback(entry: Element): boolean {
   const unsupportedTags = [
-    'w:fldChar',
-    'w:fldSimple',
-    'w:hyperlink',
-    'w:commentReference',
-    'w:commentRangeStart',
-    'w:commentRangeEnd',
     'w:footnoteReference',
     'w:endnoteReference',
   ];
@@ -1930,9 +1983,14 @@ export function noteDefinitionRequiresCollisionSafeFallback(entry: Element): boo
     for (let index = 0; index < element.attributes.length; index++) {
       const attribute = element.attributes.item(index)!;
       if (
-        attribute.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' ||
-        attribute.name.startsWith('r:')
-      ) return true;
+        attribute.namespaceURI !== OFFICE_RELATIONSHIP_NS &&
+        !attribute.name.startsWith('r:')
+      ) continue;
+      const hyperlinkTarget = element.namespaceURI === OOXML.W_NS &&
+        element.localName === 'hyperlink' &&
+        attribute.namespaceURI === OFFICE_RELATIONSHIP_NS &&
+        attribute.localName === 'id';
+      if (!hyperlinkTarget) return true;
     }
     return false;
   });

@@ -509,7 +509,7 @@ describe('notes sharing one paragraph pair by ordinal', () => {
       await expectSchemaValid(result.document, kinds);
     });
   }
-  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('still keeps separate side definitions when one paired body has a field', async () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })('reconciles a paired body that gains a field beside a plain pair in place', async () => {
     const notes: SharedParagraphNote[] = [{ kind: 'footnote', lead: VOYAGER, edited: true }, { kind: 'footnote', lead: MERIDIAN, edited: true }];
     const original = await sharedParagraphNotes(false, notes);
     const revisedArchive = await DocxArchive.load(await sharedParagraphNotes(true, notes));
@@ -525,10 +525,14 @@ describe('notes sharing one paragraph pair by ordinal', () => {
     const result = await compareDocuments(original, revised);
     const archive = await DocxArchive.load(result.document);
     const references = Array.from(parseXml(await archive.getDocumentXml()).getElementsByTagNameNS(W, 'footnoteReference'));
-    // The field-bearing pair keeps anchor-level history; the plain pair still reconciles.
-    expect(references.filter(r => r.parentNode?.parentNode && (r.parentNode.parentNode as Element).localName === 'del')).toHaveLength(1);
-    expect(references.filter(r => r.parentNode?.parentNode && (r.parentNode.parentNode as Element).localName === 'ins')).toHaveLength(1);
-    expect(references).toHaveLength(3);
+    // A field is ordinary note content (#1389): both pairs keep one stable
+    // anchor and carry their history inside the definition.
+    expect(references.filter(r => r.parentNode?.parentNode && (r.parentNode.parentNode as Element).localName === 'del')).toHaveLength(0);
+    expect(references.filter(r => r.parentNode?.parentNode && (r.parentNode.parentNode as Element).localName === 'ins')).toHaveLength(0);
+    expect(references).toHaveLength(2);
+    const fieldMarkers = Array.from(parseXml((await archive.getFile('word/footnotes.xml'))!).getElementsByTagNameNS(W, 'fldChar'));
+    expect(fieldMarkers.map(marker => marker.getAttributeNS(W, 'fldCharType'))).toEqual(['begin', 'end']);
+    expect(fieldMarkers.every(marker => (marker.parentNode?.parentNode as Element).localName === 'ins')).toBe(true);
     await expectCombinedReferencesResolve('footnote', result.document);
     await expectNoteBindingsResolve('footnote', original, revised, result.document);
   });

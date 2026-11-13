@@ -58,6 +58,67 @@ function prepareDefinition(entry: Element): string {
   return serializer.serializeToString(root);
 }
 
+const INLINE_REFERENCE_CONTAINERS = new Set(['hyperlink', 'fldSimple']);
+const INLINE_REFERENCE_MARKERS = new Set([
+  'fldChar',
+  'commentRangeStart',
+  'commentRangeEnd',
+  'commentReference',
+]);
+
+/**
+ * Hyperlinks, field structure and comment anchors placed among the
+ * definition's text and other run content, in document order. Text and
+ * formatting alone cannot show a retargeted, unlinked or moved hyperlink, a
+ * changed or moved field, or a re-anchored comment, so an unchanged-looking
+ * definition is passed through only when these agree as well. Adjacent text and adjacent field instruction
+ * fragments merge, so run splits alone do not count as a difference.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1389
+ */
+function inlineReferenceSignature(xml: string): string {
+  const tokens: string[] = [];
+  const attributesOf = (element: Element): string[] => Array.from(element.attributes)
+    .filter((attribute) => !attribute.name.startsWith('xmlns'))
+    .map((attribute) => `${attribute.namespaceURI ?? ''}:${attribute.localName}=${attribute.value}`)
+    .sort();
+  // Adjacent text, and adjacent instruction fragments, merge.
+  const pushMerged = (prefix: 'T:' | 'I:', text: string): void => {
+    const last = tokens.length - 1;
+    if (last >= 0 && tokens[last]!.startsWith(prefix)) tokens[last] += text;
+    else tokens.push(`${prefix}${text}`);
+  };
+  const visit = (element: Element): void => {
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue;
+      const node = child as Element;
+      const name = node.namespaceURI === W_NS ? node.localName : '';
+      const parentName = element.namespaceURI === W_NS ? element.localName : '';
+      if (name === 't' || name === 'delText') {
+        pushMerged('T:', node.textContent ?? '');
+      } else if (name === 'instrText' || name === 'delInstrText') {
+        pushMerged('I:', node.textContent ?? '');
+      } else if (INLINE_REFERENCE_MARKERS.has(name)) {
+        tokens.push(JSON.stringify([name, attributesOf(node)]));
+      } else if (parentName === 'r' && name !== 'rPr') {
+        // Other run content (a break, tab or symbol) also sits inside or
+        // outside a hyperlink or comment range.
+        tokens.push(JSON.stringify(['atom', name, attributesOf(node)]));
+      } else if (INLINE_REFERENCE_CONTAINERS.has(name)) {
+        tokens.push(JSON.stringify(['open', name, attributesOf(node)]));
+        visit(node);
+        tokens.push(JSON.stringify(['close', name]));
+      } else {
+        if (name === 'p') tokens.push('P');
+        visit(node);
+      }
+    }
+  };
+  const root = parseXml(xml).documentElement;
+  if (root) visit(root);
+  return JSON.stringify(tokens);
+}
+
 /**
  * Compare one corresponding footnote or endnote definition as an independent
  * Word story.
@@ -79,6 +140,7 @@ export function compareNoteDefinitions(
   const revisedXml = prepareDefinition(revisedEntry);
   if (
     extractRoundTripComparisonText(originalXml) === extractRoundTripComparisonText(revisedXml) &&
+    inlineReferenceSignature(originalXml) === inlineReferenceSignature(revisedXml) &&
     compareSourceProjectedFormattingFidelity(originalXml, revisedXml, revisedXml).reject.score === 1
   ) {
     const unchangedBody = parseXml(revisedXml).getElementsByTagName('w:body').item(0);
