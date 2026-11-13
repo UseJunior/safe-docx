@@ -147,6 +147,21 @@ async function packageNoteBindings(kind: NoteKind, docx: Buffer): Promise<string
   const archive = await DocxArchive.load(docx);
   return noteBindings(kind, await archive.getDocumentXml(), (await archive.getFile(`word/${kind}s.xml`)) ?? `<w:${kind}s xmlns:w="${W}"/>`);
 }
+/** Text of the definitions whose every run is inside one lifecycle marker, by marker. */
+function lifecycleMarkedDefinitions(notesXml: string, kind: NoteKind): { ins: string[]; del: string[] } {
+  const marked = { ins: [] as string[], del: [] as string[] };
+  for (const note of Array.from(parseXml(notesXml).getElementsByTagNameNS(W, kind))) {
+    const marks = Array.from(note.getElementsByTagNameNS(W, 'r')).map(run => {
+      for (let node = run.parentNode; node && node !== note; node = node.parentNode) {
+        if ((node as Element).namespaceURI === W && ['ins', 'del'].includes((node as Element).localName)) return (node as Element).localName as 'ins' | 'del';
+      }
+      return null;
+    });
+    const marker = marks[0];
+    if (marker && marks.every(m => m === marker)) marked[marker].push(note.textContent ?? '');
+  }
+  return marked;
+}
 async function nativeProjection(docx: Buffer, operation: 'acceptChanges' | 'rejectChanges'): Promise<Buffer> {
   const complete = await DocxDocument.load(docx);
   await complete[operation]();
@@ -238,7 +253,8 @@ describe('inline endnote definitions remain bound to their source sides', () => 
     // Coarse anchor history keeps the property change's Reject semantics (#990).
     const references = Array.from(parseXml(await archive.getDocumentXml()).getElementsByTagNameNS(W, 'endnoteReference'));
     expect(references).toHaveLength(6);
-    expect(parseXml((await archive.getFile('word/endnotes.xml'))!).getElementsByTagNameNS(W, 'ins')).toHaveLength(0);
+    // The superseded and replacing definitions follow their anchors (#1388).
+    expect(lifecycleMarkedDefinitions((await archive.getFile('word/endnotes.xml'))!, 'endnote')).toEqual({ ins: ['endnote 1 revised body'], del: ['endnote 1 original body'] });
     await expectNoteBindingsResolve('endnote', original, revised, result.document);
     await expectSchemaValid(result.document, ['endnote']);
   });
@@ -275,7 +291,8 @@ describe('inline footnote definitions remain bound to their source sides', () =>
       expect(parseXml(await archive.getDocumentXml()).getElementsByTagNameNS(W, 'footnoteReference').length).toBe(2);
       const notes = (await archive.getFile('word/footnotes.xml'))!;
       expect(parseXml(notes).getElementsByTagNameNS(W, 'footnote').length).toBe(4);
-      expect(notes).not.toMatch(/<w:(ins|del)\b/);
+      // The superseded and replacing definitions follow their anchors (#1388).
+      expect(lifecycleMarkedDefinitions(notes, 'footnote')).toEqual({ ins: ['After note text'], del: ['Before note text'] });
       // Characterization of coarse history, not a claim of orphan-free
       // single-part projection: package resolution has the anchor inventory.
       for (const [project, expected] of [[acceptAllChanges, 'After note text'], [rejectAllChanges, 'Before note text']] as const) {

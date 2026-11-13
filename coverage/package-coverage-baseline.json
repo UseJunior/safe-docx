@@ -21,7 +21,7 @@
       }
     },
     "docx-compare": {
-      "lines": 92.73,
+      "lines": 94.02,
       "branches": 82.95,
       "functions": 94.52,
       "statements": 90.8,
@@ -58,7 +58,7 @@
     }
   },
   "aggregate": {
-    "lines_mean": 93.55,
+    "lines_mean": 93.87,
     "branches_mean": 83.7,
     "functions_mean": 95.72,
     "statements_mean": 91.41
