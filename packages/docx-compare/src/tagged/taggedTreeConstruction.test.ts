@@ -362,7 +362,7 @@ describe('complete tagged-tree construction', () => {
     }).moves).toHaveLength(0);
   });
 
-  test('pairs only outermost overlapping candidates and remains stable for repeated similar blocks', () => {
+  test('leaves relocated block containers unpaired and remains stable for repeated similar blocks', () => {
     const nested = (text: string) => '<w:sdt><w:sdtContent>'
       + `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
       + '</w:sdtContent></w:sdt>';
@@ -377,9 +377,9 @@ describe('complete tagged-tree construction', () => {
       moveMinimumWordCount: 5,
       moveSimilarityThreshold: 0.7,
     });
-    expect(nestedResult.moves).toHaveLength(1);
-    expect(nestedResult.moves[0]?.source.node.localName).toBe('sdt');
-    expect(nestedResult.moves[0]?.destination.node.localName).toBe('sdt');
+    // No revision particle can wrap a block w:sdt, so a relocated one is a
+    // tracked deletion and insertion of its content, never a move (#1386).
+    expect(nestedResult.moves).toHaveLength(0);
 
     const repeatedOriginalXml = [
       'Opening anchor remains unchanged.',

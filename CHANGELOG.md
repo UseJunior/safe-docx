@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Inserting or deleting a whole block-level content control (`w:sdt`) or
+  custom XML element (`w:customXml`), in the body or in a table cell, no
+  longer makes `compareDocuments` fail with
+  `UnsupportedBlockContainerRevisionError`. No revision can wrap the
+  container itself, so, as Word shows an inserted content control, the
+  container is published and every paragraph mark and run inside it is
+  marked inserted or deleted; a table inside it has each row marked.
+  Accept All and Reject All remove the content, but the container stays
+  behind empty (holding one empty paragraph) in Reject All of an inserted one
+  and Accept All of a deleted one, so each such container is listed in
+  `unrepresentedChanges` with the `contentControl` scope and `element`
+  `sdt` or `customXml`. A container that moved is tracked as deleted and
+  inserted, not as a move. Inside a text box or a footnote or endnote, whose
+  stories do not publish `unrepresentedChanges`, the comparison still refuses
+  the container with `UnsupportedBlockContainerRevisionError`, which now
+  names the part in `partPath`. (#1386)
+
 - A header or footer that gains or loses a text box no longer makes
   `compareDocuments` fail with `UnsupportedTextBoxRevisionError` ("inserted
   or deleted ancillary text-box topology is not supported"). Boxes in a

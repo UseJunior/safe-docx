@@ -50,7 +50,11 @@ import {
   rejectAllChanges,
   compareTexts,
 } from './trackChangesAcceptorAst.js';
-import { detectUnrepresentedChanges, subtractRepresentedPackageChanges } from './unrepresentedChanges.js';
+import {
+  detectUnrepresentedChanges,
+  refuseUnreportedBlockContainer,
+  subtractRepresentedPackageChanges,
+} from './unrepresentedChanges.js';
 import { normalizeExplicitStorySlots, reportSlotChangesAgainstInputs } from './storySlotNormalization.js';
 import { auditPicturePayloads, payloadSwappedRelationshipIds } from './picturePayload.js';
 import {
@@ -1555,6 +1559,7 @@ async function compareDocumentsTagged(
       nextPackageRevisionId,
       false,
     );
+    refuseUnreportedBlockContainer(result.unrepresentedChanges, story.partPath);
     if (story.ancillaryMode === 'inserted') {
       const marked = await markInsertedAncillaryStoryParagraphs(
         story.revised,

@@ -6,6 +6,7 @@ import {
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
+import { refuseUnreportedBlockContainer } from './unrepresentedChanges.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
 import {
@@ -148,14 +149,19 @@ export function compareNoteDefinitions(
     return Array.from(unchangedBody.childNodes)
       .filter((node): node is Element => node.nodeType === 1);
   }
-  const comparedXml = buildTaggedTreePublication({
+  const publication = buildTaggedTreePublication({
     originalXml,
     revisedXml,
     author: options.author,
     date: options.date,
     detectFormatChanges: options.formatDetection?.detectFormatChanges ?? true,
     detectMoves: false,
-  }).xml;
+  });
+  refuseUnreportedBlockContainer(
+    publication.unrepresentedChanges,
+    revisedEntry.localName === 'endnote' ? 'word/endnotes.xml' : 'word/footnotes.xml',
+  );
+  const comparedXml = publication.xml;
   const expectedAccepted = extractRoundTripComparisonText(
     acceptAllChanges(revisedXml),
   );

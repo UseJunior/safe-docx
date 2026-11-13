@@ -12,6 +12,7 @@ import type { RevisionAttribution, RevisionGroupingPolicy } from '../compare-typ
 import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
+import { isBlockContainer } from './blockContainer.js';
 import {
   addRowExceptionRevisionCompanions,
   isTableLevelPropertyElement,
@@ -35,38 +36,26 @@ import {
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-/** A whole block-level container cannot be nested in a run revision. */
+/**
+ * A whole block-level container was inserted or deleted in a story whose
+ * emptied container could not be reported.
+ *
+ * In the main document the container is published with its paragraph marks,
+ * runs and table rows tracked, and listed in `unrepresentedChanges` (#1386).
+ * Text-box, header/footer and note stories do not publish unrepresented
+ * changes, so there the comparison still refuses it.
+ */
 export class UnsupportedBlockContainerRevisionError extends Error {
-  readonly partPath = 'word/document.xml';
-  constructor(readonly change: 'insert' | 'delete', readonly container: 'sdt' | 'customXml') {
+  constructor(
+    readonly change: 'insert' | 'delete',
+    readonly container: 'sdt' | 'customXml',
+    readonly partPath: string = 'word/document.xml',
+  ) {
     super(`Unsupported ${change} of a block-level ${container} container`);
     this.name = 'UnsupportedBlockContainerRevisionError';
   }
 }
 
-/**
- * Distinguish block-level containers from run-level controls before revision wrapping.
- *
- * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
- * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
- * @see #1075
- */
-function isBlockContainer(element: WmlElement): element is WmlElement {
-  if (element.namespaceURI !== W_NS || !['sdt', 'customXml'].includes(element.localName)) return false;
-  const hasBlockContent = (container: WmlElement): boolean => {
-    const children = container.localName === 'sdt'
-      ? childElements(container)
-        .filter((child) => child.namespaceURI === W_NS && child.localName === 'sdtContent')
-        .flatMap((content) => childElements(content))
-      : childElements(container);
-    return children.some((child) => child.namespaceURI === W_NS
-      && (['p', 'tbl'].includes(child.localName)
-        || (['sdt', 'customXml'].includes(child.localName) && hasBlockContent(child))));
-  };
-  return hasBlockContent(element);
-}
 const OPERATION_PROVENANCE_ATTRIBUTE = 'data-safe-docx-operation';
 export const COMPARISON_REVISION_ATTRIBUTE = 'data-safe-docx-comparison-revision';
 const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
@@ -1306,6 +1295,49 @@ function markWholeTable(
   return table;
 }
 
+/**
+ * Track a whole inserted or deleted block-level `w:sdt` or `w:customXml`.
+ *
+ * Neither container may be a child of `w:ins`/`w:del`, so, as Word does for an
+ * inserted content control, the container stays live and its content carries
+ * the revision: every paragraph's mark and runs, and every row of a contained
+ * table. Nested block containers are walked the same way. Accept/Reject then
+ * remove the content; an emptied container is a reader concern (see the
+ * `contentControl` unrepresented change).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1386
+ */
+function markWholeBlockContainer(
+  container: WmlElement,
+  kind: 'ins' | 'del',
+  allocateRevision: () => ComparisonRevision,
+  operationIds: readonly string[],
+): WmlElement {
+  const content = container.localName === 'sdt'
+    ? childElements(container)
+      .filter((child) => child.namespaceURI === W_NS && child.localName === 'sdtContent')
+      .flatMap((sdtContent) => childElements(sdtContent))
+    : childElements(container);
+  for (const child of content) {
+    if (child.namespaceURI !== W_NS) continue;
+    if (child.localName === 'p') {
+      markWholeParagraph(child, kind, allocateRevision(), allocateRevision(), allocateRevision, operationIds);
+    } else if (child.localName === 'tbl') {
+      markWholeTable(child, kind, allocateRevision(), allocateRevision, operationIds);
+    } else if (isBlockContainer(child)) {
+      markWholeBlockContainer(child, kind, allocateRevision, operationIds);
+    }
+  }
+  return container;
+}
+
 const CHANGE_ELEMENT_BY_SCOPE = {
   run: 'w:rPrChange',
   paragraphMark: 'w:rPrChange',
@@ -2422,11 +2454,6 @@ function emitNode(
 ): WmlElement {
   const nodeRevision = allocateRevision();
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
-  if ((node.tag === 'original' || node.tag === 'revised') && isBlockContainer(base)) {
-    throw new UnsupportedBlockContainerRevisionError(
-      node.tag === 'revised' ? 'insert' : 'delete', base.localName as 'sdt' | 'customXml',
-    );
-  }
   if (!node.opaque && node.children.length > 0) {
     const directPropertyTag = DIRECT_PROPERTY_BY_CONTAINER[base.localName];
     const retainedProperty = directPropertyTag
@@ -2684,6 +2711,11 @@ function emitNode(
         base, 'del', revision, allocateRevision, operationProvenance(node),
       ), entry.originalStack);
     }
+    if (isBlockContainer(base)) {
+      return wrapPreserved(markWholeBlockContainer(
+        base, 'del', allocateRevision, operationProvenance(node),
+      ), entry.originalStack);
+    }
     return wrapPreserved(wrapRevision(
       base,
       relation ? 'moveFrom' : 'del',
@@ -2717,6 +2749,11 @@ function emitNode(
     if (!relation && base.namespaceURI === W_NS && base.localName === 'tbl') {
       return wrapPreserved(markWholeTable(
         base, 'ins', revision, allocateRevision, operationProvenance(node),
+      ), entry.revisedStack);
+    }
+    if (isBlockContainer(base)) {
+      return wrapPreserved(markWholeBlockContainer(
+        base, 'ins', allocateRevision, operationProvenance(node),
       ), entry.revisedStack);
     }
     return wrapPreserved(wrapRevision(

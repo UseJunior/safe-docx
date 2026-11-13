@@ -1,5 +1,6 @@
 import { childElements, inventoryTableOccupancy, parseXml, TableOccupancyError } from '@usejunior/docx-core';
 import type { TaggedNode } from './taggedTree.js';
+import { isBlockContainer } from './blockContainer.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -153,6 +154,15 @@ function guardUnmatchedTable(table: Element, tableIndex: number): void {
   }
 }
 
+function outermostTables(root: Element): Element[] {
+  return Array.from(root.getElementsByTagNameNS(W_NS, 'tbl')).filter((table) => {
+    for (let parent = table.parentElement; parent && parent !== root; parent = parent.parentElement) {
+      if (parent.namespaceURI === W_NS && parent.localName === 'tbl') return false;
+    }
+    return true;
+  });
+}
+
 /**
  * Fail before serialization when native comparison cannot express body-table topology.
  *
@@ -193,7 +203,11 @@ export function guardBodyTableTopology(tree: TaggedNode): void {
       }
     } else if (element.namespaceURI === W_NS && ['sdt', 'customXml'].includes(element.localName)
       && node.tag !== 'both') {
-      if (owner || element.getElementsByTagNameNS(W_NS, 'tbl').length > 0) {
+      if (isBlockContainer(element)) {
+        // A whole block container is tracked through its content (#1386); its
+        // tables are unmatched tables and face the same limits as any other.
+        for (const table of outermostTables(element)) guardUnmatchedTable(table, tableIndex++);
+      } else if (owner || element.getElementsByTagNameNS(W_NS, 'tbl').length > 0) {
         throw new UnsupportedTableTopologyComparisonError('tableContainer', owner?.index ?? tableIndex);
       }
     }

@@ -135,12 +135,25 @@ export type UnrepresentedChangeScope =
   | 'drawing';
 export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 
-/** Identity of the content control whose properties differ (`contentControl` scope). */
+/**
+ * Identity of the content control whose properties differ, or of a whole block
+ * container inserted or deleted (`contentControl` scope).
+ */
 export interface UnrepresentedContentControlChange {
-  /** Zero-based document-order ordinal among the revised document's content controls. */
+  /**
+   * Zero-based document-order ordinal among the revised document's content
+   * controls. For a whole container (`element` `sdt` or `customXml`), its
+   * ordinal among the comparison output's elements of that name.
+   */
   index: number;
-  /** The property element that differs. */
-  element: 'sdtPr' | 'sdtEndPr';
+  /**
+   * The property element that differs, or, for a whole block container present
+   * in one document only, the container (`sdt` or `customXml`). The redline
+   * tracks that container's paragraphs, runs and table rows, but no revision
+   * can wrap the container itself, so Reject All of an added one (Accept All
+   * of a removed one) leaves it empty, holding one empty paragraph.
+   */
+  element: 'sdtPr' | 'sdtEndPr' | 'sdt' | 'customXml';
   /** `w:id`, `w:tag` and `w:alias` from the control's `w:sdtPr` (revised side first), when present. */
   id?: string;
   tag?: string;
