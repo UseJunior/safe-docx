@@ -852,17 +852,32 @@ describe('block customXml boundary moves (#1102)', () => {
         opensField + retagged(closesField) + tail], ['added', 'removed']],
     ] as const;
 
-    // A field inside an earlier insertion: changing its instruction deletes
-    // part of that insertion, so some deleted field characters are in neither
-    // projection. They are left to the per-deletion rule (a review of this
-    // change found the story-wide rule threw on them).
-    for (const [kind, wrap] of crossingWrappers) {
+    // Fields inside earlier tracked changes. A character that is both
+    // inserted and deleted is in neither projection and stays deleted: a
+    // review of this change found the story-wide rule threw on such
+    // characters, and then that lifting them published an extra empty field.
+    const priorInsertion = (inner: string) => `<w:ins w:id="80" w:author="Prior" w:date="2026-01-01T00:00:00Z">${inner}</w:ins>`;
+    const priorDeletion = (inner: string) => `<w:del w:id="81" w:author="Prior" w:date="2026-01-01T00:00:00Z">${inner
+      .replaceAll('<w:t ', '<w:delText ').replaceAll('</w:t>', '</w:delText>')
+      .replaceAll('<w:instrText ', '<w:delInstrText ').replaceAll('</w:instrText>', '</w:delInstrText>')}</w:del>`;
+    const runsOf = (paragraph: string) => paragraph.slice('<w:p>'.length, -'</w:p>'.length);
+    const priorChangeCases = crossingWrappers.flatMap(([kind, wrap]) => [
+      [`a field inside an earlier insertion in a ${kind} changes its instruction`, [
+        wrap(`<w:p>${priorInsertion(run('See ') + field('REF _Ref1459 \\h', 'Section 1.1'))}</w:p>`) + para('Tail.'),
+        wrap(`<w:p>${priorInsertion(run('See ') + field('REF _Ref1462 \\h', 'Section 1.1'))}</w:p>`) + para('Tail.'),
+      ]],
+      [`a field inside earlier insertions crosses a ${kind} whose halves change sides`, [
+        wrap(`<w:p>${priorInsertion(runsOf(opensField))}</w:p>`) + `<w:p>${priorInsertion(runsOf(closesField))}</w:p>` + para('Tail.'),
+        `<w:p>${priorInsertion(runsOf(opensField))}</w:p>` + wrap(`<w:p>${priorInsertion(runsOf(closesField))}</w:p>`) + para('Tail.'),
+      ]],
+      [`a field inside earlier deletions crosses a ${kind} whose halves change sides`, [
+        wrap(`<w:p>${priorDeletion(runsOf(opensField))}</w:p>`) + `<w:p>${priorDeletion(runsOf(closesField))}</w:p>` + para('Tail.'),
+        `<w:p>${priorDeletion(runsOf(opensField))}</w:p>` + wrap(`<w:p>${priorDeletion(runsOf(closesField))}</w:p>`) + para('Tail.'),
+      ]],
+    ] as const);
+    for (const [name, [originalBody, revisedBody]] of priorChangeCases) {
       for (const detectMoves of [false, true]) {
-        crossingTest(`a field inside an earlier insertion in a ${kind} changes its instruction with detectMoves=${detectMoves}`, async () => {
-          const priorInsertion = (inner: string) => `<w:ins w:id="80" w:author="Prior" w:date="2026-01-01T00:00:00Z">${inner}</w:ins>`;
-          const fieldParagraph = (instruction: string) => `<w:p>${priorInsertion(run('See ') + field(instruction, 'Section 1.1'))}</w:p>`;
-          const originalBody = wrap(fieldParagraph('REF _Ref1459 \\h')) + para('Tail.');
-          const revisedBody = wrap(fieldParagraph('REF _Ref1462 \\h')) + para('Tail.');
+        crossingTest(`${name} with detectMoves=${detectMoves} resolves the earlier change as each source does`, async () => {
           const original = await buildDocxFromBodyXml(originalBody);
           const revised = await buildDocxFromBodyXml(revisedBody);
           const result = await compareDocuments(original, revised, { detectMoves });
@@ -875,9 +890,9 @@ describe('block customXml boundary moves (#1102)', () => {
           ] as const) {
             const native = parseXml(xml);
             nativeProject(native);
-            // Each projection resolves the earlier insertion as its source does.
-            expect(fieldShape(astProject(xml)), `${label} comparison acceptor`).toEqual(fieldShape(astProject(source)));
-            expect(fieldShape(serializeXml(native)), `${label} docx-core acceptor`).toEqual(fieldShape(astProject(source)));
+            const expected = fieldShape(astProject(source));
+            expect(fieldShape(astProject(xml)), `${label} comparison acceptor`).toEqual(expected);
+            expect(fieldShape(serializeXml(native)), `${label} docx-core acceptor`).toEqual(expected);
             expect(collectStrictFieldStructureIssues(astProject(xml)), `${label} fields`).toEqual([]);
           }
         });

@@ -421,11 +421,16 @@ function fieldCharactersKeptDeleted(root: WmlElement): Set<Element> {
   const kept = new Set<Element>();
   if (!rejected || !accepted) return kept;
   for (const field of deleted) {
-    // A character deleted inside an insertion (an earlier insertion this
-    // comparison deletes) is in neither projection; the per-deletion rule
-    // decides it, as before.
+    // A character that is both inserted and deleted (an earlier insertion
+    // this comparison deletes, or an earlier deletion inside content this
+    // comparison inserts) is in neither projection. Lifting it out of its
+    // deletion would leave it inside the insertion, live after Accept All,
+    // so it stays deleted.
     const members = rejected.get(field);
-    if (!members) continue;
+    if (!members) {
+      kept.add(field);
+      continue;
+    }
     const live = members.find((member) => !deleted.has(member));
     if (!live) {
       kept.add(field);
