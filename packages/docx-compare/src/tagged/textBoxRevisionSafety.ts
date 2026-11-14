@@ -1442,8 +1442,8 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
  * paragraphs that stay in the scaffold (those holding a field, a content
  * control or a drawing) are left out too: the story comparison carries a
  * change to them as `w:rPrChange` / `w:pPrChange`, exactly as for a plain
- * paragraph. A paragraph that already carries formatting history keeps its
- * properties (see `removeTrackableFormatting`). Only the eligibility gates
+ * paragraph. A paragraph whose mark is already inserted, deleted or moved
+ * keeps its properties (see `removeTrackableFormatting`). Only the eligibility gates
  * use it; the projection inventory keeps
  * the properties, so a formatting change the comparison dropped still fails
  * the projection check.
@@ -1577,10 +1577,11 @@ function removeTrackableRows(root: Element): void {
  */
 const trackableFormatting = { ignoreTrackableFormatting: true, ignoreTrackableRows: true } as const;
 
-/** Revision markup inside a property element: formatting history the paragraph already carries. */
-const PROPERTY_REVISION_CHILDREN = new Set([
-  'rPrChange',
-  'pPrChange',
+/**
+ * Paragraph-mark revision markers: a paragraph whose mark is already inserted,
+ * deleted or moved keeps its formatting in the scaffold.
+ */
+const PARAGRAPH_MARK_REVISION_CHILDREN = new Set([
   'ins',
   'del',
   'moveFrom',
@@ -1593,15 +1594,16 @@ const PROPERTY_REVISION_CHILDREN = new Set([
  * Content-control properties (`w:sdtPr`, `w:sdtEndPr`) and table properties
  * are not touched, so a change to them stays a scaffold change.
  *
- * A paragraph that already carries formatting history (a revision record in
- * its paragraph properties, paragraph-mark properties or any run's
- * properties) keeps all of its formatting: a new formatting revision there
- * would have to merge with the existing record, which the story comparison
- * does not do, so a change to it stays a scaffold change and is listed.
+ * Formatting that already carries a pending `w:rPrChange` / `w:pPrChange` is
+ * removed too: the story comparison layers a new formatting revision onto it
+ * as one schema-valid record set (see `layeredFormattingRevision.ts`, #1461).
+ * A paragraph whose mark is already inserted, deleted or moved keeps all of
+ * its formatting, so a change to it stays a scaffold change and is listed.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @see https://github.com/UseJunior/safe-docx/issues/1461
  */
 function removeTrackableFormatting(root: Element): void {
   const isW = (element: Element | null, localName: string): boolean =>
@@ -1613,12 +1615,10 @@ function removeTrackableFormatting(root: Element): void {
       : undefined;
     const runProperties = Array.from(paragraph.getElementsByTagNameNS(OOXML.W_NS, 'rPr'))
       .filter((properties) => isW(properties.parentElement, 'r'));
-    const properties = [paragraphProperties, markProperties, ...runProperties]
-      .filter((element): element is Element => element !== undefined);
-    const hasHistory = properties.some((element) => directChildElements(element).some(
-      (child) => child.namespaceURI === OOXML.W_NS && PROPERTY_REVISION_CHILDREN.has(child.localName),
-    ));
-    if (hasHistory) continue;
+    const markRevised = !!markProperties && directChildElements(markProperties).some(
+      (child) => child.namespaceURI === OOXML.W_NS && PARAGRAPH_MARK_REVISION_CHILDREN.has(child.localName),
+    );
+    if (markRevised) continue;
     for (const element of runProperties) element.parentNode?.removeChild(element);
     if (paragraphProperties) {
       // `w:sectPr` is not formatting `w:pPrChange` records (CT_PPrBase).

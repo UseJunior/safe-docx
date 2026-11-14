@@ -43,8 +43,11 @@ eligibility checks it SHALL also leave out the run properties, paragraph-mark
 run properties and paragraph properties of the paragraphs it keeps (those
 holding a field, content control or drawing), because `w:rPrChange` and
 `w:pPrChange` record a change to them; content-control properties and field
-instructions stay in it, and so does all formatting of a paragraph that
-already carries a formatting revision record. The eligibility checks SHALL
+instructions stay in it, and so does all formatting of a paragraph whose
+mark is already inserted, deleted or moved. A paragraph that already carries
+a `w:rPrChange` or `w:pPrChange` record is compared like any other; the new
+formatting revision is layered without nesting or duplicating a record.
+The eligibility checks SHALL
 also leave out each row of a table placed directly in the story whose
 paragraphs are all admitted ordinary paragraphs and which carries no revision
 record, because the story comparison tracks such a row as inserted or deleted
@@ -72,7 +75,7 @@ MUST NOT be silently represented as an ordinary text edit.
 - **AND** accept-all SHALL recover the revised formatting and reject-all the original formatting, with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`
 - **AND** the story SHALL NOT remain in `unrepresentedChanges`
 - **AND** a change to a field instruction, a content control's own properties, or the presence of a field or content control SHALL still be listed
-- **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL still be listed, never emitted as a nested or duplicate formatting revision
+- **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL also be tracked, with at most one formatting revision per property element and never a nested or duplicate one, while reject-all SHALL recover the original document's rejected formatting
 
 #### Scenario: [SDX-CMP-STORY-07] Header and footer table rows are tracked as whole-row revisions
 - **GIVEN** a paired default, first or even header or footer, or a text box inside one, whose table gains or loses a row of ordinary paragraphs (at the start, in the middle or at the end, beside an edit to another row, or beside a row holding a `PAGE` field), or whose row skeleton changes within an unchanged grid
