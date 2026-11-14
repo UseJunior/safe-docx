@@ -25,6 +25,7 @@
  */
 
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
+import { revisionStoryPartPaths } from '../tagged/revisionMarkup.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
@@ -54,8 +55,6 @@ export const REVISION_ANNOTATION_NAMES: ReadonlySet<string> = new Set([
   'tcPrChange',
   'numberingChange',
 ]);
-
-const STORY_PART = /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/;
 
 export interface RevisionIdOccurrence {
   part: string;
@@ -102,12 +101,13 @@ export function duplicateRevisionIdsInXml(xml: string, part?: string): string[] 
 
 /**
  * Duplicate revision identifiers across every story part of a package
- * (document scope). Empty when the package is conformant.
+ * (document scope), found by relationship as well as by name. Empty when the
+ * package is conformant.
  */
 export async function duplicateRevisionIdsInPackage(buffer: Buffer): Promise<string[]> {
   const archive = await DocxArchive.load(buffer);
   const occurrences: RevisionIdOccurrence[] = [];
-  for (const part of archive.listFiles().filter((path) => STORY_PART.test(path)).sort()) {
+  for (const part of await revisionStoryPartPaths(archive)) {
     const xml = await archive.getFile(part);
     if (xml) occurrences.push(...revisionIdOccurrences(xml, part));
   }

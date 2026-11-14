@@ -36,7 +36,7 @@ import {
   revisionIdOccurrences,
 } from '../testing/revisionIdUniqueness.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
-import { renumberDuplicateRevisionIds } from './revisionMarkup.js';
+import { renumberDuplicateRevisionIds, renumberDuplicateRevisionIdsAcrossParts } from './revisionMarkup.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
 const test = testAllure
@@ -141,7 +141,7 @@ async function assertSchema(buffer: Buffer): Promise<void> {
 }
 
 /** A one-section document whose default footer holds `footerXml` paragraphs. */
-async function buildWithFooter(bodyXml: string, footerXml: string): Promise<Buffer> {
+async function buildWithFooter(bodyXml: string, footerXml: string, footerPart = 'footer1.xml'): Promise<Buffer> {
   const base = await buildDocxFromBodyXml(bodyXml, [], { namespaces: { r: R_NS } });
   const archive = await DocxArchive.load(base);
   archive.setDocumentXml((await archive.getDocumentXml()).replace(
@@ -151,18 +151,17 @@ async function buildWithFooter(bodyXml: string, footerXml: string): Promise<Buff
   archive.setFile(
     'word/_rels/document.xml.rels',
     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      `<Relationship Id="rIdFooter" Type="${R_NS}/footer" Target="footer1.xml"/></Relationships>`,
+      `<Relationship Id="rIdFooter" Type="${R_NS}/footer" Target="${footerPart}"/></Relationships>`,
   );
-  archive.setFile('word/footer1.xml', `<?xml version="1.0"?><w:ftr xmlns:w="${W_NS}">${footerXml}</w:ftr>`);
+  archive.setFile(`word/${footerPart}`, `<?xml version="1.0"?><w:ftr xmlns:w="${W_NS}">${footerXml}</w:ftr>`);
   return archive.save();
 }
-
-const STORY_PARTS = ['word/document.xml', 'word/footer1.xml'] as const;
 
 interface Case {
   name: string;
   original: () => Promise<Buffer>;
   revised: () => Promise<Buffer>;
+  footerPart?: string;
 }
 
 const cases: readonly Case[] = [
@@ -191,6 +190,12 @@ const cases: readonly Case[] = [
     original: () => buildWithFooter(paragraph(run('Body keep')), paragraph(pendingRun('Footer old words'))),
     revised: () => buildWithFooter(paragraph(run('Body keep')) + paragraph(pendingRun('New text')), paragraph(run('Footer new'))),
   },
+  {
+    name: 'the same collision sits in a footer part with an unconventional file name',
+    original: () => buildWithFooter(paragraph(run('Body keep')), paragraph(pendingRun('Footer old words')), 'footer-custom.xml'),
+    revised: () => buildWithFooter(paragraph(run('Body keep')) + paragraph(pendingRun('New text')), paragraph(run('Footer new')), 'footer-custom.xml'),
+    footerPart: 'word/footer-custom.xml',
+  },
 ];
 
 async function partXml(buffer: Buffer, part: string): Promise<string | null> {
@@ -206,6 +211,7 @@ describe('revision identifiers stay unique when the comparison splits or combine
         return inputs;
       });
       const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      const storyParts = ['word/document.xml', item.footerPart ?? 'word/footer1.xml'];
 
       await then('no two revisions in any story part share an identifier, and the package passes the schema gate', async () => {
         expect(result.unrepresentedChanges).toBeUndefined();
@@ -214,7 +220,7 @@ describe('revision identifiers stay unique when the comparison splits or combine
       });
 
       await then('Accept All gives the revised document and Reject All the original, with both appliers', async () => {
-        for (const part of STORY_PARTS) {
+        for (const part of storyParts) {
           const comparedXml = await partXml(result.document, part);
           if (comparedXml === null) continue;
           const originalXml = (await partXml(original, part))!;
@@ -229,7 +235,7 @@ describe('revision identifiers stay unique when the comparison splits or combine
       });
 
       await then('resolving only the comparison revisions, selected by identifier, gives each input with its pending records', async () => {
-        for (const part of STORY_PARTS) {
+        for (const part of storyParts) {
           const comparedXml = await partXml(result.document, part);
           if (comparedXml === null) continue;
           expect(storyView(projectComparisonLayerById(comparedXml, 'reject'), true), part)
@@ -264,6 +270,44 @@ describe('revision identifiers stay unique when the comparison splits or combine
       const document = parseXml(renumbered.xml);
       expect(document.getElementsByTagNameNS(W_NS, 'moveFromRangeEnd')[0]!.getAttributeNS(W_NS, 'id')).toBe('5');
       expect(document.getElementsByTagNameNS(W_NS, 'moveToRangeEnd')[0]!.getAttributeNS(W_NS, 'id')).toBe('101');
+    });
+  });
+
+  test('pairs a range end with its start by decimal value when renumbering', async ({ given, when, then }: AllureBddContext) => {
+    const xml = await given('a repeated move range whose start writes the identifier 05 and whose end writes 5', () =>
+      `<w:body xmlns:w="${W_NS}">` +
+      paragraph('<w:moveFromRangeStart w:id="5" w:name="m"/><w:moveFrom w:id="6">' + run('moved') + '</w:moveFrom><w:moveFromRangeEnd w:id="5"/>') +
+      paragraph('<w:moveToRangeStart w:id="05" w:name="m"/><w:moveTo w:id="7">' + run('moved') + '</w:moveTo><w:moveToRangeEnd w:id="5"/>') +
+      '</w:body>');
+    const renumbered = await when('the repeated identifier is renumbered', () => {
+      const document = parseXml(xml);
+      let next = 100;
+      renumberDuplicateRevisionIds(document.documentElement, () => next++);
+      return parseXml(serializeXml(document));
+    });
+    await then('the start and the end that closes it get the same fresh identifier', () => {
+      expect(renumbered.getElementsByTagNameNS(W_NS, 'moveToRangeStart')[0]!.getAttributeNS(W_NS, 'id')).toBe('100');
+      expect(renumbered.getElementsByTagNameNS(W_NS, 'moveToRangeEnd')[0]!.getAttributeNS(W_NS, 'id')).toBe('100');
+      expect(renumbered.getElementsByTagNameNS(W_NS, 'moveFromRangeEnd')[0]!.getAttributeNS(W_NS, 'id')).toBe('5');
+    });
+  });
+
+  test('keeps the comparison revision identifier against a copy in another part', async ({ given, when, then }: AllureBddContext) => {
+    const input = await given('a main-story pending record and a footer comparison insertion with the same identifier', () =>
+      buildWithFooter(
+        paragraph(pendingRun('Body text')),
+        paragraph(`<w:ins w:id="71" w:author="${COMPARE_OPTIONS.author}" w:date="2026-11-14T00:00:00Z">${run('Footer')}</w:ins>`),
+        'footer-custom.xml',
+      ));
+    const output = await when('identifiers are made unique across the parts', () =>
+      renumberDuplicateRevisionIdsAcrossParts(input, (element) => element.getAttributeNS(W_NS, 'author') === COMPARE_OPTIONS.author));
+    await then('the footer insertion keeps 71 and the main-story record gets a fresh identifier', async () => {
+      expect(await duplicateRevisionIdsInPackage(input)).not.toEqual([]);
+      expect(await duplicateRevisionIdsInPackage(output)).toEqual([]);
+      expect(revisionIdOccurrences((await partXml(output, 'word/footer-custom.xml'))!)
+        .map(({ name, id }) => `${name}#${id}`)).toEqual(['ins#71']);
+      expect(revisionIdOccurrences((await partXml(output, 'word/document.xml'))!)
+        .map(({ name, id }) => `${name}#${id}`)).not.toContain('rPrChange#71');
     });
   });
 });

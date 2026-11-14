@@ -3,6 +3,7 @@ import {
   DocxArchive,
   findChildByTagName,
   insertAfterElement,
+  normalizeOpcRelationshipTarget,
   parseXml,
   serializeXml,
   wrapElement,
@@ -134,7 +135,8 @@ export function collectRevisionAnnotations(root: Element): Array<{ element: Elem
     if (element.namespaceURI === MC_NS && element.localName === 'Fallback') return;
     if (element.namespaceURI === W_NS) {
       const name = element.localName;
-      const id = element.getAttributeNS(W_NS, 'id') ?? '';
+      const raw = element.getAttributeNS(W_NS, 'id') ?? '';
+      const id = canonicalDecimalId(raw) ?? raw;
       if (REVISION_ANNOTATION_LOCAL_NAMES.has(name)) {
         const entry = { element, ends: [] as Element[] };
         out.push(entry);
@@ -187,18 +189,36 @@ export function renumberDuplicateRevisionIds(
   allocate: () => number,
   options: RenumberRevisionIdOptions = {},
 ): number {
-  const reserved = options.reserved ?? new Set<string>();
-  const annotations = collectRevisionAnnotations(root).flatMap(({ element, ends }) => {
+  return renumberAnnotations(revisionAnnotationsWithIds(root), allocate, options).size;
+}
+
+interface IdentifiedAnnotation {
+  element: Element;
+  ends: Element[];
+  id: string;
+}
+
+function revisionAnnotationsWithIds(root: Element): IdentifiedAnnotation[] {
+  return collectRevisionAnnotations(root).flatMap(({ element, ends }) => {
     const raw = element.getAttributeNS(W_NS, 'id');
     return raw === null ? [] : [{ element, ends, id: canonicalDecimalId(raw) ?? raw }];
   });
+}
+
+/** Renumber repeated identifiers in `annotations` (in order); returns the renumbered elements. */
+function renumberAnnotations(
+  annotations: readonly IdentifiedAnnotation[],
+  allocate: () => number,
+  options: RenumberRevisionIdOptions,
+): Set<Element> {
+  const reserved = options.reserved ?? new Set<string>();
   const owners = new Map<string, Element>();
   if (options.keep) {
     for (const { element, id } of annotations) {
       if (!reserved.has(id) && !owners.has(id) && options.keep(element)) owners.set(id, element);
     }
   }
-  let renumbered = 0;
+  const renumbered = new Set<Element>();
   for (const { element, ends, id } of annotations) {
     const owner = owners.get(id);
     if (owner === element) continue;
@@ -211,15 +231,44 @@ export function renumberDuplicateRevisionIds(
     owners.set(fresh, element);
     element.setAttributeNS(W_NS, 'w:id', fresh);
     for (const end of ends) end.setAttributeNS(W_NS, 'w:id', fresh);
-    renumbered++;
+    renumbered.add(element);
   }
   return renumbered;
 }
 
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
-/** Story parts other than the main story whose markup can hold revisions. */
+const MAIN_STORY_PART = 'word/document.xml';
+/** Conventional names of the story parts other than the main story. */
 const REVISION_STORY_PART = /^word\/(header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/u;
+/** Relationship types of the main story's parts that hold their own stories. */
+const STORY_RELATIONSHIP_TYPE = /\/officeDocument\/2006\/relationships\/(header|footer|footnotes|endnotes|comments)$/u;
+
+/**
+ * The main story first, then every other part that holds a story: each
+ * header, footer, footnotes, endnotes or comments part the main story's
+ * relationships target (whatever its file name), plus any part with the
+ * conventional name.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ */
+export async function revisionStoryPartPaths(archive: DocxArchive): Promise<string[]> {
+  const paths = new Set(archive.listFiles().filter((path) => REVISION_STORY_PART.test(path)));
+  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
+  if (relationshipsXml !== null) {
+    for (const relationship of Array.from(parseXml(relationshipsXml).getElementsByTagName('Relationship'))) {
+      if (relationship.getAttribute('TargetMode') === 'External') continue;
+      if (!STORY_RELATIONSHIP_TYPE.test(relationship.getAttribute('Type') ?? '')) continue;
+      const target = relationship.getAttribute('Target');
+      if (!target) continue;
+      const path = normalizeOpcRelationshipTarget({ ownerPart: MAIN_STORY_PART, target }).target;
+      if (path && archive.hasFile(path)) paths.add(path);
+    }
+  }
+  paths.delete(MAIN_STORY_PART);
+  return [MAIN_STORY_PART, ...[...paths].sort()];
+}
 
 /**
  * Make revision identifiers unique across the whole document. Parts are
@@ -240,10 +289,9 @@ export async function renumberDuplicateRevisionIdsAcrossParts(
   keep?: (element: Element) => boolean,
 ): Promise<Buffer> {
   const archive = await DocxArchive.load(document);
-  const storyParts = archive.listFiles().filter((path) => REVISION_STORY_PART.test(path)).sort();
   const parts: Array<{ path: string; root: Element }> = [];
   const state = createRevisionIdState();
-  for (const path of ['word/document.xml', ...storyParts]) {
+  for (const path of await revisionStoryPartPaths(archive)) {
     const xml = await archive.getFile(path);
     if (xml === null) continue;
     const root = parseXml(xml).documentElement;
@@ -257,20 +305,17 @@ export async function renumberDuplicateRevisionIdsAcrossParts(
   }
   if (maximum >= BigInt(Number.MAX_SAFE_INTEGER)) return document;
   state.nextId = Number(maximum) + 1;
-  const reserved = new Set<string>();
-  let changed = false;
+  // One pass over every part in order, so the comparison's own revisions keep
+  // their identifiers against a copy in any part.
+  const annotations = parts.flatMap(({ root }) => revisionAnnotationsWithIds(root));
+  const renumbered = renumberAnnotations(annotations, () => allocateRevisionId(state), { keep });
+  if (renumbered.size === 0) return document;
   for (const { path, root } of parts) {
-    if (renumberDuplicateRevisionIds(root, () => allocateRevisionId(state), { reserved, keep }) > 0) {
-      const serialized = serializeXml(root.ownerDocument!);
-      archive.setFile(path, serialized.startsWith('<?xml') ? serialized : XML_DECLARATION + serialized);
-      changed = true;
-    }
-    for (const { element } of collectRevisionAnnotations(root)) {
-      const raw = element.getAttributeNS(W_NS, 'id');
-      if (raw !== null) reserved.add(canonicalDecimalId(raw) ?? raw);
-    }
+    if (!annotations.some(({ element }) => renumbered.has(element) && element.ownerDocument === root.ownerDocument)) continue;
+    const serialized = serializeXml(root.ownerDocument!);
+    archive.setFile(path, serialized.startsWith('<?xml') ? serialized : XML_DECLARATION + serialized);
   }
-  return changed ? archive.save() : document;
+  return archive.save();
 }
 
 /** Format a date for OOXML (ISO 8601 without milliseconds). */
