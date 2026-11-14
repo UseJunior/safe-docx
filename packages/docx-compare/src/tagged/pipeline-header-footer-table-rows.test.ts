@@ -33,7 +33,7 @@ import {
   OOXML,
   parseXml,
 } from '@usejunior/docx-core';
-import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
+import { buildDocxFromBodyXml, COMPLETE_NUMPAGES_FIELD } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { compareDocumentsAtomizer, type TaggedCompareResult } from './pipeline.js';
@@ -580,15 +580,9 @@ describe('a table inside a header text box (#1393)', { timeout: LOAD_SENSITIVE_T
   );
 });
 
-const numPagesField = (): string =>
-  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
-  '<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>' +
-  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
-  '<w:r><w:t>3</w:t></w:r>' +
-  '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
 const PAGE_ROW = row('Page', text('Page ') + pageField());
 /** A "Page X of Y" row: PAGE and NUMPAGES fields in one cell. */
-const PAGE_OF_ROW = row('Page', text('Page ') + pageField() + text(' of ') + numPagesField());
+const PAGE_OF_ROW = row('Page', text('Page ') + pageField() + text(' of ') + COMPLETE_NUMPAGES_FIELD);
 
 /**
  * A header or footer table row that holds a field, a content control, range
@@ -675,7 +669,7 @@ describe('header and footer table changes the row revisions cannot carry stay li
       // A field instruction change in a paired row is listed, as in a paragraph (SDX-CMP-STORY-06).
       name: 'a kept row whose PAGE field becomes a NUMPAGES field',
       original: story(COMPANY, PAGE_ROW),
-      revised: story(COMPANY, row('Page', text('Page ') + numPagesField())),
+      revised: story(COMPANY, row('Page', text('Page ') + COMPLETE_NUMPAGES_FIELD)),
     },
     {
       name: 'a PAGE-field row that gains a NUMPAGES field',
