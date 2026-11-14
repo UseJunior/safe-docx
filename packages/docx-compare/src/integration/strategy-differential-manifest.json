@@ -493,8 +493,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 928785,
-            "sha256": "aea14f244134614a39658172e04cb803f1af2b7f84750296e19b6e372b0b779f",
+            "bytes": 928778,
+            "sha256": "fc14262e202c6e5423a9a29fc7dcbdef8b1a0f02c4b4e0d5a220b522fdc7bffb",
             "kind": "xml"
           },
           {
@@ -584,7 +584,7 @@
           {
             "path": "word/footnotes.xml",
             "bytes": 29013,
-            "sha256": "95f22b5856693eee3ef87da723a3a40825245d9ac433b03bb0eada787aa8a629",
+            "sha256": "55fe6f72ff6fdd2838ce5735b3891544f45f207789c8b98b127af0dffc9501f5",
             "kind": "xml"
           },
           {

@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect } from 'vitest';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
+import { duplicateRevisionIdsInPackage } from '../testing/revisionIdUniqueness.js';
 import {
   acceptChanges,
   collectStrictFieldStructureIssues,
@@ -97,6 +98,7 @@ function blockStructure(xml: string, dropEmptied = false): { shape: string; empt
 async function assertTrackedContainer(original: Buffer, revised: Buffer, kind: 'ins' | 'del'): Promise<void> {
   const result = await compareDocuments(original, revised);
   await assertSchema(result.document);
+  expect(await duplicateRevisionIdsInPackage(result.document)).toEqual([]);
   const xml = await (await DocxArchive.load(result.document)).getDocumentXml();
   const document = parseXml(xml);
   for (const tag of ['ins', 'del']) {
