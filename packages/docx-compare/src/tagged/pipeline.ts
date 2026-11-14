@@ -118,6 +118,9 @@ import {
 import {
   allocateRevisionId,
   createRevisionIdState,
+  formatDate,
+  renumberDuplicateRevisionIds,
+  renumberDuplicateRevisionIdsAcrossParts,
 } from './revisionMarkup.js';
 import {
   assembleTextBoxStoryComparison,
@@ -377,25 +380,47 @@ function relationshipPartRelsPath(partPath: string): string {
 }
 
 /**
+ * Whether a revision was written by this comparison (its author, and its
+ * date when the caller fixed one), so its identifier stays put when a
+ * preserved copy shares it.
+ */
+function comparisonRevisionPredicate(author: string, date?: Date): (element: Element) => boolean {
+  const stamp = date ? formatDate(date) : undefined;
+  return (element) => element.getAttribute('w:author') === author &&
+    (stamp === undefined || element.getAttribute('w:date') === stamp);
+}
+
+/**
  * Apply consumer-facing repairs to the complete tagged main story before its
  * bytes enter the publication gates. Bookmark identifiers and revision
  * identifiers are distinct OOXML spaces, but every surviving numeric `w:id`
  * is conservatively reserved so a split wrapper cannot collide with either.
+ * A pending revision repeated on the fragments of a split run, or carried
+ * from both documents, then gets its own identifier (#1466).
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.45
  */
-function finalizeTaggedDocumentXml(documentXml: string): string {
+function finalizeTaggedDocumentXml(
+  documentXml: string,
+  minimumRevisionId = 1,
+  isComparisonRevision?: (element: Element) => boolean,
+): string {
   const document = parseXml(documentXml);
   const root = document.documentElement;
   const revisionIds = createRevisionIdState([root]);
+  // A nested story's identifiers start above every identifier the package
+  // already holds, so a repair here cannot reuse one from another part.
+  revisionIds.nextId = Math.max(revisionIds.nextId, minimumRevisionId);
   enforceConsumerCompatibility(
     root,
     () => allocateRevisionId(revisionIds),
     { repairBookmarkInventory: false },
   );
+  renumberDuplicateRevisionIds(root, () => allocateRevisionId(revisionIds), { keep: isComparisonRevision });
   const serialized = coalesceProjectionEquivalentBookmarkSplits(
     new XMLSerializer().serializeToString(document),
   );
@@ -499,7 +524,11 @@ export async function buildStandaloneTaggedPackage(
       taggedOriginalXml,
       taggedRevisedXml,
       finalizedPublication: consumeTaggedPublicationStatistics(
-        finalizeTaggedDocumentXml(taggedPublication.xml),
+        finalizeTaggedDocumentXml(
+          taggedPublication.xml,
+          options.minimumRevisionId,
+          comparisonRevisionPredicate(options.author, options.date),
+        ),
         taggedPublication.stats,
       ),
       unrepresentedChanges: taggedPublication.unrepresentedChanges,
@@ -1898,11 +1927,19 @@ export async function compareDocumentsAtomizer(
         .filter((slot) => slot.side === 'revised' && slot.copiedFrom === undefined)
         .map((slot) => slot.partPath)),
     };
-    const result = await withPicturePayloadAudit(
+    const audited = await withPicturePayloadAudit(
       normalized.original,
       normalized.revised,
       await compareDocumentsTagged(normalized.original, normalized.revised, options, blankSlotParts),
     );
+    // Revision identifiers are unique across the document, not per part (#1466).
+    const result = {
+      ...audited,
+      document: await renumberDuplicateRevisionIdsAcrossParts(
+        audited.document,
+        comparisonRevisionPredicate(options.author ?? 'Comparison', options.date),
+      ),
+    };
     return result.unrepresentedChanges && normalized.slots.length > 0
       ? { ...result, unrepresentedChanges: reportSlotChangesAgainstInputs(result.unrepresentedChanges, normalized.slots) }
       : result;
