@@ -45,3 +45,4 @@
 - [x] 6.4 Run the mandatory build, lint, test, spec-coverage, and conformance gates.
 - [ ] 6.5 Obtain Claude Fable implementation review, resolve all findings, merge, and run post-merge smoke verification.
 - [x] 6.6 Track formatting-only changes in header/footer paragraphs that hold a field, content control or drawing with `w:rPrChange`/`w:pPrChange` instead of listing them (#1392).
+- [x] 6.7 Track a header/footer table row of ordinary paragraphs inserted or deleted (and a row skeleton change within an unchanged grid) with whole-row `w:trPr/w:ins`/`w:trPr/w:del` revisions under the main-body table-topology guard instead of listing it (#1393).
