@@ -953,16 +953,18 @@ reader('LibreOffice resolves a whole inserted or deleted block container', () =>
     }
     const states = await runLibreOfficeOracle(jobs);
     const report: string[] = [];
+    const checks: Array<[string, string, string]> = [];
     labels.forEach((label, index) => {
       const [originalState, revisedState, accepted, rejected] = states.slice(index * 4, index * 4 + 4) as [string, string, string, string];
       report.push(`${label}\n  original ${fieldText(originalState)}\n  revised  ${fieldText(revisedState)}`
         + `\n  accept   ${fieldText(accepted)}\n  reject   ${fieldText(rejected)}`);
-      expect(fieldText(accepted), `${label} accept`).toBe(fieldText(revisedState));
-      expect(fieldText(rejected), `${label} reject`).toBe(fieldText(originalState));
+      checks.push([`${label} accept`, fieldText(accepted), fieldText(revisedState)]);
+      checks.push([`${label} reject`, fieldText(rejected), fieldText(originalState)]);
     });
     if (process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REPORT) {
       const { appendFileSync } = await import('node:fs');
       appendFileSync(process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REPORT, `\n${report.join('\n')}`);
     }
+    for (const [label, actual, expected] of checks) expect(actual, label).toBe(expected);
   }, 900_000);
 });

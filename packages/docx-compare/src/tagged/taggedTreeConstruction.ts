@@ -1183,6 +1183,25 @@ function constructBoth(
         ));
       }
     }
+    // Side-only content is emitted deleted first, except when the deleted
+    // content opens a field that it does not close and the inserted content
+    // closes one it does not open, as when the halves of a field crossing a
+    // container boundary change sides. Deleted-first would then nest the
+    // deleted field inside the inserted field's result in the redline's
+    // combined field sequence; a reader that resolves fields across the
+    // whole redline before applying revisions (LibreOffice) then replaces
+    // that result and loses the text inside it. Inserted-first keeps the two
+    // fields one after the other (#1462).
+    const fieldDepth = (elements: readonly WmlElement[]): number => elements.reduce((depth, element) =>
+      depth + Array.from(element.getElementsByTagNameNS(W, 'fldChar')).reduce((sum, fieldChar) => {
+        const type = fieldChar.getAttributeNS(W, 'fldCharType');
+        return sum + (type === 'begin' ? 1 : type === 'end' ? -1 : 0);
+      }, 0), 0);
+    const insertedFirst = fieldDepth(originalChildren.slice(oi, originalEnd)) > 0
+      && fieldDepth(revisedChildren.slice(ri, revisedEnd)) < 0;
+    if (insertedFirst) {
+      while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
+    }
     while (oi < originalEnd) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
     while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
   };
