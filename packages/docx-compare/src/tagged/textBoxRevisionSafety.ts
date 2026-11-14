@@ -2744,11 +2744,47 @@ async function ancillaryStoryInputs(
     const original = storage.boxes.length > 0
       ? { ...pair.original, xml: storage.xml, textBoxes: partTextBoxes(storage.xml) }
       : pair.original;
+    // A box whose drawing changed (a resize, a move) is spliced into the
+    // revised drawing and listed with the `drawing` scope (#1382), so the
+    // part's ordinary text is compared against the original with those
+    // drawings already aligned. Comparing the unaligned scaffold would skip
+    // the ordinary story whenever a box beside it was resized, leaving the
+    // ordinary edit untracked (#1448).
+    const shapedBoxes: Array<{ index: number; change: DrawingShapeChange }> = [];
+    if (original.textBoxes.length === pair.revised.textBoxes.length) {
+      for (let index = 0; index < original.textBoxes.length; index += 1) {
+        const originalTextBox = original.textBoxes[index]!;
+        const revisedTextBox = pair.revised.textBoxes[index]!;
+        const shapeChange = drawingShapeChange(originalTextBox, revisedTextBox);
+        if (
+          shapeChange &&
+          copyIdentityTokens(originalTextBox).join('|') === copyIdentityTokens(revisedTextBox).join('|')
+        ) {
+          shapedBoxes.push({ index, change: shapeChange });
+        }
+      }
+    }
+    const drawingAlignedXml = shapedBoxes.length > 0
+      ? partXmlWithRevisedDrawings(
+        original.xml,
+        pair.revised.xml,
+        shapedBoxes.map(({ index }) => index),
+      )
+      : original.xml;
+    const ordinaryOriginalXml = drawingAlignedXml ?? original.xml;
+    // A listed drawing describes only its own box: a group, another shape
+    // beside it or a shared template it changed keeps the part's own entry.
+    const drawingsDescribeOnlyTheirBoxes = shapedBoxes.every(({ index, change }) =>
+      isSoleDrawingShape(original.textBoxes[index]!, change.originalContainer) &&
+      isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer) &&
+      shapeTemplatesAgree(change.originalContainer, change.revisedContainer));
     if (
       topologyMatches
       && pair.bindingClosureMatched
       && original.ordinaryContent !== pair.revised.ordinaryContent
-      && ordinaryStoryScaffoldFingerprint(original.xml, trackableFormatting)
+      && (shapedBoxes.length === 0
+        || ordinaryStoryContentFingerprint(ordinaryOriginalXml) !== pair.revised.ordinaryContent)
+      && ordinaryStoryScaffoldFingerprint(ordinaryOriginalXml, trackableFormatting)
         === ordinaryStoryScaffoldFingerprint(pair.revised.xml, trackableFormatting)
     ) {
       const originalTargets = relationshipTargets(original.relationshipsXml);
@@ -2766,7 +2802,7 @@ async function ancillaryStoryInputs(
         const storyRevisedArchive = await revisedArchive.clone();
         storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
           originalDocumentXml,
-          partXmlWithRevisedTextBoxes(original.xml, pair.revised.xml),
+          partXmlWithRevisedTextBoxes(ordinaryOriginalXml, pair.revised.xml),
         ));
         storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
           revisedDocumentXml,
@@ -2789,13 +2825,15 @@ async function ancillaryStoryInputs(
           original: await storyOriginalArchive.save(),
           revised: await storyRevisedArchive.save(),
         });
-        representedChanges.push(...pair.revised.bindings.map((binding) => ({
-          scope: binding.kind,
-          kind: 'changed' as const,
-          sectionIndex: binding.sectionOrdinal,
-          role: binding.role,
-          partPath: pair.revised.targetPath,
-        })));
+        if (drawingsDescribeOnlyTheirBoxes) {
+          representedChanges.push(...pair.revised.bindings.map((binding) => ({
+            scope: binding.kind,
+            kind: 'changed' as const,
+            sectionIndex: binding.sectionOrdinal,
+            role: binding.role,
+            partPath: pair.revised.targetPath,
+          })));
+        }
       }
     }
     const originalVisualOrdinals = partVisualTextBoxOrdinals(original.xml);
@@ -2834,7 +2872,6 @@ async function ancillaryStoryInputs(
     // comparison being refused (#1430).
     const originalTargets = relationshipTargets(original.relationshipsXml);
     const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
-    const shapedBoxes: Array<{ index: number; change: DrawingShapeChange }> = [];
     for (let index = 0; index < original.textBoxes.length; index += 1) {
       const originalTextBox = original.textBoxes[index]!;
       const revisedTextBox = pair.revised.textBoxes[index]!;
@@ -2848,7 +2885,6 @@ async function ancillaryStoryInputs(
       const shapeChange = drawingShapeChange(originalTextBox, revisedTextBox);
       const replacedDrawing = shapeChange !== undefined &&
         copyIdentityTokens(originalTextBox).join('|') !== copyIdentityTokens(revisedTextBox).join('|');
-      if (shapeChange && !replacedDrawing) shapedBoxes.push({ index, change: shapeChange });
       const originalRelationshipClosure = relationshipClosureFingerprint(
         originalTextBox,
         originalTargets,
@@ -2925,13 +2961,7 @@ async function ancillaryStoryInputs(
       });
     }
     if (shapedBoxes.length > 0 || storage.boxes.length > 0) {
-      const alignedXml = shapedBoxes.length > 0
-        ? partXmlWithRevisedDrawings(
-          original.xml,
-          pair.revised.xml,
-          shapedBoxes.map(({ index }) => index),
-        )
-        : original.xml;
+      const alignedXml = drawingAlignedXml;
       if (alignedXml !== undefined) {
         drawingAlignedOriginalParts.set(original.targetPath, alignedXml);
         // The part's entry is represented when its stories and drawings are
@@ -2939,10 +2969,7 @@ async function ancillaryStoryInputs(
         // the drawings listed. A drawing that draws more than its box (a
         // group, another shape beside it) keeps the part's own entry too.
         if (
-          shapedBoxes.every(({ index, change }) =>
-            isSoleDrawingShape(original.textBoxes[index]!, change.originalContainer) &&
-            isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer) &&
-            shapeTemplatesAgree(change.originalContainer, change.revisedContainer)) &&
+          drawingsDescribeOnlyTheirBoxes &&
           canonicalNode(
             parseXml(partXmlWithRevisedTextBoxes(alignedXml, pair.revised.xml)).documentElement,
           ) === pair.revised.canonical
