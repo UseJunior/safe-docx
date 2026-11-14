@@ -720,6 +720,32 @@ describe('text-box drawing shape changes (#1382)', { timeout: LOAD_SENSITIVE_TIM
     });
   });
 
+  test('tracks an ordinary footer edit beside a group that resizes a shape, keeping the footer entry', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    // The ordinary text is compared against the original with the group's
+    // drawing aligned (#1448); the resized rectangle is still geometry the
+    // drawing entry does not describe, so the footer stays listed.
+    const footer = (prefix: 'Old' | 'New', rectWidth: string): string =>
+      `<w:r><w:pict><v:group id="group1" style="width:400pt;height:100pt" coordsize="400,100">` +
+      `<v:shape id="a" style="width:200pt;height:50pt"><v:textbox>${story(`Footer notice: ${prefix}`)}</v:textbox></v:shape>` +
+      `<v:rect id="b" style="width:${rectWidth};height:50pt"/></v:group></w:pict></w:r>` +
+      `<w:r><w:t xml:space="preserve">${prefix} ordinary</w:t></w:r>`;
+    const original = await given('a footer group of a box and a rectangle, and ordinary text', () =>
+      footerPackage(footer('Old', '100pt')));
+    const revised = await given('the box and the ordinary text edited, the rectangle resized', () =>
+      footerPackage(footer('New', '180pt')));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('both edits are tracked, and the drawing and the footer are listed', async () => {
+      expect(result.unrepresentedChanges?.map((change) => change.scope).sort()).toEqual(['drawing', 'footer']);
+      expect(trackedBoxText(await partXml(result.document, 'word/footer1.xml')))
+        .toEqual([{ deleted: 'Old', inserted: 'New' }]);
+      await assertDocumentedProjections(original, revised, result.document, 'word/footer1.xml');
+    });
+  });
+
   test('keeps the footer entry when a footer drawing resizes a second anchored shape', async ({
     given, when, then,
   }: AllureBddContext) => {

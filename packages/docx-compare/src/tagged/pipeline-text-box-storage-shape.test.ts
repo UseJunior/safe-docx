@@ -683,6 +683,39 @@ describe('text boxes stored as DrawingML only or differently in the two document
     });
   });
 
+  test('tracks an ordinary footer edit beside an edited box and an edited, resized box', async ({
+    given, when, then,
+  }: AllureBddContext) => {
+    const secondBox = (text: string, width: string): string =>
+      `<w:r>${vmlPict(text, width).replace('id="box1"', 'id="box2"').replace('_x0000_s1026', '_x0000_s1027')}</w:r>`;
+    const footerParagraph = (prefix: 'Old' | 'New', width: string): string =>
+      twin(prefix) + secondBox(`${prefix} second`, width) +
+      `<w:r><w:t xml:space="preserve">${prefix} ordinary</w:t></w:r>`;
+    const original = await given('a footer with a twinned box, a VML box and ordinary text', () =>
+      footerPackage(footerParagraph('Old', '200pt')));
+    const revised = await given('both boxes edited, the VML box widened, the ordinary text edited', () =>
+      footerPackage(footerParagraph('New', '260pt')));
+    const result = await when('the documents are compared', () =>
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    const output = await partXml(result.document, FOOTER);
+
+    await then('every text change is tracked and only the resize is listed', async () => {
+      expect(trackedCopyText(output)).toEqual([
+        { deleted: 'Old', inserted: 'New' },
+        { deleted: 'Old', inserted: 'New' },
+        { deleted: 'Old', inserted: 'New' },
+      ]);
+      expect(result.unrepresentedChanges).toEqual([{
+        scope: 'drawing',
+        kind: 'changed',
+        sectionIndex: 0,
+        role: 'default',
+        drawing: { story: 'footer', partPath: FOOTER, index: 1, element: 'pict', name: 'box2' },
+      }]);
+      await assertProjections(original, revised, result.document, FOOTER);
+    });
+  });
+
   test('tracks a footer box with no spelling in common as replaced', async ({
     given, when, then, and,
   }: AllureBddContext) => {
