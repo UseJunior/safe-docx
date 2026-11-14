@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A field that crosses the boundary of a block-level content control
+  (`w:sdt`) or custom XML element (`w:customXml`), beginning inside the
+  container and ending outside it or the reverse, no longer corrupts the
+  redline or aborts the comparison when the field's halves change sides. A
+  container both documents hold now pairs, and the paragraphs holding the
+  field's halves are tracked as deleted and inserted, so Accept All and
+  Reject All each keep exactly one copy of the field. Previously some of these
+  comparisons failed with a `fieldStructure` error, and others published a
+  redline whose Accept All held an extra empty field (begin, separate and end
+  with no instruction) and whose Reject All held an empty container, with the
+  container listed in `unrepresentedChanges`. A container only one document
+  holds, or whose identity changes, is tracked whole as before, with the
+  deleted half of the field kept inside its deletion. (#1462)
+
 - A table row inserted into or deleted from a header or footer table, or a
   table inside a header or footer text box, is now tracked as a whole row
   (`w:trPr/w:ins`, `w:trPr/w:del`), as in body tables, instead of the header
@@ -25,8 +39,7 @@
   into or out of the container is tracked, instead of the whole container
   being deleted and reinserted with both emptied containers listed in
   `unrepresentedChanges`. The same holds when the moving paragraph itself
-  holds a complete field. A container whose field begins inside it and ends
-  outside it (or the reverse) is still not paired. (#1459)
+  holds a complete field. (#1459)
 
 - A formatting-only change (bold, font size, alignment, paragraph-mark
   formatting) in a header or footer paragraph that also holds a field such as
