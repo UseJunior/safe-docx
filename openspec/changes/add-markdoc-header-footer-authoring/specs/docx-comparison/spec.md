@@ -43,8 +43,11 @@ eligibility checks it SHALL also leave out the run properties, paragraph-mark
 run properties and paragraph properties of the paragraphs it keeps (those
 holding a field, content control or drawing), because `w:rPrChange` and
 `w:pPrChange` record a change to them; content-control properties and field
-instructions stay in it, and so does all formatting of a paragraph that
-already carries a formatting revision record. Field-state validation
+instructions stay in it, and so does all formatting of a paragraph whose
+mark is already inserted, deleted or moved. A paragraph that already carries
+a `w:rPrChange` or `w:pPrChange` record is compared like any other; the new
+formatting revision is layered without nesting or duplicating a record.
+Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
@@ -63,7 +66,7 @@ MUST NOT be silently represented as an ordinary text edit.
 - **AND** accept-all SHALL recover the revised formatting and reject-all the original formatting, with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`
 - **AND** the story SHALL NOT remain in `unrepresentedChanges`
 - **AND** a change to a field instruction, a content control's own properties, or the presence of a field or content control SHALL still be listed
-- **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL still be listed, never emitted as a nested or duplicate formatting revision
+- **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL also be tracked, with at most one formatting revision per property element and never a nested or duplicate one, while reject-all SHALL recover the original document's rejected formatting
 
 #### Scenario: [SDX-CMP-STORY-05] Unsupported topology remains unrepresented
 - **GIVEN** selected stories with creation, deletion, rebinding, ambiguous pairing, structural table mutation, drawing/content-control mutation, or nested-story change outside the admitted subset

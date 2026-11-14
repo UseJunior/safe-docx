@@ -13,6 +13,7 @@ import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
 import { isBlockContainer } from './blockContainer.js';
+import { placeSinglePropertyRevision, splitLayeredRunFormatting } from './layeredFormattingRevision.js';
 import {
   addRowExceptionRevisionCompanions,
   isTableLevelPropertyElement,
@@ -1548,18 +1549,28 @@ function applyParagraphPropertyDelta(
     live.insertBefore(mark, boundary ?? null);
     return mark;
   };
-  if ((liveMark ? new XMLSerializer().serializeToString(liveMark) : '') !==
-      (originalMark ? new XMLSerializer().serializeToString(originalMark) : '')) {
-    const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
-    appendChangeMetadata(markChange, revision);
-    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
-    if (originalMark) {
-      for (const child of childElements(originalMark)) {
-        if (child.localName !== 'rPrChange') snapshot.appendChild(cloneElement(child));
+  // One w:rPrChange per paragraph mark: the original's pending record, when
+  // it has one, stays as written; the revised input's own record is dropped
+  // (#1461).
+  const originalMarkRecord = (originalMark && childElements(originalMark).find((child) => child.localName === 'rPrChange')) ?? undefined;
+  const markSignature = (element: WmlElement | null | undefined): string => element
+    ? childElements(element).filter((child) => child.localName !== 'rPrChange')
+      .map((child) => new XMLSerializer().serializeToString(child)).join('')
+    : '';
+  const markChanged = markSignature(liveMark) !== markSignature(originalMark);
+  if (markChanged || originalMarkRecord || (liveMark && childElements(liveMark).some((child) => child.localName === 'rPrChange'))) {
+    placeSinglePropertyRevision(ensureMark(), 'rPrChange', originalMarkRecord, markChanged, () => {
+      const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
+      appendChangeMetadata(markChange, revision);
+      const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+      if (originalMark) {
+        for (const child of childElements(originalMark)) {
+          if (child.localName !== 'rPrChange') snapshot.appendChild(cloneElement(child));
+        }
       }
-    }
-    markChange.appendChild(snapshot);
-    ensureMark().appendChild(markChange);
+      markChange.appendChild(snapshot);
+      return markChange;
+    });
   }
   // A prior w:sectPrChange in the revised input is not this comparison's
   // revision; drop it whether or not a new one is recorded below.
@@ -1592,17 +1603,22 @@ function applyParagraphPropertyDelta(
   }
   // With a split boundary, Reject All restores base formatting from the
   // original mark, so a pPrChange is needed only for a real base change.
+  // The original's pending w:pPrChange, when it has one, is the paragraph's
+  // one record: it already restores what the original rejects to (#1461).
+  const originalParagraphRecord = (original && childElements(original).find((child) => child.localName === 'pPrChange')) ?? undefined;
   if (!splitsSectionBoundary || paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
-    const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
-    appendChangeMetadata(pPrChange, revision);
-    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
-    if (original) {
-      for (const child of childElements(original)) {
-        if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) snapshot.appendChild(cloneElement(child));
+    placeSinglePropertyRevision(live, 'pPrChange', originalParagraphRecord, true, () => {
+      const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
+      appendChangeMetadata(pPrChange, revision);
+      const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+      if (original) {
+        for (const child of childElements(original)) {
+          if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) snapshot.appendChild(cloneElement(child));
+        }
       }
-    }
-    pPrChange.appendChild(snapshot);
-    live.appendChild(pPrChange);
+      pPrChange.appendChild(snapshot);
+      return pPrChange;
+    });
   }
   const current = childElements(paragraph).find((child) => child.localName === 'pPr');
   if (current) paragraph.replaceChild(live, current);
@@ -2857,6 +2873,11 @@ export function serializeTaggedTree(
     options.revisionGrouping ?? 'token-minimal',
   );
   splitRunsAroundRevisionWrappers(emitted, allocateRevision);
+  splitLayeredRunFormatting(emitted, {
+    isComparisonRecord: (record) => record.hasAttribute(COMPARISON_REVISION_ATTRIBUTE),
+    nextRevisionId: () => allocateRevision().id,
+    wrap: (run, kind) => wrapRevision(run, kind, allocateRevision()),
+  });
   insertSectionBoundaryParagraphs(emitted);
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);
