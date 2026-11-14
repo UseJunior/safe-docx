@@ -185,11 +185,15 @@ const BASE_FOOTER: Part = { id: 'rIdFooter0', kind: 'footer', target: 'footer0.x
  * exists and footer0 where it does not. `removed` drops the boundary in the
  * revision; `inserted` adds it.
  */
-function carriedFooterPair(direction: 'removed' | 'inserted', footer0: Part = BASE_FOOTER): Promise<[Buffer, Buffer]> {
+function carriedFooterPair(
+  direction: 'removed' | 'inserted',
+  footer0: Part = BASE_FOOTER,
+  footer1Ending = '',
+): Promise<[Buffer, Buffer]> {
   const label = direction === 'removed' ? 'Removed' : 'Inserted';
   const footer1: Part = {
     id: 'rIdFooter1', kind: 'footer', target: 'footer1.xml',
-    xml: story('footer', `${label} footer line`, paragraph(`${label} box`)),
+    xml: story('footer', `${label} footer line`, paragraph(`${label} box`)).replace('</w:ftr>', `${footer1Ending}</w:ftr>`),
   };
   const head = paragraph('Intro') + sectionParagraph('Zero end', reference('footer', 'rIdFooter0')) + paragraph('One body');
   const withBoundary = packageWith(
@@ -512,6 +516,50 @@ describe('a displaced story copied into the carried part (#1454)', () => {
       expect(paragraphLayout(rejectAllChanges(compared))).toEqual(paragraphLayout(originalFooter1));
       expect(paragraphLayout(await footerAfterDocxCore(result.document, 'accept'))).toEqual(paragraphLayout(revisedFooter0));
       expect(paragraphLayout(await footerAfterDocxCore(result.document, 'reject'))).toEqual(paragraphLayout(originalFooter1));
+    });
+  });
+
+  // A story may end in a table (CT_HdrFtr does not require a final
+  // paragraph); Word shows the empty paragraph mark after it either way.
+  const tableEnding =
+    '<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single"/></w:tblBorders></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+  const tableEndingFooter: Part = {
+    id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml',
+    xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}">` +
+      paragraph('Base footer', '<w:jc w:val="center"/>') + tableEnding + '</w:ftr>',
+  };
+  for (const { name, pair } of [
+    { name: 'a displaced footer ending in a table, across a removed boundary', pair: () => carriedFooterPair('removed', tableEndingFooter) },
+    { name: 'a displaced footer ending in a table, across an inserted boundary', pair: () => carriedFooterPair('inserted', tableEndingFooter) },
+  ]) {
+    test(`${name} ends in a paragraph neither projection removes`, async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('the pair', pair);
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the carried footer ends in a paragraph whose mark carries no revision', async () => {
+        const footer = parseXml((await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!);
+        const last = Array.from(footer.documentElement.childNodes).filter((node) => node.nodeType === 1).at(-1) as Element;
+        expect(last.localName).toBe('p');
+        const mark = last.getElementsByTagNameNS(W_NS, 'pPr').item(0)?.getElementsByTagNameNS(W_NS, 'rPr').item(0);
+        expect(Array.from(mark?.childNodes ?? []).map((node) => (node as Element).localName)).not.toContain('ins');
+        expect(Array.from(mark?.childNodes ?? []).map((node) => (node as Element).localName)).not.toContain('del');
+      });
+      await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+        await expectDisplayedParity(original, revised, result.document);
+      });
+    });
+  }
+
+  test('a displaced and a carried footer both ending in a table still fail closed', async ({ given, when }: AllureBddContext) => {
+    // Neither half ends in a paragraph that could close the story on both
+    // sides; Word never writes such a story, as it always ends one with a
+    // paragraph mark.
+    const [original, revised] = await given('both footers ending in a table', () =>
+      carriedFooterPair('removed', tableEndingFooter, tableEnding));
+    await when('the pair is compared, the comparison refuses instead of publishing', async () => {
+      await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
+        /accept\/reject package projection validation/u,
+      );
     });
   });
 

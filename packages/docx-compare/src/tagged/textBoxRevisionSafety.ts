@@ -4550,11 +4550,13 @@ const UNCOPYABLE_DISPLACED_CONTENT = new Set([
  * and bookmarks, content-control ids and Word 2010 paragraph and text ids
  * are dropped. A data-bound control (whose shown text Word refreshes from a
  * custom XML part) is not display-neutral, so `copyableDisplacedBlocks`
- * refuses one first.
+ * refuses one first. With `finalParagraphAfterTable` (comparison only, never
+ * a copy), an empty plain paragraph that closes a story after a table is
+ * dropped too.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
  */
-function stripDisplayNeutralMarkup(root: Element): void {
+function stripDisplayNeutralMarkup(root: Element, options: { finalParagraphAfterTable?: boolean } = {}): void {
   for (const container of Array.from(root.getElementsByTagName('*')).reverse()) {
     if (
       container.namespaceURI !== OOXML.W_NS ||
@@ -4586,6 +4588,24 @@ function stripDisplayNeutralMarkup(root: Element): void {
     }
     element.removeAttributeNS(WORD_2010_NS, 'paraId');
     element.removeAttributeNS(WORD_2010_NS, 'textId');
+  }
+  if (!options.finalParagraphAfterTable) return;
+  // A story that ends in a table shows the empty paragraph mark after it
+  // whether or not the part spells one out (Word adds it on open).
+  const blocks = directChildElements(root).filter((element) =>
+    element.namespaceURI === OOXML.W_NS && element.localName !== 'sectPr');
+  const last = blocks.at(-1);
+  const beforeLast = blocks.at(-2);
+  const isEmptyPlainParagraph = (paragraph: Element): boolean =>
+    directChildElements(paragraph).every((child) =>
+      child.localName === 'pPr' &&
+      directChildElements(child).every((property) =>
+        property.localName === 'rPr' && directChildElements(property).length === 0));
+  if (
+    last?.localName === 'p' && beforeLast?.localName === 'tbl' &&
+    isEmptyPlainParagraph(last)
+  ) {
+    root.removeChild(last);
   }
 }
 
@@ -4674,6 +4694,53 @@ export async function displacedLifecycleStoryXml(
 }
 
 /**
+ * Make a replacement's final paragraph one whose mark neither projection
+ * removes: a story's final paragraph mark always stays, so a marked one
+ * would leave an empty trailing paragraph on the side that drops it. Two
+ * paragraphs are joined (`joinReplacementFinalParagraph`). When the
+ * inserted half ends in a table, the deleted half's last paragraph moves
+ * after it and keeps its deleted runs, with its properties tracked against
+ * none; when the deleted half ends in one, the inserted half's last
+ * paragraph keeps its inserted runs with prior properties of none. Either
+ * projection then ends in a paragraph, which after a final table is the
+ * empty paragraph mark Word keeps there. When both halves end in a table
+ * (CT_HdrFtr allows it; Word itself always closes a story with a paragraph)
+ * nothing is changed, and the projection check refuses the redline.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ */
+function finishReplacementFinalParagraph(
+  body: Element,
+  deleted: Element | undefined,
+  inserted: Element | undefined,
+  author: string,
+  dateString: string,
+  state: ReturnType<typeof createRevisionIdState>,
+): void {
+  const isW = (element: Element | undefined, ...names: string[]): element is Element =>
+    !!element && element.namespaceURI === OOXML.W_NS && names.includes(element.localName);
+  const end = directChildElements(body).find((element) => isW(element, 'sectPr')) ?? null;
+  const unmark = (paragraph: Element, marker: 'ins' | 'del'): void => {
+    const properties = directChildElements(paragraph).find((element) => isW(element, 'pPr'));
+    const mark = properties && directChildElements(properties).find((element) => isW(element, 'rPr'));
+    if (!properties || !mark) return;
+    for (const element of directChildElements(mark).filter((child) => isW(child, marker))) mark.removeChild(element);
+    if (directChildElements(mark).length === 0) properties.removeChild(mark);
+  };
+  if (isW(deleted, 'p') && isW(inserted, 'p')) {
+    joinReplacementFinalParagraph(deleted, inserted, author, dateString, state);
+  } else if (isW(deleted, 'p')) {
+    body.insertBefore(deleted, end);
+    unmark(deleted, 'del');
+    trackFinalParagraphPropertiesAgainstBlank(body, 'w:del', author, dateString, state);
+  } else if (isW(inserted, 'p')) {
+    unmark(inserted, 'ins');
+    trackFinalParagraphPropertiesAgainstBlank(body, 'w:ins', author, dateString, state);
+  }
+}
+
+/**
  * Join the last paragraph of a replacement's deleted half to the last
  * paragraph of its inserted half, the story's final paragraph, as Word's own
  * comparison writes a replaced final paragraph: the deleted runs go first,
@@ -4681,8 +4748,7 @@ export async function displacedLifecycleStoryXml(
  * never removed, so a marked one would leave an empty trailing paragraph on
  * the side that drops it), and the deleted paragraph's properties become
  * the `w:pPrChange` / `w:rPrChange` prior state. A paragraph that already
- * carries a property change, or a half that does not end in a paragraph,
- * keeps its marked mark.
+ * carries a property change keeps its marked mark.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
@@ -4862,7 +4928,7 @@ async function markLifecycleAncillaryStoryParagraphs(
     for (const block of imported) body.insertBefore(block, before);
     displaced = markContent(imported, markerTag === 'w:del' ? 'w:ins' : 'w:del');
     const [deletedHalf, insertedHalf] = markerTag === 'w:del' ? [storyBlocks, imported] : [imported, storyBlocks];
-    joinReplacementFinalParagraph(deletedHalf.at(-1), insertedHalf.at(-1), author, dateString, state);
+    finishReplacementFinalParagraph(body, deletedHalf.at(-1), insertedHalf.at(-1), author, dateString, state);
   }
   if (options.blankFinalParagraph) {
     trackFinalParagraphPropertiesAgainstBlank(body, markerTag, author, dateString, state);
@@ -4969,7 +5035,7 @@ function projectedStoryContent(
   if (isBlankStoryPart(projectedXml)) return null;
   if (displayOnly) {
     const document = parseXml(projectedXml);
-    stripDisplayNeutralMarkup(document.documentElement);
+    stripDisplayNeutralMarkup(document.documentElement, { finalParagraphAfterTable: true });
     projectedXml = serializer.serializeToString(document);
   }
   return [
