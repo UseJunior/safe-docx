@@ -313,3 +313,80 @@ describe('formatting change on a paragraph mark or paragraph that already carrie
     });
   }
 });
+
+/**
+ * A paragraph that gains or loses its section break is split: it keeps the
+ * revised mark (inserted) and an empty boundary paragraph after it keeps the
+ * original mark (deleted). The original's pending `w:pPrChange` or
+ * paragraph-mark `w:rPrChange` must survive on the paragraph that Reject All
+ * resolves to, so Reject All still gives the original's rejected view (#1465).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1465
+ */
+describe('section break gained or lost on a paragraph that carries a pending record (#1465)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  const SECTION = '<w:sectPr><w:type w:val="nextPage"/><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/></w:sectPr>';
+  const PRIOR_MARK = `<w:rPr><w:b/>${PRIOR_RUN}</w:rPr>`;
+  const PRIOR_PPR = `<w:jc w:val="right"/>${PRIOR_PARAGRAPH}`;
+  const PRIOR_INDENT = '<w:pPrChange w:id="73" w:author="Prior" w:date="2026-11-01T00:00:00Z"><w:pPr><w:ind w:left="720"/></w:pPr></w:pPrChange>';
+  const body = (first: string): string => first + paragraph(run('After the break'));
+  const sectionCases: ReadonlyArray<{ name: string; original: string; revised: string }> = [
+    {
+      name: 'a paragraph with a pending w:pPrChange gains a section break',
+      original: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}</w:pPr>`)),
+      revised: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}${SECTION}</w:pPr>`)),
+    },
+    {
+      name: 'a paragraph with a pending w:pPrChange loses its section break',
+      original: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}${SECTION}</w:pPr>`)),
+      revised: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}</w:pPr>`)),
+    },
+    {
+      name: 'a paragraph whose mark has a pending w:rPrChange gains a section break',
+      original: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_MARK}</w:pPr>`)),
+      revised: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_MARK}${SECTION}</w:pPr>`)),
+    },
+    {
+      name: 'a paragraph whose mark has a pending w:rPrChange loses its section break',
+      original: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_MARK}${SECTION}</w:pPr>`)),
+      revised: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_MARK}</w:pPr>`)),
+    },
+    {
+      name: 'a paragraph with both pending records gains a section break and changes alignment',
+      original: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}${PRIOR_MARK}</w:pPr>`)),
+      revised: body(paragraph(run('Hello'), `<w:pPr><w:jc w:val="center"/>${PRIOR_PARAGRAPH}<w:rPr><w:i/>${PRIOR_RUN}</w:rPr>${SECTION}</w:pPr>`)),
+    },
+    {
+      name: 'a paragraph with both pending records loses its section break; the revised has accepted them',
+      original: body(paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}${PRIOR_MARK}${SECTION}</w:pPr>`)),
+      revised: body(paragraph(run('Hello'), '<w:pPr><w:jc w:val="right"/><w:rPr><w:b/></w:rPr></w:pPr>')),
+    },
+    {
+      name: 'the last body paragraph, with a pending w:pPrChange, gains a section break before the final section',
+      original: paragraph(run('Before')) + paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}</w:pPr>`),
+      revised: paragraph(run('Before')) + paragraph(run('Hello'), `<w:pPr>${PRIOR_PPR}${SECTION}</w:pPr>`),
+    },
+    {
+      name: 'a paragraph whose pending w:pPrChange restores indentation loses its section break and changes alignment',
+      original: body(paragraph(run('Hello'), `<w:pPr><w:jc w:val="right"/>${PRIOR_INDENT}${SECTION}</w:pPr>`)),
+      revised: body(paragraph(run('Hello'), `<w:pPr><w:jc w:val="center"/>${PRIOR_INDENT}</w:pPr>`)),
+    },
+  ];
+  const sectionTest = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.18' });
+  for (const layered of sectionCases) {
+    sectionTest(`keeps the original record when ${layered.name}`, async ({ given, when, then }: AllureBddContext) => {
+      await given(layered.name, () => undefined);
+      const compared = await when('the pair is compared', () => compareBodies(layered.original, layered.revised));
+      await expectFaithfulProjections({ then }, compared);
+      await then('the section count follows each side on Accept All and Reject All', () => {
+        const sections = (xml: string): number => parseXml(xml).getElementsByTagNameNS(W_NS, 'sectPr').length;
+        for (const applier of ['ast', 'core'] as const) {
+          expect(sections(project(compared.comparedXml, 'accept', applier))).toBe(sections(compared.revisedXml));
+          expect(sections(project(compared.comparedXml, 'reject', applier))).toBe(sections(compared.originalXml));
+        }
+      });
+    });
+  }
+});

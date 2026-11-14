@@ -1691,12 +1691,17 @@ function applyParagraphPropertyDelta(
     change.appendChild(buildSectPrBaseSnapshot(originalSection, paragraph.ownerDocument!));
     section.appendChild(change);
   }
-  // With a split boundary, Reject All restores base formatting from the
-  // original mark, so a pPrChange is needed only for a real base change.
   // The original's pending w:pPrChange, when it has one, is the paragraph's
   // one record: it already restores what the original rejects to (#1461).
+  // With a split boundary, rejecting the inserted mark merges this
+  // paragraph's content into the boundary paragraph and keeps the leading
+  // (this) paragraph's base properties, so the original's record must stay
+  // here, not on the boundary paragraph, even when the base properties are
+  // unchanged (#1465). Without one, a comparison record is needed only for a
+  // real base change.
   const originalParagraphRecord = (original && childElements(original).find((child) => child.localName === 'pPrChange')) ?? undefined;
-  if (!splitsSectionBoundary || paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
+  if (!splitsSectionBoundary || originalParagraphRecord ||
+    paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
     placeSinglePropertyRevision(live, 'pPrChange', originalParagraphRecord, true, () => {
       const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
       appendChangeMetadata(pPrChange, revision);
