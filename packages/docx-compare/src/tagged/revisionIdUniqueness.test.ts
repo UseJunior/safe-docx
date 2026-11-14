@@ -141,7 +141,14 @@ async function assertSchema(buffer: Buffer): Promise<void> {
 }
 
 /** A one-section document whose default footer holds `footerXml` paragraphs. */
-async function buildWithFooter(bodyXml: string, footerXml: string, footerPart = 'footer1.xml'): Promise<Buffer> {
+async function buildWithFooter(
+  bodyXml: string,
+  footerXml: string,
+  footerPart = 'footer1.xml',
+  relationshipPrefix = '',
+): Promise<Buffer> {
+  const pr = relationshipPrefix ? `${relationshipPrefix}:` : '';
+  const prefixDeclaration = relationshipPrefix ? `:${relationshipPrefix}` : '';
   const base = await buildDocxFromBodyXml(bodyXml, [], { namespaces: { r: R_NS } });
   const archive = await DocxArchive.load(base);
   archive.setDocumentXml((await archive.getDocumentXml()).replace(
@@ -150,8 +157,8 @@ async function buildWithFooter(bodyXml: string, footerXml: string, footerPart = 
   ));
   archive.setFile(
     'word/_rels/document.xml.rels',
-    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      `<Relationship Id="rIdFooter" Type="${R_NS}/footer" Target="${footerPart}"/></Relationships>`,
+    `<${pr}Relationships xmlns${prefixDeclaration}="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<${pr}Relationship Id="rIdFooter" Type="${R_NS}/footer" Target="${footerPart}"/></${pr}Relationships>`,
   );
   archive.setFile(`word/${footerPart}`, `<?xml version="1.0"?><w:ftr xmlns:w="${W_NS}">${footerXml}</w:ftr>`);
   return archive.save();
@@ -196,6 +203,12 @@ const cases: readonly Case[] = [
     revised: () => buildWithFooter(paragraph(run('Body keep')) + paragraph(pendingRun('New text')), paragraph(run('Footer new')), 'footer-custom.xml'),
     footerPart: 'word/footer-custom.xml',
   },
+  {
+    name: 'the unconventionally named footer is linked through a namespace-prefixed relationship',
+    original: () => buildWithFooter(paragraph(run('Body keep')), paragraph(pendingRun('Footer old words')), 'footer-custom.xml', 'pr'),
+    revised: () => buildWithFooter(paragraph(run('Body keep')) + paragraph(pendingRun('New text')), paragraph(run('Footer new')), 'footer-custom.xml', 'pr'),
+    footerPart: 'word/footer-custom.xml',
+  },
 ];
 
 async function partXml(buffer: Buffer, part: string): Promise<string | null> {
@@ -216,6 +229,12 @@ describe('revision identifiers stay unique when the comparison splits or combine
       await then('no two revisions in any story part share an identifier, and the package passes the schema gate', async () => {
         expect(result.unrepresentedChanges).toBeUndefined();
         expect(await duplicateRevisionIdsInPackage(result.document)).toEqual([]);
+        const all: string[] = [];
+        for (const part of storyParts) {
+          const xml = await partXml(result.document, part);
+          if (xml !== null) all.push(...revisionIdOccurrences(xml, part).map(({ id }) => id));
+        }
+        expect(new Set(all).size, 'no identifier is shared between the main story and the footer').toBe(all.length);
         await assertSchema(result.document);
       });
 

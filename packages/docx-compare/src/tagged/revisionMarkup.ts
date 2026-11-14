@@ -239,6 +239,7 @@ function renumberAnnotations(
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
 const MAIN_STORY_PART = 'word/document.xml';
+const PACKAGE_RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 /** Conventional names of the story parts other than the main story. */
 const REVISION_STORY_PART = /^word\/(header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/u;
 /** Relationship types of the main story's parts that hold their own stories. */
@@ -257,7 +258,8 @@ export async function revisionStoryPartPaths(archive: DocxArchive): Promise<stri
   const paths = new Set(archive.listFiles().filter((path) => REVISION_STORY_PART.test(path)));
   const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
   if (relationshipsXml !== null) {
-    for (const relationship of Array.from(parseXml(relationshipsXml).getElementsByTagName('Relationship'))) {
+    const relationships = parseXml(relationshipsXml).getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship');
+    for (const relationship of Array.from(relationships)) {
       if (relationship.getAttribute('TargetMode') === 'External') continue;
       if (!STORY_RELATIONSHIP_TYPE.test(relationship.getAttribute('Type') ?? '')) continue;
       const target = relationship.getAttribute('Target');
