@@ -698,7 +698,8 @@ const OFFICE_NS = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
  * LibreOffice maps a DOCX section to a page style: the first paragraph of a
  * section names its master page (`style:master-page-name` on its automatic
  * paragraph style), and that master page's `style:footer` is what the
- * section's pages show.
+ * section's pages show. A footer that keeps a table says so, since a table's
+ * borders draw without any text.
  */
 async function odtFooterPerSection(bytes: Buffer): Promise<string[]> {
   const zip = await JSZip.loadAsync(bytes);
@@ -712,15 +713,20 @@ async function odtFooterPerSection(bytes: Buffer): Promise<string[]> {
   const footerOf = new Map<string, string>();
   for (const master of Array.from(styles.getElementsByTagNameNS(STYLE_NS, 'master-page'))) {
     const footer = master.getElementsByTagNameNS(STYLE_NS, 'footer').item(0);
-    footerOf.set(master.getAttributeNS(STYLE_NS, 'name') ?? '', (footer?.textContent ?? '').replace(/\s+/gu, ' ').trim() || '-');
+    const tables = footer?.getElementsByTagNameNS('urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'table').length ?? 0;
+    // LibreOffice can leave a zero-width joiner where it resolved a revision.
+    const text = (footer?.textContent ?? '').replace(/\u200d/gu, '').replace(/\s+/gu, ' ').trim();
+    footerOf.set(master.getAttributeNS(STYLE_NS, 'name') ?? '', `${text || '-'}${tables > 0 ? ` [${tables} table]` : ''}`);
   }
   const body = content.getElementsByTagNameNS(OFFICE_NS, 'text').item(0)!;
   const sections: string[] = [];
   for (const block of Array.from(body.childNodes) as Element[]) {
     if (block.nodeType !== 1) continue;
-    const master = masterOf.get(block.getAttributeNS?.('urn:oasis:names:tc:opendocument:xmlns:text:1.0', 'style-name') ??
-      block.getAttributeNS?.('urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'style-name') ?? '');
+    const master = masterOf.get(block.getAttributeNS('urn:oasis:names:tc:opendocument:xmlns:text:1.0', 'style-name') ??
+      block.getAttributeNS('urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'style-name') ?? '');
+    // The first section uses the default page style unless it names one.
     if (master) sections.push(footerOf.get(master) ?? '?');
+    else if (sections.length === 0) sections.push(footerOf.get('Standard') ?? '?');
   }
   return sections;
 }
@@ -731,13 +737,19 @@ const reader = process.env.SAFE_DOCX_CARRIED_FOOTER_READER_REQUIRED === '1' ? de
 reader('LibreOffice accepts and rejects a carried footer per section (#1454)', () => {
   test('displaced inherited footers and carried bordered tables', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
-    const cases: Array<{ label: string; pair: [Buffer, Buffer] }> = [
-      { label: 'removed boundary displaces footer0', pair: await carriedFooterPair('removed') },
-      { label: 'inserted boundary displaces footer0', pair: await carriedFooterPair('inserted') },
-      { label: 'removed footer with a bordered table', pair: await tableFooterPair('removed', SINGLE_BORDERS) },
-      { label: 'inserted footer with a bordered table', pair: await tableFooterPair('inserted', SINGLE_BORDERS, 'Cell') },
+    // `owner` is the last section whose footer is the first (or only) page
+    // style LibreOffice builds from the changed part; see below.
+    const cases: Array<{ label: string; owner: number; pair: [Buffer, Buffer] }> = [
+      // Baseline from #1204, untouched by #1454: LibreOffice shows the same
+      // section and shared-footer behaviour for a removed boundary whose
+      // shared footer's text box changed.
+      { label: 'baseline: removed boundary, shared boxed footer (#1204)', owner: 0, pair: await removedBoundaryPair(SURVIVOR_VARIANTS[0].survivor) },
+      { label: 'removed boundary displaces footer0', owner: 1, pair: await carriedFooterPair('removed') },
+      { label: 'inserted boundary displaces footer0', owner: 1, pair: await carriedFooterPair('inserted') },
+      { label: 'removed footer with a bordered table', owner: 0, pair: await tableFooterPair('removed', SINGLE_BORDERS) },
+      { label: 'inserted footer with a bordered table', owner: 0, pair: await tableFooterPair('inserted', SINGLE_BORDERS, 'Cell') },
     ];
-    for (const { label, pair: [original, revised] } of cases) {
+    for (const { label, owner, pair: [original, revised] } of cases) {
       const compared = (await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).document;
       const jobs = [
         { op: 'identity' as const, docx: original, saveAs: 'odt' as const },
@@ -753,11 +765,19 @@ reader('LibreOffice accepts and rejects a carried footer per section (#1454)', (
         if (!/produced no output/u.test(String(error))) throw error;
         await runLibreOfficeOracle(jobs, undefined, capture);
       }
-      const [originalView, revisedView, acceptedView, rejectedView] = await Promise.all(packages.map(odtFooterPerSection));
+      const [originalView, revisedView, acceptedView, rejectedView] = (await Promise.all(packages.map(odtFooterPerSection))) as [string[], string[], string[], string[]];
       console.log(`[#1454] ${label}: original=${JSON.stringify(originalView)} revised=${JSON.stringify(revisedView)}` +
         ` accepted=${JSON.stringify(acceptedView)} rejected=${JSON.stringify(rejectedView)}`);
-      expect(acceptedView, `${label} accept`).toEqual(revisedView);
-      expect(rejectedView, `${label} reject`).toEqual(originalView);
+      // LibreOffice does not apply a tracked section boundary as Word does:
+      // it keeps the page style a removed boundary started on Accept and
+      // drops one on Reject, and a footer part that two page styles share
+      // keeps its revisions only in the first, so the second reads as plain
+      // text holding both sides (the #1204 baseline shows both). The verdict
+      // is therefore the sections up to the one whose page style is the
+      // changed part's first, where LibreOffice does apply the revisions.
+      const upToOwner = (view: string[]): string[] => view.slice(0, owner + 1);
+      expect(upToOwner(acceptedView), `${label} accept`).toEqual(upToOwner(revisedView));
+      expect(upToOwner(rejectedView), `${label} reject`).toEqual(upToOwner(originalView));
     }
   }, 600_000);
 });
