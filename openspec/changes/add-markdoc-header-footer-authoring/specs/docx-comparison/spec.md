@@ -53,11 +53,15 @@ paragraphs are all admitted ordinary paragraphs and which carries no revision
 record, because the story comparison tracks such a row as inserted or deleted
 under the same table-topology guard as the main body; a row holding a field,
 content control (including a cell-level one), drawing, nested table, range
-markup or table-property exceptions stays in it, and so does every row of a
-story that also holds a text box. A table topology that guard refuses in a
-header or footer part with no text box SHALL leave that part listed rather
-than abort the comparison; a text-box story the guard refuses keeps the
-unguarded comparison it used before. Field-state validation
+markup or table-property exceptions stays in it. A row beside a text box is
+left out the same way: the box's content is compared once, as the box's own
+story. A table topology that guard refuses in a header or footer part's own
+story, beside a text box or not, SHALL leave that whole part listed (none of
+its stories spliced, the revised part carried) rather than abort the
+comparison; a text-box story the guard refuses keeps the unguarded comparison
+it used before, unless that comparison would wrap a `w:tr` or `w:tc` in a
+revision, which SHALL leave its header or footer part listed the same way and
+SHALL refuse a body text box with a typed error. Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
