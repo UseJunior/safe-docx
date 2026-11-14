@@ -124,6 +124,7 @@ import {
   assertAncillaryTextBoxStoryProjection,
   type BlankSlotParts,
   deletedAncillaryStoryOutputPaths,
+  displacedLifecycleStoryXml,
   markDeletedAncillaryStoryParagraphs,
   markInsertedAncillaryStoryParagraphs,
   markTrackedTextBoxLifecycles,
@@ -1529,6 +1530,7 @@ async function compareDocumentsTagged(
   );
   const sectionAlignedStories = new Set<TextBoxStoryInput>();
   const representedPartPaths = new Set<string>();
+  const displacedCopyPartPaths = new Set<string>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   const compareStory = async (story: TextBoxStoryInput): Promise<void> => {
     if (
@@ -1587,51 +1589,56 @@ async function compareDocumentsTagged(
       result = await compareNestedStory(false);
     }
     refuseUnreportedBlockContainer(result.unrepresentedChanges, story.partPath);
-    if (story.ancillaryMode === 'inserted') {
-      const marked = await markInsertedAncillaryStoryParagraphs(
-        story.revised,
+    if (story.ancillaryMode === 'inserted' || story.ancillaryMode === 'deleted') {
+      const inserted = story.ancillaryMode === 'inserted';
+      // Where the projection that drops this story carries its part onto a
+      // section that showed another story, that story is copied in and
+      // tracked the other way (#1454).
+      const displacedStoryXml = story.slotLifecycle
+        ? undefined
+        : await displacedLifecycleStoryXml(
+          outerResult.document,
+          inserted ? textBoxPlan.outerOriginal : textBoxPlan.outerRevised,
+          deletedStoryOutputPaths.get(story) ?? story.partPath,
+          inserted ? 'inserted' : 'deleted',
+        );
+      const marked = await (inserted ? markInsertedAncillaryStoryParagraphs : markDeletedAncillaryStoryParagraphs)(
+        inserted ? story.revised : story.original,
         outerResult.document,
         options.author ?? 'Comparison',
         options.date ?? new Date(),
         nextPackageRevisionId,
-        { blankFinalParagraph: story.slotLifecycle },
+        { blankFinalParagraph: story.slotLifecycle, displacedStoryXml },
       );
-      const insertionRanges = marked.markedParagraphs;
+      const ranges = marked.markedParagraphs;
+      const displaced = marked.displacedParagraphs;
+      if (displaced > 0) displacedCopyPartPaths.add(deletedStoryOutputPaths.get(story) ?? story.partPath);
       result = {
         ...result,
         document: marked.document,
-        stats: {
-          ...result.stats,
-          insertions: insertionRanges,
-          insertedRanges: insertionRanges,
-          insertedAtoms: Math.max(
-            result.stats.insertedAtoms,
-            marked.markedParagraphs,
-          ),
-        },
-      };
-    } else if (story.ancillaryMode === 'deleted') {
-      const marked = await markDeletedAncillaryStoryParagraphs(
-        story.original,
-        outerResult.document,
-        options.author ?? 'Comparison',
-        options.date ?? new Date(),
-        nextPackageRevisionId,
-        { blankFinalParagraph: story.slotLifecycle },
-      );
-      const deletionRanges = marked.markedParagraphs;
-      result = {
-        ...result,
-        document: marked.document,
-        stats: {
-          ...result.stats,
-          deletions: deletionRanges,
-          deletedRanges: deletionRanges,
-          deletedAtoms: Math.max(
-            result.stats.deletedAtoms,
-            marked.markedParagraphs,
-          ),
-        },
+        stats: inserted
+          ? {
+            ...result.stats,
+            insertions: ranges,
+            insertedRanges: ranges,
+            insertedAtoms: Math.max(result.stats.insertedAtoms, ranges),
+            deletions: result.stats.deletions + displaced,
+            deletedRanges: result.stats.deletedRanges + displaced,
+            deletedAtoms: result.stats.deletedAtoms + displaced,
+            insertedTableRows: result.stats.insertedTableRows + marked.markedRows,
+            deletedTableRows: result.stats.deletedTableRows + marked.displacedRows,
+          }
+          : {
+            ...result.stats,
+            deletions: ranges,
+            deletedRanges: ranges,
+            deletedAtoms: Math.max(result.stats.deletedAtoms, ranges),
+            insertions: result.stats.insertions + displaced,
+            insertedRanges: result.stats.insertedRanges + displaced,
+            insertedAtoms: result.stats.insertedAtoms + displaced,
+            insertedTableRows: result.stats.insertedTableRows + marked.displacedRows,
+            deletedTableRows: result.stats.deletedTableRows + marked.markedRows,
+          },
       };
     }
     nextPackageRevisionId = Math.max(
@@ -1803,6 +1810,7 @@ async function compareDocumentsTagged(
       {
         changes: unrepresentedChanges,
         comparedPartPaths: new Set(storyResults.map(({ partPath }) => partPath)),
+        displacedCopyPartPaths,
       },
     );
   }
