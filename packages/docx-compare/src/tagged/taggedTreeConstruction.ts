@@ -1148,19 +1148,21 @@ function constructBoth(
     // Field-context keys deliberately keep different complete fields out of
     // the LCS. Do not re-pair their individual runs through the generic fuzzy
     // gap matcher: that interleaves one source field with multiple revised
-    // fields and produces projection-invalid partial complexes. A gap whose
-    // fields each complete inside one element still pairs its block
-    // containers (#1459); a gap holding part of a field pairs nothing.
-    const similarityPairs = gapElements.some((element) => !fieldsCompleteWithin(element))
-      ? []
-      : gapElements.some(holdsFieldControl)
-        ? blockContainerPairs(originalGap, revisedGap)
-        : similarParagraphPairs(
-          originalGap,
-          revisedGap,
-          originalNumberingIdentities,
-          revisedNumberingIdentities,
-        );
+    // fields and produces projection-invalid partial complexes. A gap holding
+    // a field, whole or in part, pairs only its same-identity block
+    // containers (#1459), each diffed child by child through this same guard.
+    // A field crossing a container boundary is then tracked as the deletion
+    // and insertion of the paragraphs holding its halves, which the
+    // serializer keeps deleted as one field (#1462), and the container is
+    // not churned whole around it.
+    const similarityPairs = gapElements.some((element) => !fieldsCompleteWithin(element) || holdsFieldControl(element))
+      ? blockContainerPairs(originalGap, revisedGap)
+      : similarParagraphPairs(
+        originalGap,
+        revisedGap,
+        originalNumberingIdentities,
+        revisedNumberingIdentities,
+      );
     for (const [localOriginal, localRevised] of similarityPairs) {
       const matchedOriginal = gapOriginalStart + localOriginal;
       const matchedRevised = gapRevisedStart + localRevised;
@@ -1180,6 +1182,25 @@ function constructBoth(
           revisedNumberingIdentities,
         ));
       }
+    }
+    // Side-only content is emitted deleted first, except when the deleted
+    // content opens a field that it does not close and the inserted content
+    // closes one it does not open, as when the halves of a field crossing a
+    // container boundary change sides. Deleted-first would then nest the
+    // deleted field inside the inserted field's result in the redline's
+    // combined field sequence; a reader that resolves fields across the
+    // whole redline before applying revisions (LibreOffice) then replaces
+    // that result and loses the text inside it. Inserted-first keeps the two
+    // fields one after the other (#1462).
+    const fieldDepth = (elements: readonly WmlElement[]): number => elements.reduce((depth, element) =>
+      depth + Array.from(element.getElementsByTagNameNS(W, 'fldChar')).reduce((sum, fieldChar) => {
+        const type = fieldChar.getAttributeNS(W, 'fldCharType');
+        return sum + (type === 'begin' ? 1 : type === 'end' ? -1 : 0);
+      }, 0), 0);
+    const insertedFirst = fieldDepth(originalChildren.slice(oi, originalEnd)) > 0
+      && fieldDepth(revisedChildren.slice(ri, revisedEnd)) < 0;
+    if (insertedFirst) {
+      while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
     }
     while (oi < originalEnd) children.push({ tag: 'original', node: originalChildren[oi++]!, children: [], opaque: true });
     while (ri < revisedEnd) children.push({ tag: 'revised', node: revisedChildren[ri++]!, children: [], opaque: true });
