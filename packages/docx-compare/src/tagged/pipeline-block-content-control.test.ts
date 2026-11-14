@@ -852,6 +852,38 @@ describe('block customXml boundary moves (#1102)', () => {
         opensField + retagged(closesField) + tail], ['added', 'removed']],
     ] as const;
 
+    // A field inside an earlier insertion: changing its instruction deletes
+    // part of that insertion, so some deleted field characters are in neither
+    // projection. They are left to the per-deletion rule (a review of this
+    // change found the story-wide rule threw on them).
+    for (const [kind, wrap] of crossingWrappers) {
+      for (const detectMoves of [false, true]) {
+        crossingTest(`a field inside an earlier insertion in a ${kind} changes its instruction with detectMoves=${detectMoves}`, async () => {
+          const priorInsertion = (inner: string) => `<w:ins w:id="80" w:author="Prior" w:date="2026-01-01T00:00:00Z">${inner}</w:ins>`;
+          const fieldParagraph = (instruction: string) => `<w:p>${priorInsertion(run('See ') + field(instruction, 'Section 1.1'))}</w:p>`;
+          const originalBody = wrap(fieldParagraph('REF _Ref1459 \\h')) + para('Tail.');
+          const revisedBody = wrap(fieldParagraph('REF _Ref1462 \\h')) + para('Tail.');
+          const original = await buildDocxFromBodyXml(originalBody);
+          const revised = await buildDocxFromBodyXml(revisedBody);
+          const result = await compareDocuments(original, revised, { detectMoves });
+          await assertSchema(result.document);
+          const xml = await (await DocxArchive.load(result.document)).getDocumentXml();
+          const sourceXml = async (buffer: Buffer) => (await DocxArchive.load(buffer)).getDocumentXml();
+          for (const [label, astProject, nativeProject, source] of [
+            ['accept', acceptAllChanges, acceptChanges, await sourceXml(revised)],
+            ['reject', rejectAllChanges, rejectChanges, await sourceXml(original)],
+          ] as const) {
+            const native = parseXml(xml);
+            nativeProject(native);
+            // Each projection resolves the earlier insertion as its source does.
+            expect(fieldShape(astProject(xml)), `${label} comparison acceptor`).toEqual(fieldShape(astProject(source)));
+            expect(fieldShape(serializeXml(native)), `${label} docx-core acceptor`).toEqual(fieldShape(astProject(source)));
+            expect(collectStrictFieldStructureIssues(astProject(xml)), `${label} fields`).toEqual([]);
+          }
+        });
+      }
+    }
+
     for (const [name, [originalBody, revisedBody], listed] of [...unpairedCases, ...identityCases]) {
       for (const detectMoves of [false, true]) {
         crossingTest(`${name} with detectMoves=${detectMoves} tracks it whole and keeps one field in each projection`, async () => {
