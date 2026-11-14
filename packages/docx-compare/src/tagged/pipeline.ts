@@ -133,6 +133,7 @@ import {
   type TextBoxStoryInput,
   rejectedSelectedAncillaryStoryPaths,
   sectionAlignedOrdinaryStoryInputs,
+  storyComparisonReproducesBothSides,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
 import {
@@ -1587,6 +1588,19 @@ async function compareDocumentsTagged(
         return;
       }
       result = await compareNestedStory(false);
+    }
+    // A header or footer part with no text box in it whose own comparison
+    // does not reproduce both sides (its table rows paired differently from
+    // the eligibility scaffold) stays listed too (#1467).
+    if (
+      story.container === 'ancillaryPart' &&
+      story.ancillaryMode !== 'inserted' &&
+      story.ancillaryMode !== 'deleted' &&
+      !textBoxPlan.stories.some((other) =>
+        other.container === 'textBox' && other.partPath === story.partPath) &&
+      !(await storyComparisonReproducesBothSides(story.original, story.revised, result.document))
+    ) {
+      return;
     }
     refuseUnreportedBlockContainer(result.unrepresentedChanges, story.partPath);
     if (story.ancillaryMode === 'inserted' || story.ancillaryMode === 'deleted') {
