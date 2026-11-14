@@ -1454,7 +1454,11 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
  * when it is inserted or deleted with `w:trPr/w:ins` or `w:trPr/w:del`, as in
  * the main body, under the same table-topology guard. A row holding a field,
  * a content control, a drawing, a nested table or table-property exceptions
- * stays in the scaffold, so inserting or deleting it is still listed. Only the eligibility gates use it.
+ * stays in the scaffold, so inserting or deleting it is still listed. Only the
+ * lifecycle eligibility gate uses it; the ordinary-story gates pair the two
+ * stories' rows instead (`ordinaryStoryScaffoldsMatch`), which also admits an
+ * inserted or deleted row holding a field, a content control, range markup or
+ * a nested table.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
@@ -1471,6 +1475,14 @@ function ordinaryStoryScaffoldFingerprint(
   xml: string,
   options: { ignoreTrackableFormatting?: boolean; ignoreTrackableRows?: boolean } = {},
 ): string {
+  return canonicalNode(ordinaryStoryScaffoldRoot(xml, options));
+}
+
+/** The scaffold `ordinaryStoryScaffoldFingerprint` canonicalizes, as an element tree. */
+function ordinaryStoryScaffoldRoot(
+  xml: string,
+  options: { ignoreTrackableFormatting?: boolean; ignoreTrackableRows?: boolean } = {},
+): Element {
   const document = parseXml(xml);
   const root = document.documentElement.cloneNode(true) as Element;
   removeFormattingWhitespace(root);
@@ -1499,7 +1511,7 @@ function ordinaryStoryScaffoldFingerprint(
   if (options.ignoreTrackableFormatting) removeTrackableFormatting(root);
   removeEmptyFormattingProperties(root);
   blankOrdinaryParagraphText(root);
-  return canonicalNode(root);
+  return root;
 }
 
 /**
@@ -1551,24 +1563,26 @@ function removeTrackableRows(root: Element): void {
   // A story holding a text box keeps every row: its comparison may fall back
   // to the unguarded path, which must not see a newly admitted row change.
   if (root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0) return;
-  const isW = (element: Element, ...localNames: string[]): boolean =>
-    element.namespaceURI === OOXML.W_NS && localNames.includes(element.localName);
   for (const table of directChildElements(root)) {
-    if (!isW(table, 'tbl')) continue;
+    if (!isWordElement(table, 'tbl')) continue;
     for (const row of directChildElements(table)) {
-      if (!isW(row, 'tr')) continue;
-      // Only row properties and cells left holding nothing but their cell
-      // properties: a cell-level content control, custom XML, table-property
-      // exceptions, range markup or a nested table keeps the row.
-      const plain = directChildElements(row).every((child) =>
-        isW(child, 'trPr')
-        || (isW(child, 'tc') && directChildElements(child).every((part) => isW(part, 'tcPr'))));
-      if (!plain) continue;
-      if (Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'))
-        .some((element) => ROW_REVISION_RECORDS.has(element.localName))) continue;
-      table.removeChild(row);
+      if (isWordElement(row, 'tr') && isPlainTrackableRow(row)) table.removeChild(row);
     }
   }
+}
+
+/**
+ * Whether a scaffold row holds only row properties and cells left holding
+ * nothing but their cell properties (their paragraphs were all removed as
+ * admitted plain paragraphs), and carries no revision record: a cell-level
+ * content control, custom XML, table-property exceptions, range markup or a
+ * nested table keeps the row.
+ */
+function isPlainTrackableRow(row: Element): boolean {
+  return directChildElements(row).every((child) =>
+    isWordElement(child, 'trPr')
+    || (isWordElement(child, 'tc') && directChildElements(child).every((part) => isWordElement(part, 'tcPr'))))
+    && !rowCarriesRevision(row);
 }
 
 /**
@@ -1576,6 +1590,169 @@ function removeTrackableRows(root: Element): void {
  * and plain table rows it tracks as inserted or deleted, are not scaffold.
  */
 const trackableFormatting = { ignoreTrackableFormatting: true, ignoreTrackableRows: true } as const;
+
+/**
+ * Content a row tracked as a whole-row insertion or deletion may not hold: a
+ * drawing or text box (rare elements, which stay listed with their story),
+ * table-property exceptions (docx-core's Reject All does not restore a
+ * `w:tblPrExChange`), and note or comment anchors, which a header or footer
+ * cannot carry.
+ */
+const UNTRACKABLE_ROW_CONTENT = new Set([
+  'drawing',
+  'pict',
+  'object',
+  'txbxContent',
+  'tblPrEx',
+  'commentRangeStart',
+  'commentRangeEnd',
+  'commentReference',
+  'footnoteReference',
+  'endnoteReference',
+]);
+
+const isWordElement = (element: Element, ...localNames: string[]): boolean =>
+  element.namespaceURI === OOXML.W_NS && localNames.includes(element.localName);
+
+/** Whether a row, or anything in it, already carries a revision record. */
+function rowCarriesRevision(row: Element): boolean {
+  return Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'))
+    .some((element) => ROW_REVISION_RECORDS.has(element.localName));
+}
+
+/**
+ * Whether the story comparison can track a scaffold row as a whole-row
+ * insertion or deletion: it holds only row properties and cells, each cell
+ * possibly inside a cell-level content control, carries no revision record
+ * and holds none of `UNTRACKABLE_ROW_CONTENT`. Its cells may hold fields,
+ * content controls, range markup and nested tables. A cell-level custom XML
+ * element or row-level range markup keeps the row, so a change to it is
+ * listed. The whole-row marker never wraps a cell: a cell-level content
+ * control goes with its row, and the revisions on its cells' content sit
+ * inside the cells.
+ */
+function isTrackableScaffoldRow(row: Element): boolean {
+  const cellLevelControl = (child: Element): boolean => isWordElement(child, 'sdt')
+    && directChildElements(child).every((part) => isWordElement(part, 'sdtPr', 'sdtEndPr')
+      || (isWordElement(part, 'sdtContent') && directChildElements(part).every((cell) => isWordElement(cell, 'tc'))));
+  if (!directChildElements(row).every((child) => isWordElement(child, 'trPr', 'tc') || cellLevelControl(child))) return false;
+  if (rowCarriesRevision(row)) return false;
+  return !Array.from(row.getElementsByTagName('*')).some((element) =>
+    (element.namespaceURI === MC_NS && element.localName === 'AlternateContent')
+    || (element.namespaceURI === OOXML.W_NS && UNTRACKABLE_ROW_CONTENT.has(element.localName)));
+}
+
+/**
+ * Whether a trackable scaffold row holds only fields beyond plain paragraphs:
+ * no content control, custom XML, nested table or cell-level range markup.
+ * Should the story comparison pair such a row with a row of plain paragraphs,
+ * it tracks the field as inserted or deleted run content inside the paired
+ * cells. A row holding the others must not be paired with a different row: a
+ * content control inserted into a kept cell leaves its emptied shell after
+ * Reject All, and its properties have no revision record.
+ */
+function holdsOnlyFieldScaffold(row: Element): boolean {
+  if (Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'))
+    .some((element) => isWordElement(element, 'sdt', 'customXml', 'tbl'))) return false;
+  return directChildElements(row)
+    .filter((child) => isWordElement(child, 'tc'))
+    .every((cell) => directChildElements(cell).every((part) => isWordElement(part, 'tcPr', 'p')));
+}
+
+/**
+ * Remove, from the scaffolds of two stories, the rows of each table placed
+ * directly in the story that the story comparison tracks as whole-row
+ * insertions or deletions. Each table's rows are paired with the matching
+ * table's by their longest common subsequence of identical scaffold rows; a
+ * paired row stays, so a kept row whose field instruction, content-control
+ * properties or bookmarks changed still reads as a scaffold change. An
+ * unpaired row is removed when:
+ *
+ * - it holds only plain paragraphs and carries no revision record (#1393); or
+ * - it is a trackable scaffold row (`isTrackableScaffoldRow`) and the other
+ *   story's table has no unpaired row, so the comparison has no row to pair
+ *   it with; or
+ * - it is a trackable scaffold row holding fields
+ *   (`holdsOnlyFieldScaffold`), and every unpaired row of the other story's
+ *   table holds only plain paragraphs.
+ *
+ * Two unpaired scaffold rows facing each other stay, as a paired paragraph's
+ * field instruction or content-control change does (SDX-CMP-STORY-06): the
+ * comparison may pair them.
+ *
+ * Neither story may hold a text box: its comparison may fall back to the
+ * unguarded path, which must not see a newly admitted row change.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see https://github.com/UseJunior/safe-docx/issues/1467
+ */
+function removeUnpairedTrackableRows(originalRoot: Element, revisedRoot: Element): void {
+  if (
+    originalRoot.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0
+    || revisedRoot.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0
+  ) return;
+  const directTables = (root: Element): Element[] =>
+    directChildElements(root).filter((child) => isWordElement(child, 'tbl'));
+  const rows = (table: Element): Element[] =>
+    directChildElements(table).filter((child) => isWordElement(child, 'tr'));
+  const originalTables = directTables(originalRoot);
+  const revisedTables = directTables(revisedRoot);
+  for (let index = 0; index < Math.min(originalTables.length, revisedTables.length); index += 1) {
+    const originalRows = rows(originalTables[index]!);
+    const revisedRows = rows(revisedTables[index]!);
+    const originalKeys = originalRows.map((row) => canonicalNode(row));
+    const revisedKeys = revisedRows.map((row) => canonicalNode(row));
+    const lengths = Array.from(
+      { length: originalRows.length + 1 },
+      () => new Array<number>(revisedRows.length + 1).fill(0),
+    );
+    for (let i = originalRows.length - 1; i >= 0; i -= 1) {
+      for (let j = revisedRows.length - 1; j >= 0; j -= 1) {
+        lengths[i]![j] = originalKeys[i] === revisedKeys[j]
+          ? lengths[i + 1]![j + 1]! + 1
+          : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!);
+      }
+    }
+    const unpairedOriginal = new Set(originalRows);
+    const unpairedRevised = new Set(revisedRows);
+    for (let i = 0, j = 0; i < originalRows.length && j < revisedRows.length;) {
+      if (originalKeys[i] === revisedKeys[j]) {
+        unpairedOriginal.delete(originalRows[i]!);
+        unpairedRevised.delete(revisedRows[j]!);
+        i += 1;
+        j += 1;
+      } else if (lengths[i + 1]![j]! >= lengths[i]![j + 1]!) i += 1;
+      else j += 1;
+    }
+    for (const [unpaired, otherUnpaired] of [
+      [unpairedOriginal, unpairedRevised],
+      [unpairedRevised, unpairedOriginal],
+    ] as const) {
+      const otherOnlyPlain = [...otherUnpaired].every((row) => isPlainTrackableRow(row));
+      for (const row of unpaired) {
+        const removable = isPlainTrackableRow(row)
+          || (isTrackableScaffoldRow(row)
+            && (otherUnpaired.size === 0 || (otherOnlyPlain && holdsOnlyFieldScaffold(row))));
+        if (removable) row.parentNode?.removeChild(row);
+      }
+    }
+  }
+}
+
+/**
+ * Whether two header/footer stories share their eligibility scaffold: the
+ * formatting the story comparison tracks is left out of both
+ * (`removeTrackableFormatting`), and so are the table rows it tracks as
+ * whole-row insertions or deletions (`removeUnpairedTrackableRows`).
+ */
+function ordinaryStoryScaffoldsMatch(originalXml: string, revisedXml: string): boolean {
+  const options = { ignoreTrackableFormatting: true } as const;
+  const originalRoot = ordinaryStoryScaffoldRoot(originalXml, options);
+  const revisedRoot = ordinaryStoryScaffoldRoot(revisedXml, options);
+  removeUnpairedTrackableRows(originalRoot, revisedRoot);
+  return canonicalNode(originalRoot) === canonicalNode(revisedRoot);
+}
 
 /**
  * Paragraph-mark revision markers: a paragraph whose mark is already inserted,
@@ -2784,8 +2961,7 @@ async function ancillaryStoryInputs(
       && original.ordinaryContent !== pair.revised.ordinaryContent
       && (shapedBoxes.length === 0
         || ordinaryStoryContentFingerprint(ordinaryOriginalXml) !== pair.revised.ordinaryContent)
-      && ordinaryStoryScaffoldFingerprint(ordinaryOriginalXml, trackableFormatting)
-        === ordinaryStoryScaffoldFingerprint(pair.revised.xml, trackableFormatting)
+      && ordinaryStoryScaffoldsMatch(ordinaryOriginalXml, pair.revised.xml)
     ) {
       const originalTargets = relationshipTargets(original.relationshipsXml);
       const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
@@ -3264,10 +3440,7 @@ export async function sectionAlignedOrdinaryStoryInputs(
     // The compared part must still be the revised part: the redline goes there.
     if (comparedIdentity(comparedPath) !== revisedIdentity(comparedPath)) return false;
     if (originalStory.ordinaryContent === revisedStory.ordinaryContent) return false;
-    if (
-      ordinaryStoryScaffoldFingerprint(originalStory.xml, trackableFormatting)
-        !== ordinaryStoryScaffoldFingerprint(revisedStory.xml, trackableFormatting)
-    ) {
+    if (!ordinaryStoryScaffoldsMatch(originalStory.xml, revisedStory.xml)) {
       return false;
     }
     // Both stories must reference the same resolved targets (internal
@@ -5044,10 +5217,86 @@ function projectedStoryContent(
     stripDisplayNeutralMarkup(document.documentElement, { finalParagraphAfterTable: true });
     projectedXml = serializer.serializeToString(document);
   }
+  projectedXml = withEquivalentFieldAndBookmarkForms(projectedXml);
   return [
     ordinaryStoryScaffoldFingerprint(projectedXml),
     extractRoundTripComparisonText(projectedXml),
   ].join('|');
+}
+
+/**
+ * Write a projected story in one form where two forms display the same:
+ *
+ * - a simple field (`w:fldSimple`) as the equivalent complex field, the form
+ *   the comparison gives a simple field it inserts or deletes, since a run
+ *   revision admits only run content (see `expandRevisionWrappedSimpleFields`
+ *   in `taggedTreeSerializer.ts`): begin, instruction, separate, the cached
+ *   result and end, the field-character runs taking the result's run
+ *   properties;
+ * - each bookmark's `w:id` as its ordinal in the story, since the id only
+ *   pairs a `w:bookmarkStart` with its `w:bookmarkEnd` and the comparison
+ *   renumbers it to keep ids unique across the package.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1467
+ */
+function withEquivalentFieldAndBookmarkForms(xml: string): string {
+  const document = parseXml(xml);
+  const isW = (element: Element, localName: string): boolean =>
+    element.namespaceURI === OOXML.W_NS && element.localName === localName;
+  // Innermost first, so an outer field's result already holds complex fields.
+  for (const field of Array.from(document.getElementsByTagNameNS(OOXML.W_NS, 'fldSimple')).reverse()) {
+    const content = directChildElements(field);
+    const fieldData = content.find((child) => isW(child, 'fldData'));
+    const result = content.filter((child) => child !== fieldData);
+    const firstResultRun = result.flatMap((child) =>
+      isW(child, 'r') ? [child] : Array.from(child.getElementsByTagNameNS(OOXML.W_NS, 'r')))[0];
+    const resultProperties = firstResultRun
+      ? directChildElements(firstResultRun).find((child) => isW(child, 'rPr'))
+      : undefined;
+    const controlRun = (control: Element): Element => {
+      const run = document.createElementNS(OOXML.W_NS, 'w:r');
+      if (resultProperties) {
+        const properties = resultProperties.cloneNode(true) as Element;
+        for (const change of directChildElements(properties).filter((child) => isW(child, 'rPrChange'))) {
+          properties.removeChild(change);
+        }
+        run.appendChild(properties);
+      }
+      run.appendChild(control);
+      return run;
+    };
+    const fieldCharacter = (type: 'begin' | 'separate' | 'end'): Element => {
+      const control = document.createElementNS(OOXML.W_NS, 'w:fldChar');
+      control.setAttributeNS(OOXML.W_NS, 'w:fldCharType', type);
+      if (type === 'begin') {
+        for (const flag of ['fldLock', 'dirty']) {
+          const value = field.getAttributeNS(OOXML.W_NS, flag);
+          if (value !== null && value !== '') control.setAttributeNS(OOXML.W_NS, `w:${flag}`, value);
+        }
+        if (fieldData) control.appendChild(fieldData.cloneNode(true));
+      }
+      return controlRun(control);
+    };
+    const instruction = document.createElementNS(OOXML.W_NS, 'w:instrText');
+    instruction.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    instruction.appendChild(document.createTextNode(field.getAttributeNS(OOXML.W_NS, 'instr') ?? ''));
+    const parent = field.parentNode!;
+    for (const item of [fieldCharacter('begin'), controlRun(instruction), fieldCharacter('separate'), ...result, fieldCharacter('end')]) {
+      parent.insertBefore(item, field);
+    }
+    parent.removeChild(field);
+  }
+  const ordinals = new Map<string, string>();
+  for (const element of Array.from(document.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
+    if (element.localName !== 'bookmarkStart' && element.localName !== 'bookmarkEnd') continue;
+    const id = element.getAttributeNS(OOXML.W_NS, 'id');
+    if (id === null) continue;
+    if (!ordinals.has(id)) ordinals.set(id, String(ordinals.size));
+    element.setAttributeNS(OOXML.W_NS, 'w:id', ordinals.get(id)!);
+  }
+  return serializer.serializeToString(document);
 }
 
 /**

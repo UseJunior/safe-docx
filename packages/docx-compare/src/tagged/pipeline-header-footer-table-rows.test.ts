@@ -2,7 +2,9 @@
  * A header or footer table that gains or loses a row is tracked with whole-row
  * revisions, as a body table is: an inserted row carries `w:trPr/w:ins` and
  * a deleted row `w:trPr/w:del`, beside the revisions on its content, instead
- * of the story being left in `unrepresentedChanges`.
+ * of the story being left in `unrepresentedChanges`. That holds for a row of
+ * plain paragraphs (#1393) and for a row holding a field, a content control
+ * (inside a cell or around one), range markup or a nested table (#1467).
  *
  * Each case checks, for every default, first and even header and footer, the
  * tables and paragraphs each part shows after Accept All and Reject All, with
@@ -14,6 +16,7 @@
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @see https://github.com/UseJunior/safe-docx/issues/1393
+ * @see https://github.com/UseJunior/safe-docx/issues/1467
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -23,7 +26,13 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { DocxArchive, DocxDocument, OOXML, parseXml } from '@usejunior/docx-core';
+import {
+  collectStrictFieldStructureIssues,
+  DocxArchive,
+  DocxDocument,
+  OOXML,
+  parseXml,
+} from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
@@ -139,12 +148,16 @@ const isW = (node: Node | null, name: string): boolean =>
 const children = (element: Element, name: string): Element[] =>
   Array.from(element.childNodes).filter((child): child is Element => isW(child, name));
 
-/** The visible text of a paragraph, with a field's instruction kept as `{PAGE}`. */
+/**
+ * The visible text of a paragraph, with a field's instruction kept as `{PAGE}`,
+ * for a simple field as for the equivalent complex field.
+ */
 function paragraphText(p: Element): string {
   let value = '';
   for (const element of Array.from(p.getElementsByTagNameNS(W_NS, '*'))) {
     if (element.localName === 't') value += element.textContent ?? '';
     else if (element.localName === 'instrText') value += `{${(element.textContent ?? '').trim()}}`;
+    else if (element.localName === 'fldSimple') value += `{${(element.getAttributeNS(W_NS, 'instr') ?? '').trim()}}`;
   }
   return value;
 }
@@ -305,6 +318,79 @@ async function expectTrackedRows(
     expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
   });
   await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document));
+}
+
+/**
+ * A story's field structure: its text, field characters and field
+ * instructions in document order, so a duplicated, dropped or reordered field
+ * character, or an instruction left behind, reads differently. A simple field
+ * reads as the equivalent complex field (begin, instruction, separate, result,
+ * end), the form the comparison gives a simple field it inserts or deletes; a
+ * deleted instruction (`w:delInstrText`) reads as an instruction, since a
+ * projection must not leave one.
+ */
+function fieldStructure(xml: string): string[] {
+  const tokens: string[] = [];
+  const visit = (element: Element): void => {
+    if (element.namespaceURI === W_NS) {
+      if (element.localName === 't' || element.localName === 'delText') tokens.push(`"${element.textContent ?? ''}"`);
+      else if (element.localName === 'fldChar') tokens.push(`{${element.getAttributeNS(W_NS, 'fldCharType')}}`);
+      else if (element.localName === 'instrText' || element.localName === 'delInstrText') {
+        tokens.push(`instr(${(element.textContent ?? '').trim()})`);
+      } else if (element.localName === 'fldSimple') {
+        tokens.push('{begin}', `instr(${(element.getAttributeNS(W_NS, 'instr') ?? '').trim()})`, '{separate}');
+        Array.from(element.childNodes).filter((child): child is Element => child.nodeType === 1).forEach(visit);
+        tokens.push('{end}');
+        return;
+      }
+    }
+    Array.from(element.childNodes).filter((child): child is Element => child.nodeType === 1).forEach(visit);
+  };
+  visit(parseXml(xml).documentElement);
+  return tokens;
+}
+
+/**
+ * Every header and footer keeps its fields whole after Accept All and Reject
+ * All, with both appliers: the field structure equals the revised (accept) or
+ * original (reject) story's, and the strict field-structure check finds nothing.
+ */
+async function expectFieldStructure(
+  { then }: Pick<AllureBddContext, 'then'>,
+  original: Buffer,
+  revised: Buffer,
+  result: TaggedCompareResult,
+): Promise<void> {
+  await then('every header and footer keeps its field structure in both projections, with both appliers', async () => {
+    const originalArchive = await DocxArchive.load(original);
+    const revisedArchive = await DocxArchive.load(revised);
+    const comparedArchive = await DocxArchive.load(result.document);
+    const projectedArchives: Record<string, DocxArchive> = {};
+    for (const projection of ['accept', 'reject'] as const) {
+      const document = await DocxDocument.load(result.document);
+      if (projection === 'accept') await document.acceptChanges();
+      else await document.rejectChanges();
+      projectedArchives[projection] = await DocxArchive.load((await document.toBuffer()).buffer);
+    }
+    for (const slot of SLOTS) {
+      const path = partPath(slot);
+      const comparedXml = (await comparedArchive.getFile(path))!;
+      for (const [projection, expectedXml, astXml] of [
+        ['accept', (await revisedArchive.getFile(path))!, acceptAllChanges(comparedXml)],
+        ['reject', (await originalArchive.getFile(path))!, rejectAllChanges(comparedXml)],
+      ] as const) {
+        const coreXml = (await projectedArchives[projection]!.getFile(path))!;
+        for (const [applier, xml] of [['ast', astXml], ['core', coreXml]] as const) {
+          expect(fieldStructure(xml), `${path} ${projection} ${applier}`).toEqual(fieldStructure(expectedXml));
+          // CT_HdrFtr holds the block-level content a body holds.
+          const asDocument = xml
+            .replace(/<w:(hdr|ftr)(\s[^>]*)?>/u, (_match, _root, attributes = '') => `<w:document${attributes}><w:body>`)
+            .replace(/<\/w:(hdr|ftr)>\s*$/u, '</w:body></w:document>');
+          expect(collectStrictFieldStructureIssues(asDocument), `${path} ${projection} ${applier}`).toEqual([]);
+        }
+      }
+    }
+  });
 }
 
 interface RowCase {
@@ -494,7 +580,77 @@ describe('a table inside a header text box (#1393)', { timeout: LOAD_SENSITIVE_T
   );
 });
 
-describe('header and footer table changes the row revisions cannot carry stay listed (#1393)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+const numPagesField = (): string =>
+  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r><w:t>3</w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+const PAGE_ROW = row('Page', text('Page ') + pageField());
+/** A "Page X of Y" row: PAGE and NUMPAGES fields in one cell. */
+const PAGE_OF_ROW = row('Page', text('Page ') + pageField() + text(' of ') + numPagesField());
+
+/**
+ * A header or footer table row that holds a field, a content control, range
+ * markup or a nested table is tracked as a whole-row revision when it is
+ * inserted or deleted, as in the main body: "Page X of Y" cells are common in
+ * agreements. The field keeps its structure in each projection: its text,
+ * field characters and instruction, in document order, equal the source's.
+ */
+describe('a header or footer table row holding a field, content control or range markup (#1467)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  const SIMPLE_FIELD_ROW = row('Pages', '<w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>3</w:t></w:r></w:fldSimple>');
+  const CONTROL_ROW = `<w:tr>${cell(text('Client'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr>`
+    + `<w:sdt><w:sdtPr><w:alias w:val="Client"/><w:tag w:val="client"/></w:sdtPr><w:sdtContent>${paragraph(text('Acme Corp'))}</w:sdtContent></w:sdt></w:tc></w:tr>`;
+  const CELL_CONTROL_ROW = `<w:tr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Client'))}</w:sdtContent></w:sdt>${cell(text('Acme'))}</w:tr>`;
+  // A bookmark inside the paragraph, and one around the cell's paragraphs.
+  const BOOKMARK_ROW = row('Matter', '<w:bookmarkStart w:id="7" w:name="MatterNumber"/>' + text('2026-001') + '<w:bookmarkEnd w:id="7"/>');
+  const CELL_BOOKMARK_ROW = `<w:tr>${cell(text('Office'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr>`
+    + `<w:bookmarkStart w:id="8" w:name="OfficeAddress"/>${paragraph(text('1 Main Street'))}${paragraph(text('Springfield'))}`
+    + '<w:bookmarkEnd w:id="8"/></w:tc></w:tr>';
+  const NESTED_TABLE_ROW = `<w:tr>${cell(text('Signatory'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr>`
+    + '<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>'
+    + `<w:tr>${cell(text('Jane Doe'), '<w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>')}</w:tr></w:tbl>${paragraph('')}</w:tc></w:tr>`;
+  const RICH_CASES: readonly RowCase[] = [
+    { name: 'an inserted row holding a PAGE field', original: [COMPANY], revised: [COMPANY, PAGE_ROW], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted row holding a PAGE field', original: [COMPANY, PAGE_ROW], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
+    { name: 'an inserted "Page X of Y" row', original: [COMPANY, ADDRESS], revised: [COMPANY, PAGE_OF_ROW, ADDRESS], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted "Page X of Y" row', original: [PAGE_OF_ROW, COMPANY, ADDRESS], revised: [COMPANY, ADDRESS], markers: { inserted: 0, deleted: 1 } },
+    { name: 'an inserted row holding a simple NUMPAGES field', original: [COMPANY], revised: [SIMPLE_FIELD_ROW, COMPANY], markers: { inserted: 1, deleted: 0 } },
+    { name: 'an inserted row beside a kept PAGE-field row', original: [COMPANY, PAGE_ROW], revised: [COMPANY, PAGE_OF_ROW, PAGE_ROW], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a PAGE-field row replacing a plain row', original: [COMPANY, ADDRESS], revised: [COMPANY, PAGE_ROW], markers: { inserted: 1, deleted: 1 } },
+    { name: 'an inserted row holding a content control', original: [COMPANY], revised: [COMPANY, CONTROL_ROW], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted row holding a content control', original: [CONTROL_ROW, COMPANY], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
+    { name: 'an inserted row whose cell sits in a cell-level content control', original: [COMPANY], revised: [COMPANY, CELL_CONTROL_ROW], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted row whose cell sits in a cell-level content control', original: [CELL_CONTROL_ROW, COMPANY], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
+    { name: 'an inserted row holding a bookmark', original: [COMPANY], revised: [COMPANY, BOOKMARK_ROW], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted row holding a bookmark', original: [COMPANY, BOOKMARK_ROW, ADDRESS], revised: [COMPANY, ADDRESS], markers: { inserted: 0, deleted: 1 } },
+    { name: 'an inserted row holding a bookmark around its cell paragraphs', original: [COMPANY], revised: [CELL_BOOKMARK_ROW, COMPANY], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted row holding a bookmark around its cell paragraphs', original: [COMPANY, CELL_BOOKMARK_ROW], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
+    { name: 'an inserted row holding a nested table', original: [COMPANY], revised: [COMPANY, NESTED_TABLE_ROW], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted row holding a nested table', original: [COMPANY, NESTED_TABLE_ROW], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
+  ];
+  for (const richCase of RICH_CASES) {
+    test.openspec('[SDX-CMP-STORY-07] Header and footer table rows are tracked as whole-row revisions')(
+      `tracks ${richCase.name} in every header and footer`,
+      async ({ given, when, then }: AllureBddContext) => {
+        const [original, revised] = await given(`six stories each holding a table; the revision has ${richCase.name} and edits the body`, () =>
+          Promise.all([
+            storyPackage('Body draft', () => story(...richCase.original)),
+            storyPackage('Body final', () => story(...richCase.revised)),
+          ]));
+        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+        await expectTrackedRows({ then }, original, revised, result, richCase.markers);
+        await expectFieldStructure({ then }, original, revised, result);
+      },
+    );
+  }
+});
+
+/**
+ * Changes the whole-row revisions cannot carry, or that the comparison could
+ * pair into a kept row's change that is itself listed, keep the story listed.
+ */
+describe('header and footer table changes the row revisions cannot carry stay listed (#1393, #1467)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   const LISTED_CASES: ReadonlyArray<{ name: string; original: string; revised: string }> = [
     {
       // docx-core's Reject All does not restore a w:tblPrExChange.
@@ -509,14 +665,31 @@ describe('header and footer table changes the row revisions cannot carry stay li
       revised: story(`<w:tr><w:sdt><w:sdtPr><w:alias w:val="Company"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt>${cell(text('Corp'))}</w:tr>`),
     },
     {
+      name: 'a renamed content control in a kept row',
+      original: story(COMPANY, `<w:tr>${cell(text('Client'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${paragraph(text('Acme'))}</w:sdtContent></w:sdt></w:tc></w:tr>`),
+      revised: story(COMPANY, `<w:tr>${cell(text('Client'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr><w:sdt><w:sdtPr><w:alias w:val="Customer"/></w:sdtPr><w:sdtContent>${paragraph(text('Acme'))}</w:sdtContent></w:sdt></w:tc></w:tr>`),
+    },
+    {
+      // A field instruction change in a paired row is listed, as in a paragraph (SDX-CMP-STORY-06).
+      name: 'a kept row whose PAGE field becomes a NUMPAGES field',
+      original: story(COMPANY, PAGE_ROW),
+      revised: story(COMPANY, row('Page', text('Page ') + numPagesField())),
+    },
+    {
+      name: 'a PAGE-field row that gains a NUMPAGES field',
+      original: story(COMPANY, PAGE_ROW),
+      revised: story(COMPANY, PAGE_OF_ROW),
+    },
+    {
+      // A content control must not land in a paired row's kept cell.
+      name: 'a content-control row replacing a plain row',
+      original: story(COMPANY, ADDRESS),
+      revised: story(COMPANY, `<w:tr>${cell(text('Client'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${paragraph(text('Acme'))}</w:sdtContent></w:sdt></w:tc></w:tr>`),
+    },
+    {
       name: 'a renamed cell-level content control',
       original: story(`<w:tr><w:sdt><w:sdtPr><w:alias w:val="Company"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt>${cell(text('Corp'))}</w:tr>`),
       revised: story(`<w:tr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt>${cell(text('Corp'))}</w:tr>`),
-    },
-    {
-      name: 'an inserted row holding a PAGE field',
-      original: story(COMPANY),
-      revised: story(COMPANY, row('Page', text('Page ') + pageField())),
     },
   ];
   for (const listedCase of LISTED_CASES) {
@@ -592,6 +765,60 @@ reader('LibreOffice accepts and rejects header and footer table rows as compared
       expect(revisedView!.footer).toHaveLength(readerCase.revised.length);
       expect(accepted).toEqual(revisedView);
       expect(rejected).toEqual(originalView);
+    }, 600_000);
+  }
+});
+
+/**
+ * Each header and footer of an ODT export as the number of page-number and
+ * page-count fields LibreOffice read from it.
+ */
+async function odtStoryFields(odt: Buffer): Promise<Record<string, number>> {
+  const zip = await JSZip.loadAsync(odt);
+  const styles = parseXml(await zip.file('styles.xml')!.async('string'));
+  const STYLE_NS = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0';
+  const TEXT_NS = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+  const fields: Record<string, number> = {};
+  for (const localName of ['header', 'header-left', 'header-first', 'footer', 'footer-left', 'footer-first']) {
+    const story = styles.getElementsByTagNameNS(STYLE_NS, localName)[0];
+    fields[localName] = story
+      ? story.getElementsByTagNameNS(TEXT_NS, 'page-number').length + story.getElementsByTagNameNS(TEXT_NS, 'page-count').length
+      : 0;
+  }
+  return fields;
+}
+
+reader('LibreOffice accepts and rejects header and footer table rows holding fields as compared (#1467)', () => {
+  const READER_CASES: readonly RowCase[] = [
+    { name: 'an inserted "Page X of Y" row', original: [COMPANY, ADDRESS], revised: [COMPANY, PAGE_OF_ROW, ADDRESS], markers: { inserted: 1, deleted: 0 } },
+    { name: 'a deleted row holding a PAGE field', original: [COMPANY, PAGE_ROW], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
+  ];
+  for (const readerCase of READER_CASES) {
+    test(`shows the revised rows and fields after Accept All and the original after Reject All for ${readerCase.name}`, async () => {
+      const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
+      const original = await storyPackage('Body draft', () => story(...readerCase.original));
+      const revised = await storyPackage('Body final', () => story(...readerCase.revised));
+      const { document } = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const packages: Buffer[] = [];
+      await runLibreOfficeOracle(
+        [
+          { op: 'identity' as const, docx: original, saveAs: 'odt' as const },
+          { op: 'identity' as const, docx: revised, saveAs: 'odt' as const },
+          { op: 'accept' as const, docx: document, saveAs: 'odt' as const },
+          { op: 'reject' as const, docx: document, saveAs: 'odt' as const },
+        ],
+        undefined,
+        (index: number, bytes: Buffer) => { packages[index] = bytes; },
+      );
+      const [originalView, revisedView, accepted, rejected] = await Promise.all(packages.map(odtStoryRows));
+      const [originalFields, revisedFields, acceptedFields, rejectedFields] = await Promise.all(packages.map(odtStoryFields));
+      expect(originalView!.footer).toHaveLength(readerCase.original.length);
+      expect(revisedView!.footer).toHaveLength(readerCase.revised.length);
+      expect(originalFields).not.toEqual(revisedFields);
+      expect(accepted).toEqual(revisedView);
+      expect(rejected).toEqual(originalView);
+      expect(acceptedFields).toEqual(revisedFields);
+      expect(rejectedFields).toEqual(originalFields);
     }, 600_000);
   }
 });
