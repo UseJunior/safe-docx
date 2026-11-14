@@ -5204,6 +5204,34 @@ interface DisplayedStoryPage {
   displayContent?: string | null;
 }
 
+/**
+ * Whether a header/footer story's own comparison shows the revised story after
+ * Accept All and the original story after Reject All, judged as the package
+ * projection check judges each page (`projectedStoryContent`).
+ *
+ * The eligibility scaffold pairs table rows by their scaffold
+ * (`removeUnpairedTrackableRows`); the story comparison pairs them by their
+ * text. Where the two pairings differ, a kept row can carry a scaffold change
+ * no revision records, such as a renamed content control. Such a story is left
+ * uncompared, so it stays listed, instead of failing the package projection
+ * check and aborting the comparison.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see https://github.com/UseJunior/safe-docx/issues/1467
+ */
+export async function storyComparisonReproducesBothSides(
+  original: Buffer,
+  revised: Buffer,
+  compared: Buffer,
+): Promise<boolean> {
+  const [originalXml, revisedXml, comparedXml] = await Promise.all(
+    [original, revised, compared].map(async (buffer) => (await DocxArchive.load(buffer)).getDocumentXml()),
+  );
+  return projectedStoryContent(comparedXml!, 'accept') === projectedStoryContent(revisedXml!, 'accept')
+    && projectedStoryContent(comparedXml!, 'reject') === projectedStoryContent(originalXml!, 'reject');
+}
+
 /** A projected story part's content, or `null` when it shows nothing. */
 function projectedStoryContent(
   partXml: string,

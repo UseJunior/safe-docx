@@ -651,6 +651,8 @@ describe('a header or footer table row holding a field, content control or range
  * pair into a kept row's change that is itself listed, keep the story listed.
  */
 describe('header and footer table changes the row revisions cannot carry stay listed (#1393, #1467)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  const controlRow = (alias: string, value: string): string =>
+    `<w:tr>${cell(text('Client'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr><w:sdt><w:sdtPr><w:alias w:val="${alias}"/></w:sdtPr><w:sdtContent>${paragraph(text(value))}</w:sdtContent></w:sdt></w:tc></w:tr>`;
   const LISTED_CASES: ReadonlyArray<{ name: string; original: string; revised: string }> = [
     {
       // docx-core's Reject All does not restore a w:tblPrExChange.
@@ -685,6 +687,13 @@ describe('header and footer table changes the row revisions cannot carry stay li
       name: 'a content-control row replacing a plain row',
       original: story(COMPANY, ADDRESS),
       revised: story(COMPANY, `<w:tr>${cell(text('Client'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${paragraph(text('Acme'))}</w:sdtContent></w:sdt></w:tc></w:tr>`),
+    },
+    {
+      // The scaffold pairs the alias-A rows; the story comparison pairs the
+      // rows by text, so the kept row would carry an untracked rename.
+      name: 'a content-control row inserted above a kept row whose control is renamed',
+      original: story(controlRow('A', 'Alpha')),
+      revised: story(controlRow('B', 'Alpha'), controlRow('A', 'Beta')),
     },
     {
       name: 'a renamed cell-level content control',
