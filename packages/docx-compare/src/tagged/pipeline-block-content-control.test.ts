@@ -17,7 +17,6 @@ import {
 import { compareDocuments, formatUnrepresentedChangeWarnings } from '../index.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
-import { TaggedPublicationSafetyError } from './pipeline.js';
 
 const TEST_FEATURE = 'Block Container Revisions';
 const test = testAllure.epic('Document Comparison')
@@ -715,30 +714,148 @@ describe('block customXml boundary moves (#1102)', () => {
       }
     }
 
-    // A gap holding part of a field pairs nothing, so a container whose field
-    // crosses its boundary stays on the whole-container path, as before
-    // #1459. That path cannot yet track the deleted half of such a field, so
-    // the comparison fails closed on its field-structure check rather than
-    // publishing a split field.
-    const crossingCases = [
-      ['a field begins inside the customXml container and ends after it', [
-        para(moving) + custom(unchanged + opensField) + closesField,
-        custom(para(moving) + unchanged + opensField) + closesField,
-      ]],
-      ['a field begins before the content control and ends inside it', [
-        opensField + control(closesField + unchanged + para(moving)) + para('After control.'),
-        opensField + control(closesField + unchanged) + para(moving) + para('After control.'),
-      ]],
+    // A field that crosses a container boundary (#1462). The paragraphs
+    // holding its halves are tracked as deletions and insertions, and the
+    // deleted halves stay deleted as one field: lifting their field characters
+    // out of w:del left an extra empty field (begin, separate, end with no
+    // instruction) after Accept All while every field-structure check passed.
+    // `fieldShape` compares text, field characters and instructions in
+    // document order, so a duplicated or dropped field character fails.
+    const crossingTest = fieldTest.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' });
+    const sourceStrict = (body: string) =>
+      collectStrictFieldStructureIssues(`<w:document xmlns:w="${W}"><w:body>${body}</w:body></w:document>`);
+    async function expectFieldExactProjections(
+      originalBody: string,
+      revisedBody: string,
+      detectMoves: boolean,
+      // The container change `unrepresentedChanges` lists for a container
+      // that is not in both documents, whose emptied shell the projection
+      // that removes its content keeps (as for any whole container).
+      listed: ReadonlyArray<'added' | 'removed' | 'changed'> = [],
+    ) {
+      expect(sourceStrict(originalBody)).toEqual([]);
+      expect(sourceStrict(revisedBody)).toEqual([]);
+      const { result, projections, xml } = await compareAndProject(originalBody, revisedBody, detectMoves, fieldShape);
+      const containerChanges = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl');
+      expect(containerChanges.map((change) => change.kind).sort()).toEqual([...listed].sort());
+      const shellsAllowed = { accept: listed.filter((kind) => kind === 'removed').length,
+        reject: listed.filter((kind) => kind === 'added').length };
+      // An emptied container keeps one empty paragraph: containers, no tokens.
+      const isShell = (row: string) => row.endsWith(':') && !/["{(]/u.test(row);
+      // Changed control properties publish the revised ones whole (#1095).
+      const identity = (rows: readonly string[]) => listed.includes('changed')
+        ? rows.map((row) => row.replace(/sdt\[[^\]]*\]/gu, 'sdt[]'))
+        : [...rows];
+      for (const projection of projections) {
+        const expected = identity(projection.expected);
+        for (const [who, rows] of [['comparison', projection.ast], ['docx-core', projection.native]] as const) {
+          const actual = identity(rows);
+          const kept = actual.filter((row) => !isShell(row) || expected.includes(row));
+          expect(kept, `${projection.label} ${who} acceptor`).toEqual(expected);
+          expect(actual.length - kept.length, `${projection.label} ${who} emptied shells`)
+            .toBeLessThanOrEqual(shellsAllowed[projection.label]);
+        }
+      }
+      for (const [label, astProject, nativeProject] of [
+        ['accept', acceptAllChanges, acceptChanges],
+        ['reject', rejectAllChanges, rejectChanges],
+      ] as const) {
+        const native = parseXml(xml);
+        nativeProject(native);
+        expect(collectStrictFieldStructureIssues(astProject(xml)), `${label} comparison acceptor fields`).toEqual([]);
+        expect(collectStrictFieldStructureIssues(serializeXml(native)), `${label} docx-core acceptor fields`).toEqual([]);
+      }
+      return { result, document: parseXml(xml) };
+    }
+
+    // The container is in both documents: it pairs, so it is tracked, not
+    // listed, and no emptied shell is left.
+    const crossingWrappers = [
+      ['customXml container', (inner: string) => custom(inner)],
+      ['content control', (inner: string) => control(inner)],
     ] as const;
+    const crossingCases = crossingWrappers.flatMap(([kind, wrap]) => [
+      [`the field's begin leaves the ${kind} and its end enters it`, [
+        wrap(opensField) + closesField + para('Tail.'),
+        opensField + wrap(closesField) + para('Tail.'),
+      ]],
+      [`the field's begin enters the ${kind} and its end leaves it`, [
+        opensField + wrap(closesField) + para('Tail.'),
+        wrap(opensField) + closesField + para('Tail.'),
+      ]],
+      [`the field's end moves into the ${kind} that holds its begin`, [
+        wrap(para('Held clause.') + opensField) + closesField + para('Tail.'),
+        wrap(para('Held clause.') + opensField + closesField) + para('Tail.'),
+      ]],
+      [`the field's end leaves the ${kind} that holds its begin, beside an edit`, [
+        wrap(para('Held clause.') + opensField + closesField) + para('Tail.'),
+        wrap(para('Held clause.') + opensField) + closesField + para('Tail, amended.'),
+      ]],
+      [`a field begins inside the ${kind} and ends after it while a paragraph moves in`, [
+        para(moving) + wrap(unchanged + opensField) + closesField,
+        wrap(para(moving) + unchanged + opensField) + closesField,
+      ]],
+      [`a field begins before the ${kind} and ends inside it while a paragraph moves out`, [
+        opensField + wrap(closesField + unchanged + para(moving)) + para('After.'),
+        opensField + wrap(closesField + unchanged) + para(moving) + para('After.'),
+      ]],
+    ] as const);
 
     for (const [name, [originalBody, revisedBody]] of crossingCases) {
       for (const detectMoves of [false, true]) {
-        fieldTest(`${name} with detectMoves=${detectMoves} is not paired and fails closed`, async () => {
-          const original = await buildDocxFromBodyXml(originalBody);
-          const revised = await buildDocxFromBodyXml(revisedBody);
-          const failure = await compareDocuments(original, revised, { detectMoves }).then(() => undefined, (error: unknown) => error);
-          expect(failure).toBeInstanceOf(TaggedPublicationSafetyError);
-          expect((failure as TaggedPublicationSafetyError).failedChecks).toEqual(['fieldStructure']);
+        crossingTest(`${name} with detectMoves=${detectMoves} pairs the container and keeps one field in each projection`, async () => {
+          const { document } = await expectFieldExactProjections(originalBody, revisedBody, detectMoves);
+          // Each deleted half keeps its field characters inside its deletion.
+          for (const fieldChar of Array.from(document.getElementsByTagNameNS(W, 'fldChar'))) {
+            const run = fieldChar.parentNode as Element;
+            const paragraph = run.parentNode as Element;
+            const deletedParagraph = Array.from(paragraph.getElementsByTagNameNS(W, 'delText')).length > 0
+              && Array.from(paragraph.getElementsByTagNameNS(W, 't')).length === 0;
+            if (deletedParagraph) expect((run.parentNode as Element).localName, 'deleted field character').toBe('del');
+          }
+        });
+      }
+    }
+
+    // A container that only one document holds, or whose identity changes,
+    // with a field crossing its boundary: the container's content is tracked
+    // whole as for any container that is not in both documents, and the
+    // deleted half of the field stays deleted.
+    const renamed = (inner: string) => custom(inner, 'renamedClause');
+    const otherUri = (inner: string) => `<w:customXml w:uri="urn:example:other" w:element="clause">${inner}</w:customXml>`;
+    const retagged = (inner: string) => control(inner, 'counterparty');
+    const lead = para('Lead paragraph.');
+    const tail = para('Tail paragraph.');
+    const unpairedCases = crossingWrappers.flatMap(([kind, wrap]) => [
+      [`a ${kind} holding the field's begin is removed`, [lead + wrap(opensField) + closesField + tail,
+        lead + opensField + closesField + tail], ['removed']],
+      [`a ${kind} holding the field's end is removed`, [lead + opensField + wrap(closesField) + tail,
+        lead + opensField + closesField + tail], ['removed']],
+      [`a ${kind} holding the field's begin and an edited paragraph is removed`, [
+        lead + wrap(opensField + para('Middle clause.')) + closesField + tail,
+        lead + opensField + para('Middle clause, amended.') + closesField + tail], ['removed']],
+      [`a ${kind} is added around the field's begin`, [lead + opensField + closesField + tail,
+        lead + wrap(opensField) + closesField + tail], ['added']],
+    ] as const);
+    const identityCases = [
+      ["a customXml container holding the field's begin is renamed", [lead + custom(opensField) + closesField + tail,
+        lead + renamed(opensField) + closesField + tail], ['added', 'removed']],
+      ["a customXml container holding the field's end changes its namespace", [lead + opensField + custom(closesField) + tail,
+        lead + opensField + otherUri(closesField) + tail], ['added', 'removed']],
+      ["a customXml container is renamed while the field's end moves into it", [custom(opensField) + closesField + tail,
+        opensField + renamed(closesField) + tail], ['added', 'removed']],
+      // A content control pairs whatever its tag; the changed properties
+      // are published whole and listed (#1095).
+      ["a content control holding the field's begin is retagged", [lead + control(opensField) + closesField + tail,
+        lead + retagged(opensField) + closesField + tail], ['changed']],
+      ["a content control is retagged while the field's end moves into it", [control(opensField) + closesField + tail,
+        opensField + retagged(closesField) + tail], ['added', 'removed']],
+    ] as const;
+
+    for (const [name, [originalBody, revisedBody], listed] of [...unpairedCases, ...identityCases]) {
+      for (const detectMoves of [false, true]) {
+        crossingTest(`${name} with detectMoves=${detectMoves} tracks it whole and keeps one field in each projection`, async () => {
+          await expectFieldExactProjections(originalBody, revisedBody, detectMoves, listed);
         });
       }
     }
@@ -797,5 +914,55 @@ reader('LibreOffice resolves a whole inserted or deleted block container', () =>
       writeFileSync(process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REPORT, report.join('\n'));
     }
     for (const [label, actual, expected] of checks) expect(actual, label).toBe(expected);
+  }, 900_000);
+
+  // LibreOffice drops a block content control's wrapper on save, so the
+  // paragraphs' text and field characters are compared, not the containers.
+  test('resolves a field crossing a block container boundary to one field in each projection', async () => {
+    const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
+    const run = (text: string) => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
+    const fieldChar = (type: string) => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
+    const opens = `<w:p>${run('Held clause, see ')}${fieldChar('begin')}`
+      + `<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>${fieldChar('separate')}${run('3')}</w:p>`;
+    const closes = `<w:p>${run(' continued')}${fieldChar('end')}${run(' after.')}</w:p>`;
+    const tailParagraph = paragraph('Tail');
+    const customXml = (inner: string) => `<w:customXml w:uri="urn:test" w:element="clause">${inner}</w:customXml>`;
+    const control = (inner: string) => `<w:sdt><w:sdtPr><w:tag w:val="clause"/></w:sdtPr><w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+    const fieldText = (xml: string) => Array.from(parseXml(xml).getElementsByTagNameNS(W_MAIN, 'p')).map((p) => {
+      const tokens = Array.from(p.getElementsByTagNameNS(W_MAIN, '*')).flatMap((element) => {
+        if (element.localName === 't') return [element.textContent ?? ''];
+        if (element.localName === 'fldChar') return [`{${element.getAttributeNS(W_MAIN, 'fldCharType')}}`];
+        if (element.localName === 'instrText') return [`[${(element.textContent ?? '').trim()}]`];
+        return [];
+      });
+      return tokens.join('');
+    }).filter((text) => text !== '').join(' / ');
+    const jobs: Array<{ op: 'accept' | 'reject' | 'identity'; documentXml: string }> = [];
+    const labels: string[] = [];
+    for (const [kind, wrap] of [['customXml', customXml], ['sdt', control]] as const) {
+      const original = await buildDocxFromBodyXml(wrap(opens) + closes + tailParagraph);
+      const revised = await buildDocxFromBodyXml(opens + wrap(closes) + tailParagraph);
+      const compared = await (await DocxArchive.load((await compareDocuments(original, revised)).document)).getDocumentXml();
+      labels.push(kind);
+      jobs.push(
+        { op: 'identity', documentXml: await (await DocxArchive.load(original)).getDocumentXml() },
+        { op: 'identity', documentXml: await (await DocxArchive.load(revised)).getDocumentXml() },
+        { op: 'accept', documentXml: compared },
+        { op: 'reject', documentXml: compared },
+      );
+    }
+    const states = await runLibreOfficeOracle(jobs);
+    const report: string[] = [];
+    labels.forEach((label, index) => {
+      const [originalState, revisedState, accepted, rejected] = states.slice(index * 4, index * 4 + 4) as [string, string, string, string];
+      report.push(`${label}\n  original ${fieldText(originalState)}\n  revised  ${fieldText(revisedState)}`
+        + `\n  accept   ${fieldText(accepted)}\n  reject   ${fieldText(rejected)}`);
+      expect(fieldText(accepted), `${label} accept`).toBe(fieldText(revisedState));
+      expect(fieldText(rejected), `${label} reject`).toBe(fieldText(originalState));
+    });
+    if (process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REPORT) {
+      const { appendFileSync } = await import('node:fs');
+      appendFileSync(process.env.SAFE_DOCX_BLOCK_CONTAINER_READER_REPORT, `\n${report.join('\n')}`);
+    }
   }, 900_000);
 });

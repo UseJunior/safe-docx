@@ -363,20 +363,101 @@ function wrapRevision(
 }
 
 /**
+ * Deleted field characters that must stay deleted. Field characters are
+ * matched into fields by nesting, separately in the story's Reject All
+ * sequence (everything outside `w:ins` and `w:moveTo`) and its Accept All
+ * sequence (everything outside `w:del` and `w:moveFrom`). A deleted character
+ * stays deleted when Accept All removes its whole field, wherever the
+ * deletions holding that field sit, or when the field it belongs to in Accept
+ * All already holds an inserted character of the same type that replaces it.
+ * A field can cross paragraphs and block containers, so a field whose halves
+ * a comparison tracks in separate paragraphs (a field crossing the boundary
+ * of a block content control or `w:customXml` element) is decided over the
+ * whole story, not per deletion. When either sequence does not nest, no
+ * character is kept, which leaves the per-deletion behaviour unchanged.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @see https://github.com/UseJunior/safe-docx/issues/1462
+ */
+function fieldCharactersKeptDeleted(root: WmlElement): Set<Element> {
+  const within = (element: Element, names: readonly string[]): boolean => {
+    for (let node = element.parentNode; node && node !== root.parentNode; node = node.parentNode) {
+      if (node.nodeType === 1 && (node as Element).namespaceURI === W_NS
+        && names.includes((node as Element).localName)) return true;
+    }
+    return false;
+  };
+  const typeOf = (field: Element): string =>
+    field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '';
+  const characters = Array.from(root.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
+  const deleted = new Set(characters.filter((field) => within(field, ['del', 'moveFrom'])));
+  const inserted = new Set(characters.filter((field) => within(field, ['ins', 'moveTo'])));
+  // The field each character of one projection belongs to, or undefined when
+  // that projection's characters do not nest.
+  const fields = (sequence: readonly Element[]): Map<Element, Element[]> | undefined => {
+    const owner = new Map<Element, Element[]>();
+    const stack: Array<{ members: Element[]; separated: boolean }> = [];
+    for (const field of sequence) {
+      const type = typeOf(field);
+      if (type === 'begin') {
+        const members = [field];
+        owner.set(field, members);
+        stack.push({ members, separated: false });
+        continue;
+      }
+      const open = stack[stack.length - 1];
+      if (!open || (type === 'separate' && open.separated) || (type !== 'separate' && type !== 'end')) return undefined;
+      open.members.push(field);
+      owner.set(field, open.members);
+      if (type === 'separate') open.separated = true;
+      else stack.pop();
+    }
+    return stack.length === 0 ? owner : undefined;
+  };
+  const rejected = fields(characters.filter((field) => !inserted.has(field)));
+  const accepted = fields(characters.filter((field) => !deleted.has(field)));
+  const kept = new Set<Element>();
+  if (!rejected || !accepted) return kept;
+  for (const field of deleted) {
+    const members = rejected.get(field)!;
+    const live = members.find((member) => !deleted.has(member));
+    if (!live) {
+      kept.add(field);
+      continue;
+    }
+    const replacement = accepted.get(live)!
+      .some((member) => inserted.has(member) && typeOf(member) === typeOf(field));
+    if (replacement) kept.add(field);
+  }
+  return kept;
+}
+
+/**
  * Keep partial field-character controls live and split deletion content around
  * them. Complete field sequences (including multiple or nested fields) belong
  * inside the deletion: hoisting their controls leaves live field objects after
  * Accept and can transfer deleted paragraph formatting onto surviving content.
+ * A character also stays deleted when Accept All removes its whole field,
+ * even when separate deletions hold that field, or when an inserted character
+ * replaces it (`fieldCharactersKeptDeleted`): hoisting one half of a field
+ * deleted across a paragraph or block-container boundary would leave an extra
+ * empty field, or a second end, after Accept All (#1462).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.deleted-field-code
  */
 function hoistFieldCharactersFromDeletions(root: WmlElement): void {
+  const keptDeleted = fieldCharactersKeptDeleted(root);
   const deletions = Array.from(root.getElementsByTagNameNS(W_NS, 'del')) as WmlElement[];
   for (const deletion of deletions) {
     const parent = deletion.parentNode;
     if (!parent) continue;
+    const partial = (element: Element): Element[] =>
+      Array.from(element.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName))
+        .filter((field) => !keptDeleted.has(field));
     const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
     const deletedFieldTypes = deletedFields.map((field) =>
       field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '');
@@ -391,7 +472,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
       }
       return false;
     }) && separators.length === 0;
-    if (complete) continue;
+    if (complete || partial(deletion).length === 0) continue;
     let nextElement = deletion.nextSibling;
     while (nextElement && nextElement.nodeType !== 1) nextElement = nextElement.nextSibling;
     if (deletedFields.length === 1 && nextElement && (nextElement as WmlElement).localName === 'ins') {
@@ -405,7 +486,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
       }
     }
     const children = childElements(deletion);
-    if (!children.some((child) => child.getElementsByTagNameNS(W_NS, 'fldChar').length > 0)) continue;
+    if (!children.some((child) => partial(child).length > 0)) continue;
     const replacement: WmlElement[] = [];
     let wrapper: WmlElement | undefined;
     const flush = (): void => {
@@ -413,7 +494,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
       wrapper = undefined;
     };
     for (const child of children) {
-      if (child.getElementsByTagNameNS(W_NS, 'fldChar').length > 0) {
+      if (partial(child).length > 0) {
         flush();
         replacement.push(child);
       } else {
