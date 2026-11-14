@@ -189,11 +189,15 @@ function carriedFooterPair(
   direction: 'removed' | 'inserted',
   footer0: Part = BASE_FOOTER,
   footer1Ending = '',
+  wrapFooter1Line: (line: string) => string = (line) => line,
 ): Promise<[Buffer, Buffer]> {
   const label = direction === 'removed' ? 'Removed' : 'Inserted';
+  const line = paragraph(`${label} footer line`);
   const footer1: Part = {
     id: 'rIdFooter1', kind: 'footer', target: 'footer1.xml',
-    xml: story('footer', `${label} footer line`, paragraph(`${label} box`)).replace('</w:ftr>', `${footer1Ending}</w:ftr>`),
+    xml: story('footer', `${label} footer line`, paragraph(`${label} box`))
+      .replace(line, wrapFooter1Line(line))
+      .replace('</w:ftr>', `${footer1Ending}</w:ftr>`),
   };
   const head = paragraph('Intro') + sectionParagraph('Zero end', reference('footer', 'rIdFooter0')) + paragraph('One body');
   const withBoundary = packageWith(
@@ -562,6 +566,27 @@ describe('a displaced story copied into the carried part (#1454)', () => {
       );
     });
   });
+
+  // Review round 2: the carried story's last paragraph inside a block
+  // content control or custom XML element. Neither element carries a
+  // revision marker, so the projection that empties the carried story keeps
+  // an empty paragraph inside it, the gap #1455 reports for a slot
+  // lifecycle. The comparison refuses rather than publish that line.
+  for (const direction of ['removed', 'inserted'] as const) {
+    for (const [container, wrap] of [
+      ['a content control', (line: string) => `<w:sdt><w:sdtPr><w:id w:val="300"/></w:sdtPr><w:sdtContent>${line}</w:sdtContent></w:sdt>`],
+      ['custom XML', (line: string) => `<w:customXml w:element="footer">${line}</w:customXml>`],
+    ] as const) {
+      test(`a carried footer ending in ${container}, across ${direction === 'removed' ? 'a removed' : 'an inserted'} boundary, still fails closed`, async ({ given, when }: AllureBddContext) => {
+        const [original, revised] = await given('the pair', () => carriedFooterPair(direction, BASE_FOOTER, '', wrap));
+        await when('the pair is compared, the comparison refuses instead of publishing', async () => {
+          await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
+            /accept\/reject package projection validation/u,
+          );
+        });
+      });
+    }
+  }
 
   test('a displaced footer holding a drawing still fails closed', async ({ given, when }: AllureBddContext) => {
     // Copying a drawing would duplicate its shape into a second part; the

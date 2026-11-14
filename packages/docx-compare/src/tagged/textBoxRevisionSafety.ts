@@ -4557,6 +4557,26 @@ const UNCOPYABLE_DISPLACED_CONTENT = new Set([
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
  */
 function stripDisplayNeutralMarkup(root: Element, options: { finalParagraphAfterTable?: boolean } = {}): void {
+  if (options.finalParagraphAfterTable) {
+    // A story that ends in a table shows the empty paragraph mark after it
+    // whether or not the part spells one out (Word adds it on open), so a
+    // closing empty plain paragraph there reads the same as none.
+    const blocks = directChildElements(root).filter((element) =>
+      element.namespaceURI === OOXML.W_NS && element.localName !== 'sectPr');
+    const last = blocks.at(-1);
+    const beforeLast = blocks.at(-2);
+    const isEmptyPlainParagraph = (paragraph: Element): boolean =>
+      directChildElements(paragraph).every((child) =>
+        child.localName === 'pPr' &&
+        directChildElements(child).every((property) =>
+          property.localName === 'rPr' && directChildElements(property).length === 0));
+    if (
+      last?.localName === 'p' && isEmptyPlainParagraph(last) &&
+      beforeLast?.localName === 'tbl'
+    ) {
+      root.removeChild(last);
+    }
+  }
   for (const container of Array.from(root.getElementsByTagName('*')).reverse()) {
     if (
       container.namespaceURI !== OOXML.W_NS ||
@@ -4588,24 +4608,6 @@ function stripDisplayNeutralMarkup(root: Element, options: { finalParagraphAfter
     }
     element.removeAttributeNS(WORD_2010_NS, 'paraId');
     element.removeAttributeNS(WORD_2010_NS, 'textId');
-  }
-  if (!options.finalParagraphAfterTable) return;
-  // A story that ends in a table shows the empty paragraph mark after it
-  // whether or not the part spells one out (Word adds it on open).
-  const blocks = directChildElements(root).filter((element) =>
-    element.namespaceURI === OOXML.W_NS && element.localName !== 'sectPr');
-  const last = blocks.at(-1);
-  const beforeLast = blocks.at(-2);
-  const isEmptyPlainParagraph = (paragraph: Element): boolean =>
-    directChildElements(paragraph).every((child) =>
-      child.localName === 'pPr' &&
-      directChildElements(child).every((property) =>
-        property.localName === 'rPr' && directChildElements(property).length === 0));
-  if (
-    last?.localName === 'p' && beforeLast?.localName === 'tbl' &&
-    isEmptyPlainParagraph(last)
-  ) {
-    root.removeChild(last);
   }
 }
 
@@ -4701,7 +4703,11 @@ export async function displacedLifecycleStoryXml(
  * inserted half ends in a table, the deleted half's last paragraph moves
  * after it and keeps its deleted runs, with its properties tracked against
  * none; when the deleted half ends in one, the inserted half's last
- * paragraph keeps its inserted runs with prior properties of none. Either
+ * paragraph keeps its inserted runs with prior properties of none. A half
+ * that ends in a block content control or custom XML element is refused by
+ * the projection check: neither carries a revision marker, so its emptied
+ * paragraph survives the projection that removes the half (as for a slot
+ * lifecycle, #1455). Either
  * projection then ends in a paragraph, which after a final table is the
  * empty paragraph mark Word keeps there. When both halves end in a table
  * (CT_HdrFtr allows it; Word itself always closes a story with a paragraph)
