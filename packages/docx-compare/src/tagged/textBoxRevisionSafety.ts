@@ -1448,17 +1448,28 @@ function admittedPlainParagraphForScaffold(paragraph: Element): boolean {
  * the properties, so a formatting change the comparison dropped still fails
  * the projection check.
  *
+ * With `ignoreTrackableRows`, a row of a table placed directly in the story
+ * is left out when every paragraph in it is an admitted plain paragraph and
+ * the row carries no revision record: the story comparison tracks such a row
+ * when it is inserted or deleted with `w:trPr/w:ins` or `w:trPr/w:del`, as in
+ * the main body, under the same table-topology guard. A row holding a field,
+ * a content control, a drawing, a nested table or table-property exceptions
+ * stays in the scaffold, so inserting or deleting it is still listed. Only the eligibility gates use it.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @see https://github.com/UseJunior/safe-docx/issues/998
  * @see https://github.com/UseJunior/safe-docx/issues/1392
+ * @see https://github.com/UseJunior/safe-docx/issues/1393
  */
 function ordinaryStoryScaffoldFingerprint(
   xml: string,
-  options: { ignoreTrackableFormatting?: boolean } = {},
+  options: { ignoreTrackableFormatting?: boolean; ignoreTrackableRows?: boolean } = {},
 ): string {
   const document = parseXml(xml);
   const root = document.documentElement.cloneNode(true) as Element;
@@ -1484,6 +1495,7 @@ function ordinaryStoryScaffoldFingerprint(
   for (const paragraph of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p')).reverse()) {
     if (admittedPlainParagraphForScaffold(paragraph)) paragraph.parentNode?.removeChild(paragraph);
   }
+  if (options.ignoreTrackableRows) removeTrackableRows(root);
   if (options.ignoreTrackableFormatting) removeTrackableFormatting(root);
   removeEmptyFormattingProperties(root);
   blankOrdinaryParagraphText(root);
@@ -1508,8 +1520,62 @@ function removeEmptyFormattingProperties(root: Element): void {
   }
 }
 
-/** The eligibility gates' scaffold: formatting the story comparison tracks is not scaffold. */
-const trackableFormatting = { ignoreTrackableFormatting: true } as const;
+/** Revision records a table row can already carry in its row, cell or exception properties. */
+const ROW_REVISION_RECORDS = new Set([
+  'ins',
+  'del',
+  'trPrChange',
+  'tcPrChange',
+  'tblPrExChange',
+  'cellIns',
+  'cellDel',
+  'cellMerge',
+]);
+
+/**
+ * Remove each row of a table placed directly in the story root whose
+ * paragraphs were all removed as admitted plain paragraphs and which carries
+ * no revision record, so a story whose tables differ only by such rows reads
+ * as the same scaffold. Rows inside a nested table, a content control or a
+ * text box are not touched, and neither is any row of a story that holds a
+ * text box. A row with anything besides its row properties and cells of
+ * plain paragraphs stays too: a cell-level content control or custom XML
+ * element, range markup, a nested table, or table-property exceptions
+ * (`w:tblPrEx`, whose `w:tblPrExChange` docx-core's Reject All does not
+ * restore), so a change to it is listed.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ */
+function removeTrackableRows(root: Element): void {
+  // A story holding a text box keeps every row: its comparison may fall back
+  // to the unguarded path, which must not see a newly admitted row change.
+  if (root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0) return;
+  const isW = (element: Element, ...localNames: string[]): boolean =>
+    element.namespaceURI === OOXML.W_NS && localNames.includes(element.localName);
+  for (const table of directChildElements(root)) {
+    if (!isW(table, 'tbl')) continue;
+    for (const row of directChildElements(table)) {
+      if (!isW(row, 'tr')) continue;
+      // Only row properties and cells left holding nothing but their cell
+      // properties: a cell-level content control, custom XML, table-property
+      // exceptions, range markup or a nested table keeps the row.
+      const plain = directChildElements(row).every((child) =>
+        isW(child, 'trPr')
+        || (isW(child, 'tc') && directChildElements(child).every((part) => isW(part, 'tcPr'))));
+      if (!plain) continue;
+      if (Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'))
+        .some((element) => ROW_REVISION_RECORDS.has(element.localName))) continue;
+      table.removeChild(row);
+    }
+  }
+}
+
+/**
+ * The eligibility gates' scaffold: formatting the story comparison tracks,
+ * and plain table rows it tracks as inserted or deleted, are not scaffold.
+ */
+const trackableFormatting = { ignoreTrackableFormatting: true, ignoreTrackableRows: true } as const;
 
 /**
  * Paragraph-mark revision markers: a paragraph whose mark is already inserted,
@@ -2678,11 +2744,47 @@ async function ancillaryStoryInputs(
     const original = storage.boxes.length > 0
       ? { ...pair.original, xml: storage.xml, textBoxes: partTextBoxes(storage.xml) }
       : pair.original;
+    // A box whose drawing changed (a resize, a move) is spliced into the
+    // revised drawing and listed with the `drawing` scope (#1382), so the
+    // part's ordinary text is compared against the original with those
+    // drawings already aligned. Comparing the unaligned scaffold would skip
+    // the ordinary story whenever a box beside it was resized, leaving the
+    // ordinary edit untracked (#1448).
+    const shapedBoxes: Array<{ index: number; change: DrawingShapeChange }> = [];
+    if (original.textBoxes.length === pair.revised.textBoxes.length) {
+      for (let index = 0; index < original.textBoxes.length; index += 1) {
+        const originalTextBox = original.textBoxes[index]!;
+        const revisedTextBox = pair.revised.textBoxes[index]!;
+        const shapeChange = drawingShapeChange(originalTextBox, revisedTextBox);
+        if (
+          shapeChange &&
+          copyIdentityTokens(originalTextBox).join('|') === copyIdentityTokens(revisedTextBox).join('|')
+        ) {
+          shapedBoxes.push({ index, change: shapeChange });
+        }
+      }
+    }
+    const drawingAlignedXml = shapedBoxes.length > 0
+      ? partXmlWithRevisedDrawings(
+        original.xml,
+        pair.revised.xml,
+        shapedBoxes.map(({ index }) => index),
+      )
+      : original.xml;
+    const ordinaryOriginalXml = drawingAlignedXml ?? original.xml;
+    // A listed drawing describes only its own box: a group, another shape
+    // beside it or a shared template it changed keeps the part's own entry.
+    const drawingsDescribeOnlyTheirBoxes = shapedBoxes.every(({ index, change }) =>
+      isSoleDrawingShape(original.textBoxes[index]!, change.originalContainer) &&
+      isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer) &&
+      shapeTemplatesAgree(change.originalContainer, change.revisedContainer));
     if (
       topologyMatches
       && pair.bindingClosureMatched
       && original.ordinaryContent !== pair.revised.ordinaryContent
-      && ordinaryStoryScaffoldFingerprint(original.xml, trackableFormatting)
+      && (shapedBoxes.length === 0
+        || ordinaryStoryContentFingerprint(ordinaryOriginalXml) !== pair.revised.ordinaryContent)
+      && ordinaryStoryScaffoldFingerprint(ordinaryOriginalXml, trackableFormatting)
         === ordinaryStoryScaffoldFingerprint(pair.revised.xml, trackableFormatting)
     ) {
       const originalTargets = relationshipTargets(original.relationshipsXml);
@@ -2700,7 +2802,7 @@ async function ancillaryStoryInputs(
         const storyRevisedArchive = await revisedArchive.clone();
         storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
           originalDocumentXml,
-          partXmlWithRevisedTextBoxes(original.xml, pair.revised.xml),
+          partXmlWithRevisedTextBoxes(ordinaryOriginalXml, pair.revised.xml),
         ));
         storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(
           revisedDocumentXml,
@@ -2723,13 +2825,15 @@ async function ancillaryStoryInputs(
           original: await storyOriginalArchive.save(),
           revised: await storyRevisedArchive.save(),
         });
-        representedChanges.push(...pair.revised.bindings.map((binding) => ({
-          scope: binding.kind,
-          kind: 'changed' as const,
-          sectionIndex: binding.sectionOrdinal,
-          role: binding.role,
-          partPath: pair.revised.targetPath,
-        })));
+        if (drawingsDescribeOnlyTheirBoxes) {
+          representedChanges.push(...pair.revised.bindings.map((binding) => ({
+            scope: binding.kind,
+            kind: 'changed' as const,
+            sectionIndex: binding.sectionOrdinal,
+            role: binding.role,
+            partPath: pair.revised.targetPath,
+          })));
+        }
       }
     }
     const originalVisualOrdinals = partVisualTextBoxOrdinals(original.xml);
@@ -2768,7 +2872,6 @@ async function ancillaryStoryInputs(
     // comparison being refused (#1430).
     const originalTargets = relationshipTargets(original.relationshipsXml);
     const revisedTargets = relationshipTargets(pair.revised.relationshipsXml);
-    const shapedBoxes: Array<{ index: number; change: DrawingShapeChange }> = [];
     for (let index = 0; index < original.textBoxes.length; index += 1) {
       const originalTextBox = original.textBoxes[index]!;
       const revisedTextBox = pair.revised.textBoxes[index]!;
@@ -2782,7 +2885,6 @@ async function ancillaryStoryInputs(
       const shapeChange = drawingShapeChange(originalTextBox, revisedTextBox);
       const replacedDrawing = shapeChange !== undefined &&
         copyIdentityTokens(originalTextBox).join('|') !== copyIdentityTokens(revisedTextBox).join('|');
-      if (shapeChange && !replacedDrawing) shapedBoxes.push({ index, change: shapeChange });
       const originalRelationshipClosure = relationshipClosureFingerprint(
         originalTextBox,
         originalTargets,
@@ -2859,13 +2961,7 @@ async function ancillaryStoryInputs(
       });
     }
     if (shapedBoxes.length > 0 || storage.boxes.length > 0) {
-      const alignedXml = shapedBoxes.length > 0
-        ? partXmlWithRevisedDrawings(
-          original.xml,
-          pair.revised.xml,
-          shapedBoxes.map(({ index }) => index),
-        )
-        : original.xml;
+      const alignedXml = drawingAlignedXml;
       if (alignedXml !== undefined) {
         drawingAlignedOriginalParts.set(original.targetPath, alignedXml);
         // The part's entry is represented when its stories and drawings are
@@ -2873,10 +2969,7 @@ async function ancillaryStoryInputs(
         // the drawings listed. A drawing that draws more than its box (a
         // group, another shape beside it) keeps the part's own entry too.
         if (
-          shapedBoxes.every(({ index, change }) =>
-            isSoleDrawingShape(original.textBoxes[index]!, change.originalContainer) &&
-            isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer) &&
-            shapeTemplatesAgree(change.originalContainer, change.revisedContainer)) &&
+          drawingsDescribeOnlyTheirBoxes &&
           canonicalNode(
             parseXml(partXmlWithRevisedTextBoxes(alignedXml, pair.revised.xml)).documentElement,
           ) === pair.revised.canonical

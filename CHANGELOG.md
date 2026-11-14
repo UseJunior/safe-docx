@@ -16,6 +16,23 @@
   holds, or whose identity changes, is tracked whole as before, with the
   deleted half of the field kept inside its deletion. (#1462)
 
+- A table row inserted into or deleted from a header or footer table, or a
+  table inside a header or footer text box, is now tracked as a whole row
+  (`w:trPr/w:ins`, `w:trPr/w:del`), as in body tables, instead of the header
+  or footer being listed in `unrepresentedChanges`. This covers default,
+  first-page and even-page headers and footers, rows beside a `PAGE` field
+  row, and a row whose cells merge within an unchanged grid, which is
+  replaced by a deleted and an inserted row. Header, footer and text-box
+  stories are now compared under the main-body table-topology guard first,
+  so such a merge inside a text box is no longer emitted as revisions
+  wrapped around cells; a table change the guard refuses in a header or
+  footer part is listed, and a text-box story the guard refuses keeps its
+  previous comparison. Inserting or deleting a row that holds a field, content control
+  (including a cell-level one), drawing, nested table or table-property
+  exceptions (`w:tblPrEx`), a change to a row's table-property exceptions,
+  a row change in a header or footer table that sits beside a text box in
+  the same part, or a whole table, is still listed. (#1393)
+
 - A block-level content control (`w:sdt`) or custom XML element
   (`w:customXml`) that holds a field such as `REF` or `PAGE` now pairs across
   a boundary move, as one without a field does: only the paragraph that moved
