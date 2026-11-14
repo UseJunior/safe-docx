@@ -1537,23 +1537,35 @@ const ROW_REVISION_RECORDS = new Set([
  * paragraphs were all removed as admitted plain paragraphs and which carries
  * no revision record, so a story whose tables differ only by such rows reads
  * as the same scaffold. Rows inside a nested table, a content control or a
- * text box are not touched. A row with table-property exceptions
- * (`w:tblPrEx`) stays too: docx-core's Reject All does not restore a
- * `w:tblPrExChange`, so a change to them is listed.
+ * text box are not touched, and neither is any row of a story that holds a
+ * text box. A row with anything besides its row properties and cells of
+ * plain paragraphs stays too: a cell-level content control or custom XML
+ * element, range markup, a nested table, or table-property exceptions
+ * (`w:tblPrEx`, whose `w:tblPrExChange` docx-core's Reject All does not
+ * restore), so a change to it is listed.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  */
 function removeTrackableRows(root: Element): void {
+  // A story holding a text box keeps every row: its comparison may fall back
+  // to the unguarded path, which must not see a newly admitted row change.
+  if (root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0) return;
+  const isW = (element: Element, ...localNames: string[]): boolean =>
+    element.namespaceURI === OOXML.W_NS && localNames.includes(element.localName);
   for (const table of directChildElements(root)) {
-    if (table.namespaceURI !== OOXML.W_NS || table.localName !== 'tbl') continue;
+    if (!isW(table, 'tbl')) continue;
     for (const row of directChildElements(table)) {
-      if (row.namespaceURI !== OOXML.W_NS || row.localName !== 'tr') continue;
-      const descendants = Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'));
-      if (descendants.some((element) =>
-        element.localName === 'p'
-        || element.localName === 'tblPrEx'
-        || ROW_REVISION_RECORDS.has(element.localName))) continue;
+      if (!isW(row, 'tr')) continue;
+      // Only row properties and cells left holding nothing but their cell
+      // properties: a cell-level content control, custom XML, table-property
+      // exceptions, range markup or a nested table keeps the row.
+      const plain = directChildElements(row).every((child) =>
+        isW(child, 'trPr')
+        || (isW(child, 'tc') && directChildElements(child).every((part) => isW(part, 'tcPr'))));
+      if (!plain) continue;
+      if (Array.from(row.getElementsByTagNameNS(OOXML.W_NS, '*'))
+        .some((element) => ROW_REVISION_RECORDS.has(element.localName))) continue;
       table.removeChild(row);
     }
   }

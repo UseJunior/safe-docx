@@ -1557,9 +1557,12 @@ async function compareDocumentsTagged(
           : undefined;
     // A nested story's tables get the main-body row machinery: an inserted
     // or deleted row is tracked with w:trPr/w:ins or w:trPr/w:del, and a
-    // changed row skeleton is replaced (#1393). A topology the guard refuses
-    // keeps the unguarded comparison the story used before, so a change that
-    // was listed stays listed instead of aborting the whole comparison.
+    // changed row skeleton is replaced (#1393). When the guard refuses the
+    // story's tables, a header or footer part with no text box in it is left
+    // uncompared, so it stays listed (as a part the eligibility gates turned
+    // away does) instead of aborting the whole comparison. A text-box story,
+    // or a part holding one, keeps the unguarded comparison it used before:
+    // its eligibility never admits a row change (`removeTrackableRows`).
     const compareNestedStory = (guardTableTopology: boolean): Promise<TaggedCompareResult> =>
       compareDocumentsTaggedCore(
         lifecycleEmptySide ?? story.original,
@@ -1574,6 +1577,13 @@ async function compareDocumentsTagged(
       result = await compareNestedStory(true);
     } catch (error) {
       if (!(error instanceof UnsupportedTableTopologyComparisonError)) throw error;
+      if (
+        story.container === 'ancillaryPart' &&
+        !textBoxPlan.stories.some((other) =>
+          other.container === 'textBox' && other.partPath === story.partPath)
+      ) {
+        return;
+      }
       result = await compareNestedStory(false);
     }
     refuseUnreportedBlockContainer(result.unrepresentedChanges, story.partPath);

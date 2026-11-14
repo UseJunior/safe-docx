@@ -503,6 +503,17 @@ describe('header and footer table changes the row revisions cannot carry stay li
       revised: story(COMPANY, ADDRESS.replace('<w:tr>', '<w:tr><w:tblPrEx><w:tblW w:w="7000" w:type="dxa"/></w:tblPrEx>')),
     },
     {
+      // A cell-level content control keeps its row in the scaffold.
+      name: 'a cell added beside a cell-level content control',
+      original: story(`<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr><w:sdt><w:sdtPr><w:alias w:val="Company"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt></w:tr>`),
+      revised: story(`<w:tr><w:sdt><w:sdtPr><w:alias w:val="Company"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt>${cell(text('Corp'))}</w:tr>`),
+    },
+    {
+      name: 'a renamed cell-level content control',
+      original: story(`<w:tr><w:sdt><w:sdtPr><w:alias w:val="Company"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt>${cell(text('Corp'))}</w:tr>`),
+      revised: story(`<w:tr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt>${cell(text('Corp'))}</w:tr>`),
+    },
+    {
       name: 'an inserted row holding a PAGE field',
       original: story(COMPANY),
       revised: story(COMPANY, row('Page', text('Page ') + pageField())),

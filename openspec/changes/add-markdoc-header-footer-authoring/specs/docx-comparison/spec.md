@@ -49,9 +49,11 @@ also leave out each row of a table placed directly in the story whose
 paragraphs are all admitted ordinary paragraphs and which carries no revision
 record, because the story comparison tracks such a row as inserted or deleted
 under the same table-topology guard as the main body; a row holding a field,
-content control, drawing, nested table or table-property exceptions stays in
-it. A table topology that guard refuses in a header, footer or text-box story
-SHALL leave that story listed rather than abort the comparison. Field-state validation
+content control (including a cell-level one), drawing, nested table, range
+markup or table-property exceptions stays in it, and so does every row of a
+story that also holds a text box. A table topology that guard refuses in a
+header, footer or text-box story SHALL leave that change listed rather than
+abort the comparison. Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
@@ -78,7 +80,7 @@ MUST NOT be silently represented as an ordinary text edit.
 - **THEN** an inserted row SHALL carry `w:trPr/w:ins` and a deleted row `w:trPr/w:del`, and a matched row whose skeleton changed SHALL be replaced by a deleted and an inserted row (a vertical-merge band as a whole), as in the main body
 - **AND** accept-all SHALL recover the revised story and reject-all the original story, with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`
 - **AND** the story SHALL NOT remain in `unrepresentedChanges`, an unchanged field SHALL keep its structure without revision markup, and the emitted document SHALL validate against the vendored Transitional schema
-- **AND** inserting or deleting a row that holds a field, content control, drawing, nested table or table-property exceptions, a change to a row's table-property exceptions, or a whole table, SHALL still be listed
+- **AND** inserting or deleting a row that holds a field, content control, drawing, nested table or table-property exceptions, a change to a row's table-property exceptions or cell-level content control, a row change in a table beside a text box in the same story, or a whole table, SHALL still be listed
 
 #### Scenario: [SDX-CMP-STORY-05] Unsupported topology remains unrepresented
 - **GIVEN** selected stories with creation, deletion, rebinding, ambiguous pairing, structural table mutation outside the tracked table-row subset, drawing/content-control mutation, or nested-story change outside the admitted subset
