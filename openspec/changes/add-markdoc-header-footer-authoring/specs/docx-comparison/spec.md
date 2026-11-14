@@ -55,8 +55,9 @@ under the same table-topology guard as the main body; a row holding a field,
 content control (including a cell-level one), drawing, nested table, range
 markup or table-property exceptions stays in it, and so does every row of a
 story that also holds a text box. A table topology that guard refuses in a
-header, footer or text-box story SHALL leave that change listed rather than
-abort the comparison. Field-state validation
+header or footer part with no text box SHALL leave that part listed rather
+than abort the comparison; a text-box story the guard refuses keeps the
+unguarded comparison it used before. Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and

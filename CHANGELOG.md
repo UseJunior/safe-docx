@@ -11,8 +11,9 @@
   replaced by a deleted and an inserted row. Header, footer and text-box
   stories are now compared under the main-body table-topology guard first,
   so such a merge inside a text box is no longer emitted as revisions
-  wrapped around cells; a table change the guard refuses there is still
-  listed. Inserting or deleting a row that holds a field, content control
+  wrapped around cells; a table change the guard refuses in a header or
+  footer part is listed, and a text-box story the guard refuses keeps its
+  previous comparison. Inserting or deleting a row that holds a field, content control
   (including a cell-level one), drawing, nested table or table-property
   exceptions (`w:tblPrEx`), a change to a row's table-property exceptions,
   a row change in a header or footer table that sits beside a text box in
