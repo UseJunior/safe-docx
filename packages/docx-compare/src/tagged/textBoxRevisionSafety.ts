@@ -4355,7 +4355,7 @@ export async function markInsertedAncillaryStoryParagraphs(
   date: Date,
   minimumRevisionId = 0,
   options: LifecycleMarkingOptions = {},
-): Promise<{ document: Buffer; markedParagraphs: number }> {
+): Promise<{ document: Buffer; markedParagraphs: number; markedRows: number; displacedParagraphs: number; displacedRows: number }> {
   return markLifecycleAncillaryStoryParagraphs(
     storyDocument,
     preservedPackage,
@@ -4385,7 +4385,7 @@ export async function markDeletedAncillaryStoryParagraphs(
   date: Date,
   minimumRevisionId = 0,
   options: LifecycleMarkingOptions = {},
-): Promise<{ document: Buffer; markedParagraphs: number }> {
+): Promise<{ document: Buffer; markedParagraphs: number; markedRows: number; displacedParagraphs: number; displacedRows: number }> {
   return markLifecycleAncillaryStoryParagraphs(
     storyDocument,
     preservedPackage,
@@ -4405,6 +4405,14 @@ export interface LifecycleMarkingOptions {
    * properties are tracked with a `w:pPrChange` against none.
    */
   blankFinalParagraph?: boolean;
+  /**
+   * The story the side without this story shows where the projection carries
+   * this story's part (`displacedLifecycleStoryXml`), already projected to
+   * that side. Its content is tracked the opposite way inside this story:
+   * inserted after a deleted story's content, deleted ahead of an inserted
+   * story's content (#1454).
+   */
+  displacedStoryXml?: string;
 }
 
 /**
@@ -4490,15 +4498,360 @@ function trackFinalParagraphPropertiesAgainstBlank(
 }
 
 /**
+ * Track a lifecycle story's table row as inserted or deleted, so its borders
+ * and shading go with the row instead of surviving as an empty table on the
+ * side without the story. `w:ins` / `w:del` follow the `CT_TrPrBase`
+ * properties and precede `w:trPrChange`; a row already carrying a pending
+ * marker of the same kind keeps it.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1454
+ */
+function markLifecycleRow(
+  row: Element,
+  markerTag: 'w:ins' | 'w:del',
+  author: string,
+  dateString: string,
+  state: ReturnType<typeof createRevisionIdState>,
+): boolean {
+  const document = row.ownerDocument!;
+  const isW = (element: Element, ...names: string[]): boolean =>
+    element.namespaceURI === OOXML.W_NS && names.includes(element.localName);
+  const kind = markerTag === 'w:ins' ? 'ins' : 'del';
+  let properties = directChildElements(row).find((element) => isW(element, 'trPr'));
+  if (!properties) {
+    properties = document.createElementNS(OOXML.W_NS, 'w:trPr');
+    // CT_Row: w:tblPrEx, then w:trPr, then the cells.
+    const after = directChildElements(row).find((element) => !isW(element, 'tblPrEx'));
+    row.insertBefore(properties, after ?? null);
+  }
+  if (directChildElements(properties).some((element) => isW(element, kind))) return false;
+  const marker = document.createElementNS(OOXML.W_NS, markerTag);
+  marker.setAttributeNS(OOXML.W_NS, 'w:id', String(allocateRevisionId(state)));
+  marker.setAttributeNS(OOXML.W_NS, 'w:author', author);
+  marker.setAttributeNS(OOXML.W_NS, 'w:date', dateString);
+  const boundary = directChildElements(properties).find((element) =>
+    kind === 'ins' ? isW(element, 'del', 'trPrChange') : isW(element, 'trPrChange'));
+  properties.insertBefore(marker, boundary ?? null);
+  return true;
+}
+
+/** Elements a displaced story copy must not duplicate into another part. */
+const UNCOPYABLE_DISPLACED_CONTENT = new Set([
+  'drawing', 'pict', 'object', 'txbxContent', 'AlternateContent',
+  'commentRangeStart', 'commentRangeEnd', 'commentReference',
+  'footnoteReference', 'endnoteReference', 'altChunk', 'subDoc', 'dataBinding',
+]);
+
+/**
+ * Strip from a story root what does not change what it shows: a block-,
+ * row- or cell-level content control or custom XML element is unwrapped,
+ * and bookmarks, content-control ids and Word 2010 paragraph and text ids
+ * are dropped. A data-bound control (whose shown text Word refreshes from a
+ * custom XML part) is not display-neutral, so `copyableDisplacedBlocks`
+ * refuses one first. With `finalParagraphAfterTable` (comparison only, never
+ * a copy), an empty plain paragraph that closes a story after a table is
+ * dropped too.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ */
+function stripDisplayNeutralMarkup(root: Element, options: { finalParagraphAfterTable?: boolean } = {}): void {
+  if (options.finalParagraphAfterTable) {
+    // A story that ends in a table shows the empty paragraph mark after it
+    // whether or not the part spells one out (Word adds it on open), so a
+    // closing empty plain paragraph there reads the same as none.
+    const blocks = directChildElements(root).filter((element) =>
+      element.namespaceURI === OOXML.W_NS && element.localName !== 'sectPr');
+    const last = blocks.at(-1);
+    const beforeLast = blocks.at(-2);
+    const isEmptyPlainParagraph = (paragraph: Element): boolean =>
+      directChildElements(paragraph).every((child) =>
+        child.localName === 'pPr' &&
+        directChildElements(child).every((property) =>
+          property.localName === 'rPr' && directChildElements(property).length === 0));
+    if (
+      last?.localName === 'p' && isEmptyPlainParagraph(last) &&
+      beforeLast?.localName === 'tbl'
+    ) {
+      root.removeChild(last);
+    }
+  }
+  for (const container of Array.from(root.getElementsByTagName('*')).reverse()) {
+    if (
+      container.namespaceURI !== OOXML.W_NS ||
+      (container.localName !== 'sdt' && container.localName !== 'customXml') ||
+      hasAncestor(container, 'p')
+    ) {
+      continue;
+    }
+    const content = container.localName === 'sdt'
+      ? directChildElements(container).find((element) => element.localName === 'sdtContent')
+      : container;
+    const parent = container.parentNode!;
+    for (const child of content
+      ? directChildElements(content).filter((element) =>
+        !(container.localName === 'customXml' && element.localName === 'customXmlPr'))
+      : []) {
+      parent.insertBefore(child, container);
+    }
+    parent.removeChild(container);
+  }
+  for (const element of Array.from(root.getElementsByTagName('*'))) {
+    if (
+      element.namespaceURI === OOXML.W_NS &&
+      (element.localName === 'bookmarkStart' || element.localName === 'bookmarkEnd' ||
+        (element.localName === 'id' && (element.parentNode as Element | null)?.localName === 'sdtPr'))
+    ) {
+      element.parentNode?.removeChild(element);
+      continue;
+    }
+    element.removeAttributeNS(WORD_2010_NS, 'paraId');
+    element.removeAttributeNS(WORD_2010_NS, 'textId');
+  }
+}
+
+/**
+ * The block content of a displaced story, ready to copy into a lifecycle
+ * story, or `undefined` when it cannot be copied without a second package
+ * resource: a drawing, an object, a text box, a comment or note anchor, or
+ * any relationship reference would need its own target in the carried part.
+ * Identifiers that must stay unique in the document are left to the story
+ * that owns them, and block-level containers are unwrapped
+ * (`stripDisplayNeutralMarkup`): `w:sdt` and `w:customXml` carry no revision
+ * marker, so a container's paragraph would survive the projection that
+ * removes the copy.
+ */
+function copyableDisplacedBlocks(partXml: string): Element[] | undefined {
+  const root = parseXml(partXml).documentElement;
+  for (const element of Array.from(root.getElementsByTagName('*'))) {
+    if (UNCOPYABLE_DISPLACED_CONTENT.has(element.localName)) return undefined;
+    for (let index = 0; index < element.attributes.length; index += 1) {
+      if (element.attributes.item(index)?.namespaceURI === RELATIONSHIPS_NS) return undefined;
+    }
+  }
+  stripDisplayNeutralMarkup(root);
+  return directChildElements(root).filter((element) =>
+    element.namespaceURI === OOXML.W_NS && element.localName !== 'sectPr');
+}
+
+/**
+ * The story the side without a lifecycle story shows on the pages where the
+ * comparison's own projection carries that story's part, projected to that
+ * side, or `undefined` when there is nothing to copy (those pages show no
+ * story there, or a blank one), when the pages disagree on the story, or
+ * when the story cannot be copied (`copyableDisplacedBlocks`).
+ *
+ * Accept All (for a `deleted` story) or Reject All (for an `inserted` one)
+ * of a removed section boundary carries its references onto a following
+ * section that has none (Word's carry, #1144). The lifecycle story's content
+ * is then all tracked the other way and shows blank, while the document on
+ * that side shows the story the section inherited. A `w:sectPrChange`
+ * snapshot is `CT_SectPrBase` and cannot hold the reference (#944), so the
+ * display change is tracked as content: the displaced story's text, copied
+ * into the carried part with the opposite marker.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
+ * @see https://github.com/UseJunior/safe-docx/issues/1454
+ * @see https://github.com/UseJunior/safe-docx/issues/1144
+ */
+export async function displacedLifecycleStoryXml(
+  compared: Buffer,
+  side: Buffer,
+  outputPath: string,
+  mode: 'inserted' | 'deleted',
+): Promise<string | undefined> {
+  const project = mode === 'deleted' ? acceptAllChanges : rejectAllChanges;
+  const [comparedArchive, sideArchive] = await Promise.all([
+    DocxArchive.load(compared),
+    DocxArchive.load(side),
+  ]);
+  const comparedBindings = resolveEffectiveStoryBindings({
+    documentXml: project(await comparedArchive.getDocumentXml()),
+    relationshipsXml: await comparedArchive.getFile('word/_rels/document.xml.rels'),
+    settingsXml: await comparedArchive.getFile('word/settings.xml'),
+  });
+  const sideBindings = resolveEffectiveStoryBindings({
+    documentXml: project(await sideArchive.getDocumentXml()),
+    relationshipsXml: await sideArchive.getFile('word/_rels/document.xml.rels'),
+    settingsXml: await sideArchive.getFile('word/settings.xml'),
+  });
+  if (!comparedBindings.ok || !sideBindings.ok) return undefined;
+  const sidePages = new Map(pageStorySlots(sideBindings).map(({ page, slot }) =>
+    [[slot.sectionOrdinal, slot.kind, page].join('|'), slot.targetPath]));
+  const displaced = new Set<string | undefined>();
+  for (const { page, slot } of pageStorySlots(comparedBindings)) {
+    if (slot.targetPath !== outputPath) continue;
+    displaced.add(sidePages.get([slot.sectionOrdinal, slot.kind, page].join('|')));
+  }
+  const [targetPath] = displaced;
+  if (displaced.size !== 1 || targetPath === undefined) return undefined;
+  const partXml = await sideArchive.getFile(targetPath);
+  if (partXml === null) return undefined;
+  const projected = project(partXml);
+  if (isBlankStoryPart(projected) || copyableDisplacedBlocks(projected) === undefined) return undefined;
+  return projected;
+}
+
+/**
+ * Make a replacement's final paragraph one whose mark neither projection
+ * removes: a story's final paragraph mark always stays, so a marked one
+ * would leave an empty trailing paragraph on the side that drops it. Two
+ * paragraphs are joined (`joinReplacementFinalParagraph`). When the
+ * inserted half ends in a table, the deleted half's last paragraph moves
+ * after it and keeps its deleted runs, with its properties tracked against
+ * none; when the deleted half ends in one, the inserted half's last
+ * paragraph keeps its inserted runs with prior properties of none. A half
+ * that ends in a block content control or custom XML element is refused by
+ * the projection check: neither carries a revision marker, so its emptied
+ * paragraph survives the projection that removes the half (as for a slot
+ * lifecycle, #1455). Either
+ * projection then ends in a paragraph, which after a final table is the
+ * empty paragraph mark Word keeps there. When both halves end in a table
+ * (CT_HdrFtr allows it; Word itself always closes a story with a paragraph)
+ * nothing is changed, and the projection check refuses the redline.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ */
+function finishReplacementFinalParagraph(
+  body: Element,
+  deleted: Element | undefined,
+  inserted: Element | undefined,
+  author: string,
+  dateString: string,
+  state: ReturnType<typeof createRevisionIdState>,
+): void {
+  const isW = (element: Element | undefined, ...names: string[]): element is Element =>
+    !!element && element.namespaceURI === OOXML.W_NS && names.includes(element.localName);
+  const end = directChildElements(body).find((element) => isW(element, 'sectPr')) ?? null;
+  const unmark = (paragraph: Element, marker: 'ins' | 'del'): void => {
+    const properties = directChildElements(paragraph).find((element) => isW(element, 'pPr'));
+    const mark = properties && directChildElements(properties).find((element) => isW(element, 'rPr'));
+    if (!properties || !mark) return;
+    for (const element of directChildElements(mark).filter((child) => isW(child, marker))) mark.removeChild(element);
+    if (directChildElements(mark).length === 0) properties.removeChild(mark);
+  };
+  if (isW(deleted, 'p') && isW(inserted, 'p')) {
+    joinReplacementFinalParagraph(deleted, inserted, author, dateString, state);
+  } else if (isW(deleted, 'p')) {
+    body.insertBefore(deleted, end);
+    unmark(deleted, 'del');
+    trackFinalParagraphPropertiesAgainstBlank(body, 'w:del', author, dateString, state);
+  } else if (isW(inserted, 'p')) {
+    unmark(inserted, 'ins');
+    trackFinalParagraphPropertiesAgainstBlank(body, 'w:ins', author, dateString, state);
+  }
+}
+
+/**
+ * Join the last paragraph of a replacement's deleted half to the last
+ * paragraph of its inserted half, the story's final paragraph, as Word's own
+ * comparison writes a replaced final paragraph: the deleted runs go first,
+ * the paragraph mark carries no insertion (a story's final paragraph mark is
+ * never removed, so a marked one would leave an empty trailing paragraph on
+ * the side that drops it), and the deleted paragraph's properties become
+ * the `w:pPrChange` / `w:rPrChange` prior state. A paragraph that already
+ * carries a property change keeps its marked mark.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ */
+function joinReplacementFinalParagraph(
+  deleted: Element | undefined,
+  inserted: Element | undefined,
+  author: string,
+  dateString: string,
+  state: ReturnType<typeof createRevisionIdState>,
+): void {
+  const isW = (element: Element | undefined, ...names: string[]): element is Element =>
+    !!element && element.namespaceURI === OOXML.W_NS && names.includes(element.localName);
+  if (!isW(deleted, 'p') || !isW(inserted, 'p')) return;
+  const propertiesOf = (paragraph: Element): Element | undefined =>
+    directChildElements(paragraph).find((element) => isW(element, 'pPr'));
+  const markOf = (properties: Element | undefined): Element | undefined =>
+    properties && directChildElements(properties).find((element) => isW(element, 'rPr'));
+  const deletedProperties = propertiesOf(deleted);
+  const deletedMark = markOf(deletedProperties);
+  const document = inserted.ownerDocument!;
+  let insertedProperties = propertiesOf(inserted);
+  const insertedMark = markOf(insertedProperties);
+  if (
+    [deletedProperties, insertedProperties].some((properties) =>
+      properties && directChildElements(properties).some((element) => isW(element, 'pPrChange', 'sectPr'))) ||
+    [deletedMark, insertedMark].some((mark) =>
+      mark && directChildElements(mark).some((element) => isW(element, 'rPrChange', 'moveFrom', 'moveTo')))
+  ) {
+    return;
+  }
+  const baseProperties = (properties: Element | undefined): Element[] =>
+    properties ? directChildElements(properties).filter((element) => !isW(element, 'rPr')) : [];
+  const markFormatting = (mark: Element | undefined): Element[] =>
+    mark ? directChildElements(mark).filter((element) => !isW(element, 'ins', 'del')) : [];
+  const fingerprint = (elements: Element[]): string => elements.map(canonicalNode).join('');
+  const change = (name: string, priorName: string, prior: Element[]): Element => {
+    const record = document.createElementNS(OOXML.W_NS, `w:${name}`);
+    record.setAttributeNS(OOXML.W_NS, 'w:id', String(allocateRevisionId(state)));
+    record.setAttributeNS(OOXML.W_NS, 'w:author', author);
+    record.setAttributeNS(OOXML.W_NS, 'w:date', dateString);
+    const snapshot = document.createElementNS(OOXML.W_NS, `w:${priorName}`);
+    for (const element of prior) snapshot.appendChild(document.importNode(element, true));
+    record.appendChild(snapshot);
+    return record;
+  };
+  if (!insertedProperties) {
+    insertedProperties = document.createElementNS(OOXML.W_NS, 'w:pPr');
+    inserted.insertBefore(insertedProperties, inserted.firstChild);
+  }
+  // CT_ParaRPr: revision markers, formatting, then w:rPrChange.
+  const priorMark = markFormatting(deletedMark);
+  let mark = insertedMark;
+  if (mark) {
+    for (const marker of directChildElements(mark).filter((element) => isW(element, 'ins'))) {
+      mark.removeChild(marker);
+    }
+  }
+  if (fingerprint(priorMark) !== fingerprint(markFormatting(mark))) {
+    if (!mark) {
+      mark = document.createElementNS(OOXML.W_NS, 'w:rPr');
+      insertedProperties.appendChild(mark);
+    }
+    mark.appendChild(change('rPrChange', 'rPr', priorMark));
+  }
+  if (mark && directChildElements(mark).length === 0) insertedProperties.removeChild(mark);
+  // CT_PPr: the CT_PPrBase properties and the mark's w:rPr, then w:pPrChange.
+  const priorProperties = baseProperties(deletedProperties);
+  if (fingerprint(priorProperties) !== fingerprint(baseProperties(insertedProperties))) {
+    insertedProperties.appendChild(change('pPrChange', 'pPr', priorProperties));
+  }
+  if (directChildElements(insertedProperties).length === 0) inserted.removeChild(insertedProperties);
+  const content = directChildElements(inserted).find((element) => !isW(element, 'pPr')) ?? null;
+  for (const child of Array.from(deleted.childNodes)) {
+    if (child.nodeType === 1 && isW(child as Element, 'pPr')) continue;
+    inserted.insertBefore(child, content);
+  }
+  deleted.parentNode?.removeChild(deleted);
+}
+
+/**
  * Shared marker for lifecycle stories. Every paragraph in the story, including
  * paragraphs inside tables and nested text boxes, receives a paragraph-mark
  * revision; every run that is not a drawing/VML carrier and is not already
  * inside a revision wrapper is wrapped. Runs inside `w:hyperlink`,
  * `w:fldSimple` and run-level `w:sdt` are included, since those containers
- * admit run-level revision elements.
+ * admit run-level revision elements. Every table row is tracked the same way
+ * (`markLifecycleRow`), so a table's borders go with its content. A
+ * displaced story (`LifecycleMarkingOptions.displacedStoryXml`) is copied in
+ * and marked the opposite way.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1454
  */
 async function markLifecycleAncillaryStoryParagraphs(
   storyDocument: Buffer,
@@ -4508,7 +4861,7 @@ async function markLifecycleAncillaryStoryParagraphs(
   minimumRevisionId: number,
   markerTag: 'w:ins' | 'w:del',
   options: LifecycleMarkingOptions = {},
-): Promise<{ document: Buffer; markedParagraphs: number }> {
+): Promise<{ document: Buffer; markedParagraphs: number; markedRows: number; displacedParagraphs: number; displacedRows: number }> {
   const archive = await DocxArchive.load(storyDocument);
   const document = parseXml(await archive.getDocumentXml());
   const body = document.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0);
@@ -4528,27 +4881,60 @@ async function markLifecycleAncillaryStoryParagraphs(
   const state = createRevisionIdState(preservedRoots);
   state.nextId = Math.max(state.nextId, minimumRevisionId);
   const dateString = formatDate(date);
-  const markParagraph = (paragraph: Element): void =>
-    markLifecycleParagraph(paragraph, markerTag, author, dateString, state);
   // Nested text-box paragraphs are marked on their own; every other paragraph
   // in the story (direct, table cell, block-level sdt) is marked here and
-  // counted as one represented range.
-  let markedParagraphs = 0;
-  for (const paragraph of Array.from(
-    body.getElementsByTagNameNS(OOXML.W_NS, 'p'),
-  )) {
-    if (hasAncestorBelow(paragraph, body, 'txbxContent')) continue;
-    markedParagraphs += 1;
-    markParagraph(paragraph);
-    for (const textBox of Array.from(
-      paragraph.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
-    )) {
-      for (const nestedParagraph of Array.from(
-        textBox.getElementsByTagNameNS(OOXML.W_NS, 'p'),
-      )) {
-        markParagraph(nestedParagraph);
+  // counted as one represented range. Every table row, nested ones included,
+  // is tracked too.
+  const markContent = (blocks: readonly Element[], tag: 'w:ins' | 'w:del'): { paragraphs: number; rows: number } => {
+    let paragraphs = 0;
+    let rows = 0;
+    for (const block of blocks) {
+      const isParagraph = block.namespaceURI === OOXML.W_NS && block.localName === 'p';
+      for (const paragraph of [
+        ...(isParagraph ? [block] : []),
+        ...Array.from(block.getElementsByTagNameNS(OOXML.W_NS, 'p')),
+      ]) {
+        if (hasAncestorBelow(paragraph, body, 'txbxContent')) continue;
+        paragraphs += 1;
+        markLifecycleParagraph(paragraph, tag, author, dateString, state);
+        for (const textBox of Array.from(
+          paragraph.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
+        )) {
+          for (const nestedParagraph of Array.from(
+            textBox.getElementsByTagNameNS(OOXML.W_NS, 'p'),
+          )) {
+            markLifecycleParagraph(nestedParagraph, tag, author, dateString, state);
+          }
+        }
+      }
+      for (const row of Array.from(block.getElementsByTagNameNS(OOXML.W_NS, 'tr'))) {
+        if (markLifecycleRow(row, tag, author, dateString, state)) rows += 1;
       }
     }
+    return { paragraphs, rows };
+  };
+  const storyBlocks = directChildElements(body).filter(
+    (element) => !(element.namespaceURI === OOXML.W_NS && element.localName === 'sectPr'),
+  );
+  const marked = markContent(storyBlocks, markerTag);
+  // The displaced story goes where a replacement's other half would: its
+  // copy is inserted after a deleted story's content, or deleted ahead of an
+  // inserted story's content, so the final paragraph is the one the side
+  // keeping the story shows last.
+  let displaced = { paragraphs: 0, rows: 0 };
+  const displacedBlocks = options.displacedStoryXml === undefined
+    ? undefined
+    : copyableDisplacedBlocks(options.displacedStoryXml);
+  if (displacedBlocks && displacedBlocks.length > 0) {
+    const imported = displacedBlocks.map((block) => document.importNode(block, true) as Element);
+    const before = markerTag === 'w:del'
+      ? directChildElements(body).find((element) =>
+        element.namespaceURI === OOXML.W_NS && element.localName === 'sectPr') ?? null
+      : storyBlocks[0] ?? null;
+    for (const block of imported) body.insertBefore(block, before);
+    displaced = markContent(imported, markerTag === 'w:del' ? 'w:ins' : 'w:del');
+    const [deletedHalf, insertedHalf] = markerTag === 'w:del' ? [storyBlocks, imported] : [imported, storyBlocks];
+    finishReplacementFinalParagraph(body, deletedHalf.at(-1), insertedHalf.at(-1), author, dateString, state);
   }
   if (options.blankFinalParagraph) {
     trackFinalParagraphPropertiesAgainstBlank(body, markerTag, author, dateString, state);
@@ -4556,7 +4942,10 @@ async function markLifecycleAncillaryStoryParagraphs(
   archive.setDocumentXml(serializer.serializeToString(document));
   return {
     document: await archive.save(),
-    markedParagraphs,
+    markedParagraphs: marked.paragraphs,
+    markedRows: marked.rows,
+    displacedParagraphs: displaced.paragraphs,
+    displacedRows: displaced.rows,
   };
 }
 
@@ -4608,11 +4997,12 @@ async function displayedStoryProjectionInventory(
     );
   }
   const projectedParts = new Map<string, string | null>();
-  const shown = (targetPath: string): string | null => {
-    if (!projectedParts.has(targetPath)) {
-      projectedParts.set(targetPath, projectedStoryContent(parts.get(targetPath)!, projection));
+  const shown = (targetPath: string, displayOnly = false): string | null => {
+    const key = `${displayOnly ? 'display' : 'exact'}|${targetPath}`;
+    if (!projectedParts.has(key)) {
+      projectedParts.set(key, projectedStoryContent(parts.get(targetPath)!, projection, displayOnly));
     }
-    return projectedParts.get(targetPath)!;
+    return projectedParts.get(key)!;
   };
   const inventory: DisplayedStoryPage[] = [
     { key: 'sections', content: String(bindings.sectionCount) },
@@ -4623,6 +5013,7 @@ async function displayedStoryProjectionInventory(
       key: [slot.sectionOrdinal, slot.kind, page].join('|'),
       targetPath: slot.targetPath,
       content: shown(slot.targetPath),
+      displayContent: shown(slot.targetPath, true),
     });
   }
   return inventory;
@@ -4636,20 +5027,27 @@ interface DisplayedStoryPage {
   targetPath?: string;
   /** What the part shows, or `null` when it shows nothing (a blank page reads as no story). */
   content: string | null;
+  /** `content` without display-neutral markup (`stripDisplayNeutralMarkup`). */
+  displayContent?: string | null;
 }
 
 /** A projected story part's content, or `null` when it shows nothing. */
 function projectedStoryContent(
   partXml: string,
   projection: 'accept' | 'reject',
+  displayOnly = false,
 ): string | null {
-  const projectedXml = (projection === 'accept' ? acceptAllChanges : rejectAllChanges)(partXml);
-  return isBlankStoryPart(projectedXml)
-    ? null
-    : [
-      ordinaryStoryScaffoldFingerprint(projectedXml),
-      extractRoundTripComparisonText(projectedXml),
-    ].join('|');
+  let projectedXml = (projection === 'accept' ? acceptAllChanges : rejectAllChanges)(partXml);
+  if (isBlankStoryPart(projectedXml)) return null;
+  if (displayOnly) {
+    const document = parseXml(projectedXml);
+    stripDisplayNeutralMarkup(document.documentElement, { finalParagraphAfterTable: true });
+    projectedXml = serializer.serializeToString(document);
+  }
+  return [
+    ordinaryStoryScaffoldFingerprint(projectedXml),
+    extractRoundTripComparisonText(projectedXml),
+  ].join('|');
 }
 
 /**
@@ -4687,6 +5085,13 @@ export interface UnrepresentedStoryParts {
   changes: readonly UnrepresentedChange[];
   /** Output parts a header/footer story comparison wrote. */
   comparedPartPaths: ReadonlySet<string>;
+  /**
+   * Output parts holding a displaced story's copy (`displacedLifecycleStoryXml`).
+   * A page showing one is compared without display-neutral markup on both
+   * sides: the copy unwraps the containers and drops the identifiers the
+   * displaced story keeps (#1454).
+   */
+  displacedCopyPartPaths?: ReadonlySet<string>;
 }
 
 /**
@@ -4775,26 +5180,43 @@ export async function assertAncillaryTextBoxStoryProjection(
       unrepresented,
     )
     : new Set<string>();
+  // A page that shows a displaced story's copy after either projection is
+  // compared by what it displays, on both sides (#1454).
+  const displacedCopyPaths = unrepresented?.displacedCopyPartPaths ?? new Set<string>();
+  const displayKeys = new Set(
+    [...rejectedCompared, ...acceptedCompared]
+      .filter((page) => page.targetPath !== undefined && displacedCopyPaths.has(page.targetPath))
+      .map((page) => page.key),
+  );
   // Blank pages stay in the inventory until here, so a listed part that
   // shows nothing still replaces the original's expectation for its pages.
   const expectedRejected = new Map(expectedOriginal.map((page) => [page.key, page.content]));
+  const heldToRevisedKeys = new Set<string>();
   for (const page of rejectedCompared) {
     if (page.targetPath === undefined || !excludedPartPaths.has(page.targetPath)) continue;
+    heldToRevisedKeys.add(page.key);
     const revisedPartXml = await revisedArchive.getFile(page.targetPath);
     expectedRejected.set(
       page.key,
-      revisedPartXml === null ? null : projectedStoryContent(revisedPartXml, 'reject'),
+      revisedPartXml === null ? null : projectedStoryContent(revisedPartXml, 'reject', displayKeys.has(page.key)),
     );
   }
+  for (const page of expectedOriginal) {
+    if (displayKeys.has(page.key) && !heldToRevisedKeys.has(page.key)) {
+      expectedRejected.set(page.key, page.displayContent ?? null);
+    }
+  }
+  const pageContent = (page: DisplayedStoryPage): [string, string | null] =>
+    [page.key, displayKeys.has(page.key) ? page.displayContent ?? null : page.content];
   const listed = (pages: Iterable<[string, string | null]>): string[] =>
     [...pages]
       .filter((entry): entry is [string, string] => entry[1] !== null)
       .map(([key, content]) => `${key}|${content}`)
       .sort();
   const expectedRejectedPages = listed(expectedRejected);
-  const rejectedComparedPages = listed(rejectedCompared.map((page) => [page.key, page.content]));
-  const expectedRevisedPages = listed(expectedRevised.map((page) => [page.key, page.content]));
-  const acceptedComparedPages = listed(acceptedCompared.map((page) => [page.key, page.content]));
+  const rejectedComparedPages = listed(rejectedCompared.map(pageContent));
+  const expectedRevisedPages = listed(expectedRevised.map(pageContent));
+  const acceptedComparedPages = listed(acceptedCompared.map(pageContent));
   if (
     JSON.stringify(expectedRejectedPages) !== JSON.stringify(rejectedComparedPages) ||
     JSON.stringify(expectedRevisedPages) !== JSON.stringify(acceptedComparedPages)

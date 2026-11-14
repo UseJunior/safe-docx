@@ -23,6 +23,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { describe, expect } from 'vitest';
+import JSZip from 'jszip';
 import { DocxArchive, DocxDocument, OOXML, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
@@ -38,7 +39,6 @@ import {
   assertAncillaryTextBoxStoryProjection,
   deletedAncillaryStoryOutputPaths,
   rejectedSelectedAncillaryStoryPaths,
-  UnsupportedTextBoxRevisionError,
   type TextBoxStoryInput,
 } from './textBoxRevisionSafety.js';
 
@@ -158,6 +158,83 @@ async function assertSchema(buffer: Buffer): Promise<void> {
 function bodyText(xml: string): string {
   return extractRoundTripComparisonText(xml);
 }
+
+/**
+ * The compared output reproduces, page by page, the footers and headers the
+ * revision shows after Accept All and the original shows after Reject All,
+ * under both appliers, with the body text and a schema-valid package.
+ */
+async function expectDisplayedParity(original: Buffer, revised: Buffer, compared: Buffer): Promise<void> {
+  const accepted = await shownStories(revised);
+  const rejected = await shownStories(original);
+  expect(await shownStories(compared, acceptAllChanges)).toEqual(accepted);
+  expect(await shownStories(compared, rejectAllChanges)).toEqual(rejected);
+  expect(await shownAfterDocxCore(compared, 'accept')).toEqual(accepted);
+  expect(await shownAfterDocxCore(compared, 'reject')).toEqual(rejected);
+  const documentXml = await (await DocxArchive.load(compared)).getDocumentXml();
+  expect(bodyText(acceptAllChanges(documentXml))).toBe(bodyText(await (await DocxArchive.load(revised)).getDocumentXml()));
+  expect(bodyText(rejectAllChanges(documentXml))).toBe(bodyText(await (await DocxArchive.load(original)).getDocumentXml()));
+  await assertSchema(compared);
+}
+
+const BASE_FOOTER: Part = { id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml', xml: story('footer', 'Base footer') };
+
+/**
+ * Footer0 on section 0, a boxed footer1 on section 1, and a final section
+ * with no references, which inherits footer1 where section 1's boundary
+ * exists and footer0 where it does not. `removed` drops the boundary in the
+ * revision; `inserted` adds it.
+ */
+function carriedFooterPair(
+  direction: 'removed' | 'inserted',
+  footer0: Part = BASE_FOOTER,
+  footer1Ending = '',
+  wrapFooter1Line: (line: string) => string = (line) => line,
+): Promise<[Buffer, Buffer]> {
+  const label = direction === 'removed' ? 'Removed' : 'Inserted';
+  const line = paragraph(`${label} footer line`);
+  const footer1: Part = {
+    id: 'rIdFooter1', kind: 'footer', target: 'footer1.xml',
+    xml: story('footer', `${label} footer line`, paragraph(`${label} box`))
+      .replace(line, wrapFooter1Line(line))
+      .replace('</w:ftr>', `${footer1Ending}</w:ftr>`),
+  };
+  const head = paragraph('Intro') + sectionParagraph('Zero end', reference('footer', 'rIdFooter0')) + paragraph('One body');
+  const withBoundary = packageWith(
+    head + sectionParagraph('One end', reference('footer', 'rIdFooter1')) + paragraph('Two'),
+    '<w:sectPr/>',
+    [footer0, footer1],
+  );
+  const withoutBoundary = packageWith(head + paragraph('One end') + paragraph('Two'), '<w:sectPr/>', [footer0]);
+  return Promise.all(direction === 'removed' ? [withBoundary, withoutBoundary] : [withoutBoundary, withBoundary]);
+}
+
+/**
+ * A section whose boxed footer also holds a table with the given borders,
+ * over a final section with no references; `removed` drops the section's
+ * boundary in the revision, `inserted` adds it.
+ */
+function tableFooterPair(direction: 'removed' | 'inserted', borders: string, cellText = ''): Promise<[Buffer, Buffer]> {
+  const label = direction === 'removed' ? 'Removed' : 'Inserted';
+  const table =
+    `<w:tbl><w:tblPr><w:tblBorders>${borders}</w:tblBorders></w:tblPr>` +
+    '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc>' +
+    (cellText ? paragraph(cellText) : '<w:p/>') + '</w:tc></w:tr></w:tbl>';
+  const footer: Part = {
+    id: 'rIdTableFooter', kind: 'footer', target: 'footer1.xml',
+    xml: story('footer', `${label} footer line`, paragraph(`${label} box`)).replace('</w:ftr>', `${table}<w:p/></w:ftr>`),
+  };
+  const withBoundary = packageWith(
+    paragraph('Stable body') + sectionParagraph('End of section', reference('footer', 'rIdTableFooter')) + paragraph('Final section'),
+    '<w:sectPr/>',
+    [footer],
+  );
+  const withoutBoundary = packageWith(paragraph('Stable body') + paragraph('End of section') + paragraph('Final section'), '<w:sectPr/>', []);
+  return Promise.all(direction === 'removed' ? [withBoundary, withoutBoundary] : [withoutBoundary, withBoundary]);
+}
+
+const SINGLE_BORDERS = '<w:top w:val="single"/><w:bottom w:val="single"/>';
+const NIL_BORDERS = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((edge) => `<w:${edge} w:val="nil"/>`).join('');
 
 const SHARED_FOOTER = (box: string): Part => ({
   id: 'rIdShared', kind: 'footer', target: 'footer1.xml',
@@ -331,34 +408,18 @@ describe('the projection check compares displayed stories, not literal reference
     });
   });
 
-  test('a carried story that replaces an inherited footer on Accept All fails closed', async ({ given, when, then }: AllureBddContext) => {
+  test('a carried story that replaces an inherited footer on Accept All is tracked as content', async ({ given, when, then }: AllureBddContext) => {
     // Original: footer0 on section 0, a boxed footer1 on section 1, and a
     // final section that inherits footer1. The revision removes section 1's
     // boundary, so its final section inherits footer0. Accept All of the
     // compared output removes the boundary and, as Word does, carries
     // footer1 (all of it a tracked deletion) onto the final section, which
-    // then shows a blank footer instead of footer0. Before #1204 the check
-    // compared literal references without the carry and passed this output.
-    const footer0: Part = { id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml', xml: story('footer', 'Base footer') };
-    const footer1: Part = {
-      id: 'rIdFooter1', kind: 'footer', target: 'footer1.xml',
-      xml: story('footer', 'Removed footer line', paragraph('Removed box')),
-    };
+    // would then show a blank footer instead of footer0. A w:sectPrChange
+    // cannot hold the reference (#944), so the display change is tracked as
+    // content: footer1 also holds footer0's text as a tracked insertion after
+    // its own deleted text (#1454).
     const [original, revised] = await given('a removed section whose footer the final section inherited', () =>
-      Promise.all([
-        packageWith(
-          paragraph('Intro') + sectionParagraph('Zero end', reference('footer', 'rIdFooter0')) +
-            paragraph('One body') + sectionParagraph('One end', reference('footer', 'rIdFooter1')) + paragraph('Two'),
-          '<w:sectPr/>',
-          [footer0, footer1],
-        ),
-        packageWith(
-          paragraph('Intro') + sectionParagraph('Zero end', reference('footer', 'rIdFooter0')) +
-            paragraph('One body') + paragraph('One end') + paragraph('Two'),
-          '<w:sectPr/>',
-          [footer0],
-        ),
-      ]));
+      carriedFooterPair('removed'));
 
     await then('the revision shows footer0 on its final section', async () => {
       expect(await shownStories(revised)).toEqual([
@@ -367,42 +428,172 @@ describe('the projection check compares displayed stories, not literal reference
       ]);
     });
 
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('footer1 holds footer0\'s text as a tracked insertion after its own deleted text', async () => {
+      const footer = parseXml((await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!);
+      expect(Array.from(footer.getElementsByTagNameNS(W_NS, 'delText')).map((t) => t.textContent).join('')).toContain('Removed footer line');
+      const inserted = Array.from(footer.getElementsByTagNameNS(W_NS, 'ins'))
+        .flatMap((ins) => Array.from(ins.getElementsByTagNameNS(W_NS, 't'))).map((t) => t.textContent).join('');
+      expect(inserted).toBe('Base footer');
+    });
+
+    await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+      await expectDisplayedParity(original, revised, result.document);
+    });
+  });
+
+  test('a carried story that replaces an inherited footer on Reject All is tracked as content', async ({ given, when, then }: AllureBddContext) => {
+    // The mirror: the revision inserts a section whose boxed footer the final
+    // section then inherits. Reject All removes the inserted boundary and
+    // carries the new footer (all of it a tracked insertion) onto the final
+    // section, which would show a blank footer instead of footer0, so
+    // footer1 also holds footer0's text as a tracked deletion ahead of its
+    // own inserted text (#1454).
+    const [original, revised] = await given('an inserted section whose footer the final section inherits', () =>
+      carriedFooterPair('inserted'));
+
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('footer1 holds footer0\'s text as a tracked deletion', async () => {
+      const footer = parseXml((await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!);
+      expect(Array.from(footer.getElementsByTagNameNS(W_NS, 'delText')).map((t) => t.textContent).join('')).toBe('Base footer');
+    });
+
+    await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+      await expectDisplayedParity(original, revised, result.document);
+    });
+  });
+});
+
+describe('a displaced story copied into the carried part (#1454)', () => {
+  const pageNumberFooter = (): Part => ({
+    id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml',
+    xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}">` +
+      paragraph('Base first', '<w:jc w:val="left"/>') +
+      '<w:sdt><w:sdtPr><w:id w:val="7"/><w:docPartObj><w:docPartGallery w:val="Page Numbers (Bottom of Page)"/>' +
+      '<w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>' +
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:sdtContent></w:sdt>' +
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr></w:p></w:ftr>',
+  });
+  /** Alignment and text of each paragraph outside a text box. */
+  const paragraphLayout = (xml: string): string[] =>
+    Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'p'))
+      .filter((p) => p.getElementsByTagNameNS(W_NS, 'txbxContent').length === 0 &&
+        (p.parentNode as Element | null)?.localName !== 'txbxContent')
+      .map((p) => {
+        const pPr = Array.from(p.childNodes).find((node) => (node as Element).localName === 'pPr') as Element | undefined;
+        const jc = pPr && Array.from(pPr.childNodes).find((node) => (node as Element).localName === 'jc') as Element | undefined;
+        const text = Array.from(p.getElementsByTagNameNS(W_NS, 't')).map((t) => t.textContent).join('');
+        return `${jc?.getAttributeNS(W_NS, 'val') ?? '-'}:${text}`;
+      });
+  const footerAfterDocxCore = async (buffer: Buffer, mode: 'accept' | 'reject'): Promise<string> => {
+    const document = await DocxDocument.load(buffer);
+    if (mode === 'accept') await document.acceptChanges();
+    else await document.rejectChanges();
+    return (await (await DocxArchive.load((await document.toBuffer()).buffer)).getFile('word/footer1.xml'))!;
+  };
+
+  test('a page-number footer is copied without its content control, with the final paragraph properties tracked', async ({ given, when, then }: AllureBddContext) => {
+    const [original, revised] = await given('a removed section whose footer displaces an inherited page-number footer', () =>
+      carriedFooterPair('removed', pageNumberFooter()));
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    const compared = (await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!;
+
+    await then('the copy carries no content control, and the final paragraph tracks its properties', () => {
+      const footer = parseXml(compared);
+      expect(footer.getElementsByTagNameNS(W_NS, 'sdt')).toHaveLength(0);
+      expect(footer.getElementsByTagNameNS(W_NS, 'pPrChange')).toHaveLength(1);
+      expect(Array.from(footer.getElementsByTagNameNS(W_NS, 'instrText')).map((t) => t.textContent).join('')).toBe(' PAGE ');
+    });
+
+    await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+      await expectDisplayedParity(original, revised, result.document);
+    });
+
+    await then('the carried footer lays out its paragraphs as the displayed story does, under both appliers', async () => {
+      const revisedFooter0 = (await (await DocxArchive.load(revised)).getFile('word/footer0.xml'))!;
+      const originalFooter1 = (await (await DocxArchive.load(original)).getFile('word/footer1.xml'))!;
+      expect(paragraphLayout(acceptAllChanges(compared))).toEqual(paragraphLayout(revisedFooter0));
+      expect(paragraphLayout(rejectAllChanges(compared))).toEqual(paragraphLayout(originalFooter1));
+      expect(paragraphLayout(await footerAfterDocxCore(result.document, 'accept'))).toEqual(paragraphLayout(revisedFooter0));
+      expect(paragraphLayout(await footerAfterDocxCore(result.document, 'reject'))).toEqual(paragraphLayout(originalFooter1));
+    });
+  });
+
+  // A story may end in a table (CT_HdrFtr does not require a final
+  // paragraph); Word shows the empty paragraph mark after it either way.
+  const tableEnding =
+    '<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single"/></w:tblBorders></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
+  const tableEndingFooter: Part = {
+    id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml',
+    xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}">` +
+      paragraph('Base footer', '<w:jc w:val="center"/>') + tableEnding + '</w:ftr>',
+  };
+  for (const { name, pair } of [
+    { name: 'a displaced footer ending in a table, across a removed boundary', pair: () => carriedFooterPair('removed', tableEndingFooter) },
+    { name: 'a displaced footer ending in a table, across an inserted boundary', pair: () => carriedFooterPair('inserted', tableEndingFooter) },
+  ]) {
+    test(`${name} ends in a paragraph neither projection removes`, async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('the pair', pair);
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the carried footer ends in a paragraph whose mark carries no revision', async () => {
+        const footer = parseXml((await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!);
+        const last = Array.from(footer.documentElement.childNodes).filter((node) => node.nodeType === 1).at(-1) as Element;
+        expect(last.localName).toBe('p');
+        const mark = last.getElementsByTagNameNS(W_NS, 'pPr').item(0)?.getElementsByTagNameNS(W_NS, 'rPr').item(0);
+        expect(Array.from(mark?.childNodes ?? []).map((node) => (node as Element).localName)).not.toContain('ins');
+        expect(Array.from(mark?.childNodes ?? []).map((node) => (node as Element).localName)).not.toContain('del');
+      });
+      await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+        await expectDisplayedParity(original, revised, result.document);
+      });
+    });
+  }
+
+  test('a displaced and a carried footer both ending in a table still fail closed', async ({ given, when }: AllureBddContext) => {
+    // Neither half ends in a paragraph that could close the story on both
+    // sides; Word never writes such a story, as it always ends one with a
+    // paragraph mark.
+    const [original, revised] = await given('both footers ending in a table', () =>
+      carriedFooterPair('removed', tableEndingFooter, tableEnding));
     await when('the pair is compared, the comparison refuses instead of publishing', async () => {
-      await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
-        UnsupportedTextBoxRevisionError,
-      );
       await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
         /accept\/reject package projection validation/u,
       );
     });
   });
 
-  test('a carried story that replaces an inherited footer on Reject All fails closed', async ({ given, when }: AllureBddContext) => {
-    // The mirror: the revision inserts a section whose boxed footer the final
-    // section then inherits. Reject All removes the inserted boundary and
-    // carries the new footer (all of it a tracked insertion) onto the final
-    // section, which would show a blank footer instead of footer0.
-    const footer0: Part = { id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml', xml: story('footer', 'Base footer') };
-    const footer1: Part = {
-      id: 'rIdFooter1', kind: 'footer', target: 'footer1.xml',
-      xml: story('footer', 'Inserted footer line', paragraph('Inserted box')),
-    };
-    const [original, revised] = await given('an inserted section whose footer the final section inherits', () =>
-      Promise.all([
-        packageWith(
-          paragraph('Intro') + sectionParagraph('Zero end', reference('footer', 'rIdFooter0')) +
-            paragraph('One body') + paragraph('One end') + paragraph('Two'),
-          '<w:sectPr/>',
-          [footer0],
-        ),
-        packageWith(
-          paragraph('Intro') + sectionParagraph('Zero end', reference('footer', 'rIdFooter0')) +
-            paragraph('One body') + sectionParagraph('One end', reference('footer', 'rIdFooter1')) + paragraph('Two'),
-          '<w:sectPr/>',
-          [footer0, footer1],
-        ),
-      ]));
+  // Review round 2: the carried story's last paragraph inside a block
+  // content control or custom XML element. Neither element carries a
+  // revision marker, so the projection that empties the carried story keeps
+  // an empty paragraph inside it, the gap #1455 reports for a slot
+  // lifecycle. The comparison refuses rather than publish that line.
+  for (const direction of ['removed', 'inserted'] as const) {
+    for (const [container, wrap] of [
+      ['a content control', (line: string) => `<w:sdt><w:sdtPr><w:id w:val="300"/></w:sdtPr><w:sdtContent>${line}</w:sdtContent></w:sdt>`],
+      ['custom XML', (line: string) => `<w:customXml w:element="footer">${line}</w:customXml>`],
+    ] as const) {
+      test(`a carried footer ending in ${container}, across ${direction === 'removed' ? 'a removed' : 'an inserted'} boundary, still fails closed`, async ({ given, when }: AllureBddContext) => {
+        const [original, revised] = await given('the pair', () => carriedFooterPair(direction, BASE_FOOTER, '', wrap));
+        await when('the pair is compared, the comparison refuses instead of publishing', async () => {
+          await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
+            /accept\/reject package projection validation/u,
+          );
+        });
+      });
+    }
+  }
 
+  test('a displaced footer holding a drawing still fails closed', async ({ given, when }: AllureBddContext) => {
+    // Copying a drawing would duplicate its shape into a second part; the
+    // copy is limited to text, fields and tables.
+    const footer0: Part = { id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml', xml: story('footer', 'Base footer', paragraph('Base box')) };
+    const [original, revised] = await given('a removed section whose footer displaces an inherited footer with a text box', () =>
+      carriedFooterPair('removed', footer0));
     await when('the pair is compared, the comparison refuses instead of publishing', async () => {
       await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
         /accept\/reject package projection validation/u,
@@ -412,60 +603,54 @@ describe('the projection check compares displayed stories, not literal reference
 });
 
 describe('content the projection check must not read as blank (review of PR #1409)', () => {
-  test('a removed footer whose bordered table survives Accept All fails closed', async ({ given, when }: AllureBddContext) => {
+  test('a removed footer whose bordered table is tracked with its rows', async ({ given, when, then }: AllureBddContext) => {
     // The removed section's footer holds a text box and a bordered table.
     // Accept All carries the footer onto the final section; the text is a
-    // tracked deletion, but the table and its borders stay, so the final
-    // section does not show the revision's blank footer.
-    const table =
-      '<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single"/><w:bottom w:val="single"/></w:tblBorders></w:tblPr>' +
-      '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>';
-    const removed: Part = {
-      id: 'rIdRemoved', kind: 'footer', target: 'footer1.xml',
-      xml: story('footer', 'Removed footer line', paragraph('Removed box')).replace('</w:ftr>', `${table}<w:p/></w:ftr>`),
-    };
+    // tracked deletion, and the table's rows are tracked as deleted
+    // (w:trPr/w:del), so the borders go with them and the final section
+    // shows the revision's blank footer (#1454).
     const [original, revised] = await given('a removed section whose footer holds a bordered table', () =>
-      Promise.all([
-        packageWith(
-          paragraph('Stable body') + sectionParagraph('End of section', reference('footer', 'rIdRemoved')) + paragraph('Final section'),
-          '<w:sectPr/>',
-          [removed],
-        ),
-        packageWith(
-          paragraph('Stable body') + paragraph('End of section') + paragraph('Final section'),
-          '<w:sectPr/>',
-          [],
-        ),
-      ]));
+      tableFooterPair('removed', SINGLE_BORDERS));
 
-    await when('the pair is compared, the comparison refuses instead of publishing', async () => {
-      await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
-        /accept\/reject package projection validation/u,
-      );
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the table row carries a deleted-row marker', async () => {
+      const footer = parseXml((await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!);
+      const rows = Array.from(footer.getElementsByTagNameNS(W_NS, 'tr'));
+      expect(rows).toHaveLength(1);
+      const trPr = Array.from(rows[0]!.childNodes).find((node) => (node as Element).localName === 'trPr') as Element;
+      expect(Array.from(trPr.childNodes).map((node) => (node as Element).localName)).toContain('del');
+    });
+
+    await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+      await expectDisplayedParity(original, revised, result.document);
+    });
+  });
+
+  test('an inserted footer whose bordered table is tracked with its rows', async ({ given, when, then }: AllureBddContext) => {
+    // The mirror: Reject All carries the inserted section's footer onto the
+    // final section, and its rows are tracked as inserted (w:trPr/w:ins).
+    const [original, revised] = await given('an inserted section whose footer holds a bordered table', () =>
+      tableFooterPair('inserted', SINGLE_BORDERS, 'Cell'));
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+
+    await then('the table row carries an inserted-row marker, and the row count is reported', async () => {
+      const footer = parseXml((await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!);
+      const trPr = footer.getElementsByTagNameNS(W_NS, 'trPr').item(0)!;
+      expect(Array.from(trPr.childNodes).map((node) => (node as Element).localName)).toContain('ins');
+      expect(result.stats.insertedTableRows).toBeGreaterThanOrEqual(1);
+    });
+
+    await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+      await expectDisplayedParity(original, revised, result.document);
     });
   });
 
   test('control: a removed footer whose table borders are all nil still publishes', async ({ given, when, then }: AllureBddContext) => {
     // Review round 2 of PR #1409: an unbordered layout table draws nothing
     // once Accept All empties its cells, so it must not read as content.
-    const edges = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
-      .map((edge) => `<w:${edge} w:val="nil"/>`).join('');
-    const table =
-      `<w:tbl><w:tblPr><w:tblBorders>${edges}</w:tblBorders></w:tblPr>` +
-      '<w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>';
-    const removed: Part = {
-      id: 'rIdRemoved', kind: 'footer', target: 'footer1.xml',
-      xml: story('footer', 'Removed footer line', paragraph('Removed box')).replace('</w:ftr>', `${table}<w:p/></w:ftr>`),
-    };
     const [original, revised] = await given('a removed section whose footer holds an unbordered table', () =>
-      Promise.all([
-        packageWith(
-          paragraph('Stable body') + sectionParagraph('End of section', reference('footer', 'rIdRemoved')) + paragraph('Final section'),
-          '<w:sectPr/>',
-          [removed],
-        ),
-        packageWith(paragraph('Stable body') + paragraph('End of section') + paragraph('Final section'), '<w:sectPr/>', []),
-      ]));
+      tableFooterPair('removed', NIL_BORDERS, 'Cell'));
 
     const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
     await then('the redline publishes and passes the schema gate', async () => {
@@ -576,4 +761,96 @@ describe('lifecycle story selection with the carry applied (#1204)', () => {
       expect(references).toHaveLength(1);
     });
   });
+});
+
+const STYLE_NS = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0';
+const OFFICE_NS = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
+
+/**
+ * The footer text LibreOffice's saved ODT shows on each section, in order.
+ * LibreOffice maps a DOCX section to a page style: the first paragraph of a
+ * section names its master page (`style:master-page-name` on its automatic
+ * paragraph style), and that master page's `style:footer` is what the
+ * section's pages show. A footer that keeps a table says so, since a table's
+ * borders draw without any text.
+ */
+async function odtFooterPerSection(bytes: Buffer): Promise<string[]> {
+  const zip = await JSZip.loadAsync(bytes);
+  const content = parseXml((await zip.file('content.xml')!.async('string')));
+  const styles = parseXml((await zip.file('styles.xml')!.async('string')));
+  const masterOf = new Map<string, string>();
+  for (const style of Array.from(content.getElementsByTagNameNS(STYLE_NS, 'style'))) {
+    const master = style.getAttributeNS(STYLE_NS, 'master-page-name');
+    if (master) masterOf.set(style.getAttributeNS(STYLE_NS, 'name') ?? '', master);
+  }
+  const footerOf = new Map<string, string>();
+  for (const master of Array.from(styles.getElementsByTagNameNS(STYLE_NS, 'master-page'))) {
+    const footer = master.getElementsByTagNameNS(STYLE_NS, 'footer').item(0);
+    const tables = footer?.getElementsByTagNameNS('urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'table').length ?? 0;
+    // LibreOffice can leave a zero-width joiner where it resolved a revision.
+    const text = (footer?.textContent ?? '').replace(/\u200d/gu, '').replace(/\s+/gu, ' ').trim();
+    footerOf.set(master.getAttributeNS(STYLE_NS, 'name') ?? '', `${text || '-'}${tables > 0 ? ` [${tables} table]` : ''}`);
+  }
+  const body = content.getElementsByTagNameNS(OFFICE_NS, 'text').item(0)!;
+  const sections: string[] = [];
+  for (const block of Array.from(body.childNodes) as Element[]) {
+    if (block.nodeType !== 1) continue;
+    const master = masterOf.get(block.getAttributeNS('urn:oasis:names:tc:opendocument:xmlns:text:1.0', 'style-name') ??
+      block.getAttributeNS('urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'style-name') ?? '');
+    // The first section uses the default page style unless it names one.
+    if (master) sections.push(footerOf.get(master) ?? '?');
+    else if (sections.length === 0) sections.push(footerOf.get('Standard') ?? '?');
+  }
+  return sections;
+}
+
+// Explicit opt-in: a requested reader run must fail, never silently skip an
+// unusable LibreOffice.
+const reader = process.env.SAFE_DOCX_CARRIED_FOOTER_READER_REQUIRED === '1' ? describe : describe.skip;
+reader('LibreOffice accepts and rejects a carried footer per section (#1454)', () => {
+  test('displaced inherited footers and carried bordered tables', async () => {
+    const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
+    // `owner` is the last section whose footer is the first (or only) page
+    // style LibreOffice builds from the changed part; see below.
+    const cases: Array<{ label: string; owner: number; pair: [Buffer, Buffer] }> = [
+      // Baseline from #1204, untouched by #1454: LibreOffice shows the same
+      // section and shared-footer behaviour for a removed boundary whose
+      // shared footer's text box changed.
+      { label: 'baseline: removed boundary, shared boxed footer (#1204)', owner: 0, pair: await removedBoundaryPair(SURVIVOR_VARIANTS[0].survivor) },
+      { label: 'removed boundary displaces footer0', owner: 1, pair: await carriedFooterPair('removed') },
+      { label: 'inserted boundary displaces footer0', owner: 1, pair: await carriedFooterPair('inserted') },
+      { label: 'removed footer with a bordered table', owner: 0, pair: await tableFooterPair('removed', SINGLE_BORDERS) },
+      { label: 'inserted footer with a bordered table', owner: 0, pair: await tableFooterPair('inserted', SINGLE_BORDERS, 'Cell') },
+    ];
+    for (const { label, owner, pair: [original, revised] } of cases) {
+      const compared = (await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).document;
+      const jobs = [
+        { op: 'identity' as const, docx: original, saveAs: 'odt' as const },
+        { op: 'identity' as const, docx: revised, saveAs: 'odt' as const },
+        { op: 'accept' as const, docx: compared, saveAs: 'odt' as const },
+        { op: 'reject' as const, docx: compared, saveAs: 'odt' as const },
+      ];
+      const packages: Buffer[] = [];
+      const capture = (offset: number, bytes: Buffer) => { packages[offset] = bytes; };
+      try {
+        await runLibreOfficeOracle(jobs, undefined, capture);
+      } catch (error) {
+        if (!/produced no output/u.test(String(error))) throw error;
+        await runLibreOfficeOracle(jobs, undefined, capture);
+      }
+      const [originalView, revisedView, acceptedView, rejectedView] = (await Promise.all(packages.map(odtFooterPerSection))) as [string[], string[], string[], string[]];
+      console.log(`[#1454] ${label}: original=${JSON.stringify(originalView)} revised=${JSON.stringify(revisedView)}` +
+        ` accepted=${JSON.stringify(acceptedView)} rejected=${JSON.stringify(rejectedView)}`);
+      // LibreOffice does not apply a tracked section boundary as Word does:
+      // it keeps the page style a removed boundary started on Accept and
+      // drops one on Reject, and a footer part that two page styles share
+      // keeps its revisions only in the first, so the second reads as plain
+      // text holding both sides (the #1204 baseline shows both). The verdict
+      // is therefore the sections up to the one whose page style is the
+      // changed part's first, where LibreOffice does apply the revisions.
+      const upToOwner = (view: string[]): string[] => view.slice(0, owner + 1);
+      expect(upToOwner(acceptedView), `${label} accept`).toEqual(upToOwner(revisedView));
+      expect(upToOwner(rejectedView), `${label} reject`).toEqual(upToOwner(originalView));
+    }
+  }, 600_000);
 });
