@@ -5719,6 +5719,9 @@ function listedUncomparedStoryParts(
  * only positions whose stories it tracks in place, because the projection
  * check reads displayed pages only and a slot the section settings do not
  * display (a first or even page that is switched off) is never inspected.
+ * Every other listed scope except `drawing` (a content control, a picture,
+ * a section) is refused too: the fallback only replaces an abort, so it must
+ * yield a full redline rather than a partial one.
  */
 export async function assertListedStoryPartsCompared(
   revised: Buffer,
@@ -5733,7 +5736,10 @@ export async function assertListedStoryPartsCompared(
   const removed = unrepresented.changes.filter(
     (change) => (change.scope === 'header' || change.scope === 'footer') && change.kind === 'removed',
   );
-  if (uncompared.size === 0 && removed.length === 0) return;
+  const outsideStories = unrepresented.changes.filter(
+    (change) => change.scope !== 'drawing' && change.scope !== 'header' && change.scope !== 'footer',
+  );
+  if (uncompared.size === 0 && removed.length === 0 && outsideStories.length === 0) return;
   throw new UnsupportedTextBoxRevisionError([
     ...[...uncompared].sort().map((partPath) => ({
       index: 0,
@@ -5744,6 +5750,11 @@ export async function assertListedStoryPartsCompared(
       index: 0,
       partPath: 'word/document.xml',
       reason: `section-aligned header/footer pairing would list a removed ${change.scope} slot (section ${change.sectionIndex}, ${change.role})`,
+    })),
+    ...outsideStories.map((change) => ({
+      index: 0,
+      partPath: 'word/document.xml',
+      reason: `section-aligned header/footer pairing would publish beside a listed ${change.scope} change (section ${change.sectionIndex})`,
     })),
   ]);
 }

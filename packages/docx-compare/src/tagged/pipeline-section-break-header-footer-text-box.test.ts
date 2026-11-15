@@ -716,6 +716,38 @@ describe('a section break beside a retained or a final section whose footer hold
         }
       });
     }
+
+    test('publishes a full redline or refuses when a body content control property changes beside the shared-footer shape', async ({ given, when, then }: AllureBddContext) => {
+      const build = async (edited: boolean, added: boolean): Promise<Buffer> => {
+        const cover: PartSpec = { id: 'rIdH1', kind: 'header', target: 'header1.xml', xml: paragraph(text('Cover header')) };
+        const middle: PartSpec = { id: 'rIdH3', kind: 'header', target: 'header3.xml', xml: paragraph(text('Middle header')) };
+        const last: PartSpec = { id: 'rIdH5', kind: 'header', target: 'header5.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Header final' : 'Header draft' }) };
+        const shared: PartSpec = { id: 'rIdF', kind: 'footer', target: 'footer1.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Footer final' : 'Footer draft' }) };
+        const bodies = ['First.', 'Second.', 'Third.', ...(added ? ['Added last.'] : [])];
+        const references = [[cover, shared], [middle], [last], ...(added ? [[]] : [])];
+        const archive = await DocxArchive.load(await sectionedPackage(bodies, references, [cover, middle, last, shared]));
+        const control = `<w:sdt><w:sdtPr><w:alias w:val="${edited ? 'Final' : 'Draft'}"/><w:tag w:val="clause"/></w:sdtPr>` +
+          `<w:sdtContent>${paragraph(text('Controlled text'))}</w:sdtContent></w:sdt>`;
+        archive.setDocumentXml((await archive.getDocumentXml()).replace('<w:p>', `${control}<w:p>`));
+        return archive.save();
+      };
+      const [original, revised] = await given('the common-paper-csa shape, plus a block content control whose alias changes from Draft to Final', () =>
+        Promise.all([build(false, false), build(true, true)]));
+      const outcome = await when('the pair is compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
+          (result) => ({ result, error: undefined }),
+          (error: unknown) => ({ result: undefined, error }),
+        ));
+      if (outcome.result) {
+        await then('only drawings are listed', () => {
+          expect(outcome.result!.unrepresentedChanges?.filter((change) => change.scope !== 'drawing') ?? []).toEqual([]);
+        });
+      } else {
+        await then('the comparison refuses the story set', () => {
+          expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+        });
+      }
+    });
   });
 
   test('keeps an unchanged first footer paired with itself when the final section and its footer are removed', async ({ given, when, then }: AllureBddContext) => {
