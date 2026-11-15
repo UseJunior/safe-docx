@@ -17,14 +17,13 @@ import type {
   CompareResult,
   CompareStats,
   AncillaryFieldEvidence,
+  ParagraphTopologyMismatchDetails,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
   ReconstructionIdDelta,
   ReconstructionIdDeltaSummary,
   ReconstructionSafetyFailureSummary,
   ReconstructionSafetyFailureDetails,
-  ReconstructionSafetyCheckName,
-  ReconstructionSafetyChecks,
   ReconstructionTextMismatchSummary,
   ReconstructionTextMismatchDetails,
   TaggedPublicationSafetyCheckName,
@@ -49,6 +48,7 @@ import {
   acceptAllChanges,
   rejectAllChanges,
   compareTexts,
+  normalizeLayoutPreservingText,
 } from './trackChangesAcceptorAst.js';
 import {
   detectUnrepresentedChanges,
@@ -86,7 +86,11 @@ import {
   canonicalNoteId,
   evaluateAncillaryFieldSafety,
 } from './ancillaryFieldSafety.js';
-import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
+import {
+  extractRoundTripComparisonText,
+  extractRoundTripParagraphTopology,
+} from '../fieldComparisonSemantics.js';
+import { markWholeTrackedContainers } from './emptiedBlockContainers.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import {
   buildTaggedTreePublication,
@@ -702,12 +706,16 @@ export async function buildStandaloneTaggedPackage(
     }
   }
   const publicationSafety = (options.publicationSafetyEvaluator ?? evaluateSafetyChecks)(
-    extractRoundTripComparisonText(originalProjectionXml),
-    extractRoundTripComparisonText(revisedProjectionXml),
+    extractRoundTripComparisonText(originalProjectionXml, { layoutCharacters: true }),
+    extractRoundTripComparisonText(revisedProjectionXml, { layoutCharacters: true }),
     collectBookmarkDiagnostics(originalXml),
     collectBookmarkDiagnostics(revisedXml),
     taggedXml,
     finalAuxiliarySidecars,
+    {
+      original: extractRoundTripParagraphTopology(originalProjectionXml),
+      revised: extractRoundTripParagraphTopology(revisedProjectionXml),
+    },
   );
   const formattingFidelity = (
     options.formattingFidelityEvaluator ?? compareSourceProjectedFormattingFidelity
@@ -1098,7 +1106,7 @@ function diffIds(expected: string[], actual: string[]): { missing: string[]; une
 }
 
 function buildTextMismatchDetails(expectedText: string, actualText: string): ReconstructionTextMismatchDetails {
-  const comparison = compareTexts(expectedText, actualText);
+  const comparison = compareTexts(expectedText, actualText, normalizeLayoutPreservingText);
   const expectedParas = expectedText.split('\n');
   const actualParas = actualText.split('\n');
   const maxLen = Math.max(expectedParas.length, actualParas.length);
@@ -1120,6 +1128,133 @@ function buildTextMismatchDetails(expectedText: string, actualText: string): Rec
     actualParagraph:
       firstDifferingParagraphIndex >= 0 ? (actualParas[firstDifferingParagraphIndex] ?? '') : '',
     differenceSample: comparison.differences.slice(0, 3),
+  };
+}
+
+/** Spaces alone do not make a paragraph non-empty; any other character does. */
+function isEmptyTopologyParagraph(text: string): boolean {
+  return text.replace(/ +/gu, '') === '';
+}
+
+/**
+ * A story with no paragraph and a story whose only paragraph is empty are the
+ * same story: every story ends in a paragraph mark, so accept and reject
+ * materialize the one a paragraph-less source leaves implicit.
+ */
+function canonicalTopology(topology: readonly string[]): readonly string[] {
+  return topology.length === 0 ? [''] : topology;
+}
+
+/**
+ * Paragraph-mark revisions whose resolution removes the mark in each projection.
+ * Accept All removes a deleted or moved-from mark; Reject All removes an
+ * inserted or moved-to mark, including one a `w:rPrChange` snapshot records.
+ */
+const TERMINAL_MARK_REVISIONS: Record<'accept' | 'reject', { live: readonly string[]; snapshot: readonly string[] }> = {
+  accept: { live: ['w:del', 'w:moveFrom'], snapshot: [] },
+  reject: { live: ['w:ins', 'w:moveTo'], snapshot: ['w:ins', 'w:moveTo'] },
+};
+
+/**
+ * True when the main story's final paragraph is a body-level paragraph whose
+ * own mark carries a revision that `projection` resolves by removing the mark.
+ *
+ * A story's last paragraph mark cannot be removed, so resolving such a mark
+ * leaves the final paragraph in place, empty once its tracked content is gone.
+ * The serializer leaves the revision there instead of relocating it to the
+ * preceding mark (#891) when the paragraph's content sits in a hyperlink or
+ * its mark carries pre-existing revisions; LibreOffice also keeps the empty
+ * final paragraph.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/891
+ */
+export function finalParagraphMarkResolvesAway(
+  candidateXml: string,
+  projection: 'accept' | 'reject',
+): boolean {
+  const body = findAllByTagName(parseDocumentXml(candidateXml), 'w:body')[0];
+  if (!body) return false;
+  const blocks = childElements(body).filter((child) => child.tagName !== 'w:sectPr');
+  const last = blocks[blocks.length - 1];
+  if (!last || last.tagName !== 'w:p') return false;
+  const pPr = childElements(last).find((child) => child.tagName === 'w:pPr');
+  const markProperties = pPr && childElements(pPr).find((child) => child.tagName === 'w:rPr');
+  if (!markProperties) return false;
+  const kinds = TERMINAL_MARK_REVISIONS[projection];
+  if (childElements(markProperties).some((child) => kinds.live.includes(child.tagName))) return true;
+  const change = childElements(markProperties).find((child) => child.tagName === 'w:rPrChange');
+  const snapshot = change && childElements(change).find((child) => child.tagName === 'w:rPr');
+  return !!snapshot && childElements(snapshot).some((child) => kinds.snapshot.includes(child.tagName));
+}
+
+/**
+ * True when `actual` is `expected` plus one final empty paragraph and the
+ * caller has established that the final paragraph mark resolves away.
+ */
+function isTerminalParagraphMarkResidue(
+  expectedEmpty: readonly boolean[],
+  actualEmpty: readonly boolean[],
+  finalMarkResolvesAway: boolean,
+): boolean {
+  return finalMarkResolvesAway &&
+    actualEmpty.length === expectedEmpty.length + 1 &&
+    expectedEmpty.every((empty, index) => actualEmpty[index] === empty) &&
+    actualEmpty[actualEmpty.length - 1] === true;
+}
+
+/**
+ * Compare paragraph topology: the same number of paragraphs, and the same
+ * paragraphs empty. When `finalMarkResolvesAway` is set (see
+ * {@link finalParagraphMarkResolvesAway}), one extra empty paragraph at the
+ * very end is accepted as terminal paragraph-mark residue. Returns
+ * `undefined` when the topologies agree.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1027
+ */
+export function compareParagraphTopology(
+  expectedTopology: readonly string[],
+  actualTopology: readonly string[],
+  finalMarkResolvesAway = false,
+): ParagraphTopologyMismatchDetails | undefined {
+  const expected = canonicalTopology(expectedTopology);
+  const actual = canonicalTopology(actualTopology);
+  const expectedEmpty = expected.map(isEmptyTopologyParagraph);
+  const actualEmpty = actual.map(isEmptyTopologyParagraph);
+  if (isTerminalParagraphMarkResidue(expectedEmpty, actualEmpty, finalMarkResolvesAway)) return undefined;
+  const length = Math.max(expectedEmpty.length, actualEmpty.length);
+  let firstDifference = -1;
+  for (let index = 0; index < length; index++) {
+    if (expectedEmpty[index] !== actualEmpty[index]) {
+      firstDifference = index;
+      break;
+    }
+  }
+  if (firstDifference < 0) return undefined;
+  let preceding = '';
+  for (let index = Math.min(firstDifference, expected.length) - 1; index >= 0; index--) {
+    if (!expectedEmpty[index]) {
+      preceding = expected[index]!;
+      break;
+    }
+  }
+  return {
+    expectedParagraphCount: expected.length,
+    actualParagraphCount: actual.length,
+    expectedEmptyParagraphCount: expectedEmpty.filter(Boolean).length,
+    actualEmptyParagraphCount: actualEmpty.filter(Boolean).length,
+    firstDifferingParagraphIndex: firstDifference,
+    expectedParagraphEmpty: expectedEmpty[firstDifference] ?? null,
+    actualParagraphEmpty: actualEmpty[firstDifference] ?? null,
+    precedingExpectedParagraph: preceding,
+  };
+}
+
+function summarizeParagraphTopologyMismatch(
+  details: ParagraphTopologyMismatchDetails,
+): ParagraphTopologyMismatchDetails {
+  return {
+    ...details,
+    precedingExpectedParagraph: truncateForSummary(details.precedingExpectedParagraph),
   };
 }
 
@@ -1209,6 +1344,16 @@ function buildFailureSummary(
   if (failureDetails.rejectBookmarks) {
     summary.rejectBookmarks = summarizeBookmarkMismatch(failureDetails.rejectBookmarks);
   }
+  if (failureDetails.acceptParagraphTopology) {
+    summary.acceptParagraphTopology = summarizeParagraphTopologyMismatch(
+      failureDetails.acceptParagraphTopology,
+    );
+  }
+  if (failureDetails.rejectParagraphTopology) {
+    summary.rejectParagraphTopology = summarizeParagraphTopologyMismatch(
+      failureDetails.rejectParagraphTopology,
+    );
+  }
 
   return Object.keys(summary).length > 0 ? summary : undefined;
 }
@@ -1275,7 +1420,23 @@ export function splitStories(
   return stories;
 }
 
-function evaluateSafetyChecks(
+/** Publication checks decided by {@link evaluateSafetyChecks}. */
+export type PublicationSafetyEvaluatorChecks = Omit<TaggedPublicationSafetyChecks, 'formattingFidelity'>;
+type PublicationSafetyEvaluatorCheckName = Exclude<TaggedPublicationSafetyCheckName, 'formattingFidelity'>;
+
+/**
+ * The structural publication gate: accept/reject text (with layout
+ * characters), paragraph topology, bookmarks and field structure.
+ *
+ * The expected texts must be `extractRoundTripComparisonText(..., {
+ * layoutCharacters: true })` projections and the expected topologies
+ * `extractRoundTripParagraphTopology` projections of the source sides.
+ *
+ * @internal Exported for gate fault-injection tests.
+ * @see https://github.com/UseJunior/safe-docx/issues/1026
+ * @see https://github.com/UseJunior/safe-docx/issues/1027
+ */
+export function evaluateSafetyChecks(
   originalTextForRoundTrip: string,
   revisedTextForRoundTrip: string,
   originalBookmarkDiagnostics: BookmarkDiagnostics,
@@ -1286,22 +1447,48 @@ function evaluateSafetyChecks(
     endnotesXmls: ReadonlyArray<string | null>;
     selectedStoryXmls: ReadonlyArray<{ path: string; xml: string }>;
   },
+  expectedParagraphTopology: {
+    original: readonly string[];
+    revised: readonly string[];
+  },
 ): {
   safe: boolean;
-  checks: ReconstructionSafetyChecks;
-  failedChecks: ReconstructionSafetyCheckName[];
+  checks: PublicationSafetyEvaluatorChecks;
+  failedChecks: PublicationSafetyEvaluatorCheckName[];
   failureDetails?: ReconstructionSafetyFailureDetails;
   failureSummary?: ReconstructionSafetyFailureSummary;
 } {
   const acceptedXml = acceptAllChanges(candidateXml);
   const rejectedXml = rejectAllChanges(candidateXml);
-  const acceptedText = extractRoundTripComparisonText(acceptedXml);
-  const rejectedText = extractRoundTripComparisonText(rejectedXml);
+  const acceptedText = extractRoundTripComparisonText(acceptedXml, { layoutCharacters: true });
+  const rejectedText = extractRoundTripComparisonText(rejectedXml, { layoutCharacters: true });
+  // Stamp whole inserted or deleted block containers first, so the shell
+  // each leaves in the projection removing its content is recognised.
+  const topologyProjection = (
+    revision: 'w:ins' | 'w:del',
+    project: (xml: string) => string,
+    projected: string,
+  ): string[] => {
+    const stamped = markWholeTrackedContainers(candidateXml, revision);
+    return extractRoundTripParagraphTopology(stamped === candidateXml ? projected : project(stamped));
+  };
+  const acceptTopologyMismatch = compareParagraphTopology(
+    expectedParagraphTopology.revised,
+    topologyProjection('w:del', acceptAllChanges, acceptedXml),
+    finalParagraphMarkResolvesAway(candidateXml, 'accept'),
+  );
+  const rejectTopologyMismatch = compareParagraphTopology(
+    expectedParagraphTopology.original,
+    topologyProjection('w:ins', rejectAllChanges, rejectedXml),
+    finalParagraphMarkResolvesAway(candidateXml, 'reject'),
+  );
   const acceptedBookmarkDiagnostics = collectBookmarkDiagnostics(acceptedXml);
   const rejectedBookmarkDiagnostics = collectBookmarkDiagnostics(rejectedXml);
   const combinedBookmarkDiagnostics = collectBookmarkDiagnostics(candidateXml);
-  const acceptTextComparison = compareTexts(revisedTextForRoundTrip, acceptedText);
-  const rejectTextComparison = compareTexts(originalTextForRoundTrip, rejectedText);
+  const acceptTextComparison = compareTexts(
+    revisedTextForRoundTrip, acceptedText, normalizeLayoutPreservingText);
+  const rejectTextComparison = compareTexts(
+    originalTextForRoundTrip, rejectedText, normalizeLayoutPreservingText);
 
   const combinedBookmarksOk = bookmarkDiagnosticsIntroduceNoStructuralAnomalies(
     combinedBookmarkDiagnostics,
@@ -1347,9 +1534,13 @@ function evaluateSafetyChecks(
     validateFieldStructure(acceptedStories) &&
     validateFieldStructure(rejectedStories);
 
-  const checks: ReconstructionSafetyChecks = {
+  const checks: PublicationSafetyEvaluatorChecks = {
     acceptText: acceptTextComparison.normalizedIdentical,
     rejectText: rejectTextComparison.normalizedIdentical,
+    // Separate from the text checks, whose normalization collapses repeated
+    // paragraph breaks: an empty paragraph dropped or added changes only this.
+    acceptParagraphTopology: acceptTopologyMismatch === undefined,
+    rejectParagraphTopology: rejectTopologyMismatch === undefined,
     // Hoisting may intentionally normalize which source marker carries a
     // bookmark name, so source-inventory equality is too strict. Publication
     // still fails closed on new balance, uniqueness, and reference anomalies
@@ -1361,8 +1552,8 @@ function evaluateSafetyChecks(
     fieldStructure: fieldStructureOk,
   };
 
-  const failedChecks: ReconstructionSafetyCheckName[] = (Object.entries(checks) as Array<
-    [ReconstructionSafetyCheckName, boolean]
+  const failedChecks: PublicationSafetyEvaluatorCheckName[] = (Object.entries(checks) as Array<
+    [PublicationSafetyEvaluatorCheckName, boolean]
   >)
     .filter(([, ok]) => !ok)
     .map(([name]) => name);
@@ -1374,6 +1565,8 @@ function evaluateSafetyChecks(
   if (!checks.rejectText) {
     failureDetails.rejectText = buildTextMismatchDetails(originalTextForRoundTrip, rejectedText);
   }
+  if (acceptTopologyMismatch) failureDetails.acceptParagraphTopology = acceptTopologyMismatch;
+  if (rejectTopologyMismatch) failureDetails.rejectParagraphTopology = rejectTopologyMismatch;
   if (!acceptBookmarksOk) {
     failureDetails.acceptBookmarks = buildBookmarkMismatchDetails(
       revisedBookmarkDiagnostics,

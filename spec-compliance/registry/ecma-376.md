@@ -2914,6 +2914,103 @@ two legal spellings of one glyph unequal by construction. A change confined to
 and any mapping between a symbol font's private-use codepoints and Unicode
 characters with the same appearance.
 
+## [ECMA-PART1-17-3-3-32] Tab character run content (w:tab)
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.3.32"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tab
+verifiedBy: packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts
+```
+
+Part 1 §17.3.3.32 defines run-content `w:tab` as a tab character. The tagged
+publication gate projects it to U+0009, the character a literal tab inside
+`w:t` also projects to, and compares with a normalization that keeps tabs
+rather than folding them into spaces, so a comparison output that drops or adds
+a tab fails `acceptText` and `rejectText`. `w:tab` inside `w:pPr/w:tabs` is a
+tab-stop definition, not a character, and projects nothing. When a run's text
+is unchanged and only its tabs differ, the serializer redlines each added or
+removed tab at its own text offset rather than carrying the revised tabs into
+both projections.
+The claim is bounded to the comparison publication gate's text projection: it says a dropped or
+added element changes the projection, not how the character is laid out or rendered.
+
+## [ECMA-PART1-17-3-3-1] Break run content (w:br)
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.3.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:br
+verifiedBy: packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts
+```
+
+Part 1 §17.3.3.1 defines `w:br` as a break whose behaviour depends on its
+`@w:type`. The publication gate projects a text-wrapping break (the default
+type) to U+000B, a page break to U+000C and a column break to U+000E, so a
+dropped or added break, or a line break turned into a page break, fails the
+text checks. `@w:clear` only governs where text restarts around floating
+objects and is outside the projected identity.
+The claim is bounded to the comparison publication gate's text projection: it says a dropped or
+added element changes the projection, not how the character is laid out or rendered.
+
+## [ECMA-PART1-17-3-3-4] Carriage return run content (w:cr)
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.3.4"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cr
+verifiedBy: packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts
+```
+
+Part 1 §17.3.3.4 defines `w:cr` as behaving identically to a `w:br` with no
+type and no clear attributes. The publication gate therefore projects it to the
+same U+000B as a text-wrapping break: dropping or adding it fails the text
+checks, and re-spelling it as `w:br` does not.
+The claim is bounded to the comparison publication gate's text projection: it says a dropped or
+added element changes the projection, not how the character is laid out or rendered.
+
+## [ECMA-PART1-17-3-3-18] Non-breaking hyphen run content (w:noBreakHyphen)
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.3.18"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:noBreakHyphen
+verifiedBy: packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts
+```
+
+Part 1 §17.3.3.18 defines `w:noBreakHyphen` as a hyphen that is not a line
+breaking position. The publication gate projects it to U+2011 NON-BREAKING
+HYPHEN, so a dropped or added non-breaking hyphen fails the text checks and the
+literal U+2011 spelling inside `w:t` compares equal to the element.
+The claim is bounded to the comparison publication gate's text projection: it says a dropped or
+added element changes the projection, not how the character is laid out or rendered.
+
+## [ECMA-PART1-17-3-3-29] Optional hyphen run content (w:softHyphen)
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.3.29"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:softHyphen
+verifiedBy: packages/docx-compare/src/fieldComparisonSemantics.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts
+```
+
+Part 1 §17.3.3.29 defines `w:softHyphen` as an optional hyphen that is shown
+only when it breaks the line. The publication gate projects it to U+00AD SOFT
+HYPHEN, so a dropped or added optional hyphen fails the text checks and the
+literal U+00AD spelling inside `w:t` compares equal to the element.
+The claim is bounded to the comparison publication gate's text projection: it says a dropped or
+added element changes the projection, not how the character is laid out or rendered.
+
 ## [ECMA-PART1-2-1] Document conformance class (WML Strict) refused at load
 
 ```yaml

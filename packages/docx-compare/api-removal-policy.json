@@ -48,6 +48,7 @@
       "MC_NAMESPACE",
       "normalizeRunProperties",
       "normalizeText",
+      "ParagraphTopologyMismatchDetails",
       "parseDocumentXml",
       "ProjectedFormattingFidelity",
       "rejectAllChanges",

@@ -466,6 +466,8 @@ describe('tagged-tree offline evaluation', () => {
           acceptBookmarks: true,
           rejectBookmarks: true,
           fieldStructure: true,
+          acceptParagraphTopology: true,
+          rejectParagraphTopology: true,
         },
         failedChecks: ['acceptText' as const],
         failureDetails: undefined,

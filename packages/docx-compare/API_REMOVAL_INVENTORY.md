@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 71
+- Stable compatibility surface: 72
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
@@ -118,6 +118,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `normalizeText` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `PARAGRAPH_LEVEL_TAGS` | value | `src/atomizer.ts` | no | breaking removal |
 | `PARAGRAPH_PROPERTY_FRIENDLY_NAMES` | value | `src/format-detection.ts` | no | breaking removal |
+| `ParagraphTopologyMismatchDetails` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `parseDocumentXml` | function | `src/tagged/xmlToWmlElement.ts` | yes | stable compatibility |
 | `ProjectedFormattingFidelity` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `ReconstructionAttemptDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |
