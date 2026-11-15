@@ -1912,6 +1912,16 @@ async function compareDocumentsTagged(
       },
     );
   }
+  // Stories paired through the aligned sections alone carry no listing
+  // excuse: the redline must reproduce every page of both inputs (#1502).
+  if (textBoxPlan.exactAncillaryProjectionRequired) {
+    await assertAncillaryTextBoxStoryProjection(
+      textBoxPlan.ancillaryProjectionOriginal ?? original,
+      revised,
+      document,
+      { changes: [], comparedPartPaths: new Set(), displacedCopyPartPaths },
+    );
+  }
 
   // A part whose listed drawings describe only their own boxes is judged as
   // the projection check judges it: Reject All shows the revised drawings

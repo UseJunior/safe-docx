@@ -169,6 +169,13 @@ export interface TextBoxStoryComparisonPlan {
    * `markTrackedTextBoxLifecycles` (#1384).
    */
   lifecycleAncillaryPartPaths?: string[];
+  /**
+   * Header/footer stories were paired through the aligned sections alone
+   * (#1502): every page must then show the original after Reject All and the
+   * revised document after Accept All, with no listed slot excused, or the
+   * comparison is refused.
+   */
+  exactAncillaryProjectionRequired?: boolean;
   representedAncillaryChanges: Array<{
     scope: 'header' | 'footer';
     kind: 'added' | 'changed' | 'removed';
@@ -2030,6 +2037,8 @@ function pairSelectedAncillaryStories(
   pairs: PairedAncillaryStory[];
   unpairedOriginal: SelectedAncillaryStory[];
   unpairedRevised: SelectedAncillaryStory[];
+  /** Whether fallback pairs were taken: the result must then hold every page exactly. */
+  sectionAlignedFallbackApplied: boolean;
 } {
   const originalCandidates = original;
   const revisedCandidates = revised;
@@ -2125,16 +2134,17 @@ function pairSelectedAncillaryStories(
     ([left, right]) => !matchedOriginal.has(left) && !matchedRevised.has(right),
   );
   const fallbackStories = new Set(fallback.flat());
-  if (
+  const sectionAlignedFallbackApplied =
     fallback.length > 0 &&
     sectionAlignedFallback.runStories.every(
       (story) => matchedOriginal.has(story) || matchedRevised.has(story) || fallbackStories.has(story),
-    )
-  ) {
+    );
+  if (sectionAlignedFallbackApplied) {
     for (const [left, right] of fallback) pair(left, right, false, true);
   }
 
   return {
+    sectionAlignedFallbackApplied,
     pairs,
     unpairedOriginal: originalCandidates.filter(
       (story) => !matchedOriginal.has(story),
@@ -3125,6 +3135,8 @@ async function ancillaryStoryInputs(
   /** `drawingAlignedOriginalParts` restricted to parts whose listed drawings describe only their boxes. */
   drawingAccountedOriginalParts: Map<string, string>;
   lifecyclePartPaths: string[];
+  /** Section-aligned fallback pairs were taken (`pairSelectedAncillaryStories`). */
+  sectionAlignedFallbackApplied: boolean;
 }> {
   const [originalState, revisedState] = await Promise.all([
     selectedAncillaryState(originalArchive),
@@ -3141,6 +3153,7 @@ async function ancillaryStoryInputs(
       drawingAlignedOriginalParts: new Map(),
       drawingAccountedOriginalParts: new Map(),
       lifecyclePartPaths: [],
+      sectionAlignedFallbackApplied: false,
     };
   }
   const topologyMatches = ordinaryStoryTopologyMatches(originalState, revisedState);
@@ -3581,6 +3594,7 @@ async function ancillaryStoryInputs(
     drawingAlignedOriginalParts,
     drawingAccountedOriginalParts,
     lifecyclePartPaths,
+    sectionAlignedFallbackApplied: paired.sectionAlignedFallbackApplied,
     representedChanges: [
       ...representedChanges,
       ...insertedPartStories.flatMap((story) =>
@@ -4414,6 +4428,7 @@ export async function prepareTextBoxStoryComparison(
     hasAncillaryTextBoxStories: ancillary.hasTextBoxStories,
     hasUnpairedTextBoxes: unpairedTextBoxes,
     lifecycleAncillaryPartPaths: ancillary.lifecyclePartPaths,
+    ...(ancillary.sectionAlignedFallbackApplied ? { exactAncillaryProjectionRequired: true } : {}),
     representedAncillaryChanges: ancillary.representedChanges,
     drawingChanges: allDrawingChanges,
     drawingAccountedPartPaths: ancillary.drawingAccountedPartPaths,

@@ -636,6 +636,45 @@ describe('a section break beside a retained or a final section whose footer hold
         });
       }
     });
+
+    for (const sharedKind of ['footer', 'header'] as const) {
+      test(`publishes a full redline or refuses when a section showing an edited ${sharedKind === 'footer' ? 'header' : 'footer'} is removed and another story moves into its place`, async ({ given, when, then }: AllureBddContext) => {
+        const perSection: Kind = sharedKind === 'footer' ? 'header' : 'footer';
+        const build = (labels: readonly string[], edited: boolean): Promise<Buffer> => {
+          const shared: PartSpec = {
+            id: 'rIdS', kind: sharedKind, target: `${sharedKind}90.xml`,
+            xml: storyXml('DrawingML', { ...BASE_STORY, legend: `Shared${edited ? ' edited' : ''}`, boxText: 'Shared box' }),
+          };
+          const parts = new Map<string, PartSpec>();
+          for (const label of new Set(labels)) {
+            const n = parts.size + 1;
+            parts.set(label, {
+              id: `rId${n}`, kind: perSection, target: `${perSection}${n}.xml`,
+              xml: storyXml('DrawingML', { ...BASE_STORY, legend: `${label}${edited && label === 'A' ? ' edited' : ''}`, boxText: label }),
+            });
+          }
+          return sectionedPackage(labels.map((label, index) => `Body ${label} ${index}.`),
+            labels.map((label, index) => [...(index === 0 ? [shared] : []), parts.get(label)!]), [shared, ...parts.values()]);
+        };
+        const [original, revised] = await given(`${perSection}s [A, B, A] become [B, A]; A and the ${sharedKind} shared by every section are edited`, () =>
+          Promise.all([build(['A', 'B', 'A'], false), build(['B', 'A'], true)]));
+        const outcome = await when('the pair is compared', () =>
+          compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
+            (result) => ({ result, error: undefined }),
+            (error: unknown) => ({ result: undefined, error }),
+          ));
+        if (outcome.result) {
+          await then('nothing is listed', () => {
+            expect(outcome.result!.unrepresentedChanges).toBeUndefined();
+          });
+          await expectRoundTrip({ then }, original, revised, outcome.result);
+        } else {
+          await then('the comparison refuses the story set', () => {
+            expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+          });
+        }
+      });
+    }
   });
 
   test('keeps an unchanged first footer paired with itself when the final section and its footer are removed', async ({ given, when, then }: AllureBddContext) => {
