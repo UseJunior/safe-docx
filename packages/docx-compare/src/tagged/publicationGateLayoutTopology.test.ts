@@ -28,6 +28,7 @@ import {
   compareDocumentsAtomizer,
   compareParagraphTopology,
   evaluateSafetyChecks,
+  finalParagraphMarkResolvesAway,
   TaggedPublicationSafetyError,
 } from './pipeline.js';
 import {
@@ -360,7 +361,7 @@ describe('publication gate: paragraph topology (#1027)', () => {
         // A tab and a page break edited alongside text.
         [para(run(text('1.') + '<w:tab/>' + text('Term'))), para(run(text('1.') + text('Term') + '<w:br w:type="page"/>'))],
       ];
-      const outcomes: Array<{ accepted: string[]; rejected: string[] }> = [];
+      const outcomes: Array<{ accepted: string[]; rejected: string[]; acceptResidue: boolean; rejectResidue: boolean }> = [];
       await given('legitimate revisions of empty, terminal and layout-bearing paragraphs', () => undefined);
       await when('each pair is compared end to end', async () => {
         for (const [originalBody, revisedBody] of pairs) {
@@ -373,6 +374,8 @@ describe('publication gate: paragraph topology (#1027)', () => {
           outcomes.push({
             accepted: extractRoundTripParagraphTopology(acceptAllChanges(xml)),
             rejected: extractRoundTripParagraphTopology(rejectAllChanges(xml)),
+            acceptResidue: finalParagraphMarkResolvesAway(xml, 'accept'),
+            rejectResidue: finalParagraphMarkResolvesAway(xml, 'reject'),
           });
         }
       });
@@ -380,22 +383,52 @@ describe('publication gate: paragraph topology (#1027)', () => {
         expect(outcomes).toHaveLength(pairs.length);
         pairs.forEach(([originalBody, revisedBody], index) => {
           expect(compareParagraphTopology(
-            extractRoundTripParagraphTopology(documentXml(revisedBody)), outcomes[index]!.accepted)).toBeUndefined();
+            extractRoundTripParagraphTopology(documentXml(revisedBody)), outcomes[index]!.accepted,
+            outcomes[index]!.acceptResidue)).toBeUndefined();
           expect(compareParagraphTopology(
-            extractRoundTripParagraphTopology(documentXml(originalBody)), outcomes[index]!.rejected)).toBeUndefined();
+            extractRoundTripParagraphTopology(documentXml(originalBody)), outcomes[index]!.rejected,
+            outcomes[index]!.rejectResidue)).toBeUndefined();
         });
       });
     },
   );
   test.openspec('Legitimate empty paragraph edits and terminal paragraph cleanup pass the topology check')(
-    'empty paragraphs left at the very end are terminal residue; anywhere else they fail',
-    () => {
-      expect(compareParagraphTopology(['Head'], ['Head', ''])).toBeUndefined();
-      expect(compareParagraphTopology(['Head', ''], ['Head', '', ''])).toBeUndefined();
-      expect(compareParagraphTopology([], ['', ''])).toBeUndefined();
-      expect(compareParagraphTopology(['Head', 'Tail'], ['Head', '', 'Tail'])).toMatchObject({ firstDifferingParagraphIndex: 1 });
-      expect(compareParagraphTopology(['Head', ''], ['Head'])).toMatchObject({ firstDifferingParagraphIndex: 1, actualParagraphEmpty: null });
-      expect(compareParagraphTopology(['Head', 'Tail'], ['Head', 'Tail', 'Extra'])).toBeDefined();
+    'one empty final paragraph is terminal residue only when the final mark resolves away',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const body = head + tail;
+      const outcomes: Record<string, GateOutcome> = {};
+      await given('the residue allowance in isolation, and outputs that append untracked empty blocks', () => {
+        expect(compareParagraphTopology(['Head'], ['Head', ''], true)).toBeUndefined();
+        expect(compareParagraphTopology([], ['', ''], true)).toBeUndefined();
+        expect(compareParagraphTopology(['Head'], ['Head', ''])).toMatchObject({ firstDifferingParagraphIndex: 1, expectedParagraphEmpty: null });
+        expect(compareParagraphTopology(['Head'], ['Head', '', ''], true)).toBeDefined();
+        expect(compareParagraphTopology(['Head', 'Tail'], ['Head', '', 'Tail'], true)).toMatchObject({ firstDifferingParagraphIndex: 1 });
+        expect(compareParagraphTopology(['Head', ''], ['Head'], true)).toMatchObject({ actualParagraphEmpty: null });
+        expect(compareParagraphTopology(['Head', 'Tail'], ['Head', 'Tail', 'Extra'], true)).toBeDefined();
+      });
+      await when('the output gains one, then three, untracked empty final paragraphs, or a final table with an empty cell', async () => {
+        const appendAtEnd = (inserted: string) => (xml: string) => {
+          const at = xml.lastIndexOf('<w:sectPr');
+          return xml.slice(0, at) + inserted + xml.slice(at);
+        };
+        outcomes.one = await gateOnTamperedOutput(body, body, appendAtEnd(EMPTY_PARAGRAPH));
+        outcomes.three = await gateOnTamperedOutput(body, body, appendAtEnd(EMPTY_PARAGRAPH.repeat(3)));
+        outcomes.cell = await gateOnTamperedOutput(body, body, appendAtEnd('<w:tbl><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>'));
+      });
+      await then('each fails both topology checks: no final mark revision resolves away', () => {
+        for (const outcome of Object.values(outcomes)) {
+          expect(outcome.tampered).toBe(true);
+          expect(outcome.error?.failedChecks).toEqual(expect.arrayContaining(['acceptParagraphTopology', 'rejectParagraphTopology']));
+        }
+      });
+      await and('a final paragraph whose mark is a tracked deletion is recognised for Accept only', () => {
+        const xml = documentXml(head + '<w:p><w:pPr><w:rPr><w:del w:id="1" w:author="A"/></w:rPr></w:pPr></w:p>');
+        expect(finalParagraphMarkResolvesAway(xml, 'accept')).toBe(true);
+        expect(finalParagraphMarkResolvesAway(xml, 'reject')).toBe(false);
+        const snapshot = documentXml(head + '<w:p><w:pPr><w:rPr><w:rPrChange w:id="2" w:author="A"><w:rPr><w:ins w:id="3" w:author="S"/></w:rPr></w:rPrChange></w:rPr></w:pPr></w:p>');
+        expect(finalParagraphMarkResolvesAway(snapshot, 'reject')).toBe(true);
+        expect(finalParagraphMarkResolvesAway(documentXml(head + tail), 'accept')).toBe(false);
+      });
     },
   );
 

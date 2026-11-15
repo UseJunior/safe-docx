@@ -42,9 +42,11 @@ characters, and the checks SHALL make no claim about them.
 `rejectParagraphTopology`. Each SHALL pass only when the projection has the same
 number of paragraphs as its source projection and the same paragraphs empty,
 where a paragraph is empty when it projects no character other than spaces.
-Text-box paragraphs SHALL be outside the check. Extra empty paragraphs at the
-very end of a projection, which a resolved final paragraph mark leaves because a
-story's last paragraph mark cannot be removed, SHALL be outside the check. The
+Text-box paragraphs SHALL be outside the check. One extra empty paragraph at the
+very end of a projection SHALL be outside the check when the output's final
+body-level paragraph carries a paragraph-mark revision that the projection
+resolves by removing the mark, because a story's last paragraph mark cannot be
+removed. Untracked trailing empty paragraphs SHALL still fail the check. The
 checks SHALL be reported
 separately from `acceptText` and `rejectText`, with
 `ParagraphTopologyMismatchDetails` in the failure details.

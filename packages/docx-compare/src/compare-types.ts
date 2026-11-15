@@ -433,9 +433,10 @@ export interface TaggedPublicationSafetyChecks extends ReconstructionSafetyCheck
   /**
    * The Accept All projection has the revised document's paragraph topology:
    * the same number of paragraphs, and the same paragraphs empty. Text box
-   * paragraphs are outside the check, and so are extra empty paragraphs at
-   * the very end of the projection: the residue a resolved final paragraph
-   * mark leaves (#891).
+   * paragraphs are outside the check, and so is one empty final paragraph
+   * when the output's final body paragraph carries a mark revision this
+   * projection resolves: the residue a resolved final paragraph mark leaves
+   * (#891).
    */
   acceptParagraphTopology: boolean;
   /** As {@link acceptParagraphTopology}, for Reject All against the original. */

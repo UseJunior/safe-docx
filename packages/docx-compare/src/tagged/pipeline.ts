@@ -1142,44 +1142,81 @@ function canonicalTopology(topology: readonly string[]): readonly string[] {
 }
 
 /**
- * True when `actual` is `expected` followed only by empty paragraphs.
+ * Paragraph-mark revisions whose resolution removes the mark in each projection.
+ * Accept All removes a deleted or moved-from mark; Reject All removes an
+ * inserted or moved-to mark, including one a `w:rPrChange` snapshot records.
+ */
+const TERMINAL_MARK_REVISIONS: Record<'accept' | 'reject', { live: readonly string[]; snapshot: readonly string[] }> = {
+  accept: { live: ['w:del', 'w:moveFrom'], snapshot: [] },
+  reject: { live: ['w:ins', 'w:moveTo'], snapshot: ['w:ins', 'w:moveTo'] },
+};
+
+/**
+ * True when the main story's final paragraph is a body-level paragraph whose
+ * own mark carries a revision that `projection` resolves by removing the mark.
  *
- * A story's last paragraph mark cannot be removed, so when a comparison
- * deletes (or, on Reject, un-inserts) the final paragraph and the serializer
- * leaves that revision on the final paragraph's own mark instead of
- * relocating it to the preceding mark (#891), Accept or Reject leaves an
- * empty final paragraph. LibreOffice does the same. The residue changes no
- * content and stays outside this check; dropping a paragraph, or adding an
- * empty paragraph anywhere before the end, still fails it.
+ * A story's last paragraph mark cannot be removed, so resolving such a mark
+ * leaves the final paragraph in place, empty once its tracked content is gone.
+ * The serializer leaves the revision there instead of relocating it to the
+ * preceding mark (#891) when the paragraph's content sits in a hyperlink or
+ * its mark carries pre-existing revisions; LibreOffice also keeps the empty
+ * final paragraph.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/891
+ */
+export function finalParagraphMarkResolvesAway(
+  candidateXml: string,
+  projection: 'accept' | 'reject',
+): boolean {
+  const body = findAllByTagName(parseDocumentXml(candidateXml), 'w:body')[0];
+  if (!body) return false;
+  const blocks = childElements(body).filter((child) => child.tagName !== 'w:sectPr');
+  const last = blocks[blocks.length - 1];
+  if (!last || last.tagName !== 'w:p') return false;
+  const pPr = childElements(last).find((child) => child.tagName === 'w:pPr');
+  const markProperties = pPr && childElements(pPr).find((child) => child.tagName === 'w:rPr');
+  if (!markProperties) return false;
+  const kinds = TERMINAL_MARK_REVISIONS[projection];
+  if (childElements(markProperties).some((child) => kinds.live.includes(child.tagName))) return true;
+  const change = childElements(markProperties).find((child) => child.tagName === 'w:rPrChange');
+  const snapshot = change && childElements(change).find((child) => child.tagName === 'w:rPr');
+  return !!snapshot && childElements(snapshot).some((child) => kinds.snapshot.includes(child.tagName));
+}
+
+/**
+ * True when `actual` is `expected` plus one final empty paragraph and the
+ * caller has established that the final paragraph mark resolves away.
  */
 function isTerminalParagraphMarkResidue(
   expectedEmpty: readonly boolean[],
   actualEmpty: readonly boolean[],
+  finalMarkResolvesAway: boolean,
 ): boolean {
-  return actualEmpty.length > expectedEmpty.length &&
+  return finalMarkResolvesAway &&
+    actualEmpty.length === expectedEmpty.length + 1 &&
     expectedEmpty.every((empty, index) => actualEmpty[index] === empty) &&
-    actualEmpty.slice(expectedEmpty.length).every(Boolean);
+    actualEmpty[actualEmpty.length - 1] === true;
 }
 
 /**
  * Compare paragraph topology: the same number of paragraphs, and the same
- * paragraphs empty, except that extra empty paragraphs at the very end of the
- * output are accepted as terminal paragraph-mark residue. Returns `undefined`
- * when the topologies agree.
+ * paragraphs empty. When `finalMarkResolvesAway` is set (see
+ * {@link finalParagraphMarkResolvesAway}), one extra empty paragraph at the
+ * very end is accepted as terminal paragraph-mark residue. Returns
+ * `undefined` when the topologies agree.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1027
  */
 export function compareParagraphTopology(
   expectedTopology: readonly string[],
   actualTopology: readonly string[],
+  finalMarkResolvesAway = false,
 ): ParagraphTopologyMismatchDetails | undefined {
   const expected = canonicalTopology(expectedTopology);
   const actual = canonicalTopology(actualTopology);
   const expectedEmpty = expected.map(isEmptyTopologyParagraph);
   const actualEmpty = actual.map(isEmptyTopologyParagraph);
-  if (isTerminalParagraphMarkResidue(expectedEmpty, actualEmpty)) return undefined;
+  if (isTerminalParagraphMarkResidue(expectedEmpty, actualEmpty, finalMarkResolvesAway)) return undefined;
   const length = Math.max(expectedEmpty.length, actualEmpty.length);
   let firstDifference = -1;
   for (let index = 0; index < length; index++) {
@@ -1434,10 +1471,12 @@ export function evaluateSafetyChecks(
   const acceptTopologyMismatch = compareParagraphTopology(
     expectedParagraphTopology.revised,
     topologyProjection('w:del', acceptAllChanges, acceptedXml),
+    finalParagraphMarkResolvesAway(candidateXml, 'accept'),
   );
   const rejectTopologyMismatch = compareParagraphTopology(
     expectedParagraphTopology.original,
     topologyProjection('w:ins', rejectAllChanges, rejectedXml),
+    finalParagraphMarkResolvesAway(candidateXml, 'reject'),
   );
   const acceptedBookmarkDiagnostics = collectBookmarkDiagnostics(acceptedXml);
   const rejectedBookmarkDiagnostics = collectBookmarkDiagnostics(rejectedXml);
