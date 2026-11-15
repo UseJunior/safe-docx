@@ -40,9 +40,9 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
@@ -354,31 +354,40 @@ async function collectInstances(inputs, scratchDir) {
       xmlFiles.push(path);
     }
   }
-  for (const docxPath of docxFiles) {
+  // Each package gets its own scratch directory: inputs from different
+  // directories often share a basename (every run's compared.docx), and one
+  // shared extraction path would validate only the last of them.
+  const names = new Map(xmlFiles.map((file) => [file, basename(file)]));
+  for (const [index, docxPath] of docxFiles.entries()) {
     const zip = await JSZip.loadAsync(readFileSync(docxPath));
     const part = zip.file('word/document.xml');
     if (!part) fail(`${docxPath}: missing word/document.xml`);
-    const extracted = join(scratchDir, `${basename(docxPath, '.docx')}.document.xml`);
+    const extractDir = join(scratchDir, `docx-${index}`);
+    mkdirSync(extractDir);
+    const extracted = join(extractDir, `${basename(docxPath, '.docx')}.document.xml`);
     writeFileSync(extracted, await part.async('string'));
     xmlFiles.push(extracted);
+    const shown = relative(process.cwd(), docxPath);
+    names.set(extracted, `${shown.startsWith('..') ? docxPath : shown} word/document.xml`);
   }
   // Well-formedness as emitted, before preprocessing can rewrite (and so
   // hide) a repeated attribute or namespace declaration.
   const notWellFormed = new Map(checkWellFormedBatch(xmlFiles).map(({ file, lines }) => [file, lines]));
   // MCE preprocessing: validate the post-MCE projection, written to scratch
   // under the same basename so failures still identify the source instance.
-  return xmlFiles.map((file) => {
+  return xmlFiles.map((file, index) => {
+    const name = names.get(file);
     const wellFormedLines = notWellFormed.get(file);
-    if (wellFormedLines) return { path: file, name: basename(file), rejectedLines: wellFormedLines };
+    if (wellFormedLines) return { path: file, name, rejectedLines: wellFormedLines };
     const xml = readFileSync(file, 'utf-8');
     const result = applyMcePreprocessing(xml);
-    if (result.parseError) {
-      return { path: file, name: basename(file), rejectedLines: [result.parseError] };
-    }
-    if (result.xml === xml) return { path: file, name: basename(file) };
-    const projected = join(scratchDir, basename(file));
+    if (result.parseError) return { path: file, name, rejectedLines: [result.parseError] };
+    if (result.xml === xml) return { path: file, name };
+    const projectDir = join(scratchDir, `projected-${index}`);
+    mkdirSync(projectDir);
+    const projected = join(projectDir, basename(file));
     writeFileSync(projected, result.xml);
-    return { path: projected, name: basename(file) };
+    return { path: projected, name };
   });
 }
 
