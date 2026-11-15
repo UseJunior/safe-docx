@@ -472,6 +472,42 @@ describe('the assembled body round-trip check (#1486)', () => {
     expect(refusal(compared)).toBeInstanceOf(UnsupportedTextBoxRevisionError);
   });
 
+  const firstChange = (originalXml: string, revisedXml: string, comparedXml: string): unknown => {
+    try {
+      assertAssembledBodyRoundTrip(originalXml, revisedXml, comparedXml);
+      return undefined;
+    } catch (caught) {
+      return (caught as UnsupportedTextBoxRevisionError).changes?.[0] ?? caught;
+    }
+  };
+
+  test('names a box whose difference is confined to its mc:Fallback copy', () => {
+    const VML = 'urn:schemas-microsoft-com:vml';
+    const twinned = (choice: string, fallback: string): string => body(
+      paragraph(pending + text('Body.')) +
+      paragraph(`<w:r><mc:AlternateContent xmlns:mc="${MC_NS}" xmlns:v="${VML}"><mc:Choice Requires="wps">` +
+        `${textBox(choice).slice('<w:p><w:r>'.length, -'</w:r></w:p>'.length)}</mc:Choice>` +
+        `<mc:Fallback><w:pict><v:shape><v:textbox><w:txbxContent>${paragraph(text(fallback))}</w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback>` +
+        '</mc:AlternateContent></w:r>'),
+    );
+    expect(firstChange(twinned('Final', 'Final'), twinned('Final', 'Final'), twinned('Final', 'Draft'))).toEqual({
+      index: 0,
+      partPath: 'word/document.xml',
+      reason: 'assembled nested stories failed accept/reject round-trip validation',
+    });
+  });
+
+  test('judges box text with the whole body\'s normalization when the failure lies outside the boxes', () => {
+    // The box differs only by doubled whitespace, which the gate normalizes away; the body word is the real change.
+    const withBox = (bodyWord: string, boxText: string): string =>
+      body(paragraph(pending + text(bodyWord)) + textBox(boxText));
+    expect(firstChange(withBox('Body.', 'Box text'), withBox('Body.', 'Box text'), withBox('Other.', 'Box  text'))).toEqual({
+      index: 0,
+      partPath: 'word/document.xml',
+      reason: 'assembled nested stories failed accept/reject round-trip validation in the body text outside its text boxes',
+    });
+  });
+
   test('names the text box whose text differs', () => {
     const withBoxes = (first: string, second: string): string =>
       body(paragraph(pending + text('Body.')) + textBox(first) + textBox(second));

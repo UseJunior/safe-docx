@@ -5618,14 +5618,20 @@ export function assertAssembledBodyRoundTrip(
     extractRoundTripComparisonText(actual),
   ).normalizedIdentical);
   if (failed.length === 0) return;
-  const boxTexts = (xml: string): string[] => textBoxes(xml).map((group) =>
-    extractRoundTripComparisonText(serializer.serializeToString(group.selected)));
+  // Every stored copy counts, as it does in the whole-body text above: a
+  // difference confined to an `mc:Fallback` twin still names its box. Copies
+  // are judged with the same normalization as the whole body.
+  const boxCopyTexts = (xml: string): string[][] => textBoxes(xml).map((group) =>
+    allCopies(group).map((copy) => extractRoundTripComparisonText(serializer.serializeToString(copy))));
+  const sameBox = (expected: string[] | undefined, actual: string[] | undefined): boolean =>
+    expected !== undefined && actual !== undefined && expected.length === actual.length &&
+    expected.every((text, copy) => compareTexts(text, actual[copy]!).normalizedIdentical);
   let divergentBox: number | undefined;
   for (const [expected, actual] of failed) {
-    const [expectedBoxes, actualBoxes] = [boxTexts(expected), boxTexts(actual)];
+    const [expectedBoxes, actualBoxes] = [boxCopyTexts(expected), boxCopyTexts(actual)];
     const count = Math.max(expectedBoxes.length, actualBoxes.length);
     for (let index = 0; index < count && divergentBox === undefined; index++) {
-      if (expectedBoxes[index] !== actualBoxes[index]) divergentBox = index;
+      if (!sameBox(expectedBoxes[index], actualBoxes[index])) divergentBox = index;
     }
     if (divergentBox !== undefined) break;
   }
