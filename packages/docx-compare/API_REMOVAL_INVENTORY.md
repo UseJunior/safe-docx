@@ -157,6 +157,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `UnrepresentedContentControlChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedDrawingChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedPictureChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `UnrepresentedTableChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnsupportedBlockContainerRevisionError` | class | `src/tagged/taggedTreeSerializer.ts` | yes | stable compatibility |
 | `UnsupportedTableTopologyComparisonError` | class | `src/tagged/tableTopologyGuard.ts` | yes | stable compatibility |
 | `UnsupportedTextBoxRevisionError` | class | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |

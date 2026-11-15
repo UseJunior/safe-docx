@@ -24,7 +24,7 @@ import type {
 } from '../compare-types.js';
 import { paragraphJoinParts, representative, type TaggedMoveRelation, type TaggedNode } from './taggedTree.js';
 import { guardBodyTableTopology } from './tableTopologyGuard.js';
-import { replaceSkeletonChangedRows } from './tableTopologyNormalization.js';
+import { leaveOutRowlessTables, replaceSkeletonChangedRows } from './tableTopologyNormalization.js';
 import { collectContentControlPropertyChanges } from './unrepresentedChanges.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
@@ -502,9 +502,11 @@ export function buildTaggedTreePublication(
     revisionAttributionRanges: input.revisionAttributionRanges,
     minimumRevisionId: input.minimumRevisionId,
   });
+  const leftOutTables: UnrepresentedChange[] = [];
   if (input.guardTableTopology) {
     // The main body always sets it; a header, footer or text-box story sets
     // it first and drops it only when it refuses that story's tables (#1393).
+    leftOutTables.push(...leaveOutRowlessTables(constructed.tree));
     replaceSkeletonChangedRows(constructed.tree);
     guardBodyTableTopology(constructed.tree);
   }
@@ -535,7 +537,7 @@ export function buildTaggedTreePublication(
     stats: consumed.stats,
     serializedRangeStats: consumed.serializedRangeStats,
     moves: constructed.moves,
-    unrepresentedChanges: collectContentControlPropertyChanges(constructed.tree),
+    unrepresentedChanges: [...collectContentControlPropertyChanges(constructed.tree), ...leftOutTables],
   };
 }
 

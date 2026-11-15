@@ -24,7 +24,7 @@ import { DocxArchive, DocxDocument, parseXml, validateBookmarkIntegrity } from '
 import { buildDocxFromBodyXml, COMPLETE_PAGE_FIELD } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
 import { duplicateRevisionIdsInPackage } from '../testing/revisionIdUniqueness.js';
-import { compareDocuments, UnsupportedTableTopologyComparisonError } from '../index.js';
+import { compareDocuments } from '../index.js';
 import { acceptAllChanges, extractTextWithParagraphs, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { bodyTableFootprint } from './tableTopologyGuard.js';
 
@@ -256,13 +256,18 @@ describe('matched rows holding a cell-level content control whose cell skeleton 
     30000,
   );
 
-  test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
-    'keeps refusing a skeleton change in a row holding a pending cell-level topology revision', async () => {
+  test.openspec('[SDX-COMPTABLE-09] a row holding a pending cell-level revision emits a native row replacement')(
+    'replaces a row beside a control whose skeleton changes and whose cell holds a pending cell insertion', async () => {
       const pending = row([control([text('Acme')]), cell(p('Corp'), '<w:cellIns w:id="80" w:author="Earlier"/>')], AFTER);
-      await expect(compareDocuments(
-        await docx(body([pending, secondRow])),
-        await docx(body([pending.replace(`<w:trPr>${AFTER}</w:trPr>`, '').replace('</w:tr>', `${text('Inc')}</w:tr>`), secondRow])),
-      )).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
+      const { xml } = await compareChecked(
+        body([pending, secondRow]),
+        body([pending.replace(`<w:trPr>${AFTER}</w:trPr>`, '').replace('</w:tr>', `${text('Inc')}</w:tr>`), secondRow]),
+      );
+      expect(rowMarkers(xml)).toEqual([['del'], ['ins'], []]);
+      expect(wrappedCells(xml)).toBe(0);
+      // The earlier reviewer's pending cell insertion stays in each copy of the row.
+      expect(Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'cellIns'))
+        .map((element) => element.getAttributeNS(W_NS, 'author'))).toEqual(['Earlier', 'Earlier']);
     },
     30000,
   );

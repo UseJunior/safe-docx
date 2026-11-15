@@ -41,6 +41,10 @@ function describeScope(change: UnrepresentedChange): string {
     const name = drawing.name !== undefined ? ` "${drawing.name}"` : '';
     return `${shape}${name} (w:${drawing.element}, text box #${drawing.index + 1}) in ${story}`;
   }
+  if (change.scope === 'table') {
+    const source = change.kind === 'added' ? 'revised' : 'original';
+    return `table with no rows${change.table ? ` (w:tbl #${change.table.index + 1} of the ${source} document)` : ''}`;
+  }
   return change.role ? `${change.role} ${change.scope}` : change.scope;
 }
 
@@ -72,7 +76,10 @@ export function formatUnrepresentedChangeWarnings(
     `(sectionIndex ${change.sectionIndex}) has no tracked-change markup in the redline; ` +
     (change.scope === 'drawing'
       ? 'the redline shows the revised shape, which Reject All keeps. Review that part manually.'
-      : 'the output carries the revised state for it without a revision. Review that part manually.'),
+      : change.scope === 'table'
+        ? `no revision can mark a table without rows, so the redline leaves it out and ` +
+          `${change.kind === 'added' ? 'Accept All' : 'Reject All'} lacks it. It holds no text. Review that part manually.`
+        : 'the output carries the revised state for it without a revision. Review that part manually.'),
   );
 }
 

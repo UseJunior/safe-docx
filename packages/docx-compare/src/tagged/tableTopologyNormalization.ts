@@ -1,4 +1,5 @@
 import { childElements } from '@usejunior/docx-core';
+import type { UnrepresentedChange } from '../compare-types.js';
 import type { BothNode, OriginalNode, RevisedNode, TaggedNode } from './taggedTree.js';
 import { rowShape } from './tableTopologyGuard.js';
 
@@ -35,21 +36,46 @@ function cellProperties(row: Element): Element[][] {
 }
 
 /**
- * Whether a row stays with the table-topology guard whatever its merges: a
- * pending cell-level topology revision (`w:cellIns`, `w:cellDel`,
- * `w:cellMerge`, §17.13.5.2, §17.13.5.1, §17.13.5.3) on any of its cells.
- * Replacing such a row would publish a cell revision inside a row revision,
- * which readers resolve inconsistently (LibreOffice ignores cell-level
- * revisions; Word resolves them into a spanned cell, #1428).
- *
- * A cell inside a cell-level content control or custom XML element is
- * replaced with its row like any other: the wrapper goes whole with the
- * deleted row and whole with the inserted row, so each projection keeps one
- * side's wrapper, and no revision wrapper ever holds a cell (#1483).
+ * The pending cell-level topology revisions of a row, per cell in document
+ * order: each cell's `w:cellIns` (§17.13.5.2), `w:cellDel` (§17.13.5.1) and
+ * `w:cellMerge` (§17.13.5.3, with the merge states it records). Identifiers,
+ * authors and dates are attribution, not topology, and are left out.
  */
-function hasUnreplaceableCells(row: Element): boolean {
-  return cellProperties(row).some((properties) =>
-    properties.some((child) => isW(child, 'cellIns', 'cellDel', 'cellMerge')));
+function cellTopologyRevisions(row: Element): string {
+  return JSON.stringify(cellProperties(row).map((properties) => properties
+    .filter((child) => isW(child, 'cellIns', 'cellDel', 'cellMerge'))
+    .map((child) => [child.localName, child.getAttributeNS(W_NS, 'vMerge') ?? '',
+      child.getAttributeNS(W_NS, 'vMergeOrig') ?? ''])));
+}
+
+/**
+ * The pending row revisions of a row: the `w:ins` (§17.13.5.17) and `w:del`
+ * (§17.13.5.12) markers of its `w:trPr`, by name.
+ */
+function rowRevisionMarkers(row: Element): string {
+  const trPr = childElements(row).find((child) => isW(child, 'trPr'));
+  return trPr ? childElements(trPr).filter((child) => isW(child, 'ins', 'del'))
+    .map((child) => child.localName).sort().join(',') : '';
+}
+
+/**
+ * Whether a matched row changed its topology: its cell skeleton (see
+ * {@link rowShape}), the pending cell-level topology revisions its cells
+ * carry, or its own pending row insertion or deletion.
+ *
+ * A row whose pending revisions differ between the documents is replaced
+ * like a row whose skeleton changed: the deleted original row keeps the
+ * original's pending revisions and the inserted revised row the revised
+ * ones, so Reject All resolves the original's and Accept All the revised's,
+ * exactly as each source does, and every prior revision stays in place on
+ * its own copy (#1400). A row property change record could not carry them:
+ * `w:trPrChange` holds a `CT_TrPrBase`, which has no `w:ins` or `w:del`
+ * (§17.13.5.37). No new cell-level revision is ever written.
+ */
+function rowTopologyChanged(original: Element, revised: Element): boolean {
+  return rowShape(original) !== rowShape(revised)
+    || cellTopologyRevisions(original) !== cellTopologyRevisions(revised)
+    || rowRevisionMarkers(original) !== rowRevisionMarkers(revised);
 }
 
 /** Whether a row has a cell in a vertical merge (`w:vMerge`, §17.4.84). */
@@ -86,19 +112,14 @@ function continuationColumns(row: Element): Set<number> {
 }
 
 /**
- * Whether a row is outside the single-row pass: a vertical merge, which the
- * band pass ({@link replaceVerticalMergeBands}) owns, or cells the guard keeps
- * (see {@link hasUnreplaceableCells}).
+ * A matched row whose topology changed (see {@link rowTopologyChanged}) and
+ * that this pass replaces: a row with a vertical merge on either side is left
+ * to the band pass ({@link replaceVerticalMergeBands}).
  */
-function keepsGuardedTopology(row: Element): boolean {
-  return hasUnreplaceableCells(row) || hasVerticalMerge(row);
-}
-
-/** A matched row whose cell skeleton changed and that this pass replaces. */
 function replacesRow(node: TaggedNode): node is BothNode {
   return node.tag === 'both' && isRow(node.original) && isRow(node.revised)
-    && rowShape(node.original) !== rowShape(node.revised)
-    && !keepsGuardedTopology(node.original) && !keepsGuardedTopology(node.revised);
+    && rowTopologyChanged(node.original, node.revised)
+    && !hasVerticalMerge(node.original) && !hasVerticalMerge(node.revised);
 }
 
 /** The side elements of one row-level child of a table, or null when it is not a `w:tr`. */
@@ -139,9 +160,12 @@ function mergeGroups(children: readonly TaggedNode[], side: 'original' | 'revise
  * rows inserted, so Accept All and Reject All each keep one side's unbroken
  * chains. Rows outside every band keep their ordinary alignment and redline.
  *
- * A band holding a row with cells the guard keeps (see
- * {@link hasUnreplaceableCells}) is left to the guard, as is a table with
- * row-level content controls, whose rows the band cannot reorder. Cells
+ * A band also starts from a matched row whose pending cell-level or row
+ * revisions differ (see {@link rowTopologyChanged}), and a band holding a row
+ * with a pending cell-level revision is replaced like any other, each copy
+ * keeping its source's pending revisions (#1400). A table with row-level
+ * content controls, whose rows the band cannot reorder, is left to the
+ * guard. Cells
  * inside cell-level content controls count like any other cell, so a band
  * holding one is replaced with the control whole in each of its rows.
  */
@@ -156,7 +180,7 @@ function replaceVerticalMergeBands(table: BothNode): void {
     groups[side].filter((entry) => entry === group).length;
   const triggers: Array<[number, number]> = children.flatMap((child, index): Array<[number, number]> => {
     if (child.tag !== 'both' || !isRow(child.original) || !isRow(child.revised)) return [];
-    if (rowShape(child.original) === rowShape(child.revised)) return [];
+    if (!rowTopologyChanged(child.original, child.revised)) return [];
     const merged = hasVerticalMerge(child.original) || hasVerticalMerge(child.revised)
       || groupSize('original', groups.original[index]!) > 1 || groupSize('revised', groups.revised[index]!) > 1;
     return merged ? [[index, index]] : [];
@@ -217,9 +241,6 @@ function replaceVerticalMergeBands(table: BothNode): void {
   for (const [low, high] of bands) {
     const members = children.slice(low, high + 1);
     const sides = members.map(rowSides);
-    if (sides.some((entry) => [entry?.original, entry?.revised].some((row) => row && hasUnreplaceableCells(row)))) {
-      continue;
-    }
     replaced.push(...children.slice(next, low));
     // A matched non-row child between the rows (a table-level bookmark or
     // comment boundary present in both documents) keeps its order ahead of
@@ -269,9 +290,18 @@ function replaceVerticalMergeBands(table: BothNode): void {
  * new id (§17.5.2.18). Pending revisions inside the wrapped cells stay with
  * each copy, as in any other replaced row.
  *
- * Rows the passes leave alone (see {@link hasUnreplaceableCells}), and grid
- * changes, still reach the table-topology guard.
+ * A matched row whose pending cell-level topology revisions or pending row
+ * markers differ is replaced the same way (see {@link rowTopologyChanged}),
+ * and so is a row holding a pending cell-level revision whose skeleton
+ * changes: each copy keeps its own source's pending revisions, so Reject All
+ * resolves the original's and Accept All the revised's (#1400).
  *
+ * Grid changes, and rows in a table with row-level content controls that the
+ * band pass leaves alone, still reach the table-topology guard.
+ *
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5.1 — a pending w:cellDel is carried in place on its own row copy, not resolved
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5.2 — a pending w:cellIns is carried in place on its own row copy, not resolved
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5.3 — a pending w:cellMerge is carried in place on its own row copy, not resolved
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.17
@@ -281,6 +311,7 @@ function replaceVerticalMergeBands(table: BothNode): void {
  * @see https://github.com/UseJunior/safe-docx/issues/1396
  * @see https://github.com/UseJunior/safe-docx/issues/1397
  * @see https://github.com/UseJunior/safe-docx/issues/1483
+ * @see https://github.com/UseJunior/safe-docx/issues/1400
  */
 export function replaceSkeletonChangedRows(tree: TaggedNode): void {
   const visit = (node: TaggedNode): void => {
@@ -300,4 +331,75 @@ export function replaceSkeletonChangedRows(tree: TaggedNode): void {
     node.children = children;
   };
   visit(tree);
+}
+
+/**
+ * Leave out of the redline each table with no rows (a `w:tbl` holding no
+ * `w:tr`) present in one document only, and name it in
+ * `unrepresentedChanges`.
+ *
+ * A table is inserted or deleted only through the revision markers of its
+ * rows (`w:trPr/w:ins`, `w:trPr/w:del`), so a table without rows has nothing
+ * to carry one: published, it would survive the projection that should drop
+ * it. Such a table holds no cell, paragraph or text, so leaving it out changes
+ * no content of either projection; Accept All of an added one (Reject All of a
+ * removed one) lacks only the empty table, which the returned entry reports,
+ * naming the table and its section in the document that holds it. A table
+ * present in both documents is published as it is, and one that holds a range
+ * boundary is left to the guard (see {@link isLeavableRowlessTable}).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.37
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1400
+ */
+export function leaveOutRowlessTables(tree: TaggedNode): UnrepresentedChange[] {
+  const changes: UnrepresentedChange[] = [];
+  const visit = (node: TaggedNode): void => {
+    if (node.opaque) return;
+    node.children = node.children.filter((child) => {
+      if (child.tag === 'both' || !isLeavableRowlessTable(child.node)) {
+        visit(child);
+        return true;
+      }
+      const table = child.node;
+      changes.push({
+        scope: 'table',
+        kind: child.tag === 'revised' ? 'added' : 'removed',
+        sectionIndex: sourceSectionIndex(table),
+        table: { story: 'body', index: Array.from(table.ownerDocument!.getElementsByTagNameNS(W_NS, 'tbl')).indexOf(table) },
+      });
+      return false;
+    });
+  };
+  visit(tree);
+  return changes;
+}
+
+/**
+ * Whether a table holds nothing but its properties and grid: no row, and no
+ * range markup (a bookmark, comment or move range boundary, which `CT_Tbl`
+ * allows before `w:tblPr`, §17.4.37). Leaving out such a table removes no
+ * content; one that holds a range boundary stays with the table-topology
+ * guard, which refuses it (`emptyTable`) rather than unbalance the range.
+ */
+function isLeavableRowlessTable(element: Element): boolean {
+  return isW(element, 'tbl') && childElements(element).every((child) => isW(child, 'tblPr', 'tblGrid'));
+}
+
+/**
+ * The zero-based section of the document holding `element`: the number of
+ * paragraph-bound section breaks (`w:pPr/w:sectPr`, §17.6.18) before it in
+ * that document.
+ */
+function sourceSectionIndex(element: Element): number {
+  let index = 0;
+  for (const sectPr of Array.from(element.ownerDocument!.getElementsByTagNameNS(W_NS, 'sectPr'))) {
+    const parent = sectPr.parentNode as Element | null;
+    if (!parent || !isW(parent, 'pPr')) continue;
+    // DOCUMENT_POSITION_FOLLOWING: the section break comes after `element`.
+    if (element.compareDocumentPosition(sectPr) & 4) break;
+    index++;
+  }
+  return index;
 }

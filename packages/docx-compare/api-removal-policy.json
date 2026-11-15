@@ -67,6 +67,7 @@
       "UnrepresentedContentControlChange",
       "UnrepresentedDrawingChange",
       "UnrepresentedPictureChange",
+      "UnrepresentedTableChange",
       "UnsupportedBlockContainerRevisionError",
       "UnsupportedTableTopologyComparisonError",
       "UnsupportedTextBoxRevisionError",
