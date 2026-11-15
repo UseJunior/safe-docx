@@ -2127,14 +2127,20 @@ function pairSelectedAncillaryStories(
  * what the other side's last section shows is its counterpart. The other
  * sections align by what they show (`signatures`). Between two aligned
  * sections, a run of unmatched sections of equal length on both sides aligns
- * in order, and runs of unequal length align as a whole, so a story is
- * paired only when every section of both runs shows the same one per slot.
+ * in order. Runs of unequal length on both sides are returned apart
+ * (`unequalRuns`): which of their sections show the same pages is unknown,
+ * so they only ever pair a slot that every section of both runs shows one
+ * story in.
  */
 function alignedSectionOrdinals(
   original: readonly string[],
   revised: readonly string[],
-): Array<[original: number, revised: number]> {
-  if (original.length === 0 || revised.length === 0) return [];
+): {
+  aligned: Array<[original: number, revised: number]>;
+  unequalRuns: Array<{ original: number[]; revised: number[] }>;
+} {
+  const unequalRuns: Array<{ original: number[]; revised: number[] }> = [];
+  if (original.length === 0 || revised.length === 0) return { aligned: [], unequalRuns };
   const matchedPairs = (left: readonly string[], right: readonly string[]): Array<[number, number]> => {
     const unmatched = unmatchedSequenceOrdinals([...left], [...right]);
     const matchedLeft = left.map((_, index) => index).filter((index) => !unmatched.original.has(index));
@@ -2156,16 +2162,15 @@ function alignedSectionOrdinals(
         aligned.push([previous[0] + offset, previous[1] + offset]);
       }
     } else if (gap.original > 0 && gap.revised > 0) {
-      for (let left = 1; left <= gap.original; left += 1) {
-        for (let right = 1; right <= gap.revised; right += 1) {
-          aligned.push([previous[0] + left, previous[1] + right]);
-        }
-      }
+      unequalRuns.push({
+        original: Array.from({ length: gap.original }, (_, offset) => previous[0] + offset + 1),
+        revised: Array.from({ length: gap.revised }, (_, offset) => previous[1] + offset + 1),
+      });
     }
     if (anchor[0] < original.length) aligned.push(anchor);
     previous = anchor;
   }
-  return aligned;
+  return { aligned, unequalRuns };
 }
 
 /**
@@ -2180,7 +2185,12 @@ function alignedSectionOrdinals(
  * them), so an original story `A` and a revised part `B` correspond when
  * every displayed slot of an aligned section that shows `A` in the original
  * shows `B` in the revised document, and every one that shows `B` showed `A`.
- * A shared part is one story however many sections show it. A story shown
+ * A shared part is one story however many sections show it. A story that
+ * no aligned section shows, and that has no unchanged copy on the other
+ * side, is paired through a run of unequal length only when every section
+ * of the original run shows it in a slot and every section of the revised
+ * run shows one such story there, in both directions; a run never overrides
+ * what an aligned section shows (#1492 smoke). A story shown
  * only by a section with no counterpart is not paired here, so a removed or
  * inserted section's own story stays with the lifecycle checks of
  * `assertLifecycleStoriesAreSectionBound`. The assembled package is still
@@ -2225,10 +2235,11 @@ function sectionAlignedTextBoxStoryPairs(
     targets.add(to);
     map.set(from, targets);
   };
-  for (const [originalOrdinal, revisedOrdinal] of alignedSectionOrdinals(
+  const { aligned, unequalRuns } = alignedSectionOrdinals(
     signatures(originalState, originalBindings),
     signatures(revisedState, revisedBindings),
-  )) {
+  );
+  for (const [originalOrdinal, revisedOrdinal] of aligned) {
     for (const kind of STORY_KINDS) {
       for (const role of STORY_ROLES) {
         const left = slotKey(originalBindings, originalOrdinal, kind, role);
@@ -2249,6 +2260,48 @@ function sectionAlignedTextBoxStoryPairs(
     if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
     const sources = shown.backward.get(right.targetPath);
     if (sources?.size === 1 && sources.has(left.targetPath)) pairs.push([left, right]);
+  }
+  // Runs of unequal length pair only stories no aligned section shows and
+  // that have no unchanged copy on the other side, so they can never contend
+  // with an aligned or an exact pair; within the runs a story pairs only
+  // when every run showing it shows one story on the other side, both ways.
+  const exactKeys = (stories: readonly SelectedAncillaryStory[]): Set<string> =>
+    new Set(stories.map((story) => `${story.kind}|${story.canonical}`));
+  const originalExact = exactKeys(originalState.stories);
+  const revisedExact = exactKeys(revisedState.stories);
+  const inRuns = { forward: new Map<string, Set<string>>(), backward: new Map<string, Set<string>>() };
+  for (const run of unequalRuns) {
+    for (const kind of STORY_KINDS) {
+      for (const role of STORY_ROLES) {
+        for (const originalOrdinal of run.original) {
+          const left = slotKey(originalBindings, originalOrdinal, kind, role);
+          if (left === undefined) continue;
+          for (const revisedOrdinal of run.revised) {
+            const right = slotKey(revisedBindings, revisedOrdinal, kind, role);
+            if (right === undefined) continue;
+            note(inRuns.forward, left, right);
+            note(inRuns.backward, right, left);
+          }
+        }
+      }
+    }
+  }
+  const paired = { original: new Set(pairs.map(([left]) => left)), revised: new Set(pairs.map(([, right]) => right)) };
+  for (const left of originalState.stories) {
+    if (paired.original.has(left) || shown.forward.has(left.targetPath)) continue;
+    if (revisedExact.has(`${left.kind}|${left.canonical}`)) continue;
+    const targets = inRuns.forward.get(left.targetPath);
+    if (targets?.size !== 1) continue;
+    const right = revisedStories.get([...targets][0]!);
+    if (!right || right.kind !== left.kind || paired.revised.has(right)) continue;
+    if (shown.backward.has(right.targetPath) || originalExact.has(`${right.kind}|${right.canonical}`)) continue;
+    if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
+    const sources = inRuns.backward.get(right.targetPath);
+    if (sources?.size === 1 && sources.has(left.targetPath)) {
+      pairs.push([left, right]);
+      paired.original.add(left);
+      paired.revised.add(right);
+    }
   }
   return pairs;
 }

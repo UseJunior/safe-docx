@@ -494,6 +494,31 @@ describe('a section break beside a retained or a final section whose footer hold
     });
   }
 
+  test('tracks the boxed header of the last section when an inheriting section is added and a boxed footer shared by every section changes', async ({ given, when, then }: AllureBddContext) => {
+    const [original, revised] = await given('three sections with plain, plain and boxed headers and one shared boxed footer; the revision adds an inheriting final section and edits the boxed header and the footer', () => {
+      const plainHeader = (id: string, target: string, value: string): PartSpec =>
+        ({ id, kind: 'header', target, xml: paragraph(text(value)) });
+      const boxedHeader = (legend: string): PartSpec =>
+        ({ id: 'rIdH5', kind: 'header', target: 'header5.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend, boxText: 'Header box' }) });
+      const cover = plainHeader('rIdH1', 'header1.xml', 'Cover header');
+      const middle = plainHeader('rIdH3', 'header3.xml', 'Middle header');
+      const before = { header: boxedHeader('Header legend draft'), footer: LEADING };
+      const after = { header: boxedHeader('Header legend final'), footer: LEADING_EDITED };
+      return Promise.all([
+        sectionedPackage(['First.', 'Second.', 'Third.'],
+          [[cover, before.footer], [middle], [before.header]], [cover, middle, before.header, before.footer]),
+        sectionedPackage(['First.', 'Second.', 'Third.', 'Added last.'],
+          [[cover, after.footer], [middle], [after.header], []], [cover, middle, after.header, after.footer]),
+      ]);
+    });
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('the break is a paragraph-mark revision and nothing is listed', async () => {
+      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(sectionBreakRevisions(await (await DocxArchive.load(result.document)).getDocumentXml())).toEqual({ added: 1, removed: 0 });
+    });
+    await expectRoundTrip({ then }, original, revised, result);
+  });
+
   test('tracks the edited first footer when a final section with a footer of its own is added', async ({ given, when, then }: AllureBddContext) => {
     const [original, revised] = await given('one section; the revision edits its footer and adds a final section that names a new boxed footer', () => Promise.all([
       sectionedPackage(['First.'], [[LEADING]], [LEADING]),
