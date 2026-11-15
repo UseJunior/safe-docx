@@ -135,6 +135,7 @@ import {
   type TextBoxStoryComparisonPlan,
   type TextBoxStoryInput,
   rejectedSelectedAncillaryStoryPaths,
+  revisionWrapsTableStructure,
   sectionAlignedOrdinaryStoryInputs,
   storyComparisonReproducesBothSides,
   UnsupportedTextBoxRevisionError,
@@ -1562,7 +1563,52 @@ async function compareDocumentsTagged(
   const representedPartPaths = new Set<string>();
   const displacedCopyPartPaths = new Set<string>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
+  // A header or footer part whose story comparison is refused is left out of
+  // the redline whole: none of its stories is spliced, so the output carries
+  // the revised part, and it is listed. The outer comparison already lists a
+  // part whose ordinary content changed; a part holding a text box is listed
+  // here too, since the outer comparison never sees its box content (#1469).
+  // An inserted or deleted part's lifecycle story stands alone, and its path
+  // may name an original-package part; every other story shares its revised
+  // part with that part's ordinary and text-box stories.
+  const sharesRevisedPart = (story: TextBoxStoryInput): boolean =>
+    story.ancillaryMode !== 'inserted' && story.ancillaryMode !== 'deleted';
+  const refusedPartPaths = new Set<string>();
+  const refusedPartChanges: UnrepresentedChange[] = [];
+  const revisedBindings = auditSectPr(
+    textBoxPlan.revisedDocumentXml,
+    await revisedArchive.getFile('word/_rels/document.xml.rels'),
+  ).bindings;
+  const refuseStoryPart = (story: TextBoxStoryInput, reason: string): void => {
+    if (story.partPath === 'word/document.xml') {
+      throw new UnsupportedTextBoxRevisionError([{
+        index: story.visualIndex,
+        partPath: story.partPath,
+        reason,
+      }]);
+    }
+    if (!sharesRevisedPart(story)) return;
+    refusedPartPaths.add(story.partPath);
+    representedPartPaths.delete(story.partPath);
+    for (let index = storyResults.length - 1; index >= 0; index -= 1) {
+      const { story: compared } = storyResults[index]!;
+      if (sharesRevisedPart(compared) && compared.partPath === story.partPath) storyResults.splice(index, 1);
+    }
+    if (!textBoxPlan.stories.some((other) => other.container === 'textBox' && other.partPath === story.partPath)) {
+      return;
+    }
+    for (const binding of revisedBindings) {
+      if (binding.targetPath !== story.partPath) continue;
+      refusedPartChanges.push({
+        scope: binding.kind,
+        kind: 'changed',
+        sectionIndex: binding.sectionOrdinal,
+        role: binding.role,
+      });
+    }
+  };
   const compareStory = async (story: TextBoxStoryInput): Promise<void> => {
+    if (sharesRevisedPart(story) && refusedPartPaths.has(story.partPath)) return;
     if (
       story.ancillaryMode === 'inserted' &&
       !story.slotLifecycle &&
@@ -1589,12 +1635,13 @@ async function compareDocumentsTagged(
           : undefined;
     // A nested story's tables get the main-body row machinery: an inserted
     // or deleted row is tracked with w:trPr/w:ins or w:trPr/w:del, and a
-    // changed row skeleton is replaced (#1393). When the guard refuses the
-    // story's tables, a header or footer part with no text box in it is left
-    // uncompared, so it stays listed (as a part the eligibility gates turned
-    // away does) instead of aborting the whole comparison. A text-box story,
-    // or a part holding one, keeps the unguarded comparison it used before:
-    // its eligibility never admits a row change (`removeTrackableRows`).
+    // changed row skeleton is replaced (#1393). When the guard refuses a
+    // header or footer part's own story, beside a text box or not, the part
+    // is left uncompared and listed (as a part the eligibility gates turned
+    // away is) instead of aborting the whole comparison (#1469). A text-box
+    // story keeps the unguarded comparison it used before, unless that
+    // wraps a table row or cell in a revision wrapper, which the schema
+    // forbids: its part is then refused the same way.
     const compareNestedStory = (guardTableTopology: boolean): Promise<TaggedCompareResult> =>
       compareDocumentsTaggedCore(
         lifecycleEmptySide ?? story.original,
@@ -1609,26 +1656,28 @@ async function compareDocumentsTagged(
       result = await compareNestedStory(true);
     } catch (error) {
       if (!(error instanceof UnsupportedTableTopologyComparisonError)) throw error;
-      if (
-        story.container === 'ancillaryPart' &&
-        !textBoxPlan.stories.some((other) =>
-          other.container === 'textBox' && other.partPath === story.partPath)
-      ) {
+      if (story.container === 'ancillaryPart') {
+        refuseStoryPart(story, 'the table-topology guard refused the story');
         return;
       }
       result = await compareNestedStory(false);
+      if (await revisionWrapsTableStructure(result.document)) {
+        refuseStoryPart(story, 'the text-box story comparison would wrap a table row or cell in a revision');
+        return;
+      }
     }
-    // A header or footer part with no text box in it whose own comparison
-    // does not reproduce both sides (its table rows paired differently from
-    // the eligibility scaffold) stays listed too (#1467).
+    // A header or footer part whose own comparison does not reproduce both
+    // sides (its table rows paired differently from the eligibility
+    // scaffold) stays listed too (#1467), beside a text box or not (#1469):
+    // the box content is compared as its own story, and the part's ordinary
+    // story carries the revised box on both sides.
     if (
       story.container === 'ancillaryPart' &&
       story.ancillaryMode !== 'inserted' &&
       story.ancillaryMode !== 'deleted' &&
-      !textBoxPlan.stories.some((other) =>
-        other.container === 'textBox' && other.partPath === story.partPath) &&
       !(await storyComparisonReproducesBothSides(story.original, story.revised, result.document))
     ) {
+      refuseStoryPart(story, 'the story comparison did not reproduce both sides');
       return;
     }
     refuseUnreportedBlockContainer(result.unrepresentedChanges, story.partPath);
@@ -1711,7 +1760,7 @@ async function compareDocumentsTagged(
     original,
     revised,
     outerResult.document,
-    new Set(storyResults.map((storyResult) => storyResult.partPath)),
+    new Set([...storyResults.map((storyResult) => storyResult.partPath), ...refusedPartPaths]),
   );
   for (const story of sectionAligned.stories) {
     sectionAlignedStories.add(story);
@@ -1839,6 +1888,15 @@ async function compareDocumentsTagged(
         change.role === represented.role,
     ),
   ), ...(textBoxPlan.drawingChanges ?? [])];
+  for (const change of refusedPartChanges) {
+    if (!unrepresentedChanges.some((listed) =>
+      listed.scope === change.scope &&
+      listed.kind === change.kind &&
+      listed.sectionIndex === change.sectionIndex &&
+      listed.role === change.role)) {
+      unrepresentedChanges.push(change);
+    }
+  }
   if (
     textBoxPlan.hasAncillaryTextBoxStories ||
     representedPartPaths.size > 0

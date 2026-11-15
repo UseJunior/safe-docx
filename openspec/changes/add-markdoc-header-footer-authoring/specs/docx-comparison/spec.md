@@ -53,11 +53,15 @@ paragraphs are all admitted ordinary paragraphs and which carries no revision
 record, because the story comparison tracks such a row as inserted or deleted
 under the same table-topology guard as the main body; a row holding a field,
 content control (including a cell-level one), drawing, nested table, range
-markup or table-property exceptions stays in it, and so does every row of a
-story that also holds a text box. A table topology that guard refuses in a
-header or footer part with no text box SHALL leave that part listed rather
-than abort the comparison; a text-box story the guard refuses keeps the
-unguarded comparison it used before. Field-state validation
+markup or table-property exceptions stays in it. A row beside a text box is
+left out the same way: the box's content is compared once, as the box's own
+story. A table topology that guard refuses in a header or footer part's own
+story, beside a text box or not, SHALL leave that whole part listed (none of
+its stories spliced, the revised part carried) rather than abort the
+comparison; a text-box story the guard refuses keeps the unguarded comparison
+it used before, unless that comparison would wrap a `w:tr` or `w:tc` in a
+revision, which SHALL leave its header or footer part listed the same way and
+SHALL refuse a body text box with a typed error. Field-state validation
 SHALL relationship-walk every selected header/footer part.
 Creation, deletion, rebinding, ambiguous pairing, or unsupported scaffold
 mutation SHALL produce a typed diagnostic or `unrepresentedChanges` entry and
@@ -79,12 +83,13 @@ MUST NOT be silently represented as an ordinary text edit.
 - **AND** a formatting change in such a paragraph that already carries a `w:rPrChange` or `w:pPrChange` SHALL also be tracked, with at most one formatting revision per property element and never a nested or duplicate one, while reject-all SHALL recover the original document's rejected formatting
 
 #### Scenario: [SDX-CMP-STORY-07] Header and footer table rows are tracked as whole-row revisions
-- **GIVEN** a paired default, first or even header or footer, or a text box inside one, whose table gains or loses a row of ordinary paragraphs (at the start, in the middle or at the end, beside an edit to another row, or beside a row holding a `PAGE` field), or whose row skeleton changes within an unchanged grid; or a paired header or footer holding no text box whose table gains or loses a row holding a field (complex or simple, such as a "Page X of Y" cell), a content control (inside a cell or around one), range markup such as a bookmark, or a nested table
+- **GIVEN** a paired default, first or even header or footer, or a text box inside one, whose table gains or loses a row of ordinary paragraphs (at the start, in the middle or at the end, beside an edit to another row, or beside a row holding a `PAGE` field), or whose row skeleton changes within an unchanged grid, including a table placed beside a text box whose own text changes too; or a paired header or footer whose table gains or loses a row holding a field (complex or simple, such as a "Page X of Y" cell), a content control (inside a cell or around one), range markup such as a bookmark, or a nested table
 - **WHEN** the packages are compared
 - **THEN** an inserted row SHALL carry `w:trPr/w:ins` and a deleted row `w:trPr/w:del`, and a matched row whose skeleton changed SHALL be replaced by a deleted and an inserted row (a vertical-merge band as a whole), as in the main body
 - **AND** accept-all SHALL recover the revised story and reject-all the original story, with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`
 - **AND** the story SHALL NOT remain in `unrepresentedChanges`, an unchanged field SHALL keep its structure without revision markup, an inserted or deleted field SHALL keep its field characters and instruction together in each projection, and the emitted document SHALL validate against the vendored Transitional schema
-- **AND** inserting or deleting a row that holds a drawing or table-property exceptions; a change to a row's table-property exceptions or to a kept row's cell-level content control; a row change in a header or footer that holds a text box; or a whole table, SHALL still be listed
+- **AND** inserting or deleting a row that holds a drawing or table-property exceptions; a change to a row's table-property exceptions or to a kept row's cell-level content control; a cell added beside a cell-level content control, in a table inside a header or footer text box as elsewhere; or a whole table, SHALL still be listed
+- **AND** a header or footer text box's content SHALL be compared once, as the box's own story, and a part whose story comparison the table-topology guard refuses SHALL be listed whole and carried as the revised part; no revision wrapper SHALL wrap a `w:tr` or `w:tc`
 - **AND** a row holding a field that replaces another row holding a field, content control, range markup or nested table, and a row holding a content control, range markup or nested table that replaces any other row of the same table, SHALL still be listed, since the comparison may pair the two rows and a change to a field instruction or a content control's properties inside a kept row is listed (SDX-CMP-STORY-06)
 
 #### Scenario: [SDX-CMP-STORY-05] Unsupported topology remains unrepresented

@@ -1549,9 +1549,11 @@ const ROW_REVISION_RECORDS = new Set([
  * paragraphs were all removed as admitted plain paragraphs and which carries
  * no revision record, so a story whose tables differ only by such rows reads
  * as the same scaffold. Rows inside a nested table, a content control or a
- * text box are not touched, and neither is any row of a story that holds a
- * text box. A row with anything besides its row properties and cells of
- * plain paragraphs stays too: a cell-level content control or custom XML
+ * text box are not touched. A row beside a text box is removed like any
+ * other: the story comparison holds it to the table-topology guard, and a
+ * part whose story the guard refuses is listed, never compared on the
+ * unguarded path (#1469). A row with anything besides its row properties
+ * and cells of plain paragraphs stays too: a cell-level content control or custom XML
  * element, range markup, a nested table, or table-property exceptions
  * (`w:tblPrEx`, whose `w:tblPrExChange` docx-core's Reject All does not
  * restore), so a change to it is listed.
@@ -1560,9 +1562,6 @@ const ROW_REVISION_RECORDS = new Set([
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  */
 function removeTrackableRows(root: Element): void {
-  // A story holding a text box keeps every row: its comparison may fall back
-  // to the unguarded path, which must not see a newly admitted row change.
-  if (root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0) return;
   for (const table of directChildElements(root)) {
     if (!isWordElement(table, 'tbl')) continue;
     for (const row of directChildElements(table)) {
@@ -1680,18 +1679,17 @@ function holdsOnlyFieldScaffold(row: Element): boolean {
  * field instruction or content-control change does (SDX-CMP-STORY-06): the
  * comparison may pair them.
  *
- * Neither story may hold a text box: its comparison may fall back to the
- * unguarded path, which must not see a newly admitted row change.
+ * A story holding a text box is treated the same way: the box's own content
+ * is compared as its own story, and the part's ordinary story is held to the
+ * table-topology guard without the unguarded fallback, so a row change the
+ * guard refuses leaves the whole part listed (#1469).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @see https://github.com/UseJunior/safe-docx/issues/1467
+ * @see https://github.com/UseJunior/safe-docx/issues/1469
  */
 function removeUnpairedTrackableRows(originalRoot: Element, revisedRoot: Element): void {
-  if (
-    originalRoot.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0
-    || revisedRoot.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0
-  ) return;
   const directTables = (root: Element): Element[] =>
     directChildElements(root).filter((child) => isWordElement(child, 'tbl'));
   const rows = (table: Element): Element[] =>
@@ -5230,6 +5228,30 @@ export async function storyComparisonReproducesBothSides(
   );
   return projectedStoryContent(comparedXml!, 'accept') === projectedStoryContent(revisedXml!, 'accept')
     && projectedStoryContent(comparedXml!, 'reject') === projectedStoryContent(originalXml!, 'reject');
+}
+
+/**
+ * Whether a compared story wraps a table row or cell in a revision wrapper
+ * (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`), directly or through a content
+ * control or custom XML element. Those wrappers hold run content only
+ * (`CT_RunTrackChange`); a whole-row insertion or deletion is recorded inside
+ * `w:trPr` instead, and a cell has no such wrapper at all. The unguarded story
+ * comparison can emit one for a cell added beside a cell-level content
+ * control; that output is refused, not published.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.78
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.65
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see https://github.com/UseJunior/safe-docx/issues/1469
+ */
+export async function revisionWrapsTableStructure(compared: Buffer): Promise<boolean> {
+  const document = parseXml(await (await DocxArchive.load(compared)).getDocumentXml());
+  const holdsTableStructure = (element: Element): boolean => directChildElements(element).some((child) =>
+    isWordElement(child, 'tr', 'tc')
+    || (isWordElement(child, 'sdt', 'sdtContent', 'customXml') && holdsTableStructure(child)));
+  return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, '*'))
+    .some((element) => REVISION_WRAPPER_NAMES.has(element.localName) && holdsTableStructure(element));
 }
 
 /** A projected story part's content, or `null` when it shows nothing. */

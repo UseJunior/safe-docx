@@ -1,8 +1,10 @@
 /**
  * When the main-body table-topology guard refuses a header or footer story's
- * tables, the comparison does not abort: a part with no text box in it is
- * left uncompared and listed in `unrepresentedChanges`, and a text-box story
- * keeps the unguarded comparison it used before #1393.
+ * tables, the comparison does not abort: a part whose own story is refused,
+ * beside a text box or not (#1469), is left uncompared and listed in
+ * `unrepresentedChanges`, and a text-box story keeps the unguarded comparison
+ * it used before #1393 unless that would wrap a table row or cell in a
+ * revision.
  *
  * No real input is known to reach the refusal once the eligibility gates
  * have admitted a story, so the guard is wrapped to refuse any story that
@@ -97,6 +99,28 @@ describe('a header story whose tables the topology guard refuses (#1393)', () =>
       await then('the default header is listed and carries the revised part without revisions', async () => {
         expect(result.unrepresentedChanges).toEqual([
           expect.objectContaining({ scope: 'header', kind: 'changed', role: 'default' }),
+        ]);
+        expect(await headerXml(result.document)).toBe(await headerXml(revised));
+      });
+      await then('the body edit is tracked', async () => {
+        expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
+        expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+      });
+    },
+  );
+
+  test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
+    'lists a refused header part beside a text box whole, leaving its box story out too',
+    async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('a header table that gains a row the guard refuses, beside a text box whose text changes', () =>
+        Promise.all([
+          headerPackage('Body draft', table(row(REFUSE_MARKER)) + textBox('Box draft')),
+          headerPackage('Body final', table(row(REFUSE_MARKER), row('Added')) + textBox('Box final')),
+        ]));
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the default header is listed once and carries the revised part without revisions', async () => {
+        expect(result.unrepresentedChanges).toEqual([
+          { scope: 'header', kind: 'changed', sectionIndex: 0, role: 'default' },
         ]);
         expect(await headerXml(result.document)).toBe(await headerXml(revised));
       });
