@@ -161,13 +161,6 @@ function guardUnmatchedTable(table: Element, tableIndex: number): void {
       throw new UnsupportedTableTopologyComparisonError('tableContainer', tableIndex);
     }
   }
-  for (const row of rows) {
-    const trPr = direct(row, 'trPr')[0];
-    if (trPr && childElements(trPr).some((child) =>
-      child.namespaceURI === W_NS && ['ins', 'del'].includes(child.localName))) {
-      throw new UnsupportedTableTopologyComparisonError('tableContainer', tableIndex);
-    }
-  }
 }
 
 function outermostTables(root: Element): Element[] {
@@ -332,23 +325,30 @@ function rowFootprint(row: Element): TableRowFootprint {
  * malformed source table still yields a footprint that compares equal to an
  * identical projection rather than throwing.
  *
+ * With `omitRowlessTables`, a table holding no `w:tr` is left out of the
+ * signature, as the comparison leaves such a table out of the redline when
+ * only one document has it (see `leaveOutRowlessTables`, #1400).
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
  * @see https://github.com/UseJunior/safe-docx/issues/1395
  */
-export function bodyTableFootprint(xml: string): BodyTableFootprint {
+export function bodyTableFootprint(xml: string, options: { omitRowlessTables?: boolean } = {}): BodyTableFootprint {
   const document = parseXml(xml);
   const body = document.getElementsByTagNameNS(W_NS, 'body')[0];
   if (!body) return { topLevelTableBlocks: [], tables: [] };
+  const counted = (table: Element): boolean =>
+    !options.omitRowlessTables || table.getElementsByTagNameNS(W_NS, 'tr').length > 0;
   // Paragraph-mark projection can legitimately retain an empty paragraph.
   // Its count is not a table-topology fact, so only table-bearing top-level
   // blocks participate in this guard.
   const topLevelTableBlocks = childElements(body)
     .filter((child) => child.namespaceURI === W_NS
-      && (child.localName === 'tbl' || child.getElementsByTagNameNS(W_NS, 'tbl').length > 0))
+      && (child.localName === 'tbl' ? counted(child)
+        : Array.from(child.getElementsByTagNameNS(W_NS, 'tbl')).some(counted)))
     .map((child) => child.localName);
-  const tables = Array.from(body.getElementsByTagNameNS(W_NS, 'tbl')).map((table): TableFootprint => {
+  const tables = Array.from(body.getElementsByTagNameNS(W_NS, 'tbl')).filter(counted).map((table): TableFootprint => {
     let depth = 0;
     for (let parent = table.parentNode; parent && parent !== body; parent = parent.parentNode) {
       if (parent.nodeType === 1 && (parent as Element).namespaceURI === W_NS

@@ -9,17 +9,17 @@
  * A row inside the box whose cell skeleton changes beside a cell-level
  * content control is replaced whole, as in the main body (SDX-COMPTABLE-12,
  * #1483): the original row deleted, then the revised row inserted, each with
- * its own whole content control. The box's story comparison never publishes
- * a `w:ins` wrapped around `w:tc`, which the schema forbids: a change the
- * row replacement still cannot carry (a pending cell-level topology
- * revision) leaves a header or footer part out of the redline whole, and
- * refuses a body text box with a typed error.
+ * its own whole content control. So is a row whose cell carries a pending
+ * cell-level topology revision (#1400), each copy keeping its source's. The
+ * box's story comparison never publishes a `w:ins` wrapped around `w:tc`,
+ * which the schema forbids.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @see https://github.com/UseJunior/safe-docx/issues/1469
  * @see https://github.com/UseJunior/safe-docx/issues/1483
+ * @see https://github.com/UseJunior/safe-docx/issues/1400
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -35,7 +35,6 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { compareDocumentsAtomizer, type TaggedCompareResult } from './pipeline.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
-import { UnsupportedTextBoxRevisionError } from './textBoxRevisionSafety.js';
 
 const TEST_FEATURE = 'add-markdoc-header-footer-authoring';
 
@@ -554,73 +553,108 @@ describe('a cell added or removed beside a cell-level content control in a body 
 });
 
 /**
- * What the row replacement still cannot carry: a row whose cell already
- * holds a pending cell-level topology revision (`w:cellIns`, §17.13.5.2).
- * Readers resolve a cell revision inside a row revision inconsistently, so
- * the guard refuses the box story, and the unguarded retry would wrap the new
- * cell in `w:ins`. A body text box has no part to leave out, so the
- * comparison is refused with a typed error (#1469, narrowed by #1483).
+ * A row whose cell already holds a pending cell-level topology revision
+ * (`w:cellIns`, §17.13.5.2) and whose skeleton changes is replaced whole like
+ * any other (#1400): the deleted original row keeps the original's pending
+ * `w:cellIns` and the inserted revised row the revised one, so each
+ * projection resolves exactly its source's pending revision, and no revision
+ * wrapper ever holds a cell.
  */
-describe('a body text box row whose skeleton changes beside a pending cell insertion (#1483)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
-  test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
-    'refuses with a typed error instead of wrapping a cell in w:ins',
+const pendingCell = '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:cellIns w:id="80" w:author="Earlier"/></w:tcPr>'
+  + `${paragraph(text('Corp'))}</w:tc>`;
+/** A three-column box table whose row holds a cell carrying a pending `w:cellIns`, then `extra`. */
+const pendingBoxTable = (extra: string, trPr: string): string =>
+  table(`<w:tr>${trPr}${cell(text('Client'))}${pendingCell}${extra}</w:tr>`)
+    .replace('</w:tblGrid>', '<w:gridCol w:w="3000"/></w:tblGrid>') + paragraph(text('Box'));
+
+/** The number of `w:cellIns` markers in a part, each a pending revision carried from an input. */
+async function pendingCellInsertions(buffer: Buffer, partPath: string): Promise<number> {
+  const xml = (await (await DocxArchive.load(buffer)).getFile(partPath))!;
+  return parseXml(xml).getElementsByTagNameNS(W_NS, 'cellIns').length;
+}
+
+describe('a body text box row whose skeleton changes beside a pending cell insertion (#1400)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  test.openspec('[SDX-COMPTABLE-09] a row holding a pending cell-level revision emits a native row replacement')(
+    'replaces the row, each copy keeping its pending w:cellIns, instead of wrapping a cell in w:ins',
     async ({ given, when, then }: AllureBddContext) => {
-      const pending = '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:cellIns w:id="80" w:author="Earlier"/></w:tcPr>'
-        + `${paragraph(text('Corp'))}</w:tc>`;
-      const body = (extra: string, trPr: string): string => paragraph(text('Body')) + textBox('DrawingML',
-        table(`<w:tr>${trPr}${cell(text('Client'))}${pending}${extra}</w:tr>`)
-          .replace('</w:tblGrid>', '<w:gridCol w:w="3000"/></w:tblGrid>') + paragraph(text('Box')));
+      const body = (extra: string, trPr: string, ownText: string): string => paragraph(text(ownText))
+        + textBox('DrawingML', pendingBoxTable(extra, trPr));
       const [original, revised] = await given('a body text box table whose row gains a cell beside a cell carrying a pending w:cellIns', () =>
         Promise.all([
-          buildDocxFromBodyXml(body('', '<w:trPr><w:gridAfter w:val="1"/></w:trPr>'), [], BODY_NAMESPACE_OPTIONS),
-          buildDocxFromBodyXml(body(cell(text('Inc')), ''), [], BODY_NAMESPACE_OPTIONS),
+          buildDocxFromBodyXml(body('', '<w:trPr><w:gridAfter w:val="1"/></w:trPr>', 'Body draft'), [], BODY_NAMESPACE_OPTIONS),
+          buildDocxFromBodyXml(body(cell(text('Inc')), '', 'Body final'), [], BODY_NAMESPACE_OPTIONS),
         ]));
-      const comparison = await when('the pair is compared', () =>
-        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
-          () => undefined,
-          (error: unknown) => error,
-        ));
-      await then('the comparison is refused with a typed text-box error', () => {
-        expect(comparison).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      const BODY = 'word/document.xml';
+      const boxes = async (buffer: Buffer, projection: Projection | 'none', applier: 'ast' | 'core') => {
+        let archive = await DocxArchive.load(buffer);
+        if (applier === 'core' && projection !== 'none') {
+          const document = await DocxDocument.load(buffer);
+          if (projection === 'accept') await document.acceptChanges();
+          else await document.rejectChanges();
+          archive = await DocxArchive.load((await document.toBuffer()).buffer);
+        }
+        const xml = (await archive.getFile(BODY))!;
+        const project = projection === 'none' || applier === 'core'
+          ? (value: string) => value
+          : projection === 'accept' ? acceptAllChanges : rejectAllChanges;
+        return partView(project(xml)).boxes;
+      };
+      await then('the box table replaces the row, both copies keeping the pending w:cellIns, with no revision around a cell', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        const document = parseXml(await (await DocxArchive.load(result.document)).getDocumentXml());
+        const markers = Array.from(document.getElementsByTagNameNS(W_NS, 'trPr')).flatMap(elementChildren);
+        expect(markers.filter((marker) => isW(marker, 'del'))).toHaveLength(1);
+        expect(markers.filter((marker) => isW(marker, 'ins'))).toHaveLength(1);
+        expect(await pendingCellInsertions(result.document, BODY)).toBe(2);
+        const wrapped = Array.from(document.getElementsByTagNameNS(W_NS, '*'))
+          .filter((element) => isW(element, 'ins', 'del', 'moveFrom', 'moveTo'))
+          .filter((wrapper) => elementChildren(wrapper).some((child) => isW(child, 'tr', 'tc', 'sdt')));
+        expect(wrapped).toHaveLength(0);
+      });
+      await then('the box projects as each source does, with both appliers', async () => {
+        for (const applier of ['ast', 'core'] as const) {
+          expect(await boxes(result.document, 'accept', applier), applier).toEqual(await boxes(revised, 'accept', applier));
+          expect(await boxes(result.document, 'reject', applier), applier).toEqual(await boxes(original, 'reject', applier));
+        }
+        expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
+        expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+      });
+      await then('the compared package passes the emitted-document schema gate', async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'sdx-1400-'));
+        try {
+          const path = join(directory, 'compared.docx');
+          await writeFile(path, result.document);
+          const check = spawnSync(process.execPath, [schemaScript, path], { encoding: 'utf8' });
+          expect(check.status, check.stdout + check.stderr).toBe(0);
+        } finally {
+          await rm(directory, { recursive: true, force: true });
+        }
       });
     },
   );
 });
 
-/** The same change in a header or footer text box leaves the part listed and carried as revised. */
-describe('a header or footer text box row whose skeleton changes beside a pending cell insertion (#1483)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+/** The same change in a header or footer text box replaces the row inside the part. */
+describe('a header or footer text box row whose skeleton changes beside a pending cell insertion (#1400)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   for (const kind of ['header', 'footer'] as const) {
-    test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
-      `lists the ${kind} instead of wrapping a cell in w:ins`,
+    test.openspec('[SDX-CMP-STORY-07] Header and footer table rows are tracked as whole-row revisions')(
+      `replaces the ${kind} row, each copy keeping its pending w:cellIns, instead of wrapping a cell in w:ins`,
       async ({ given, when, then }: AllureBddContext) => {
-        const pending = '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:cellIns w:id="80" w:author="Earlier"/></w:tcPr>'
-          + `${paragraph(text('Corp'))}</w:tc>`;
-        const part = (extra: string, trPr: string): string => paragraph(text('Draft')) + textBox('VML',
-          table(`<w:tr>${trPr}${cell(text('Client'))}${pending}${extra}</w:tr>`)
-            .replace('</w:tblGrid>', '<w:gridCol w:w="3000"/></w:tblGrid>') + paragraph(text('Box')));
+        const part = (extra: string, trPr: string, ownText: string): string => paragraph(text(ownText))
+          + textBox('VML', pendingBoxTable(extra, trPr));
         const [original, revised] = await given(`a ${kind} text box table whose row gains a cell beside a cell carrying a pending w:cellIns, beside a body edit`, () =>
           Promise.all([
-            storyPackage('Body draft', kind, part('', '<w:trPr><w:gridAfter w:val="1"/></w:trPr>')),
-            storyPackage('Body final', kind, part(cell(text('Inc')), '')),
+            storyPackage('Body draft', kind, part('', '<w:trPr><w:gridAfter w:val="1"/></w:trPr>', 'Draft')),
+            storyPackage('Body final', kind, part(cell(text('Inc')), '', 'Final')),
           ]));
         const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
-        await then(`the default ${kind} is listed once and carried as the revised part, with no revision around a cell`, async () => {
-          expect(result.unrepresentedChanges).toEqual([
-            { scope: kind, kind: 'changed', sectionIndex: 0, role: 'default' },
-          ]);
-          expect(await rowRevisions(result.document, kind)).toEqual({ inserted: 0, deleted: 0, wrappedCells: 0 });
-          for (const applier of ['ast', 'core'] as const) {
-            for (const projection of ['accept', 'reject'] as const) {
-              expect(await projectedPart(result.document, kind, projection, applier), `${projection} ${applier}`)
-                .toEqual(await projectedPart(revised, kind, 'none', 'ast'));
-            }
-          }
+        await then(`nothing is left unrepresented and the ${kind} replaces the row, both copies keeping the pending w:cellIns`, async () => {
+          expect(result.unrepresentedChanges).toBeUndefined();
+          expect(await rowRevisions(result.document, kind)).toEqual({ inserted: 1, deleted: 1, wrappedCells: 0 });
+          expect(await pendingCellInsertions(result.document, PART_PATH(kind))).toBe(2);
         });
-        await then('the body edit is tracked', async () => {
-          expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
-          expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
-        });
-        await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document, kind));
+        await expectProjections({ then }, kind, original, revised, result);
       },
     );
   }

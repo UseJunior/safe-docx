@@ -686,11 +686,15 @@ export async function buildStandaloneTaggedPackage(
   const originalProjectionXml = rejectAllChanges(originalXml);
   const revisedProjectionXml = acceptAllChanges(revisedXml);
   if (options.guardTableTopology ?? true) {
+    // A table with no rows that only one document holds is left out of the
+    // redline and listed (#1400).
+    const footprint = { omitRowlessTables: unrepresentedChanges.some((change) => change.scope === 'table') };
     for (const [projection, expectedXml, actualXml] of [
       ['reject', originalProjectionXml, rejectAllChanges(taggedXml)],
       ['accept', revisedProjectionXml, acceptAllChanges(taggedXml)],
     ] as const) {
-      const mismatch = findTableFootprintMismatch(bodyTableFootprint(expectedXml), bodyTableFootprint(actualXml));
+      const mismatch = findTableFootprintMismatch(
+        bodyTableFootprint(expectedXml, footprint), bodyTableFootprint(actualXml, footprint));
       if (mismatch) {
         throw new UnsupportedTableTopologyComparisonError('projection', mismatch.tableIndex,
           mismatch.rowIndex, mismatch.cellIndex, mismatch.columnIndex, { projection, mismatch });
@@ -1655,6 +1659,10 @@ async function compareDocumentsTagged(
     let result: TaggedCompareResult;
     try {
       result = await compareNestedStory(true);
+      // A nested story's unrepresented changes are not published, so a
+      // row-less table it would leave out (#1400) is refused like any other.
+      const leftOut = result.unrepresentedChanges?.find((change) => change.scope === 'table');
+      if (leftOut) throw new UnsupportedTableTopologyComparisonError('emptyTable', leftOut.table?.index ?? 0);
     } catch (error) {
       if (!(error instanceof UnsupportedTableTopologyComparisonError)) throw error;
       if (story.container === 'ancillaryPart') {

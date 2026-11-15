@@ -1446,6 +1446,7 @@ const CHANGE_ELEMENT_BY_SCOPE = {
  * references are never copied into `w:sectPrChange/w:sectPr` (#944).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
  * @see https://github.com/UseJunior/safe-docx/issues/944
  */
 function applyPropertyDelta(
@@ -1480,6 +1481,14 @@ function applyPropertyDelta(
   }
   const live = delta.revised ? cloneElement(delta.revised) : undefined;
   const original = delta.original ? cloneElement(delta.original) : undefined;
+  if (original && delta.scope === 'tableRow') {
+    // `w:trPrChange` holds a `CT_TrPrBase`, which has no `w:ins` or `w:del`:
+    // a pending row insertion or deletion is a revision of the row, not one
+    // of its properties, and stays on the live `w:trPr` (#1400).
+    for (const child of childElements(original)) {
+      if (child.namespaceURI === W_NS && ['ins', 'del'].includes(child.localName)) original.removeChild(child);
+    }
+  }
   const expectedLocalName = live?.localName ?? original?.localName;
   let property = childElements(node).find((child) => child.localName === expectedLocalName);
   if (!property && (live || original)) {

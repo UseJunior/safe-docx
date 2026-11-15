@@ -132,7 +132,8 @@ export type UnrepresentedChangeScope =
   | 'footer'
   | 'contentControl'
   | 'picture'
-  | 'drawing';
+  | 'drawing'
+  | 'table';
 export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 
 /**
@@ -226,6 +227,29 @@ export interface UnrepresentedDrawingChange {
 }
 
 /**
+ * A table with no rows (a `w:tbl` holding no `w:tr`) present in one document
+ * only (`table` scope). A table is inserted or deleted only through the
+ * revision markers of its rows (ECMA-376 Part 1 §17.13.5.17, §17.13.5.12), so
+ * a table with no rows has nothing to carry one, and the comparison leaves it
+ * out of the redline: Accept All of an added one, or Reject All of a removed
+ * one, lacks it. Such a table holds no cell and no text.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see https://github.com/UseJunior/safe-docx/issues/1400
+ */
+export interface UnrepresentedTableChange {
+  /** The story holding the table. */
+  story: 'body';
+  /**
+   * Zero-based document-order ordinal of the table among the `w:tbl`
+   * elements of the document that holds it, nested tables included: the
+   * revised document for an added table, the original for a removed one.
+   */
+  index: number;
+}
+
+/**
  * A package-level input difference not expressed by emitted tracked-change
  * markup. Revision counts intentionally remain text-oriented.
  */
@@ -242,6 +266,8 @@ export interface UnrepresentedChange {
   picture?: UnrepresentedPictureChange;
   /** The affected drawing when scope is `drawing`. */
   drawing?: UnrepresentedDrawingChange;
+  /** The table left out of the redline when scope is `table`. */
+  table?: UnrepresentedTableChange;
 }
 
 /** @deprecated Tagged publication throws instead of falling back to reconstruction. */
