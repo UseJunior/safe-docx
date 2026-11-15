@@ -125,6 +125,7 @@ import {
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
+  assertAssembledBodyRoundTrip,
   type BlankSlotParts,
   deletedAncillaryStoryOutputPaths,
   displacedLifecycleStoryXml,
@@ -1802,31 +1803,19 @@ async function compareDocumentsTagged(
       (name) => !sourceDuplicateBookmarkNames.has(name),
     );
   if (introducedDuplicateBookmarkNames.length > 0) {
+    // Bookmark names are scanned in word/document.xml only.
     throw new UnsupportedTextBoxRevisionError([{
-      index: textBoxPlan.stories[0]?.visualIndex ?? 0,
-      partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
+      index: textBoxPlan.stories.find((story) => story.partPath === 'word/document.xml')?.visualIndex ?? 0,
+      partPath: 'word/document.xml',
       reason: 'assembled nested stories introduced duplicate bookmark names: ' +
         introducedDuplicateBookmarkNames.join(', '),
     }]);
   }
-  const acceptedComparison = compareTexts(
-    extractRoundTripComparisonText(textBoxPlan.revisedDocumentXml),
-    extractRoundTripComparisonText(acceptAllChanges(comparedDocumentXml)),
+  assertAssembledBodyRoundTrip(
+    textBoxPlan.originalDocumentXml,
+    textBoxPlan.revisedDocumentXml,
+    comparedDocumentXml,
   );
-  const rejectedComparison = compareTexts(
-    extractRoundTripComparisonText(textBoxPlan.originalDocumentXml),
-    extractRoundTripComparisonText(rejectAllChanges(comparedDocumentXml)),
-  );
-  if (
-    !acceptedComparison.normalizedIdentical ||
-    !rejectedComparison.normalizedIdentical
-  ) {
-    throw new UnsupportedTextBoxRevisionError([{
-      index: textBoxPlan.stories[0]?.visualIndex ?? 0,
-      partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
-      reason: 'assembled nested stories failed accept/reject round-trip validation',
-    }]);
-  }
   const results = [outerResult, ...storyResults.map(({ result }) => result)];
   const stats = results.reduce<CompareStats>(
     (combined, result) => ({

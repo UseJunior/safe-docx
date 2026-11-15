@@ -16,6 +16,7 @@ import {
 } from '../markupCompatibility.js';
 import {
   acceptAllChanges,
+  compareTexts,
   rejectAllChanges,
 } from './trackChangesAcceptorAst.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
@@ -5590,4 +5591,65 @@ export function assertTextBoxContentUnchanged(
   }
 
   if (changes.length > 0) throw new UnsupportedTextBoxRevisionError(changes);
+}
+
+/**
+ * Fail closed when the assembled main story does not project to both inputs.
+ *
+ * Either input may carry pending revisions of its own (#1464). The compared
+ * document keeps them and layers the comparison's revisions on top, so its
+ * Accept All must read as the revised document's Accept All and its Reject
+ * All as the original's Reject All: the law the outer comparison's own gate
+ * holds. Held to the raw input text instead, a pending insertion or deletion
+ * reads as a difference no assembly can remove (#1486).
+ *
+ * The check judges `word/document.xml` only; a header or footer part is held
+ * to its pages by `assertAncillaryTextBoxStoryProjection`. A failure names
+ * the first body text box whose text differs in either projection, so the
+ * locator points at a box a reader can find; when every box reads the same,
+ * the reason says the text outside them failed.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @see https://github.com/UseJunior/safe-docx/issues/1486
+ * @see https://github.com/UseJunior/safe-docx/issues/1464
+ */
+export function assertAssembledBodyRoundTrip(
+  originalDocumentXml: string,
+  revisedDocumentXml: string,
+  comparedDocumentXml: string,
+): void {
+  const pairs: Array<[expected: string, actual: string]> = [
+    [acceptAllChanges(revisedDocumentXml), acceptAllChanges(comparedDocumentXml)],
+    [rejectAllChanges(originalDocumentXml), rejectAllChanges(comparedDocumentXml)],
+  ];
+  const failed = pairs.filter(([expected, actual]) => !compareTexts(
+    extractRoundTripComparisonText(expected),
+    extractRoundTripComparisonText(actual),
+  ).normalizedIdentical);
+  if (failed.length === 0) return;
+  // Every stored copy counts, as it does in the whole-body text above: a
+  // difference confined to an `mc:Fallback` twin still names its box. Copies
+  // are judged with the same normalization as the whole body.
+  const boxCopyTexts = (xml: string): string[][] => textBoxes(xml).map((group) =>
+    allCopies(group).map((copy) => extractRoundTripComparisonText(serializer.serializeToString(copy))));
+  const sameBox = (expected: string[] | undefined, actual: string[] | undefined): boolean =>
+    expected !== undefined && actual !== undefined && expected.length === actual.length &&
+    expected.every((text, copy) => compareTexts(text, actual[copy]!).normalizedIdentical);
+  let divergentBox: number | undefined;
+  for (const [expected, actual] of failed) {
+    const [expectedBoxes, actualBoxes] = [boxCopyTexts(expected), boxCopyTexts(actual)];
+    const count = Math.max(expectedBoxes.length, actualBoxes.length);
+    for (let index = 0; index < count && divergentBox === undefined; index++) {
+      if (!sameBox(expectedBoxes[index], actualBoxes[index])) divergentBox = index;
+    }
+    if (divergentBox !== undefined) break;
+  }
+  throw new UnsupportedTextBoxRevisionError([{
+    index: divergentBox ?? 0,
+    partPath: 'word/document.xml',
+    reason: divergentBox === undefined
+      ? 'assembled nested stories failed accept/reject round-trip validation in the body text outside its text boxes'
+      : 'assembled nested stories failed accept/reject round-trip validation',
+  }]);
 }
