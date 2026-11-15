@@ -465,6 +465,74 @@ describe('a section break beside a header or footer text box whose part is share
   }
 });
 
+describe('a section break beside a retained or a final section whose footer holds a text box (#1487)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  const FOOTER = (id: string, target: string, legend: string, boxText = 'Confidential'): PartSpec =>
+    ({ id, kind: 'footer', target, xml: storyXml('DrawingML', { ...BASE_STORY, legend, boxText }) });
+  const LEADING = FOOTER('rIdA', 'footer1.xml', 'Legend draft');
+  const LEADING_EDITED = FOOTER('rIdA', 'footer1.xml', 'Legend final');
+  const FINAL = FOOTER('rIdC', 'footer2.xml', 'Final section footer', 'Final section box');
+
+  for (const direction of ['added', 'removed'] as const) {
+    test(`tracks the edited footer of a retained first section when an inheriting section after it is ${direction}`, async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('a first section and a final section with footers of their own; the revision edits the text beside the first footer box', () => {
+        const two = (leading: PartSpec): Promise<Buffer> =>
+          sectionedPackage(['First.', 'Last.'], [[leading], [FINAL]], [leading, FINAL]);
+        const three = (leading: PartSpec): Promise<Buffer> =>
+          sectionedPackage(['First.', 'Inserted middle.', 'Last.'], [[leading], [], [FINAL]], [leading, FINAL]);
+        return direction === 'added'
+          ? Promise.all([two(LEADING), three(LEADING_EDITED)])
+          : Promise.all([three(LEADING), two(LEADING_EDITED)]);
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the break is a paragraph-mark revision, the footer edit is tracked and nothing is listed', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        expect(await storyRevisionCount(result.document)).toBeGreaterThan(0);
+        expect(sectionBreakRevisions(await (await DocxArchive.load(result.document)).getDocumentXml()))
+          .toEqual(direction === 'added' ? { added: 1, removed: 0 } : { added: 0, removed: 1 });
+      });
+      await expectRoundTrip({ then }, original, revised, result);
+    });
+  }
+
+  test('tracks the edited first footer when a final section with a footer of its own is added', async ({ given, when, then }: AllureBddContext) => {
+    const [original, revised] = await given('one section; the revision edits its footer and adds a final section that names a new boxed footer', () => Promise.all([
+      sectionedPackage(['First.'], [[LEADING]], [LEADING]),
+      sectionedPackage(['First.', 'Added last.'], [[LEADING_EDITED], [FINAL]], [LEADING_EDITED, FINAL]),
+    ]));
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('nothing is left unrepresented', () => {
+      expect(result.unrepresentedChanges).toBeUndefined();
+    });
+    await expectRoundTrip({ then }, original, revised, result);
+  });
+
+  test('keeps an unchanged first footer paired with itself when the final section and its footer are removed', async ({ given, when, then }: AllureBddContext) => {
+    const [original, revised] = await given('two sections with boxed footers of their own; the revision removes the final section and keeps the first footer unchanged', () => Promise.all([
+      sectionedPackage(['First.', 'Last.'], [[LEADING], [FINAL]], [LEADING, FINAL]),
+      sectionedPackage(['First.'], [[LEADING]], [LEADING]),
+    ]));
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    // The final section's pages show the revised body-level references after
+    // Reject All too (a w:sectPrChange snapshot cannot carry them), so the
+    // removed final footer cannot be shown again and stays listed. The
+    // unchanged first footer must not be paired with the removed one, which
+    // would show the removed story on the first section's pages instead.
+    await then('the removed final footer is listed and the first footer stays the original story', async () => {
+      expect(result.unrepresentedChanges).toEqual([{ scope: 'footer', kind: 'removed', sectionIndex: 1, role: 'default' }]);
+      const expectedAccepted = await shownPages(revised);
+      expect(await shownPages(result.document, acceptAllChanges)).toEqual(expectedAccepted);
+      expect(await shownPages(await appliedByDocxCore(result.document, 'accept'))).toEqual(expectedAccepted);
+      const firstSection = (pages: string[]): string[] => pages.filter((page) => page.startsWith('0:'));
+      const expectedFirst = firstSection(await shownPages(original));
+      expect(firstSection(await shownPages(result.document, rejectAllChanges))).toEqual(expectedFirst);
+      expect(firstSection(await shownPages(await appliedByDocxCore(result.document, 'reject')))).toEqual(expectedFirst);
+      expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+      expect(await liveSectionCount(result.document, rejectAllChanges)).toBe(await liveSectionCount(original));
+    });
+    await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document));
+  });
+});
+
 /**
  * What an ODT export shows: the body text (`content.xml`) and the distinct
  * header and footer texts (LibreOffice keeps them in `styles.xml` master

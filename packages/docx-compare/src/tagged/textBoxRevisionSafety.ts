@@ -2122,33 +2122,47 @@ function pairSelectedAncillaryStories(
  * section count or layout changed. The body-level `w:sectPr` is the last
  * section on both sides, and a paragraph-level break the body comparison
  * adds or removes is recorded on paragraph marks (#1144), so the last
- * sections always correspond. The other sections align by what they show
- * (`signatures`), and a run of unmatched sections of equal length on both
- * sides between two aligned ones aligns in order.
+ * sections correspond, unless what they show places one of them elsewhere:
+ * when a final section is removed or added outright, the section that shows
+ * what the other side's last section shows is its counterpart. The other
+ * sections align by what they show (`signatures`). Between two aligned
+ * sections, a run of unmatched sections of equal length on both sides aligns
+ * in order, and runs of unequal length align as a whole, so a story is
+ * paired only when every section of both runs shows the same one per slot.
  */
 function alignedSectionOrdinals(
   original: readonly string[],
   revised: readonly string[],
 ): Array<[original: number, revised: number]> {
   if (original.length === 0 || revised.length === 0) return [];
-  const leading = { original: original.slice(0, -1), revised: revised.slice(0, -1) };
-  const unmatched = unmatchedSequenceOrdinals(leading.original, leading.revised);
-  const matchedOriginal = leading.original.map((_, index) => index).filter((index) => !unmatched.original.has(index));
-  const matchedRevised = leading.revised.map((_, index) => index).filter((index) => !unmatched.revised.has(index));
-  const anchors: Array<[number, number]> = [
-    ...matchedOriginal.map((index, offset): [number, number] => [index, matchedRevised[offset]!]),
-    [original.length - 1, revised.length - 1],
-  ];
+  const matchedPairs = (left: readonly string[], right: readonly string[]): Array<[number, number]> => {
+    const unmatched = unmatchedSequenceOrdinals([...left], [...right]);
+    const matchedLeft = left.map((_, index) => index).filter((index) => !unmatched.original.has(index));
+    const matchedRight = right.map((_, index) => index).filter((index) => !unmatched.revised.has(index));
+    return matchedLeft.map((index, offset): [number, number] => [index, matchedRight[offset]!]);
+  };
+  const last: [number, number] = [original.length - 1, revised.length - 1];
+  const whole = matchedPairs(original, revised);
+  const finalSectionMoved = whole.some(([left, right]) => (left === last[0]) !== (right === last[1]));
+  const anchors: Array<[number, number]> = finalSectionMoved
+    ? whole
+    : [...matchedPairs(original.slice(0, -1), revised.slice(0, -1)), last];
   const aligned: Array<[number, number]> = [];
   let previous: [number, number] = [-1, -1];
-  for (const anchor of anchors) {
-    const gap = anchor[0] - previous[0] - 1;
-    if (gap > 0 && gap === anchor[1] - previous[1] - 1) {
-      for (let offset = 1; offset <= gap; offset += 1) {
+  for (const anchor of [...anchors, [original.length, revised.length] as [number, number]]) {
+    const gap = { original: anchor[0] - previous[0] - 1, revised: anchor[1] - previous[1] - 1 };
+    if (gap.original > 0 && gap.original === gap.revised) {
+      for (let offset = 1; offset <= gap.original; offset += 1) {
         aligned.push([previous[0] + offset, previous[1] + offset]);
       }
+    } else if (gap.original > 0 && gap.revised > 0) {
+      for (let left = 1; left <= gap.original; left += 1) {
+        for (let right = 1; right <= gap.revised; right += 1) {
+          aligned.push([previous[0] + left, previous[1] + right]);
+        }
+      }
     }
-    aligned.push(anchor);
+    if (anchor[0] < original.length) aligned.push(anchor);
     previous = anchor;
   }
   return aligned;
