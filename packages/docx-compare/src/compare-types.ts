@@ -232,7 +232,9 @@ export interface UnrepresentedDrawingChange {
  * revision markers of its rows (ECMA-376 Part 1 §17.13.5.17, §17.13.5.12), so
  * a table with no rows has nothing to carry one, and the comparison leaves it
  * out of the redline: Accept All of an added one, or Reject All of a removed
- * one, lacks it. Such a table holds no cell and no text.
+ * one, lacks it. Only a table holding nothing but its properties and grid
+ * is left out; one that holds a bookmark, comment or move range boundary is
+ * refused (`emptyTable`) rather than have that range unbalanced.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
@@ -245,6 +247,7 @@ export interface UnrepresentedTableChange {
    * Zero-based document-order ordinal of the table among the `w:tbl`
    * elements of the document that holds it, nested tables included: the
    * revised document for an added table, the original for a removed one.
+   * The entry's `sectionIndex` names the section of that same document.
    */
   index: number;
 }

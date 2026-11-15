@@ -352,6 +352,33 @@ describe('an unmatched table with no rows (#1400)', () => {
   }
 
   test.openspec('[SDX-COMPTABLE-14] an unmatched table with no rows is left out and reported')(
+    'refuses a table with no rows that holds a bookmark start, instead of unbalancing the range', async () => {
+      const held = table([]).replace('<w:tblPr/>', '<w:bookmarkStart w:id="5" w:name="Target"/><w:tblPr/>');
+      const target = '<w:p><w:bookmarkEnd w:id="5"/><w:r><w:t>Target text</w:t></w:r></w:p>';
+      for (const [before, after] of [[body(target), body(held + target, edited)], [body(held + target), body(target, edited)]]) {
+        await expect(compareDocuments(await docx(before!), await docx(after!))).rejects.toMatchObject({
+          name: 'UnsupportedTableTopologyComparisonError', feature: 'emptyTable',
+        });
+      }
+    },
+    30000,
+  );
+
+  test.openspec('[SDX-COMPTABLE-14] an unmatched table with no rows is left out and reported')(
+    'names the section that holds a removed table in the original document', async () => {
+      const sectionBreak = '<w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>End of section one</w:t></w:r></w:p>';
+      const result = await compareDocuments(
+        await docx(body(sectionBreak + p('Same') + empty)),
+        await docx(body(p('Same'), edited)),
+      );
+      expect(result.unrepresentedChanges?.filter((change) => change.scope === 'table')).toEqual([
+        { scope: 'table', kind: 'removed', sectionIndex: 1, table: { story: 'body', index: 0 } },
+      ]);
+    },
+    30000,
+  );
+
+  test.openspec('[SDX-COMPTABLE-14] an unmatched table with no rows is left out and reported')(
     'names the left-out table by its ordinal beside a table with rows', async () => {
       const kept = table([plain('Acme', 'Corp')]);
       const result = await compareDocuments(await docx(body(kept)), await docx(body(kept + p('Between') + empty)));

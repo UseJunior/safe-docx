@@ -343,8 +343,10 @@ export function replaceSkeletonChangedRows(tree: TaggedNode): void {
  * to carry one: published, it would survive the projection that should drop
  * it. Such a table holds no cell, paragraph or text, so leaving it out changes
  * no content of either projection; Accept All of an added one (Reject All of a
- * removed one) lacks only the empty table, which the returned entry reports.
- * A table present in both documents is published as it is.
+ * removed one) lacks only the empty table, which the returned entry reports,
+ * naming the table and its section in the document that holds it. A table
+ * present in both documents is published as it is, and one that holds a range
+ * boundary is left to the guard (see {@link isLeavableRowlessTable}).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.37
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
@@ -353,29 +355,51 @@ export function replaceSkeletonChangedRows(tree: TaggedNode): void {
  */
 export function leaveOutRowlessTables(tree: TaggedNode): UnrepresentedChange[] {
   const changes: UnrepresentedChange[] = [];
-  let sectionIndex = 0;
   const visit = (node: TaggedNode): void => {
-    const element = node.tag === 'both' ? node.revised : node.node;
-    // A paragraph-bound w:sectPr closes the section it sits in, as in
-    // collectContentControlPropertyChanges.
-    if (node.tag !== 'original' && isW(element, 'sectPr')) sectionIndex++;
     if (node.opaque) return;
     node.children = node.children.filter((child) => {
-      if (child.tag === 'both' || !isW(child.node, 'tbl')
-        || child.node.getElementsByTagNameNS(W_NS, 'tr').length > 0) {
+      if (child.tag === 'both' || !isLeavableRowlessTable(child.node)) {
         visit(child);
         return true;
       }
-      const tables = Array.from(child.node.ownerDocument!.getElementsByTagNameNS(W_NS, 'tbl'));
+      const table = child.node;
       changes.push({
         scope: 'table',
         kind: child.tag === 'revised' ? 'added' : 'removed',
-        sectionIndex,
-        table: { story: 'body', index: tables.indexOf(child.node) },
+        sectionIndex: sourceSectionIndex(table),
+        table: { story: 'body', index: Array.from(table.ownerDocument!.getElementsByTagNameNS(W_NS, 'tbl')).indexOf(table) },
       });
       return false;
     });
   };
   visit(tree);
   return changes;
+}
+
+/**
+ * Whether a table holds nothing but its properties and grid: no row, and no
+ * range markup (a bookmark, comment or move range boundary, which `CT_Tbl`
+ * allows before `w:tblPr`, §17.4.37). Leaving out such a table removes no
+ * content; one that holds a range boundary stays with the table-topology
+ * guard, which refuses it (`emptyTable`) rather than unbalance the range.
+ */
+function isLeavableRowlessTable(element: Element): boolean {
+  return isW(element, 'tbl') && childElements(element).every((child) => isW(child, 'tblPr', 'tblGrid'));
+}
+
+/**
+ * The zero-based section of the document holding `element`: the number of
+ * paragraph-bound section breaks (`w:pPr/w:sectPr`, §17.6.18) before it in
+ * that document.
+ */
+function sourceSectionIndex(element: Element): number {
+  let index = 0;
+  for (const sectPr of Array.from(element.ownerDocument!.getElementsByTagNameNS(W_NS, 'sectPr'))) {
+    const parent = sectPr.parentNode as Element | null;
+    if (!parent || !isW(parent, 'pPr')) continue;
+    // DOCUMENT_POSITION_FOLLOWING: the section break comes after `element`.
+    if (element.compareDocumentPosition(sectPr) & 4) break;
+    index++;
+  }
+  return index;
 }

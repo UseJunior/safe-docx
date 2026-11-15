@@ -73,7 +73,8 @@ The comparator SHALL publish schema-valid native whole-row insertion and deletio
 - **GIVEN** a main-body table with no `w:tr` present in only one of the documents, beside an ordinary body edit
 - **WHEN** the documents are compared
 - **THEN** the comparison SHALL return a DOCX without that table, with the body edit tracked
-- **AND** `unrepresentedChanges` SHALL hold one entry with `scope: 'table'`, `kind` `added` (revised only) or `removed` (original only), its `sectionIndex`, and `table.index`, the table's document-order ordinal among the `w:tbl` elements of the document that holds it
+- **AND** a table with no rows that holds a range boundary (a `w:bookmarkStart`, comment or move range marker) SHALL instead be refused with a typed `emptyTable` diagnostic before returning a DOCX, so no range is left unbalanced
+- **AND** `unrepresentedChanges` SHALL hold one entry with `scope: 'table'`, `kind` `added` (revised only) or `removed` (original only), `table.index`, the table's document-order ordinal among the `w:tbl` elements of the document that holds it, and `sectionIndex`, the section holding it in that same document
 - **AND** `formatUnrepresentedChangeWarnings` SHALL say that Accept All (added) or Reject All (removed) lacks the table
 - **AND** apart from that table, accept-all SHALL project to the revised document and reject-all to the original document, and the emitted document SHALL validate against the vendored Transitional schema
 - **AND** a table with no rows present in both documents SHALL be published as it is, and a header, footer or text-box story holding such a table keeps its SDX-CMP-STORY-05 contract
