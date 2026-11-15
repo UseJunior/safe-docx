@@ -341,6 +341,23 @@ describe('formatting change and a word replacement on a run with a pending w:rPr
     });
   });
 
+  spanTest('keeps directly adjacent spans of different revised formatting apart', async ({ given, when, then }: AllureBddContext) => {
+    await given('a run with a pending record whose first words gain bold and the rest italics, with a word replaced in the italic part', () => undefined);
+    const compared = await when('the pair is compared', () => compareBodies(
+      paragraph(run(SENTENCE, `<w:rPr>${PRIOR_EMPTY}</w:rPr>`)),
+      paragraph(
+        run('The Company is not ', `<w:rPr><w:b/>${PRIOR_EMPTY}</w:rPr>`) +
+        run('bound by any agreement or understanding with any other entity.', `<w:rPr><w:i/>${PRIOR_EMPTY}</w:rPr>`),
+      ),
+    ));
+    await expectFaithfulProjections({ then }, compared);
+    await then('the bold span ends where the italic span begins', () => {
+      const inserted = wrappers(compared.comparedXml, 'ins').map((wrapper) => wrapper.textContent);
+      expect(inserted).toContain('The Company is not ');
+      expect(inserted.some((content) => content?.startsWith('bound by any agreement'))).toBe(true);
+    });
+  });
+
   spanTest('keeps spans of different revised formatting apart', async ({ given, when, then }: AllureBddContext) => {
     await given('a run with a pending record whose first words gain bold and last words gain italics, with a word replaced between them', () => undefined);
     const compared = await when('the pair is compared', () => compareBodies(
@@ -360,27 +377,45 @@ describe('formatting change and a word replacement on a run with a pending w:rPr
   });
 });
 
+/**
+ * LibreOffice characterization, not a positive reader result. LibreOffice
+ * 26.2 reads the deleted and inserted copies (an identity round trip keeps
+ * them), but Accept All and Reject All both leave the two copies in place
+ * when each carries a `w:rPrChange` of its own. It does the same with the
+ * one-pair shape #1464 emits for bold alone, and with the per-word pairs
+ * before this change. A plain deletion and insertion in the same batch
+ * resolves correctly as the control. Microsoft Word is the behavioural
+ * oracle for this shape; if LibreOffice starts resolving it, this pin fails
+ * and should become a positive check.
+ */
 // Explicit opt-in: a requested reader run must fail, never silently skip an
 // unusable LibreOffice.
 const reader = process.env.SAFE_DOCX_LAYERED_FORMATTING_READER_REQUIRED === '1' ? describe : describe.skip;
-reader('LibreOffice accepts and rejects a layered formatting span beside a word replacement as compared (#1488)', () => {
-  test('shows the revised formatting and text after Accept All and the original after Reject All', async () => {
+reader('LibreOffice on a layered formatting span beside a word replacement (#1488)', () => {
+  test('resolves a plain deletion and insertion but keeps both copies of a layered span on Accept All and Reject All', async () => {
     const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
     const sentence = 'The Company is not bound by any agreement or understanding with any other person.';
     const prior = '<w:rPrChange w:id="101" w:author="Prior" w:date="2026-10-01T00:00:00Z"><w:rPr/></w:rPrChange>';
+    const control = await compareBodies(paragraph(run('Old text')), paragraph(run('New text')));
     const compared = await compareBodies(
       paragraph(run(sentence, `<w:rPr><w:u w:val="single"/>${prior}</w:rPr>`)),
       paragraph(run(sentence.replace('bound', 'REVISEDTERM'), `<w:rPr><w:b/><w:u w:val="single"/>${prior}</w:rPr>`)),
     );
-    const [comparedAccepted, comparedRejected, revisedAccepted, originalRejected] = await runLibreOfficeOracle([
+    const [controlAccepted, controlRejected, comparedAccepted, comparedRejected] = await runLibreOfficeOracle([
+      { op: 'accept' as const, documentXml: control.comparedXml },
+      { op: 'reject' as const, documentXml: control.comparedXml },
       { op: 'accept' as const, documentXml: compared.comparedXml },
       { op: 'reject' as const, documentXml: compared.comparedXml },
-      { op: 'accept' as const, documentXml: compared.revisedXml },
-      { op: 'reject' as const, documentXml: compared.originalXml },
     ]);
-    expect(formattingView(comparedAccepted!)).toEqual(formattingView(revisedAccepted!));
-    expect(formattingView(comparedRejected!)).toEqual(formattingView(originalRejected!));
-    expect(formattingView(comparedAccepted!)).not.toEqual(formattingView(comparedRejected!));
+    const text = (xml: string): string =>
+      Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'body')[0]!.getElementsByTagNameNS(W_NS, 't'))
+        .map((t) => t.textContent ?? '').join('');
+    expect(text(controlAccepted!)).toBe('New text');
+    expect(text(controlRejected!)).toBe('Old text');
+    const bothCopies = 'The Company is not The Company is not boundREVISEDTERM' +
+      ' by any agreement or understanding with any other person.'.repeat(2);
+    expect(text(comparedAccepted!)).toBe(bothCopies);
+    expect(text(comparedRejected!)).toBe(bothCopies);
   }, 600_000);
 });
 
