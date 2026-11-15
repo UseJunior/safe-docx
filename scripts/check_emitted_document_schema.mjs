@@ -40,7 +40,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -188,6 +188,26 @@ function selfTest() {
 
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 
+const XML_NS = 'http://www.w3.org/XML/1998/namespace';
+
+// NCName (Namespaces in XML 1.0 §4): an XML 1.0 Name (XML 1.0 §2.3,
+// productions [4] and [4a]) without a colon.
+const NC_NAME_START_CHAR =
+  'A-Z_a-z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D' +
+  '\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD\\u{10000}-\\u{EFFFF}';
+const NC_NAME_CHAR = `${NC_NAME_START_CHAR}\\-.0-9\\u00B7\\u0300-\\u036F\\u203F-\\u2040`;
+const NC_NAME = new RegExp(`^[${NC_NAME_START_CHAR}][${NC_NAME_CHAR}]*$`, 'u');
+
+/**
+ * The namespace `prefix` is bound to in scope at `element`, or null. The
+ * `xml` prefix is bound by definition and needs no declaration (Namespaces
+ * in XML 1.0 §3), which xmldom's lookup does not report.
+ */
+function resolvePrefix(element, prefix) {
+  if (prefix === 'xml') return XML_NS;
+  return element.lookupNamespaceURI(prefix);
+}
+
 /**
  * Check every element's Markup Compatibility attributes against ECMA-376
  * Part 3 (5th edition, 2015) §7.2–§7.4, and throw on the first violation:
@@ -223,14 +243,16 @@ export function checkMarkupCompatibilityAttributes(root) {
         let prefix = token;
         if (name === 'ProcessContent') {
           const match = /^([^:]+):([^:]+)$/.exec(token);
-          if (!match) {
+          if (!match || !NC_NAME.test(match[1]) || (match[2] !== '*' && !NC_NAME.test(match[2]))) {
             throw new Error(
               `mc:ProcessContent token '${token}' on ${element.tagName} is not prefix:localName or prefix:*`
             );
           }
           prefix = match[1];
+        } else if (!NC_NAME.test(prefix)) {
+          throw new Error(`mc:${name} token '${token}' on ${element.tagName} is not a namespace prefix`);
         }
-        const namespaceUri = element.lookupNamespaceURI(prefix);
+        const namespaceUri = resolvePrefix(element, prefix);
         if (!namespaceUri) {
           throw new Error(`mc:${name} names unbound prefix '${prefix}' on ${element.tagName}`);
         }
@@ -294,7 +316,7 @@ export function applyMcePreprocessing(xml) {
     if (ignorable) {
       // checkMarkupCompatibilityAttributes has proved every prefix bound.
       for (const prefix of ignorable.trim().split(/\s+/).filter(Boolean)) {
-        ignorableNs.add(element.lookupNamespaceURI(prefix));
+        ignorableNs.add(resolvePrefix(element, prefix));
       }
     }
     if (element.namespaceURI === MC_NS && element.localName === 'AlternateContent') {
@@ -354,40 +376,42 @@ async function collectInstances(inputs, scratchDir) {
       xmlFiles.push(path);
     }
   }
-  // Each package gets its own scratch directory: inputs from different
-  // directories often share a basename (every run's compared.docx), and one
-  // shared extraction path would validate only the last of them.
-  const names = new Map(xmlFiles.map((file) => [file, basename(file)]));
-  for (const [index, docxPath] of docxFiles.entries()) {
+  // Every instance is staged under a scratch name the gate controls,
+  // instance-<n>.xml, so xmllint diagnostics are attributed by a path that
+  // holds no colon or newline and is no other path's prefix. Staging also
+  // keeps inputs that share a basename (every run's compared.docx) apart.
+  // Reports name the source instead.
+  const staged = [];
+  const stagePath = () => join(scratchDir, `instance-${staged.length}.xml`);
+  for (const file of xmlFiles) {
+    const path = stagePath();
+    copyFileSync(file, path);
+    staged.push({ path, name: basename(file) });
+  }
+  for (const docxPath of docxFiles) {
     const zip = await JSZip.loadAsync(readFileSync(docxPath));
     const part = zip.file('word/document.xml');
     if (!part) fail(`${docxPath}: missing word/document.xml`);
-    const extractDir = join(scratchDir, `docx-${index}`);
-    mkdirSync(extractDir);
-    const extracted = join(extractDir, `${basename(docxPath, '.docx')}.document.xml`);
-    writeFileSync(extracted, await part.async('string'));
-    xmlFiles.push(extracted);
+    const path = stagePath();
+    writeFileSync(path, await part.async('string'));
     const shown = relative(process.cwd(), docxPath);
-    names.set(extracted, `${shown.startsWith('..') ? docxPath : shown} word/document.xml`);
+    staged.push({ path, name: `${shown.startsWith('..') ? docxPath : shown} word/document.xml` });
   }
   // Well-formedness as emitted, before preprocessing can rewrite (and so
   // hide) a repeated attribute or namespace declaration.
-  const notWellFormed = new Map(checkWellFormedBatch(xmlFiles).map(({ file, lines }) => [file, lines]));
-  // MCE preprocessing: validate the post-MCE projection, written to scratch
-  // under the same basename so failures still identify the source instance.
-  return xmlFiles.map((file, index) => {
-    const name = names.get(file);
-    const wellFormedLines = notWellFormed.get(file);
-    if (wellFormedLines) return { path: file, name, rejectedLines: wellFormedLines };
-    const xml = readFileSync(file, 'utf-8');
+  const notWellFormed = new Map(
+    checkWellFormedBatch(staged.map(({ path }) => path)).map(({ file, lines }) => [file, lines])
+  );
+  // MCE preprocessing: validate the post-MCE projection, which replaces the
+  // staged copy once the as-emitted bytes have been checked.
+  return staged.map(({ path, name }) => {
+    const wellFormedLines = notWellFormed.get(path);
+    if (wellFormedLines) return { path, name, rejectedLines: wellFormedLines };
+    const xml = readFileSync(path, 'utf-8');
     const result = applyMcePreprocessing(xml);
-    if (result.parseError) return { path: file, name, rejectedLines: [result.parseError] };
-    if (result.xml === xml) return { path: file, name };
-    const projectDir = join(scratchDir, `projected-${index}`);
-    mkdirSync(projectDir);
-    const projected = join(projectDir, basename(file));
-    writeFileSync(projected, result.xml);
-    return { path: projected, name };
+    if (result.parseError) return { path, name, rejectedLines: [result.parseError] };
+    if (result.xml !== xml) writeFileSync(path, result.xml);
+    return { path, name };
   });
 }
 

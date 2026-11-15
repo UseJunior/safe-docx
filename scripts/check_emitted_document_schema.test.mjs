@@ -163,3 +163,42 @@ test('Ignorable and ProcessContent accept aliased prefixes for an already-ignora
   );
   assert.equal(document.getElementsByTagNameNS(W_NS, 't')[0].textContent, 'keep');
 });
+
+test('the predefined xml prefix needs no declaration in an MCE prefix list', () => {
+  const result = applyMcePreprocessing(
+    `<w:document xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" mc:MustUnderstand="xml">${BODY}</w:document>`,
+  );
+  assert.equal(result.parseError, undefined);
+});
+
+test('a ProcessContent local part must be an NCName or exactly *', () => {
+  const withToken = (token) => applyMcePreprocessing(
+    `<w:document xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" xmlns:ext="urn:test:ext" ` +
+    `mc:Ignorable="ext" mc:ProcessContent="${token}">${BODY}</w:document>`,
+  );
+  for (const token of ['ext:1bad', 'ext:**', 'ext:a*']) {
+    assert.match(withToken(token).parseError, /is not prefix:localName or prefix:\*/, token);
+  }
+  for (const token of ['ext:*', 'ext:wrap', 'ext:élément-2', 'ext:_x.y']) {
+    assert.equal(withToken(token).parseError, undefined, token);
+  }
+});
+
+test('the gate attributes a failure only to its own instance when one input path prefixes another', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sdx-schema-gate-names-'));
+  try {
+    writeFileSync(join(dir, 'prefix.xml'), `<w:document xmlns:w="${W_NS}">${BODY}</w:document>`);
+    writeFileSync(
+      join(dir, 'prefix.xml:tail.xml'),
+      `<w:document xmlns:w="${W_NS}" xmlns:a="urn:test:dup" xmlns:b="urn:test:dup">` +
+      `<w:body><w:p a:k="1" b:k="2"><w:r><w:t>x</w:t></w:r></w:p></w:body></w:document>`,
+    );
+    const result = spawnSync(process.execPath, [gateScript, dir], { encoding: 'utf-8' });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /INVALID: prefix\.xml:tail\.xml\n/);
+    assert.doesNotMatch(result.stderr, /INVALID: prefix\.xml\n/);
+    assert.match(result.stderr, /1 of 2 document\.xml instances failed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
