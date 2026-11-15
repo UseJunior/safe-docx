@@ -12,9 +12,23 @@ function isW(element: Element, ...names: string[]): boolean {
   return element.namespaceURI === W_NS && names.includes(element.localName);
 }
 
-/** The `w:tcPr` children of each direct cell of a row. */
+/**
+ * The cells of a row in document order, including cells inside cell-level
+ * content controls (`w:sdt`/`w:sdtContent`, §17.5.2.32) and cell-level
+ * custom XML elements (`w:customXml`, §17.5.1.4), which occupy the grid like
+ * direct cells.
+ */
+function rowCells(row: Element): Element[] {
+  return childElements(row).flatMap((child) => {
+    if (isW(child, 'tc')) return [child];
+    if (isW(child, 'sdt', 'sdtContent', 'customXml')) return rowCells(child);
+    return [];
+  });
+}
+
+/** The `w:tcPr` children of each cell of a row, wrapped or not. */
 function cellProperties(row: Element): Element[][] {
-  return childElements(row).filter((cell) => isW(cell, 'tc')).map((cell) => {
+  return rowCells(row).map((cell) => {
     const tcPr = childElements(cell).find((child) => isW(child, 'tcPr'));
     return tcPr ? childElements(tcPr) : [];
   });
@@ -22,13 +36,20 @@ function cellProperties(row: Element): Element[][] {
 
 /**
  * Whether a row stays with the table-topology guard whatever its merges: a
- * pending cell-level topology revision, or cells inside a cell-level content
- * control, whose grid intervals a whole-row replacement does not inventory.
+ * pending cell-level topology revision (`w:cellIns`, `w:cellDel`,
+ * `w:cellMerge`, §17.13.5.2, §17.13.5.1, §17.13.5.3) on any of its cells.
+ * Replacing such a row would publish a cell revision inside a row revision,
+ * which readers resolve inconsistently (LibreOffice ignores cell-level
+ * revisions; Word resolves them into a spanned cell, #1428).
+ *
+ * A cell inside a cell-level content control or custom XML element is
+ * replaced with its row like any other: the wrapper goes whole with the
+ * deleted row and whole with the inserted row, so each projection keeps one
+ * side's wrapper, and no revision wrapper ever holds a cell (#1483).
  */
 function hasUnreplaceableCells(row: Element): boolean {
-  return childElements(row).some((child) => isW(child, 'sdt', 'customXml'))
-    || cellProperties(row).some((properties) =>
-      properties.some((child) => isW(child, 'cellIns', 'cellDel', 'cellMerge')));
+  return cellProperties(row).some((properties) =>
+    properties.some((child) => isW(child, 'cellIns', 'cellDel', 'cellMerge')));
 }
 
 /** Whether a row has a cell in a vertical merge (`w:vMerge`, §17.4.84). */
@@ -120,7 +141,9 @@ function mergeGroups(children: readonly TaggedNode[], side: 'original' | 'revise
  *
  * A band holding a row with cells the guard keeps (see
  * {@link hasUnreplaceableCells}) is left to the guard, as is a table with
- * row-level content controls, whose rows the band cannot reorder.
+ * row-level content controls, whose rows the band cannot reorder. Cells
+ * inside cell-level content controls count like any other cell, so a band
+ * holding one is replaced with the control whole in each of its rows.
  */
 function replaceVerticalMergeBands(table: BothNode): void {
   const children = table.children;
@@ -235,6 +258,17 @@ function replaceVerticalMergeBands(table: BothNode): void {
  * of rows instead (see {@link replaceVerticalMergeBands}), so that each
  * projection holds whole merge chains.
  *
+ * A row holding a cell-level content control (`w:sdt` wrapping `w:tc`,
+ * §17.5.2.32) or cell-level custom XML element (§17.5.1.4) is replaced the
+ * same way when its skeleton, counting the wrapped cells, changes: each of
+ * the two rows keeps its own whole wrapper, so Accept All keeps the revised
+ * control and Reject All the original one, and no revision wrapper ever
+ * holds a cell. The copies keep their `w:sdtPr/w:id` as authored: each
+ * projection then holds exactly its source control, and a reader that opens
+ * the unresolved redline with two controls of one id assigns the later one a
+ * new id (§17.5.2.18). Pending revisions inside the wrapped cells stay with
+ * each copy, as in any other replaced row.
+ *
  * Rows the passes leave alone (see {@link hasUnreplaceableCells}), and grid
  * changes, still reach the table-topology guard.
  *
@@ -242,8 +276,11 @@ function replaceVerticalMergeBands(table: BothNode): void {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.84
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.18
  * @see https://github.com/UseJunior/safe-docx/issues/1396
  * @see https://github.com/UseJunior/safe-docx/issues/1397
+ * @see https://github.com/UseJunior/safe-docx/issues/1483
  */
 export function replaceSkeletonChangedRows(tree: TaggedNode): void {
   const visit = (node: TaggedNode): void => {

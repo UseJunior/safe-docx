@@ -3186,6 +3186,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-5-2-18",
+      "title": "w:id structured document tag unique ID",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.5.2.18"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr",
+      "claimRationale": "`w:sdtPr/w:id` gives a structured document tag a numerical ID that shall\npersist across sessions. When several tags carry the same value, the first\nin the document keeps it and every later one is assigned a new identifier\nwhen the document is opened. A row replacement keeps the authored ID on both\ncopies of a cell-level control, so each projection holds its source ID.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableTopologyNormalization.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableTopologyCellContentControl.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-5-2-29",
       "title": "w:sdt block-level structured document tag",
       "classification": "targeted",

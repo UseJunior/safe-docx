@@ -12,7 +12,7 @@
 ## 3. Verification
 
 - [x] 3.1 Flip SDX-COMPTABLE-03; accept-all equals revised and reject-all equals original with both the comparison acceptor and docx-core `acceptChanges`/`rejectChanges`, on text and `bodyTableFootprint`; emitted-document schema gate passes.
-- [x] 3.2 Keep pending cell-topology revisions and wrapped cells refused (SDX-COMPTABLE-09); vertical merges were refused here until section 4.
+- [x] 3.2 Keep pending cell-topology revisions refused (SDX-COMPTABLE-09); vertical merges were refused here until section 4, and cells inside cell-level content controls until section 6.
 - [x] 3.3 LibreOffice accept/reject reproduce the revised and original tables.
 - [ ] 3.4 Real NVCA smoke after merge.
 
@@ -30,3 +30,11 @@
 - [x] 5.2 Publish `w:tblPr`, `w:tblGrid` and `w:tblPrEx` whole with their own revision record; add row-level `w:tblPrExChange` companions to every row of a table that gets a comparison `w:tblPrChange`.
 - [x] 5.3 Accept/reject parity with the comparison acceptor on every table-level property and with docx-core on text, footprint and `w:tblPr`; schema gate (SDX-COMPTABLE-11).
 - [ ] 5.4 Real NVCA smoke after merge; Word reader evidence deferred (staged fixtures listed in the PR).
+
+## 6. Cells inside cell-level content controls (#1483)
+
+- [x] 6.1 Reproduce (RED) the refusal for a cell added or removed beside or inside a cell-level content control, a controlled cell merged, a control holding a field, a bookmark with a data binding or a pending insertion, a cell-level custom XML element, and a vertical-merge band holding a controlled cell.
+- [x] 6.2 Count cells inside cell-level wrappers in the row skeleton and replace such rows whole; keep only pending cell-level topology revisions with the guard (SDX-COMPTABLE-12, narrowed SDX-COMPTABLE-09).
+- [x] 6.3 Accept/reject parity with both acceptors on text, footprint and each wrapper; schema gate; the same replacement in header/footer tables and in header, footer and body text boxes.
+- [x] 6.4 LibreOffice Reject All reproduces the original table in every case, and Accept All the revised table when the control is not in the row's first cell; LibreOffice 26.2 ignores `w:trPr/w:del` on a row whose first cell sits in a cell-level control (as it does for a plain whole-row deletion of such a row), so that Accept is not asserted.
+- [ ] 6.5 Real NVCA smoke after merge.

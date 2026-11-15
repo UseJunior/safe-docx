@@ -807,6 +807,23 @@ other element (statistics, heading pairs, titles of parts) untouched, creates
 a missing part in the strict namespace when the main document relationship is
 strict (§15.2.12.3), and lets generation omit `Application`.
 
+## [ECMA-PART1-17-5-2-18] w:id structured document tag unique ID
+
+```yaml
+edition: 5
+part: 1
+section: "17.5.2.18"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr
+verifiedBy: packages/docx-compare/src/tagged/tableTopologyNormalization.ts; packages/docx-compare/src/tagged/tableTopologyCellContentControl.test.ts
+```
+
+`w:sdtPr/w:id` gives a structured document tag a numerical ID that shall
+persist across sessions. When several tags carry the same value, the first
+in the document keeps it and every later one is assigned a new identifier
+when the document is opened. A row replacement keeps the authored ID on both
+copies of a cell-level control, so each projection holds its source ID.
+
 ## [ECMA-PART1-17-5-2-29] w:sdt block-level structured document tag
 
 ```yaml

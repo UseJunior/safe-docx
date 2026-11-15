@@ -56,7 +56,7 @@ function cellShape(cell: Element): string {
 }
 
 function cellTopologyRevisions(row: Element): string[] {
-  return direct(row, 'tc').map((cell) => {
+  return wrappedChildren(row, new Set(['tc'])).map((cell) => {
     const tcPr = direct(cell, 'tcPr')[0];
     return tcPr ? childElements(tcPr)
       .filter((child) => child.namespaceURI === W_NS
@@ -79,16 +79,32 @@ function cellProperty(cell: Element | undefined, name: string): string | null {
  * alignment pairs rows across positions only when their skeletons agree.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.32
  */
 export function rowShape(row: Element): string {
   const trPr = direct(row, 'trPr')[0];
   return JSON.stringify({
     before: val(trPr && direct(trPr, 'gridBefore')[0]) ?? '0',
     after: val(trPr && direct(trPr, 'gridAfter')[0]) ?? '0',
-    children: childElements(row).filter((child) =>
-      child.namespaceURI === W_NS && ['tc', 'sdt', 'customXml'].includes(child.localName))
-      .map((child) => child.localName === 'tc' ? ['tc', cellShape(child)] : [child.localName]),
+    children: cellBearingShape(row),
   });
+}
+
+/**
+ * The cell-bearing children of a row or of a cell-level wrapper, in order: a
+ * cell as its shape, and a cell-level content control (`w:sdt`, §17.5.2.32)
+ * or custom XML element (`w:customXml`, §17.5.1.4) as its name with the
+ * shapes of the cells it wraps, so a cell added, removed, merged or split
+ * inside the wrapper changes the row's skeleton too (#1483).
+ */
+function cellBearingShape(parent: Element): unknown[] {
+  return childElements(parent).filter((child) =>
+    child.namespaceURI === W_NS && ['tc', 'sdt', 'customXml'].includes(child.localName))
+    .map((child) => {
+      if (child.localName === 'tc') return ['tc', cellShape(child)];
+      const content = child.localName === 'sdt' ? direct(child, 'sdtContent')[0] : child;
+      return [child.localName, content ? cellBearingShape(content) : []];
+    });
 }
 
 function rejectChangedRow(original: Element, revised: Element, originalTable: Element,
