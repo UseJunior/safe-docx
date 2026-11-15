@@ -170,6 +170,15 @@ export interface UnrepresentedContentControlChange {
    */
   customXmlElement?: string;
   customXmlUri?: string;
+  /**
+   * For a control inside a footnote or endnote definition, the note story,
+   * its part and the note's `w:id` in the output; `index` then counts the
+   * controls of that definition only, and the entry's `sectionIndex` names
+   * the section holding the note reference. Absent for the main story.
+   */
+  story?: 'footnote' | 'endnote';
+  partPath?: string;
+  noteId?: string;
 }
 
 /**
