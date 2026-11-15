@@ -129,6 +129,7 @@ import {
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
+  assertListedStoryPartsCompared,
   assertAssembledBodyRoundTrip,
   type BlankSlotParts,
   deletedAncillaryStoryOutputPaths,
@@ -2105,6 +2106,16 @@ async function compareDocumentsTagged(
       },
     );
   }
+  // Stories paired through the aligned sections alone carry no listing
+  // excuse: the redline must reproduce every page of both inputs (#1502).
+  if (textBoxPlan.exactAncillaryProjectionRequired) {
+    await assertAncillaryTextBoxStoryProjection(
+      textBoxPlan.ancillaryProjectionOriginal ?? original,
+      revised,
+      document,
+      { changes: [], comparedPartPaths: new Set(), displacedCopyPartPaths },
+    );
+  }
 
   // A part whose listed drawings describe only their own boxes is judged as
   // the projection check judges it: Reject All shows the revised drawings
@@ -2112,7 +2123,7 @@ async function compareDocumentsTagged(
   // difference. A positional header/footer entry a changed section count
   // leaves behind is then dropped when the part's stories are carried
   // (#1487). A drawing that draws more than its box keeps the part's entry.
-  return withRepresentedPackageChangesRemoved(textBoxPlan.drawingAccountedOriginal ?? original, revised, {
+  const result = await withRepresentedPackageChangesRemoved(textBoxPlan.drawingAccountedOriginal ?? original, revised, {
     ...outerResult,
     document,
     stats,
@@ -2121,6 +2132,15 @@ async function compareDocumentsTagged(
         ? unrepresentedChanges
         : undefined,
   });
+  // Nor may such a redline list a header/footer it did not track: the
+  // projection check reads displayed pages only (#1502).
+  if (textBoxPlan.exactAncillaryProjectionRequired) {
+    await assertListedStoryPartsCompared(revised, {
+      changes: result.unrepresentedChanges ?? [],
+      comparedPartPaths: new Set(storyResults.map(({ partPath }) => partPath)),
+    });
+  }
+  return result;
 }
 
 /**

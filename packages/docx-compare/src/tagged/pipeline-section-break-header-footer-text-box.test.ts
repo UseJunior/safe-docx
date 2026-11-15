@@ -37,6 +37,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { compareDocumentsAtomizer, type TaggedCompareResult } from './pipeline.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
+import { UnsupportedTextBoxRevisionError } from './textBoxRevisionSafety.js';
 import {
   isBlankStoryPart,
   pageStorySlots,
@@ -145,7 +146,7 @@ const STORY_CHANGES: Record<StoryChange, Partial<Story>> = {
   'the box text': { boxText: 'Confidential draft' },
 };
 
-interface PartSpec { id: string; kind: Kind; target: string; xml: string }
+interface PartSpec { id: string; kind: Kind; target: string; xml: string; role?: 'default' | 'first' | 'even' }
 
 /**
  * A package whose body holds `sections` sections: a paragraph-level
@@ -157,7 +158,7 @@ async function sectionedPackage(
   references: ReadonlyArray<readonly PartSpec[]>,
   parts: readonly PartSpec[],
 ): Promise<Buffer> {
-  const reference = (part: PartSpec): string => `<w:${part.kind}Reference w:type="default" r:id="${part.id}"/>`;
+  const reference = (part: PartSpec): string => `<w:${part.kind}Reference w:type="${part.role ?? 'default'}" r:id="${part.id}"/>`;
   const sectPr = (index: number): string =>
     `<w:sectPr>${(references[index] ?? []).map(reference).join('')}${PAGE_SETUP}</w:sectPr>`;
   const last = references.length - 1;
@@ -494,6 +495,75 @@ describe('a section break beside a retained or a final section whose footer hold
     });
   }
 
+  test('tracks the boxed header of the last section when an inheriting section is added and a boxed footer shared by every section changes', async ({ given, when, then }: AllureBddContext) => {
+    const [original, revised] = await given('three sections with plain, plain and boxed headers and one shared boxed footer; the revision adds an inheriting final section and edits the boxed header and the footer', () => {
+      const plainHeader = (id: string, target: string, value: string): PartSpec =>
+        ({ id, kind: 'header', target, xml: paragraph(text(value)) });
+      const boxedHeader = (legend: string): PartSpec =>
+        ({ id: 'rIdH5', kind: 'header', target: 'header5.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend, boxText: 'Header box' }) });
+      const cover = plainHeader('rIdH1', 'header1.xml', 'Cover header');
+      const middle = plainHeader('rIdH3', 'header3.xml', 'Middle header');
+      const before = { header: boxedHeader('Header legend draft'), footer: LEADING };
+      const after = { header: boxedHeader('Header legend final'), footer: LEADING_EDITED };
+      return Promise.all([
+        sectionedPackage(['First.', 'Second.', 'Third.'],
+          [[cover, before.footer], [middle], [before.header]], [cover, middle, before.header, before.footer]),
+        sectionedPackage(['First.', 'Second.', 'Third.', 'Added last.'],
+          [[cover, after.footer], [middle], [after.header], []], [cover, middle, after.header, after.footer]),
+      ]);
+    });
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('the break is a paragraph-mark revision and nothing is listed', async () => {
+      expect(result.unrepresentedChanges).toBeUndefined();
+      expect(sectionBreakRevisions(await (await DocxArchive.load(result.document)).getDocumentXml())).toEqual({ added: 1, removed: 0 });
+    });
+    await expectRoundTrip({ then }, original, revised, result);
+  });
+
+  for (const direction of ['added', 'removed'] as const) {
+    test(`pairs a leading footer through the unequal run when its content matches a footer the final sections already pair (break ${direction})`, async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('a first and a final section with boxed footers and one shared boxed header that changes; the leading footer gains a row and takes the content of the old final footer, and the final footer changes its legend', () => {
+        const footer = (id: string, legend: string, rows: readonly string[]): PartSpec =>
+          ({ id: `rId${id}`, kind: 'footer', target: `footer${id}.xml`, xml: storyXml('DrawingML', { ...BASE_STORY, legend, rows: [...rows] }) });
+        const header = (legend: string): PartSpec =>
+          ({ id: 'rIdH', kind: 'header', target: 'header1.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend }) });
+        const two = sectionedPackage(['First.', 'Last.'],
+          [[footer('1', 'Leading', [COMPANY]), header('Header draft')], [footer('2', 'Shared legend', [COMPANY, ADDRESS])]],
+          [footer('1', 'Leading', [COMPANY]), footer('2', 'Shared legend', [COMPANY, ADDRESS]), header('Header draft')]);
+        const three = sectionedPackage(['First.', 'Middle.', 'Last.'],
+          [[footer('1', 'Shared legend', [COMPANY, ADDRESS]), header('Header final')], [], [footer('2', 'Final legend', [COMPANY, ADDRESS])]],
+          [footer('1', 'Shared legend', [COMPANY, ADDRESS]), footer('2', 'Final legend', [COMPANY, ADDRESS]), header('Header final')]);
+        return direction === 'added' ? Promise.all([two, three]) : Promise.all([three, two]);
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the break is a paragraph-mark revision and nothing is listed', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        expect(sectionBreakRevisions(await (await DocxArchive.load(result.document)).getDocumentXml()))
+          .toEqual(direction === 'added' ? { added: 1, removed: 0 } : { added: 0, removed: 1 });
+      });
+      await expectRoundTrip({ then }, original, revised, result);
+    });
+
+    test(`pairs unchanged boxed headers that change sections when a boxed footer shared by every section changes (break ${direction})`, async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('two sections with boxed headers A and B and one shared boxed footer; the revision shows B, B again (inherited) and A, and edits the footer', () => {
+        const header = (id: string, legend: string): PartSpec =>
+          ({ id: `rIdH${id}`, kind: 'header', target: `header${id}.xml`, xml: storyXml('DrawingML', { ...BASE_STORY, legend, boxText: `${legend} box` }) });
+        const a = header('1', 'Header A');
+        const b = header('2', 'Header B');
+        const two = sectionedPackage(['First.', 'Last.'], [[LEADING, a], [b]], [LEADING, a, b]);
+        const three = sectionedPackage(['First.', 'Middle.', 'Last.'], [[LEADING_EDITED, b], [], [a]], [LEADING_EDITED, a, b]);
+        return direction === 'added' ? Promise.all([two, three]) : Promise.all([three, two]);
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the break is a paragraph-mark revision and nothing is listed', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        expect(sectionBreakRevisions(await (await DocxArchive.load(result.document)).getDocumentXml()))
+          .toEqual(direction === 'added' ? { added: 1, removed: 0 } : { added: 0, removed: 1 });
+      });
+      await expectRoundTrip({ then }, original, revised, result);
+    });
+  }
+
   test('tracks the edited first footer when a final section with a footer of its own is added', async ({ given, when, then }: AllureBddContext) => {
     const [original, revised] = await given('one section; the revision edits its footer and adds a final section that names a new boxed footer', () => Promise.all([
       sectionedPackage(['First.'], [[LEADING]], [LEADING]),
@@ -504,6 +574,180 @@ describe('a section break beside a retained or a final section whose footer hold
       expect(result.unrepresentedChanges).toBeUndefined();
     });
     await expectRoundTrip({ then }, original, revised, result);
+  });
+
+  describe('a section-aligned pair never displaces a scaffold pair or hides an unpaired run story (#1502)', () => {
+    // Boxed headers whose box text changes, one boxed footer shared by every
+    // section and edited; the revised part names are reversed so story
+    // identity cannot ride on file names.
+    const headed = (labels: readonly string[], edited: boolean): Promise<Buffer> => {
+      const shared: PartSpec = {
+        id: 'rIdS', kind: 'footer', target: 'footer90.xml',
+        xml: storyXml('DrawingML', { ...BASE_STORY, legend: `Shared ${edited}`, boxText: `Shared ${edited}` }),
+      };
+      const headers = new Map<string, PartSpec>();
+      for (const label of new Set(labels)) {
+        const index = 'ABC'.indexOf(label);
+        const n = edited ? 3 - index : index + 1;
+        headers.set(label, {
+          id: `rIdH${n}`, kind: 'header', target: `header${n}.xml`,
+          xml: storyXml('DrawingML', { ...BASE_STORY, legend: `scaffold ${index}`, boxText: `Box ${label} ${edited}` }),
+        });
+      }
+      const references = labels.map((label, index) => [
+        ...(index === 0 ? [shared] : []),
+        ...(index > 0 && labels[index - 1] === label ? [] : [headers.get(label)!]),
+      ]);
+      return sectionedPackage(labels.map((_, index) => `Body ${index}.`), references, [shared, ...headers.values()]);
+    };
+    const sectionPages = (pages: string[], sectionOrdinal: number): string[] =>
+      pages.filter((page) => page.startsWith(`${sectionOrdinal}:`));
+
+    test('keeps the first section header paired by its scaffold when the revision adds sections with headers of their own', async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('headers [A, A inherited] become [A, B, C, C inherited], every box text changes and the shared footer changes', () =>
+        Promise.all([headed(['A', 'A'], false), headed(['A', 'B', 'C', 'C'], true)]));
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the first section header is tracked in place, not listed, and Reject All restores it with both appliers', async () => {
+        expect(result.unrepresentedChanges?.filter((change) => change.sectionIndex === 0) ?? []).toEqual([]);
+        const expected = sectionPages(await shownPages(original), 0);
+        expect(sectionPages(await shownPages(result.document, rejectAllChanges), 0)).toEqual(expected);
+        expect(sectionPages(await shownPages(await appliedByDocxCore(result.document, 'reject')), 0)).toEqual(expected);
+        expect(await shownPages(result.document, acceptAllChanges)).toEqual(await shownPages(revised));
+        await assertSchema(result.document);
+      });
+    });
+
+    test('publishes a full redline or refuses, never a listed partial one, when the headers swap sections and new sections are added', async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('headers [B, A] become [A, B, C, C inherited], every box text changes and the shared footer changes', () =>
+        Promise.all([headed(['B', 'A'], false), headed(['A', 'B', 'C', 'C'], true)]));
+      const outcome = await when('the pair is compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
+          (result) => ({ result, error: undefined }),
+          (error: unknown) => ({ result: undefined, error }),
+        ));
+      if (outcome.result) {
+        await then('nothing is listed', () => {
+          expect(outcome.result!.unrepresentedChanges).toBeUndefined();
+        });
+        await expectRoundTrip({ then }, original, revised, outcome.result);
+      } else {
+        await then('the comparison refuses the story set', () => {
+          expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+        });
+      }
+    });
+
+    for (const sharedKind of ['footer', 'header'] as const) {
+      test(`publishes a full redline or refuses when a section showing an edited ${sharedKind === 'footer' ? 'header' : 'footer'} is removed and another story moves into its place`, async ({ given, when, then }: AllureBddContext) => {
+        const perSection: Kind = sharedKind === 'footer' ? 'header' : 'footer';
+        const build = (labels: readonly string[], edited: boolean): Promise<Buffer> => {
+          const shared: PartSpec = {
+            id: 'rIdS', kind: sharedKind, target: `${sharedKind}90.xml`,
+            xml: storyXml('DrawingML', { ...BASE_STORY, legend: `Shared${edited ? ' edited' : ''}`, boxText: 'Shared box' }),
+          };
+          const parts = new Map<string, PartSpec>();
+          for (const label of new Set(labels)) {
+            const n = parts.size + 1;
+            parts.set(label, {
+              id: `rId${n}`, kind: perSection, target: `${perSection}${n}.xml`,
+              xml: storyXml('DrawingML', { ...BASE_STORY, legend: `${label}${edited && label === 'A' ? ' edited' : ''}`, boxText: label }),
+            });
+          }
+          return sectionedPackage(labels.map((label, index) => `Body ${label} ${index}.`),
+            labels.map((label, index) => [...(index === 0 ? [shared] : []), parts.get(label)!]), [shared, ...parts.values()]);
+        };
+        const [original, revised] = await given(`${perSection}s [A, B, A] become [B, A]; A and the ${sharedKind} shared by every section are edited`, () =>
+          Promise.all([build(['A', 'B', 'A'], false), build(['B', 'A'], true)]));
+        const outcome = await when('the pair is compared', () =>
+          compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
+            (result) => ({ result, error: undefined }),
+            (error: unknown) => ({ result: undefined, error }),
+          ));
+        if (outcome.result) {
+          await then('nothing is listed', () => {
+            expect(outcome.result!.unrepresentedChanges).toBeUndefined();
+          });
+          await expectRoundTrip({ then }, original, revised, outcome.result);
+        } else {
+          await then('the comparison refuses the story set', () => {
+            expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+          });
+        }
+      });
+    }
+
+    for (const role of ['first', 'even'] as const) {
+      test(`publishes a full redline or refuses when a ${role}-page header the settings do not display changes beside the shared-footer shape`, async ({ given, when, then }: AllureBddContext) => {
+        const build = (edited: boolean, added: boolean): Promise<Buffer> => {
+          const cover: PartSpec = { id: 'rIdH1', kind: 'header', target: 'header1.xml', xml: paragraph(text('Cover header')) };
+          const middle: PartSpec = { id: 'rIdH3', kind: 'header', target: 'header3.xml', xml: paragraph(text('Middle header')) };
+          const last: PartSpec = { id: 'rIdH5', kind: 'header', target: 'header5.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Header final' : 'Header draft' }) };
+          const shared: PartSpec = { id: 'rIdF', kind: 'footer', target: 'footer1.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Footer final' : 'Footer draft' }) };
+          const dormant: PartSpec = {
+            id: 'rIdD', kind: 'header', target: 'header9.xml', role,
+            xml: paragraph(`<w:fldSimple w:instr="${edited ? 'AUTHOR' : 'TITLE'}">${text(edited ? 'Changed hidden text' : 'Original hidden text')}</w:fldSimple>`),
+          };
+          const bodies = ['First.', 'Second.', 'Third.', ...(added ? ['Added last.'] : [])];
+          const references = [[cover, shared, dormant], [middle], [last], ...(added ? [[]] : [])];
+          return sectionedPackage(bodies, references, [cover, middle, last, shared, dormant]);
+        };
+        const [original, revised] = await given(`the common-paper-csa shape, plus a ${role}-page header bound to the first section while its page setting is off; that header text changes`, () =>
+          Promise.all([build(false, false), build(true, true)]));
+        const outcome = await when('the pair is compared', () =>
+          compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
+            (result) => ({ result, error: undefined }),
+            (error: unknown) => ({ result: undefined, error }),
+          ));
+        if (outcome.result) {
+          await then('only drawings are listed and the undisplayed header rejects to its original text with both appliers', async () => {
+            expect(outcome.result!.unrepresentedChanges?.filter((change) => change.scope !== 'drawing') ?? []).toEqual([]);
+            const hidden = async (buffer: Buffer): Promise<string> =>
+              extractRoundTripComparisonText((await (await DocxArchive.load(buffer)).getFile('word/header9.xml'))!);
+            const compared = outcome.result!.document;
+            const rejected = await DocxArchive.load(compared);
+            rejected.setFile('word/header9.xml', rejectAllChanges((await rejected.getFile('word/header9.xml'))!));
+            expect(await hidden(await rejected.save())).toContain('Original hidden text');
+            expect(await hidden(await appliedByDocxCore(compared, 'reject'))).toContain('Original hidden text');
+          });
+        } else {
+          await then('the comparison refuses the story set', () => {
+            expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+          });
+        }
+      });
+    }
+
+    test('publishes a full redline or refuses when a body content control property changes beside the shared-footer shape', async ({ given, when, then }: AllureBddContext) => {
+      const build = async (edited: boolean, added: boolean): Promise<Buffer> => {
+        const cover: PartSpec = { id: 'rIdH1', kind: 'header', target: 'header1.xml', xml: paragraph(text('Cover header')) };
+        const middle: PartSpec = { id: 'rIdH3', kind: 'header', target: 'header3.xml', xml: paragraph(text('Middle header')) };
+        const last: PartSpec = { id: 'rIdH5', kind: 'header', target: 'header5.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Header final' : 'Header draft' }) };
+        const shared: PartSpec = { id: 'rIdF', kind: 'footer', target: 'footer1.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Footer final' : 'Footer draft' }) };
+        const bodies = ['First.', 'Second.', 'Third.', ...(added ? ['Added last.'] : [])];
+        const references = [[cover, shared], [middle], [last], ...(added ? [[]] : [])];
+        const archive = await DocxArchive.load(await sectionedPackage(bodies, references, [cover, middle, last, shared]));
+        const control = `<w:sdt><w:sdtPr><w:alias w:val="${edited ? 'Final' : 'Draft'}"/><w:tag w:val="clause"/></w:sdtPr>` +
+          `<w:sdtContent>${paragraph(text('Controlled text'))}</w:sdtContent></w:sdt>`;
+        archive.setDocumentXml((await archive.getDocumentXml()).replace('<w:p>', `${control}<w:p>`));
+        return archive.save();
+      };
+      const [original, revised] = await given('the common-paper-csa shape, plus a block content control whose alias changes from Draft to Final', () =>
+        Promise.all([build(false, false), build(true, true)]));
+      const outcome = await when('the pair is compared', () =>
+        compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
+          (result) => ({ result, error: undefined }),
+          (error: unknown) => ({ result: undefined, error }),
+        ));
+      if (outcome.result) {
+        await then('only drawings are listed', () => {
+          expect(outcome.result!.unrepresentedChanges?.filter((change) => change.scope !== 'drawing') ?? []).toEqual([]);
+        });
+      } else {
+        await then('the comparison refuses the story set', () => {
+          expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+        });
+      }
+    });
   });
 
   test('keeps an unchanged first footer paired with itself when the final section and its footer are removed', async ({ given, when, then }: AllureBddContext) => {

@@ -169,6 +169,13 @@ export interface TextBoxStoryComparisonPlan {
    * `markTrackedTextBoxLifecycles` (#1384).
    */
   lifecycleAncillaryPartPaths?: string[];
+  /**
+   * Header/footer stories were paired through the aligned sections alone
+   * (#1502): every page must then show the original after Reject All and the
+   * revised document after Accept All, with no listed slot excused, or the
+   * comparison is refused.
+   */
+  exactAncillaryProjectionRequired?: boolean;
   representedAncillaryChanges: Array<{
     scope: 'header' | 'footer';
     kind: 'added' | 'changed' | 'removed';
@@ -2011,15 +2018,27 @@ function bucketStories(
   return buckets;
 }
 
+/**
+ * Header/footer story pairs only the aligned sections show, and every story
+ * the unequal section runs show, from `sectionAlignedTextBoxStoryPairs`.
+ */
+interface SectionAlignedFallback {
+  pairs: ReadonlyArray<readonly [SelectedAncillaryStory, SelectedAncillaryStory]>;
+  runStories: readonly SelectedAncillaryStory[];
+}
+
 function pairSelectedAncillaryStories(
   original: SelectedAncillaryStory[],
   revised: SelectedAncillaryStory[],
   pairByBindingClosure: boolean,
   sectionAlignedPairs: ReadonlyArray<readonly [SelectedAncillaryStory, SelectedAncillaryStory]> = [],
+  sectionAlignedFallback: SectionAlignedFallback = { pairs: [], runStories: [] },
 ): {
   pairs: PairedAncillaryStory[];
   unpairedOriginal: SelectedAncillaryStory[];
   unpairedRevised: SelectedAncillaryStory[];
+  /** Whether fallback pairs were taken: the result must then hold every page exactly. */
+  sectionAlignedFallbackApplied: boolean;
 } {
   const originalCandidates = original;
   const revisedCandidates = revised;
@@ -2106,7 +2125,26 @@ function pairSelectedAncillaryStories(
     }
   }
 
+  // Pairs only the aligned sections show come last, so they never take a
+  // story that exact or scaffold matching pairs, and they are taken only
+  // when, with them, every story the unequal runs show is paired: a run
+  // story left over means the runs were not read correctly, so the
+  // comparison keeps its earlier pairs and its refusal (#1502).
+  const fallback = sectionAlignedFallback.pairs.filter(
+    ([left, right]) => !matchedOriginal.has(left) && !matchedRevised.has(right),
+  );
+  const fallbackStories = new Set(fallback.flat());
+  const sectionAlignedFallbackApplied =
+    fallback.length > 0 &&
+    sectionAlignedFallback.runStories.every(
+      (story) => matchedOriginal.has(story) || matchedRevised.has(story) || fallbackStories.has(story),
+    );
+  if (sectionAlignedFallbackApplied) {
+    for (const [left, right] of fallback) pair(left, right, false, true);
+  }
+
   return {
+    sectionAlignedFallbackApplied,
     pairs,
     unpairedOriginal: originalCandidates.filter(
       (story) => !matchedOriginal.has(story),
@@ -2127,14 +2165,20 @@ function pairSelectedAncillaryStories(
  * what the other side's last section shows is its counterpart. The other
  * sections align by what they show (`signatures`). Between two aligned
  * sections, a run of unmatched sections of equal length on both sides aligns
- * in order, and runs of unequal length align as a whole, so a story is
- * paired only when every section of both runs shows the same one per slot.
+ * in order. Runs of unequal length on both sides are returned apart
+ * (`unequalRuns`): which of their sections show the same pages is unknown,
+ * so every section of one run is taken to show the pages of every section of
+ * the other.
  */
 function alignedSectionOrdinals(
   original: readonly string[],
   revised: readonly string[],
-): Array<[original: number, revised: number]> {
-  if (original.length === 0 || revised.length === 0) return [];
+): {
+  aligned: Array<[original: number, revised: number]>;
+  unequalRuns: Array<{ original: number[]; revised: number[] }>;
+} {
+  const unequalRuns: Array<{ original: number[]; revised: number[] }> = [];
+  if (original.length === 0 || revised.length === 0) return { aligned: [], unequalRuns };
   const matchedPairs = (left: readonly string[], right: readonly string[]): Array<[number, number]> => {
     const unmatched = unmatchedSequenceOrdinals([...left], [...right]);
     const matchedLeft = left.map((_, index) => index).filter((index) => !unmatched.original.has(index));
@@ -2156,16 +2200,15 @@ function alignedSectionOrdinals(
         aligned.push([previous[0] + offset, previous[1] + offset]);
       }
     } else if (gap.original > 0 && gap.revised > 0) {
-      for (let left = 1; left <= gap.original; left += 1) {
-        for (let right = 1; right <= gap.revised; right += 1) {
-          aligned.push([previous[0] + left, previous[1] + right]);
-        }
-      }
+      unequalRuns.push({
+        original: Array.from({ length: gap.original }, (_, offset) => previous[0] + offset + 1),
+        revised: Array.from({ length: gap.revised }, (_, offset) => previous[1] + offset + 1),
+      });
     }
     if (anchor[0] < original.length) aligned.push(anchor);
     previous = anchor;
   }
-  return aligned;
+  return { aligned, unequalRuns };
 }
 
 /**
@@ -2180,7 +2223,15 @@ function alignedSectionOrdinals(
  * them), so an original story `A` and a revised part `B` correspond when
  * every displayed slot of an aligned section that shows `A` in the original
  * shows `B` in the revised document, and every one that shows `B` showed `A`.
- * A shared part is one story however many sections show it. A story shown
+ * A shared part is one story however many sections show it. Every section of
+ * a run of unequal length counts as showing the same pages as every section
+ * of the other side's run. Where that leaves a story beside more than one
+ * story on the other side, the aligned sections alone can still pair it as a
+ * fallback (`fallbackPairs`). `pairSelectedAncillaryStories` takes a fallback
+ * pair only after exact and scaffold matching leave both stories unpaired,
+ * only when neither has an unchanged copy on the other side, and only when
+ * the fallback pairs leave no story the runs show unpaired (#1502). A
+ * story shown
  * only by a section with no counterpart is not paired here, so a removed or
  * inserted section's own story stays with the lifecycle checks of
  * `assertLifecycleStoriesAreSectionBound`. The assembled package is still
@@ -2194,10 +2245,13 @@ function alignedSectionOrdinals(
 function sectionAlignedTextBoxStoryPairs(
   originalState: SelectedAncillaryState,
   revisedState: SelectedAncillaryState,
-): Array<[SelectedAncillaryStory, SelectedAncillaryStory]> {
+): {
+  pairs: Array<[SelectedAncillaryStory, SelectedAncillaryStory]>;
+  fallback: SectionAlignedFallback;
+} {
   const originalBindings = originalState.effectiveBindings;
   const revisedBindings = revisedState.effectiveBindings;
-  if (!originalBindings?.ok || !revisedBindings?.ok) return [];
+  if (!originalBindings?.ok || !revisedBindings?.ok) return { pairs: [], fallback: { pairs: [], runStories: [] } };
   const slotKey = (
     bindings: EffectiveStoryBindings,
     sectionOrdinal: number,
@@ -2225,32 +2279,96 @@ function sectionAlignedTextBoxStoryPairs(
     targets.add(to);
     map.set(from, targets);
   };
-  for (const [originalOrdinal, revisedOrdinal] of alignedSectionOrdinals(
+  const { aligned, unequalRuns } = alignedSectionOrdinals(
     signatures(originalState, originalBindings),
     signatures(revisedState, revisedBindings),
-  )) {
+  );
+  // `shown` holds what the aligned sections show; `spanned` adds every slot
+  // pairing inside the runs of unequal length, whose sections cannot be
+  // told apart.
+  const spanned = { forward: new Map<string, Set<string>>(), backward: new Map<string, Set<string>>() };
+  const noteSlots = (
+    maps: Array<{ forward: Map<string, Set<string>>; backward: Map<string, Set<string>> }>,
+    originalOrdinal: number,
+    revisedOrdinal: number,
+  ): void => {
     for (const kind of STORY_KINDS) {
       for (const role of STORY_ROLES) {
         const left = slotKey(originalBindings, originalOrdinal, kind, role);
         const right = slotKey(revisedBindings, revisedOrdinal, kind, role);
         if (left === undefined || right === undefined) continue;
-        note(shown.forward, left, right);
-        note(shown.backward, right, left);
+        for (const map of maps) {
+          note(map.forward, left, right);
+          note(map.backward, right, left);
+        }
       }
     }
+  };
+  for (const [originalOrdinal, revisedOrdinal] of aligned) noteSlots([shown, spanned], originalOrdinal, revisedOrdinal);
+  for (const run of unequalRuns) {
+    for (const originalOrdinal of run.original) {
+      for (const revisedOrdinal of run.revised) noteSlots([spanned], originalOrdinal, revisedOrdinal);
+    }
   }
+  const originalStories = new Map(originalState.stories.map((story) => [story.targetPath, story]));
   const revisedStories = new Map(revisedState.stories.map((story) => [story.targetPath, story]));
-  const pairs: Array<[SelectedAncillaryStory, SelectedAncillaryStory]> = [];
-  for (const left of originalState.stories) {
-    const targets = shown.forward.get(left.targetPath);
-    if (targets?.size !== 1) continue;
-    const right = revisedStories.get([...targets][0]!);
-    if (!right || right.kind !== left.kind) continue;
-    if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
-    const sources = shown.backward.get(right.targetPath);
-    if (sources?.size === 1 && sources.has(left.targetPath)) pairs.push([left, right]);
+  const runStories = new Set<SelectedAncillaryStory>();
+  const noteRunStories = (
+    bindings: EffectiveStoryBindings,
+    stories: ReadonlyMap<string, SelectedAncillaryStory>,
+    ordinals: readonly number[],
+  ): void => {
+    for (const sectionOrdinal of ordinals) {
+      for (const kind of STORY_KINDS) {
+        for (const role of STORY_ROLES) {
+          const key = slotKey(bindings, sectionOrdinal, kind, role);
+          const story = key === undefined ? undefined : stories.get(key);
+          if (story) runStories.add(story);
+        }
+      }
+    }
+  };
+  for (const run of unequalRuns) {
+    noteRunStories(originalBindings, originalStories, run.original);
+    noteRunStories(revisedBindings, revisedStories, run.revised);
   }
-  return pairs;
+  type StoryPair = [SelectedAncillaryStory, SelectedAncillaryStory];
+  const pairThrough = (
+    map: { forward: Map<string, Set<string>>; backward: Map<string, Set<string>> },
+    taken: ReadonlySet<SelectedAncillaryStory>,
+    admits: (left: SelectedAncillaryStory, right: SelectedAncillaryStory) => boolean,
+  ): StoryPair[] => {
+    const found: StoryPair[] = [];
+    for (const left of originalState.stories) {
+      if (taken.has(left)) continue;
+      const targets = map.forward.get(left.targetPath);
+      if (targets?.size !== 1) continue;
+      const right = revisedStories.get([...targets][0]!);
+      if (!right || right.kind !== left.kind || taken.has(right)) continue;
+      if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
+      if (!admits(left, right)) continue;
+      const sources = map.backward.get(right.targetPath);
+      if (sources?.size === 1 && sources.has(left.targetPath)) found.push([left, right]);
+    }
+    return found;
+  };
+  // A story pairs when the aligned sections and the runs, taken together,
+  // show it with one story on the other side, both ways.
+  const pairs = pairThrough(spanned, new Set(), () => true);
+  // A run that shows a story beside another can still leave the aligned
+  // sections showing it with one story only (#1502). Such a pair is a
+  // fallback: it is taken only after exact and scaffold matching leave both
+  // stories unpaired, and only when neither has an unchanged copy on the
+  // other side.
+  const exactKey = (story: SelectedAncillaryStory): string => `${story.kind}|${story.canonical}`;
+  const originalExact = new Set(originalState.stories.map(exactKey));
+  const revisedExact = new Set(revisedState.stories.map(exactKey));
+  const fallbackPairs = pairThrough(
+    shown,
+    new Set(pairs.flat()),
+    (left, right) => !revisedExact.has(exactKey(left)) && !originalExact.has(exactKey(right)),
+  );
+  return { pairs, fallback: { pairs: fallbackPairs, runStories: [...runStories] } };
 }
 
 function hasAncestorLocalName(element: Element, name: string): boolean {
@@ -3017,6 +3135,8 @@ async function ancillaryStoryInputs(
   /** `drawingAlignedOriginalParts` restricted to parts whose listed drawings describe only their boxes. */
   drawingAccountedOriginalParts: Map<string, string>;
   lifecyclePartPaths: string[];
+  /** Section-aligned fallback pairs were taken (`pairSelectedAncillaryStories`). */
+  sectionAlignedFallbackApplied: boolean;
 }> {
   const [originalState, revisedState] = await Promise.all([
     selectedAncillaryState(originalArchive),
@@ -3033,14 +3153,19 @@ async function ancillaryStoryInputs(
       drawingAlignedOriginalParts: new Map(),
       drawingAccountedOriginalParts: new Map(),
       lifecyclePartPaths: [],
+      sectionAlignedFallbackApplied: false,
     };
   }
   const topologyMatches = ordinaryStoryTopologyMatches(originalState, revisedState);
+  const sectionAligned = topologyMatches
+    ? { pairs: [], fallback: undefined }
+    : sectionAlignedTextBoxStoryPairs(originalState, revisedState);
   const paired = pairSelectedAncillaryStories(
     originalState.stories,
     revisedState.stories,
     topologyMatches,
-    topologyMatches ? [] : sectionAlignedTextBoxStoryPairs(originalState, revisedState),
+    sectionAligned.pairs,
+    sectionAligned.fallback,
   );
   const {
     inserted: insertedPartStories,
@@ -3469,6 +3594,7 @@ async function ancillaryStoryInputs(
     drawingAlignedOriginalParts,
     drawingAccountedOriginalParts,
     lifecyclePartPaths,
+    sectionAlignedFallbackApplied: paired.sectionAlignedFallbackApplied,
     representedChanges: [
       ...representedChanges,
       ...insertedPartStories.flatMap((story) =>
@@ -4302,6 +4428,7 @@ export async function prepareTextBoxStoryComparison(
     hasAncillaryTextBoxStories: ancillary.hasTextBoxStories,
     hasUnpairedTextBoxes: unpairedTextBoxes,
     lifecycleAncillaryPartPaths: ancillary.lifecyclePartPaths,
+    ...(ancillary.sectionAlignedFallbackApplied ? { exactAncillaryProjectionRequired: true } : {}),
     representedAncillaryChanges: ancillary.representedChanges,
     drawingChanges: allDrawingChanges,
     drawingAccountedPartPaths: ancillary.drawingAccountedPartPaths,
@@ -5582,6 +5709,54 @@ function listedUncomparedStoryParts(
     }
   }
   return parts;
+}
+
+/**
+ * Refuse a comparison whose header/footer listing would excuse a story no
+ * story comparison wrote: each listed `header` or `footer` entry must name
+ * revised parts a story comparison carried, and none may name a removed
+ * slot. A redline built on section-aligned fallback pairs (#1502) may list
+ * only positions whose stories it tracks in place, because the projection
+ * check reads displayed pages only and a slot the section settings do not
+ * display (a first or even page that is switched off) is never inspected.
+ * Every other listed scope except `drawing` (a content control, a picture,
+ * a section) is refused too: the fallback only replaces an abort, so it must
+ * yield a full redline rather than a partial one.
+ */
+export async function assertListedStoryPartsCompared(
+  revised: Buffer,
+  unrepresented: UnrepresentedStoryParts,
+): Promise<void> {
+  const archive = await DocxArchive.load(revised);
+  const uncompared = listedUncomparedStoryParts(
+    await archive.getDocumentXml(),
+    await archive.getFile('word/_rels/document.xml.rels'),
+    unrepresented,
+  );
+  const removed = unrepresented.changes.filter(
+    (change) => (change.scope === 'header' || change.scope === 'footer') && change.kind === 'removed',
+  );
+  const outsideStories = unrepresented.changes.filter(
+    (change) => change.scope !== 'drawing' && change.scope !== 'header' && change.scope !== 'footer',
+  );
+  if (uncompared.size === 0 && removed.length === 0 && outsideStories.length === 0) return;
+  throw new UnsupportedTextBoxRevisionError([
+    ...[...uncompared].sort().map((partPath) => ({
+      index: 0,
+      partPath,
+      reason: 'section-aligned header/footer pairing would list a story no story comparison tracked',
+    })),
+    ...removed.map((change) => ({
+      index: 0,
+      partPath: 'word/document.xml',
+      reason: `section-aligned header/footer pairing would list a removed ${change.scope} slot (section ${change.sectionIndex}, ${change.role})`,
+    })),
+    ...outsideStories.map((change) => ({
+      index: 0,
+      partPath: 'word/document.xml',
+      reason: `section-aligned header/footer pairing would publish beside a listed ${change.scope} change (section ${change.sectionIndex})`,
+    })),
+  ]);
 }
 
 /** The header/footer changes a comparison lists, for the package projection check. */
