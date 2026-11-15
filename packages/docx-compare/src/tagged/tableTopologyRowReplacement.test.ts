@@ -21,6 +21,7 @@ import { describe, expect } from 'vitest';
 import { DocxArchive, DocxDocument, parseXml, serializeXml, validateBookmarkIntegrity } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
+import { duplicateRevisionIdsInPackage } from '../testing/revisionIdUniqueness.js';
 import { compareDocuments } from '../index.js';
 import { acceptAllChanges, extractTextWithParagraphs, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { bodyTableFootprint } from './tableTopologyGuard.js';
@@ -93,6 +94,8 @@ function rowMarkers(xml: string): Array<{ markers: string[]; contentRevisions: n
 }
 
 async function assertSchema(buffer: Buffer): Promise<void> {
+  // Every revision keeps its own identifier (#1466).
+  expect(await duplicateRevisionIdsInPackage(buffer)).toEqual([]);
   const directory = await mkdtemp(join(tmpdir(), 'sdx-rowreplace-'));
   try {
     const path = join(directory, 'compared.docx');

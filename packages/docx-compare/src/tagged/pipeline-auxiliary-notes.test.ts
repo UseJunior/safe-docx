@@ -5,6 +5,7 @@ import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { compareDocumentsAtomizer, noteDefinitionRequiresCollisionSafeFallback } from './pipeline.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import { duplicateRevisionIdsInPackage } from '../testing/revisionIdUniqueness.js';
 
 const test = testAllure
   .epic('Document Comparison')
@@ -400,6 +401,8 @@ describe('pipeline auxiliary note publication', () => {
     });
 
     await then('each anchor stays live and each definition carries its own tracked history', async () => {
+      // Each definition's revisions keep their own identifiers (#1466).
+      expect(await duplicateRevisionIdsInPackage(result.document)).toEqual([]);
       const parts = await resultParts(result.document);
       const document = new DOMParser().parseFromString(parts.documentXml!, 'text/xml');
       const references = Array.from(document.getElementsByTagName('w:footnoteReference'));

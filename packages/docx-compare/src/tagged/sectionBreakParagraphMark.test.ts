@@ -36,6 +36,7 @@ import {
 } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
+import { duplicateRevisionIdsInPackage } from '../testing/revisionIdUniqueness.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 
@@ -490,6 +491,8 @@ describe('section-break inserts and deletes are paragraph-mark revisions (#1144)
     const trackedXml = await archive.getDocumentXml();
     const document = parseXml(trackedXml);
     expect(document.getElementsByTagNameNS(W_NS, 'sectPrChange').length).toBe(1);
+    // The w:sectPrChange and the w:pPrChange beside it are two revisions (#1466).
+    expect(await duplicateRevisionIdsInPackage(result.document)).toEqual([]);
     const body = document.getElementsByTagNameNS(W_NS, 'body').item(0)!;
     expect(wChildren(body).filter((child) => child.localName === 'p')).toHaveLength(2);
     expect(await documentShape(archive, rejectAllChanges(trackedXml), rejectAllChanges))
