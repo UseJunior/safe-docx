@@ -831,10 +831,12 @@ export function sectionDivergenceIsReported(
   // Reject All divergence is indexed by the projection's sections, and when
   // the redline adds a section break the two differ: the projection's final
   // section is the body-level w:sectPr, which is the revised final section and
-  // still carries its references (#1420).
+  // still carries its references (#1420). Only an added break shifts the
+  // index this way; a removed break keeps its own rules (#1203).
   const reportedIndexes = new Set([divergence.sectionIndex]);
   if (
     rejectProjection &&
+    rejectProjection.projectedSectionCount < rejectProjection.revisedSectionCount &&
     divergence.sectionIndex === rejectProjection.projectedSectionCount - 1
   ) {
     reportedIndexes.add(rejectProjection.revisedSectionCount - 1);

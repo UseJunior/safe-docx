@@ -601,5 +601,8 @@ describe('a section break added beside a footer the final section gains (#1420)'
     // Only the projection's final section is the revised final section.
     expect(sectionDivergenceIsReported(divergence, finalSectionFooter,
       { projectedSectionCount: 2, revisedSectionCount: 3 })).toBe(false);
+    // A removed break (more sections after Reject All) is not shifted (#1203).
+    expect(sectionDivergenceIsReported({ ...divergence, sectionIndex: 2 }, finalSectionFooter,
+      { projectedSectionCount: 3, revisedSectionCount: 2 })).toBe(false);
   });
 });
