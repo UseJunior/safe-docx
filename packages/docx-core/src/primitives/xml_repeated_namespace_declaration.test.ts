@@ -34,8 +34,19 @@ const OTHER_NS = 'urn:example:not-wordprocessingml';
 const BODY = '<w:p><w:r><w:t>Alpha bravo charlie.</w:t></w:r></w:p>';
 const FIXED_DATE = new Date(Date.UTC(2026, 0, 1));
 
-/** The shared builder appends `namespaces` after its own `xmlns:w`, so `w` repeats it. */
-const repeatW = (uri: string) => ({ namespaces: { w: uri } });
+/**
+ * The minimal package with a second `xmlns:w` (bound to `uri`) on the
+ * `w:document` root. The shared builder declares each prefix once (#1484),
+ * so the repeat is written into the built part here.
+ */
+async function buildWithRepeatedW(uri: string): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(await buildDocxFromBodyXml(BODY));
+  const root = `<w:document xmlns:w="${W_NS}"`;
+  const documentXml = await zip.file('word/document.xml')!.async('string');
+  if (!documentXml.includes(root)) throw new Error('fixture root does not start with xmlns:w');
+  zip.file('word/document.xml', documentXml.replace(root, `${root} xmlns:w="${uri}"`));
+  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+}
 
 /** A header part whose root repeats `xmlns:w` with `uri` (null: declared once). */
 const headerXml = (uri: string | null) =>
@@ -173,7 +184,7 @@ describe('parseXml with a repeated namespace declaration', () => {
 describe('DocxDocument.load with a repeated namespace declaration', () => {
   test('word/document.xml repeating xmlns:w loads, normalizes and saves like the clean package', async () => {
     const clean = await buildDocxFromBodyXml(BODY);
-    const repeated = await buildDocxFromBodyXml(BODY, [], repeatW(W_NS));
+    const repeated = await buildWithRepeatedW(W_NS);
     expect((await partText(repeated, 'word/document.xml')).split(`xmlns:w="${W_NS}"`)).toHaveLength(3);
 
     const observed = await loadNormalizeSave(repeated);
@@ -184,7 +195,7 @@ describe('DocxDocument.load with a repeated namespace declaration', () => {
   });
 
   test('a conflicting xmlns:w on word/document.xml fails with XmlPartParseError naming the part', async () => {
-    const conflicting = await buildDocxFromBodyXml(BODY, [], repeatW(OTHER_NS));
+    const conflicting = await buildWithRepeatedW(OTHER_NS);
     const failure = await DocxDocument.load(conflicting).then(() => null, (error: unknown) => error);
     expect(failure).toBeInstanceOf(XmlPartParseError);
     expect((failure as XmlPartParseError).partName).toBe('word/document.xml');

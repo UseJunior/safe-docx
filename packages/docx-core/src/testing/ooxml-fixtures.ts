@@ -300,7 +300,8 @@ function mergeRootNamespaceBindings(extra: Readonly<Record<string, string>>): Ma
 /**
  * The root `mc:Ignorable` tokens: `w14`, then each caller prefix once. Every
  * prefix must be bound on the root and must not name the Markup
- * Compatibility namespace itself (ECMA-376 Part 3 §7.2). A repeated token is
+ * Compatibility namespace itself, the rules the emitted-document schema gate
+ * (`scripts/check_emitted_document_schema.mjs`) checks. A repeated token is
  * dropped rather than written twice.
  */
 function mergeRootIgnorablePrefixes(
