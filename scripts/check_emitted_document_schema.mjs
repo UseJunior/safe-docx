@@ -189,6 +189,7 @@ function selfTest() {
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 
 const XML_NS = 'http://www.w3.org/XML/1998/namespace';
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 
 // NCName (Namespaces in XML 1.0 §4): an XML 1.0 Name (XML 1.0 §2.3,
 // productions [4] and [4a]) without a colon.
@@ -200,11 +201,13 @@ const NC_NAME = new RegExp(`^[${NC_NAME_START_CHAR}][${NC_NAME_CHAR}]*$`, 'u');
 
 /**
  * The namespace `prefix` is bound to in scope at `element`, or null. The
- * `xml` prefix is bound by definition and needs no declaration (Namespaces
- * in XML 1.0 §3), which xmldom's lookup does not report.
+ * `xml` and `xmlns` prefixes are bound by definition and need no
+ * declaration (Namespaces in XML 1.0 §3), which xmldom's lookup does not
+ * report.
  */
 function resolvePrefix(element, prefix) {
   if (prefix === 'xml') return XML_NS;
+  if (prefix === 'xmlns') return XMLNS_NS;
   return element.lookupNamespaceURI(prefix);
 }
 

@@ -164,11 +164,18 @@ test('Ignorable and ProcessContent accept aliased prefixes for an already-ignora
   assert.equal(document.getElementsByTagNameNS(W_NS, 't')[0].textContent, 'keep');
 });
 
-test('the predefined xml prefix needs no declaration in an MCE prefix list', () => {
-  const result = applyMcePreprocessing(
-    `<w:document xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" mc:MustUnderstand="xml">${BODY}</w:document>`,
-  );
-  assert.equal(result.parseError, undefined);
+test('the predefined xml and xmlns prefixes need no declaration in an MCE list', () => {
+  for (const attributes of [
+    'mc:MustUnderstand="xml"',
+    'mc:Ignorable="xml"',
+    'mc:MustUnderstand="xmlns"',
+    'mc:Ignorable="xmlns" mc:ProcessContent="xmlns:*"',
+  ]) {
+    const result = applyMcePreprocessing(
+      `<w:document xmlns:w="${W_NS}" xmlns:mc="${MC_NS}" ${attributes}>${BODY}</w:document>`,
+    );
+    assert.equal(result.parseError, undefined, attributes);
+  }
 });
 
 test('a ProcessContent local part must be an NCName or exactly *', () => {
