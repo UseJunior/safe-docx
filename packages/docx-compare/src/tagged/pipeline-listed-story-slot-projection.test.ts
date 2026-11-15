@@ -416,6 +416,14 @@ describe('the package projection check excludes only listed, uncompared slots (#
     await then('the footer is held to the original and the check fails', () =>
       expect(assertAncillaryTextBoxStoryProjection(original, revised, document, { changes: [], comparedPartPaths }))
         .rejects.toThrow(/package projection validation/u));
+    // The error names the footer page, not a text box (#1420).
+    await then('the error names the footer page it compared', async () => {
+      const error = await assertAncillaryTextBoxStoryProjection(
+        original, revised, document, { changes: [], comparedPartPaths },
+      ).catch((caught: unknown) => caught as Error);
+      expect(error?.message).toContain('Reject All section 1 odd footer');
+      expect(error?.message).not.toContain('w:txbxContent');
+    });
   });
 
   test('refuses a listed footer that is not the revised part', async ({ given, when, then }: AllureBddContext) => {

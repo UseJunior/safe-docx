@@ -497,3 +497,109 @@ describe('sections that differ only in header/footer references emit no w:sectPr
     await expectSchemaValidPackages(result.document);
   });
 });
+
+describe('a section break added beside a footer the final section gains (#1420)', () => {
+  const PAGE = `${PORTRAIT}<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>`;
+  const FOOTER_ONE: StoryPart = { id: 'rIdF1', kind: 'footer', target: 'footer1.xml', text: 'Footer one' };
+  const FOOTER_TWO: StoryPart = { id: 'rIdF2', kind: 'footer', target: 'footer2.xml', text: 'Footer two' };
+  const section = (reference?: StoryPart): string =>
+    `<w:sectPr>${reference ? `<w:footerReference w:type="default" r:id="${reference.id}"/>` : ''}` +
+    `<w:type w:val="nextPage"/>${PAGE}</w:sectPr>`;
+  const body = (breakSection?: string): string =>
+    paragraph('Alpha paragraph.') +
+    (breakSection
+      ? `<w:p><w:pPr>${breakSection}</w:pPr><w:r><w:t>Beta paragraph.</w:t></w:r></w:p>`
+      : paragraph('Beta paragraph.')) +
+    paragraph('Gamma paragraph.');
+
+  const cases: Array<{
+    label: string;
+    original: () => Promise<Buffer>;
+    revised: () => Promise<Buffer>;
+    bindings: string[];
+    /** Whether the final section's footer is listed rather than compared as a story. */
+    footerListed: boolean;
+  }> = [
+    {
+      label: 'the new section and the final section each get their own footer',
+      original: () => packageWithStories(body(), `<w:sectPr>${PAGE}</w:sectPr>`, []),
+      revised: () => packageWithStories(body(section(FOOTER_ONE)), section(FOOTER_TWO), [FOOTER_ONE, FOOTER_TWO]),
+      bindings: ['0:footer:default=word/footer1.xml', '1:footer:default=word/footer2.xml'],
+      footerListed: true,
+    },
+    {
+      label: 'the new section has no footer and the final section gains one',
+      original: () => packageWithStories(body(), `<w:sectPr>${PAGE}</w:sectPr>`, []),
+      revised: () => packageWithStories(body(section()), section(FOOTER_ONE), [FOOTER_ONE]),
+      bindings: ['1:footer:default=word/footer1.xml'],
+      footerListed: true,
+    },
+    {
+      // Word's unlink-from-previous shape (#1500): the first section keeps the
+      // original part and the final section points at an edited copy.
+      label: 'the final section points at an edited copy of the original footer',
+      original: () => packageWithStories(
+        body(), `<w:sectPr><w:footerReference w:type="default" r:id="rIdF1"/>${PAGE}</w:sectPr>`,
+        [{ ...FOOTER_ONE, text: 'Footer' }]),
+      revised: () => packageWithStories(
+        body(section(FOOTER_ONE)), section(FOOTER_TWO),
+        [{ ...FOOTER_ONE, text: 'Footer' }, { ...FOOTER_TWO, text: 'Footer edited' }]),
+      bindings: ['0:footer:default=word/footer1.xml', '1:footer:default=word/footer2.xml'],
+      // The copy is compared against the footer it displaces, so its edit is
+      // tracked and Reject All shows the original footer text.
+      footerListed: false,
+    },
+  ];
+
+  for (const { label, original, revised, bindings, footerListed } of cases) {
+    test(`${label}: the comparison completes and lists the final section's footer`, async () => {
+      const originalBuffer = await original();
+      const revisedBuffer = await revised();
+      // Neither input holds a text box, so no text-box error may be raised.
+      for (const buffer of [originalBuffer, revisedBuffer]) {
+        expect(await (await DocxArchive.load(buffer)).getDocumentXml()).not.toContain('w:txbxContent');
+      }
+      const result = await compareDocumentsAtomizer(originalBuffer, revisedBuffer, COMPARE_OPTIONS);
+      const archive = await DocxArchive.load(result.document);
+      const documentXml = await archive.getDocumentXml();
+      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+        { scope: 'section', kind: 'added', sectionIndex: 1 },
+      ]));
+      const finalFooterEntry = { scope: 'footer', kind: 'added', sectionIndex: 1, role: 'default' };
+      if (footerListed) {
+        expect(result.unrepresentedChanges).toContainEqual(finalFooterEntry);
+      } else {
+        expect(result.unrepresentedChanges).not.toContainEqual(finalFooterEntry);
+        const copy = (await archive.getFile('word/footer2.xml'))!;
+        expect(rejectAllChanges(copy)).toContain('<w:t>Footer</w:t>');
+        expect(rejectAllChanges(copy)).not.toContain('edited');
+        expect(acceptAllChanges(copy)).toContain('edited');
+      }
+      expect((await resolvedBindings(archive, acceptAllChanges(documentXml))).sort()).toEqual(bindings);
+      expect((await resolvedBindings(archive, nativeProjection(documentXml, acceptChanges))).sort())
+        .toEqual(bindings);
+      expect(liveSections(nativeProjection(documentXml, rejectChanges))).toHaveLength(1);
+      await expectSchemaValidPackages(result.document);
+    });
+  }
+
+  test('a Reject All reference divergence on the final section is matched to the revised final section', () => {
+    const divergence = {
+      scope: 'section' as const,
+      property: 'w:footerReference',
+      kind: 'added' as const,
+      expectedValue: null,
+      actualValue: '<w:footerReference/>',
+      paragraphIndex: -1,
+      textSample: '',
+      sectionIndex: 0,
+    };
+    const finalSectionFooter = [{ scope: 'footer' as const, kind: 'added' as const, sectionIndex: 1, role: 'default' as const }];
+    const counts = { projectedSectionCount: 1, revisedSectionCount: 2 };
+    expect(sectionDivergenceIsReported(divergence, finalSectionFooter)).toBe(false);
+    expect(sectionDivergenceIsReported(divergence, finalSectionFooter, counts)).toBe(true);
+    // Only the projection's final section is the revised final section.
+    expect(sectionDivergenceIsReported(divergence, finalSectionFooter,
+      { projectedSectionCount: 2, revisedSectionCount: 3 })).toBe(false);
+  });
+});
