@@ -32,6 +32,9 @@ import {
   isBlankStoryPart,
   resolveEffectiveStoryBindings,
   storySlotKey,
+  STORY_KINDS,
+  STORY_ROLES,
+  type EffectiveStoryBindings,
 } from './effectiveStoryBindings.js';
 import {
   BLANK_STORY_IDENTITY,
@@ -193,6 +196,13 @@ export interface TextBoxStoryComparisonPlan {
    * redline must show, for the header/footer projection check (#1382).
    */
   ancillaryProjectionOriginal?: Buffer;
+  /**
+   * The original package with only the `drawingAccountedPartPaths` parts'
+   * drawings replaced that way: what the finished package's header/footer
+   * entries are judged against, so an entry a changed section count leaves
+   * at another section index is dropped when the part is carried (#1487).
+   */
+  drawingAccountedOriginal?: Buffer;
 }
 
 function textBoxParagraphId(textBox: Element): string | undefined {
@@ -1281,6 +1291,8 @@ interface SelectedAncillaryState {
   settingsSignature: string;
   auditBindings: SectPrBinding[];
   stories: SelectedAncillaryStory[];
+  /** The part each section shows per kind and role, after inheritance. */
+  effectiveBindings?: EffectiveStoryBindings;
 }
 
 interface PairedAncillaryStory {
@@ -1288,6 +1300,17 @@ interface PairedAncillaryStory {
   original: SelectedAncillaryStory;
   revised: SelectedAncillaryStory;
   bindingClosureMatched: boolean;
+  /** Paired through the section alignment of a changed section topology. */
+  sectionAligned: boolean;
+}
+
+/**
+ * Whether the two stories of a pair are shown in corresponding places, so
+ * the revised part can carry the pair's redline: the same slots of a matched
+ * section topology, or the aligned pages of a changed one.
+ */
+function storiesShareSlots(pair: PairedAncillaryStory, topologyMatches: boolean): boolean {
+  return (topologyMatches && pair.bindingClosureMatched) || pair.sectionAligned;
 }
 
 function partTextBoxes(xml: string): Element[] {
@@ -1950,6 +1973,12 @@ async function selectedAncillaryState(
     settingsSignature,
     auditBindings: audit.bindings,
     stories,
+    effectiveBindings: resolveEffectiveStoryBindings({
+      documentXml,
+      relationshipsXml,
+      settingsXml,
+      packageParts: parts,
+    }),
   };
 }
 
@@ -1974,6 +2003,7 @@ function pairSelectedAncillaryStories(
   original: SelectedAncillaryStory[],
   revised: SelectedAncillaryStory[],
   pairByBindingClosure: boolean,
+  sectionAlignedPairs: ReadonlyArray<readonly [SelectedAncillaryStory, SelectedAncillaryStory]> = [],
 ): {
   pairs: PairedAncillaryStory[];
   unpairedOriginal: SelectedAncillaryStory[];
@@ -1989,6 +2019,7 @@ function pairSelectedAncillaryStories(
     left: SelectedAncillaryStory,
     right: SelectedAncillaryStory,
     bindingClosureMatched: boolean,
+    sectionAligned = false,
   ): void => {
     matchedOriginal.add(left);
     matchedRevised.add(right);
@@ -1997,6 +2028,7 @@ function pairSelectedAncillaryStories(
       original: left,
       revised: right,
       bindingClosureMatched,
+      sectionAligned,
     });
   };
 
@@ -2013,6 +2045,13 @@ function pairSelectedAncillaryStories(
       const left = closureOriginal.get(key)!;
       const right = closureRevised.get(key) ?? [];
       if (left.length === 1 && right.length === 1) pair(left[0]!, right[0]!, true);
+    }
+  } else {
+    // A changed section topology pairs text-box stories by where they are
+    // shown, before content: an unchanged copy elsewhere must not claim the
+    // story the aligned pages show (#1487).
+    for (const [left, right] of sectionAlignedPairs) {
+      if (!matchedOriginal.has(left) && !matchedRevised.has(right)) pair(left, right, false, true);
     }
   }
 
@@ -2064,6 +2103,128 @@ function pairSelectedAncillaryStories(
       (story) => !matchedRevised.has(story),
     ),
   };
+}
+
+/**
+ * Section ordinals of the two documents that show the same pages once the
+ * section count or layout changed. The body-level `w:sectPr` is the last
+ * section on both sides, and a paragraph-level break the body comparison
+ * adds or removes is recorded on paragraph marks (#1144), so the last
+ * sections always correspond. The other sections align by what they show
+ * (`signatures`), and a run of unmatched sections of equal length on both
+ * sides between two aligned ones aligns in order.
+ */
+function alignedSectionOrdinals(
+  original: readonly string[],
+  revised: readonly string[],
+): Array<[original: number, revised: number]> {
+  if (original.length === 0 || revised.length === 0) return [];
+  const leading = { original: original.slice(0, -1), revised: revised.slice(0, -1) };
+  const unmatched = unmatchedSequenceOrdinals(leading.original, leading.revised);
+  const matchedOriginal = leading.original.map((_, index) => index).filter((index) => !unmatched.original.has(index));
+  const matchedRevised = leading.revised.map((_, index) => index).filter((index) => !unmatched.revised.has(index));
+  const anchors: Array<[number, number]> = [
+    ...matchedOriginal.map((index, offset): [number, number] => [index, matchedRevised[offset]!]),
+    [original.length - 1, revised.length - 1],
+  ];
+  const aligned: Array<[number, number]> = [];
+  let previous: [number, number] = [-1, -1];
+  for (const anchor of anchors) {
+    const gap = anchor[0] - previous[0] - 1;
+    if (gap > 0 && gap === anchor[1] - previous[1] - 1) {
+      for (let offset = 1; offset <= gap; offset += 1) {
+        aligned.push([previous[0] + offset, previous[1] + offset]);
+      }
+    }
+    aligned.push(anchor);
+    previous = anchor;
+  }
+  return aligned;
+}
+
+/**
+ * Header/footer stories, at least one of each pair holding a text box, that
+ * a changed section topology shows on the same pages.
+ *
+ * Section ordinals stop naming the same pages once a section is added or
+ * removed, so the binding closures of `pairSelectedAncillaryStories` cannot
+ * pair such a story. Reject All of the compared document has the original's
+ * sections and Accept All the revised document's, and a section's references
+ * are the revised ones in both (a `w:sectPrChange` snapshot cannot carry
+ * them), so an original story `A` and a revised part `B` correspond when
+ * every displayed slot of an aligned section that shows `A` in the original
+ * shows `B` in the revised document, and every one that shows `B` showed `A`.
+ * A shared part is one story however many sections show it. A story shown
+ * only by a section with no counterpart is not paired here, so a removed or
+ * inserted section's own story stays with the lifecycle checks of
+ * `assertLifecycleStoriesAreSectionBound`. The assembled package is still
+ * held page by page to both inputs (`assertAncillaryTextBoxStoryProjection`).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1487
+ */
+function sectionAlignedTextBoxStoryPairs(
+  originalState: SelectedAncillaryState,
+  revisedState: SelectedAncillaryState,
+): Array<[SelectedAncillaryStory, SelectedAncillaryStory]> {
+  const originalBindings = originalState.effectiveBindings;
+  const revisedBindings = revisedState.effectiveBindings;
+  if (!originalBindings?.ok || !revisedBindings?.ok) return [];
+  const slotKey = (
+    bindings: EffectiveStoryBindings,
+    sectionOrdinal: number,
+    kind: SelectedAncillaryStory['kind'],
+    role: SectPrBinding['role'],
+  ): string | undefined => {
+    const slot = effectiveStorySlot(bindings, { sectionOrdinal, kind, role });
+    if (!slot?.displayed) return undefined;
+    return slot.targetPath ?? `${BLANK_STORY_IDENTITY}:${kind}`;
+  };
+  const signatures = (
+    state: SelectedAncillaryState,
+    bindings: EffectiveStoryBindings,
+  ): string[] => {
+    const canonical = new Map(state.stories.map((story) => [story.targetPath, story.canonical]));
+    return Array.from({ length: bindings.sectionCount }, (_, sectionOrdinal) =>
+      STORY_KINDS.flatMap((kind) => STORY_ROLES.map((role) => {
+        const key = slotKey(bindings, sectionOrdinal, kind, role);
+        return `${kind}:${role}:${key === undefined ? '' : canonical.get(key) ?? key}`;
+      })).join('\n'));
+  };
+  const shown = { forward: new Map<string, Set<string>>(), backward: new Map<string, Set<string>>() };
+  const note = (map: Map<string, Set<string>>, from: string, to: string): void => {
+    const targets = map.get(from) ?? new Set<string>();
+    targets.add(to);
+    map.set(from, targets);
+  };
+  for (const [originalOrdinal, revisedOrdinal] of alignedSectionOrdinals(
+    signatures(originalState, originalBindings),
+    signatures(revisedState, revisedBindings),
+  )) {
+    for (const kind of STORY_KINDS) {
+      for (const role of STORY_ROLES) {
+        const left = slotKey(originalBindings, originalOrdinal, kind, role);
+        const right = slotKey(revisedBindings, revisedOrdinal, kind, role);
+        if (left === undefined || right === undefined) continue;
+        note(shown.forward, left, right);
+        note(shown.backward, right, left);
+      }
+    }
+  }
+  const revisedStories = new Map(revisedState.stories.map((story) => [story.targetPath, story]));
+  const pairs: Array<[SelectedAncillaryStory, SelectedAncillaryStory]> = [];
+  for (const left of originalState.stories) {
+    const targets = shown.forward.get(left.targetPath);
+    if (targets?.size !== 1) continue;
+    const right = revisedStories.get([...targets][0]!);
+    if (!right || right.kind !== left.kind) continue;
+    if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
+    const sources = shown.backward.get(right.targetPath);
+    if (sources?.size === 1 && sources.has(left.targetPath)) pairs.push([left, right]);
+  }
+  return pairs;
 }
 
 function hasAncestorLocalName(element: Element, name: string): boolean {
@@ -2517,7 +2678,7 @@ async function lifecycleAncillaryStoryInputs(
   const pairedOriginal = new Set(pairing.pairs.map(([originalIndex]) => originalIndex));
   const firstUnpaired = revisedCandidates.find((_, index) =>
     !pairing.pairs.some(([, revisedIndex]) => revisedIndex === index));
-  if (!topologyMatches || !pair.bindingClosureMatched) {
+  if (!storiesShareSlots(pair, topologyMatches)) {
     refuse(
       firstUnpaired ? 'revised' : 'original',
       firstUnpaired?.copies[0] ??
@@ -2827,6 +2988,8 @@ async function ancillaryStoryInputs(
   drawingChanges: UnrepresentedChange[];
   drawingAccountedPartPaths: string[];
   drawingAlignedOriginalParts: Map<string, string>;
+  /** `drawingAlignedOriginalParts` restricted to the drawing-accounted pairs, by original part path. */
+  drawingAccountedOriginalParts: Map<string, string>;
   lifecyclePartPaths: string[];
 }> {
   const [originalState, revisedState] = await Promise.all([
@@ -2842,6 +3005,7 @@ async function ancillaryStoryInputs(
       drawingChanges: [],
       drawingAccountedPartPaths: [],
       drawingAlignedOriginalParts: new Map(),
+      drawingAccountedOriginalParts: new Map(),
       lifecyclePartPaths: [],
     };
   }
@@ -2850,6 +3014,7 @@ async function ancillaryStoryInputs(
     originalState.stories,
     revisedState.stories,
     topologyMatches,
+    topologyMatches ? [] : sectionAlignedTextBoxStoryPairs(originalState, revisedState),
   );
   const {
     inserted: insertedPartStories,
@@ -2867,6 +3032,7 @@ async function ancillaryStoryInputs(
   const drawingChanges: UnrepresentedChange[] = [];
   const drawingAccountedPartPaths: string[] = [];
   const drawingAlignedOriginalParts = new Map<string, string>();
+  const drawingAccountedOriginalParts = new Map<string, string>();
   const lifecyclePartPaths: string[] = [];
   for (const pair of paired.pairs) {
     const slotLifecycle = await slotLifecycleStoryInput(
@@ -2955,8 +3121,7 @@ async function ancillaryStoryInputs(
       isSoleDrawingShape(pair.revised.textBoxes[index]!, change.revisedContainer) &&
       shapeTemplatesAgree(change.originalContainer, change.revisedContainer));
     if (
-      topologyMatches
-      && pair.bindingClosureMatched
+      storiesShareSlots(pair, topologyMatches)
       && original.ordinaryContent !== pair.revised.ordinaryContent
       && (shapedBoxes.length === 0
         || ordinaryStoryContentFingerprint(ordinaryOriginalXml) !== pair.revised.ordinaryContent)
@@ -3150,6 +3315,7 @@ async function ancillaryStoryInputs(
           ) === pair.revised.canonical
         ) {
           drawingAccountedPartPaths.push(pair.revised.targetPath);
+          drawingAccountedOriginalParts.set(original.targetPath, alignedXml);
           representedChanges.push(...pair.revised.bindings.map((binding) => ({
             scope: binding.kind,
             kind: 'changed' as const,
@@ -3272,6 +3438,7 @@ async function ancillaryStoryInputs(
     drawingChanges,
     drawingAccountedPartPaths,
     drawingAlignedOriginalParts,
+    drawingAccountedOriginalParts,
     lifecyclePartPaths,
     representedChanges: [
       ...representedChanges,
@@ -4082,6 +4249,14 @@ export async function prepareTextBoxStoryComparison(
     }
     ancillaryProjectionOriginal = await projectionArchive.save();
   }
+  let drawingAccountedOriginal: Buffer | undefined;
+  if (ancillary.drawingAccountedOriginalParts.size > 0) {
+    const accountedArchive = await originalArchive.clone();
+    for (const [partPath, xml] of ancillary.drawingAccountedOriginalParts) {
+      accountedArchive.setFile(partPath, xml);
+    }
+    drawingAccountedOriginal = await accountedArchive.save();
+  }
 
   const outerOriginalArchive = await originalArchive.clone();
   const outerRevisedArchive = await revisedArchive.clone();
@@ -4102,6 +4277,7 @@ export async function prepareTextBoxStoryComparison(
     drawingChanges: allDrawingChanges,
     drawingAccountedPartPaths: ancillary.drawingAccountedPartPaths,
     ...(ancillaryProjectionOriginal ? { ancillaryProjectionOriginal } : {}),
+    ...(drawingAccountedOriginal ? { drawingAccountedOriginal } : {}),
   };
 }
 

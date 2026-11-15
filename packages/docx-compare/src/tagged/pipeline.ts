@@ -1905,7 +1905,14 @@ async function compareDocumentsTagged(
     );
   }
 
-  return withRepresentedPackageChangesRemoved(original, revised, {
+  // A part whose only differences are its stories and the drawings listed
+  // for its boxes is judged as the projection check judges it: Reject All
+  // shows the revised drawings around the original stories, and the
+  // `drawing` entries name that difference. A positional header/footer entry
+  // a changed section count leaves behind is then dropped when the story
+  // itself is carried (#1487). A drawing that draws more than its box keeps
+  // the part's own entry.
+  return withRepresentedPackageChangesRemoved(textBoxPlan.drawingAccountedOriginal ?? original, revised, {
     ...outerResult,
     document,
     stats,
