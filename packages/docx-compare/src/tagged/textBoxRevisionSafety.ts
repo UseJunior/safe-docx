@@ -2011,11 +2011,21 @@ function bucketStories(
   return buckets;
 }
 
+/**
+ * Header/footer story pairs only the aligned sections show, and every story
+ * the unequal section runs show, from `sectionAlignedTextBoxStoryPairs`.
+ */
+interface SectionAlignedFallback {
+  pairs: ReadonlyArray<readonly [SelectedAncillaryStory, SelectedAncillaryStory]>;
+  runStories: readonly SelectedAncillaryStory[];
+}
+
 function pairSelectedAncillaryStories(
   original: SelectedAncillaryStory[],
   revised: SelectedAncillaryStory[],
   pairByBindingClosure: boolean,
   sectionAlignedPairs: ReadonlyArray<readonly [SelectedAncillaryStory, SelectedAncillaryStory]> = [],
+  sectionAlignedFallback: SectionAlignedFallback = { pairs: [], runStories: [] },
 ): {
   pairs: PairedAncillaryStory[];
   unpairedOriginal: SelectedAncillaryStory[];
@@ -2106,6 +2116,24 @@ function pairSelectedAncillaryStories(
     }
   }
 
+  // Pairs only the aligned sections show come last, so they never take a
+  // story that exact or scaffold matching pairs, and they are taken only
+  // when, with them, every story the unequal runs show is paired: a run
+  // story left over means the runs were not read correctly, so the
+  // comparison keeps its earlier pairs and its refusal (#1502).
+  const fallback = sectionAlignedFallback.pairs.filter(
+    ([left, right]) => !matchedOriginal.has(left) && !matchedRevised.has(right),
+  );
+  const fallbackStories = new Set(fallback.flat());
+  if (
+    fallback.length > 0 &&
+    sectionAlignedFallback.runStories.every(
+      (story) => matchedOriginal.has(story) || matchedRevised.has(story) || fallbackStories.has(story),
+    )
+  ) {
+    for (const [left, right] of fallback) pair(left, right, false, true);
+  }
+
   return {
     pairs,
     unpairedOriginal: originalCandidates.filter(
@@ -2188,9 +2216,12 @@ function alignedSectionOrdinals(
  * A shared part is one story however many sections show it. Every section of
  * a run of unequal length counts as showing the same pages as every section
  * of the other side's run. Where that leaves a story beside more than one
- * story on the other side, the aligned sections alone can still pair it, but
- * only when neither story has an unchanged copy on the other side, so such a
- * pair never takes a story from an exact pair (#1502). A story shown
+ * story on the other side, the aligned sections alone can still pair it as a
+ * fallback (`fallbackPairs`). `pairSelectedAncillaryStories` takes a fallback
+ * pair only after exact and scaffold matching leave both stories unpaired,
+ * only when neither has an unchanged copy on the other side, and only when
+ * the fallback pairs leave no story the runs show unpaired (#1502). A
+ * story shown
  * only by a section with no counterpart is not paired here, so a removed or
  * inserted section's own story stays with the lifecycle checks of
  * `assertLifecycleStoriesAreSectionBound`. The assembled package is still
@@ -2204,10 +2235,13 @@ function alignedSectionOrdinals(
 function sectionAlignedTextBoxStoryPairs(
   originalState: SelectedAncillaryState,
   revisedState: SelectedAncillaryState,
-): Array<[SelectedAncillaryStory, SelectedAncillaryStory]> {
+): {
+  pairs: Array<[SelectedAncillaryStory, SelectedAncillaryStory]>;
+  fallback: SectionAlignedFallback;
+} {
   const originalBindings = originalState.effectiveBindings;
   const revisedBindings = revisedState.effectiveBindings;
-  if (!originalBindings?.ok || !revisedBindings?.ok) return [];
+  if (!originalBindings?.ok || !revisedBindings?.ok) return { pairs: [], fallback: { pairs: [], runStories: [] } };
   const slotKey = (
     bindings: EffectiveStoryBindings,
     sectionOrdinal: number,
@@ -2266,41 +2300,65 @@ function sectionAlignedTextBoxStoryPairs(
       for (const revisedOrdinal of run.revised) noteSlots([spanned], originalOrdinal, revisedOrdinal);
     }
   }
+  const originalStories = new Map(originalState.stories.map((story) => [story.targetPath, story]));
   const revisedStories = new Map(revisedState.stories.map((story) => [story.targetPath, story]));
-  const pairs: Array<[SelectedAncillaryStory, SelectedAncillaryStory]> = [];
-  const paired = { original: new Set<SelectedAncillaryStory>(), revised: new Set<SelectedAncillaryStory>() };
-  const pairThrough = (
-    map: { forward: Map<string, Set<string>>; backward: Map<string, Set<string>> },
-    admits: (left: SelectedAncillaryStory, right: SelectedAncillaryStory) => boolean,
+  const runStories = new Set<SelectedAncillaryStory>();
+  const noteRunStories = (
+    bindings: EffectiveStoryBindings,
+    stories: ReadonlyMap<string, SelectedAncillaryStory>,
+    ordinals: readonly number[],
   ): void => {
-    for (const left of originalState.stories) {
-      if (paired.original.has(left)) continue;
-      const targets = map.forward.get(left.targetPath);
-      if (targets?.size !== 1) continue;
-      const right = revisedStories.get([...targets][0]!);
-      if (!right || right.kind !== left.kind || paired.revised.has(right)) continue;
-      if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
-      if (!admits(left, right)) continue;
-      const sources = map.backward.get(right.targetPath);
-      if (sources?.size === 1 && sources.has(left.targetPath)) {
-        pairs.push([left, right]);
-        paired.original.add(left);
-        paired.revised.add(right);
+    for (const sectionOrdinal of ordinals) {
+      for (const kind of STORY_KINDS) {
+        for (const role of STORY_ROLES) {
+          const key = slotKey(bindings, sectionOrdinal, kind, role);
+          const story = key === undefined ? undefined : stories.get(key);
+          if (story) runStories.add(story);
+        }
       }
     }
   };
+  for (const run of unequalRuns) {
+    noteRunStories(originalBindings, originalStories, run.original);
+    noteRunStories(revisedBindings, revisedStories, run.revised);
+  }
+  type StoryPair = [SelectedAncillaryStory, SelectedAncillaryStory];
+  const pairThrough = (
+    map: { forward: Map<string, Set<string>>; backward: Map<string, Set<string>> },
+    taken: ReadonlySet<SelectedAncillaryStory>,
+    admits: (left: SelectedAncillaryStory, right: SelectedAncillaryStory) => boolean,
+  ): StoryPair[] => {
+    const found: StoryPair[] = [];
+    for (const left of originalState.stories) {
+      if (taken.has(left)) continue;
+      const targets = map.forward.get(left.targetPath);
+      if (targets?.size !== 1) continue;
+      const right = revisedStories.get([...targets][0]!);
+      if (!right || right.kind !== left.kind || taken.has(right)) continue;
+      if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
+      if (!admits(left, right)) continue;
+      const sources = map.backward.get(right.targetPath);
+      if (sources?.size === 1 && sources.has(left.targetPath)) found.push([left, right]);
+    }
+    return found;
+  };
   // A story pairs when the aligned sections and the runs, taken together,
   // show it with one story on the other side, both ways.
-  pairThrough(spanned, () => true);
+  const pairs = pairThrough(spanned, new Set(), () => true);
   // A run that shows a story beside another can still leave the aligned
-  // sections showing it with one story only. That pair is taken when
-  // neither story has an unchanged copy on the other side, so it can never
-  // take a story from an exact pair (#1502).
+  // sections showing it with one story only (#1502). Such a pair is a
+  // fallback: it is taken only after exact and scaffold matching leave both
+  // stories unpaired, and only when neither has an unchanged copy on the
+  // other side.
   const exactKey = (story: SelectedAncillaryStory): string => `${story.kind}|${story.canonical}`;
   const originalExact = new Set(originalState.stories.map(exactKey));
   const revisedExact = new Set(revisedState.stories.map(exactKey));
-  pairThrough(shown, (left, right) => !revisedExact.has(exactKey(left)) && !originalExact.has(exactKey(right)));
-  return pairs;
+  const fallbackPairs = pairThrough(
+    shown,
+    new Set(pairs.flat()),
+    (left, right) => !revisedExact.has(exactKey(left)) && !originalExact.has(exactKey(right)),
+  );
+  return { pairs, fallback: { pairs: fallbackPairs, runStories: [...runStories] } };
 }
 
 function hasAncestorLocalName(element: Element, name: string): boolean {
@@ -3086,11 +3144,15 @@ async function ancillaryStoryInputs(
     };
   }
   const topologyMatches = ordinaryStoryTopologyMatches(originalState, revisedState);
+  const sectionAligned = topologyMatches
+    ? { pairs: [], fallback: undefined }
+    : sectionAlignedTextBoxStoryPairs(originalState, revisedState);
   const paired = pairSelectedAncillaryStories(
     originalState.stories,
     revisedState.stories,
     topologyMatches,
-    topologyMatches ? [] : sectionAlignedTextBoxStoryPairs(originalState, revisedState),
+    sectionAligned.pairs,
+    sectionAligned.fallback,
   );
   const {
     inserted: insertedPartStories,
