@@ -146,7 +146,7 @@ const STORY_CHANGES: Record<StoryChange, Partial<Story>> = {
   'the box text': { boxText: 'Confidential draft' },
 };
 
-interface PartSpec { id: string; kind: Kind; target: string; xml: string }
+interface PartSpec { id: string; kind: Kind; target: string; xml: string; role?: 'default' | 'first' | 'even' }
 
 /**
  * A package whose body holds `sections` sections: a paragraph-level
@@ -158,7 +158,7 @@ async function sectionedPackage(
   references: ReadonlyArray<readonly PartSpec[]>,
   parts: readonly PartSpec[],
 ): Promise<Buffer> {
-  const reference = (part: PartSpec): string => `<w:${part.kind}Reference w:type="default" r:id="${part.id}"/>`;
+  const reference = (part: PartSpec): string => `<w:${part.kind}Reference w:type="${part.role ?? 'default'}" r:id="${part.id}"/>`;
   const sectPr = (index: number): string =>
     `<w:sectPr>${(references[index] ?? []).map(reference).join('')}${PAGE_SETUP}</w:sectPr>`;
   const last = references.length - 1;
@@ -668,6 +668,47 @@ describe('a section break beside a retained or a final section whose footer hold
             expect(outcome.result!.unrepresentedChanges).toBeUndefined();
           });
           await expectRoundTrip({ then }, original, revised, outcome.result);
+        } else {
+          await then('the comparison refuses the story set', () => {
+            expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);
+          });
+        }
+      });
+    }
+
+    for (const role of ['first', 'even'] as const) {
+      test(`publishes a full redline or refuses when a ${role}-page header the settings do not display changes beside the shared-footer shape`, async ({ given, when, then }: AllureBddContext) => {
+        const build = (edited: boolean, added: boolean): Promise<Buffer> => {
+          const cover: PartSpec = { id: 'rIdH1', kind: 'header', target: 'header1.xml', xml: paragraph(text('Cover header')) };
+          const middle: PartSpec = { id: 'rIdH3', kind: 'header', target: 'header3.xml', xml: paragraph(text('Middle header')) };
+          const last: PartSpec = { id: 'rIdH5', kind: 'header', target: 'header5.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Header final' : 'Header draft' }) };
+          const shared: PartSpec = { id: 'rIdF', kind: 'footer', target: 'footer1.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend: edited ? 'Footer final' : 'Footer draft' }) };
+          const dormant: PartSpec = {
+            id: 'rIdD', kind: 'header', target: 'header9.xml', role,
+            xml: paragraph(`<w:fldSimple w:instr="${edited ? 'AUTHOR' : 'TITLE'}">${text(edited ? 'Changed hidden text' : 'Original hidden text')}</w:fldSimple>`),
+          };
+          const bodies = ['First.', 'Second.', 'Third.', ...(added ? ['Added last.'] : [])];
+          const references = [[cover, shared, dormant], [middle], [last], ...(added ? [[]] : [])];
+          return sectionedPackage(bodies, references, [cover, middle, last, shared, dormant]);
+        };
+        const [original, revised] = await given(`the common-paper-csa shape, plus a ${role}-page header bound to the first section while its page setting is off; that header text changes`, () =>
+          Promise.all([build(false, false), build(true, true)]));
+        const outcome = await when('the pair is compared', () =>
+          compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
+            (result) => ({ result, error: undefined }),
+            (error: unknown) => ({ result: undefined, error }),
+          ));
+        if (outcome.result) {
+          await then('only drawings are listed and the undisplayed header rejects to its original text with both appliers', async () => {
+            expect(outcome.result!.unrepresentedChanges?.filter((change) => change.scope !== 'drawing') ?? []).toEqual([]);
+            const hidden = async (buffer: Buffer): Promise<string> =>
+              extractRoundTripComparisonText((await (await DocxArchive.load(buffer)).getFile('word/header9.xml'))!);
+            const compared = outcome.result!.document;
+            const rejected = await DocxArchive.load(compared);
+            rejected.setFile('word/header9.xml', rejectAllChanges((await rejected.getFile('word/header9.xml'))!));
+            expect(await hidden(await rejected.save())).toContain('Original hidden text');
+            expect(await hidden(await appliedByDocxCore(compared, 'reject'))).toContain('Original hidden text');
+          });
         } else {
           await then('the comparison refuses the story set', () => {
             expect(outcome.error).toBeInstanceOf(UnsupportedTextBoxRevisionError);

@@ -125,6 +125,7 @@ import {
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
+  assertListedStoryPartsCompared,
   assertAssembledBodyRoundTrip,
   type BlankSlotParts,
   deletedAncillaryStoryOutputPaths,
@@ -1929,7 +1930,7 @@ async function compareDocumentsTagged(
   // difference. A positional header/footer entry a changed section count
   // leaves behind is then dropped when the part's stories are carried
   // (#1487). A drawing that draws more than its box keeps the part's entry.
-  return withRepresentedPackageChangesRemoved(textBoxPlan.drawingAccountedOriginal ?? original, revised, {
+  const result = await withRepresentedPackageChangesRemoved(textBoxPlan.drawingAccountedOriginal ?? original, revised, {
     ...outerResult,
     document,
     stats,
@@ -1938,6 +1939,15 @@ async function compareDocumentsTagged(
         ? unrepresentedChanges
         : undefined,
   });
+  // Nor may such a redline list a header/footer it did not track: the
+  // projection check reads displayed pages only (#1502).
+  if (textBoxPlan.exactAncillaryProjectionRequired) {
+    await assertListedStoryPartsCompared(revised, {
+      changes: result.unrepresentedChanges ?? [],
+      comparedPartPaths: new Set(storyResults.map(({ partPath }) => partPath)),
+    });
+  }
+  return result;
 }
 
 /**

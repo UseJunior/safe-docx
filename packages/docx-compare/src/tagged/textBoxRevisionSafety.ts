@@ -5711,6 +5711,43 @@ function listedUncomparedStoryParts(
   return parts;
 }
 
+/**
+ * Refuse a comparison whose header/footer listing would excuse a story no
+ * story comparison wrote: each listed `header` or `footer` entry must name
+ * revised parts a story comparison carried, and none may name a removed
+ * slot. A redline built on section-aligned fallback pairs (#1502) may list
+ * only positions whose stories it tracks in place, because the projection
+ * check reads displayed pages only and a slot the section settings do not
+ * display (a first or even page that is switched off) is never inspected.
+ */
+export async function assertListedStoryPartsCompared(
+  revised: Buffer,
+  unrepresented: UnrepresentedStoryParts,
+): Promise<void> {
+  const archive = await DocxArchive.load(revised);
+  const uncompared = listedUncomparedStoryParts(
+    await archive.getDocumentXml(),
+    await archive.getFile('word/_rels/document.xml.rels'),
+    unrepresented,
+  );
+  const removed = unrepresented.changes.filter(
+    (change) => (change.scope === 'header' || change.scope === 'footer') && change.kind === 'removed',
+  );
+  if (uncompared.size === 0 && removed.length === 0) return;
+  throw new UnsupportedTextBoxRevisionError([
+    ...[...uncompared].sort().map((partPath) => ({
+      index: 0,
+      partPath,
+      reason: 'section-aligned header/footer pairing would list a story no story comparison tracked',
+    })),
+    ...removed.map((change) => ({
+      index: 0,
+      partPath: 'word/document.xml',
+      reason: `section-aligned header/footer pairing would list a removed ${change.scope} slot (section ${change.sectionIndex}, ${change.role})`,
+    })),
+  ]);
+}
+
 /** The header/footer changes a comparison lists, for the package projection check. */
 export interface UnrepresentedStoryParts {
   /** The comparison's `unrepresentedChanges`. */
