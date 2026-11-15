@@ -401,9 +401,15 @@ async function reconcileTaggedNotes(options: {
  * `w:sectPr` elements that close a section before it.
  */
 function sectionIndexOf(document: Document, element: Element): number {
+  // A paragraph's own w:sectPr closes the section the paragraph belongs to,
+  // so counting stops at the paragraph holding the element.
+  let anchor: Element = element;
+  for (let node = element.parentNode; node?.nodeType === 1; node = node.parentNode) {
+    if ((node as Element).localName === 'p') { anchor = node as Element; break; }
+  }
   let sectionIndex = 0;
   for (const candidate of Array.from(document.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
-    if (candidate === element) break;
+    if (candidate === anchor) break;
     const parent = candidate.parentNode as Element | null;
     if (candidate.localName === 'sectPr' && parent?.localName === 'pPr') sectionIndex++;
   }

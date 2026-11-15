@@ -48,7 +48,7 @@ const control = (alias: string, tag: string, text: string): string =>
   `<w:sdt><w:sdtPr><w:alias w:val="${alias}"/><w:tag w:val="${tag}"/><w:id w:val="7"/></w:sdtPr>` +
   `<w:sdtContent><w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p></w:sdtContent></w:sdt>`;
 
-async function build(story: Story, alias: string, tag: string, bodyText: string): Promise<Buffer> {
+async function build(story: Story, alias: string, tag: string, bodyText: string, sectionBreaks = 0): Promise<Buffer> {
   const note = story === 'body' ? {} : story === 'footnote'
     ? { footnoteOnParagraph: 0, footnoteText: 'placeholder' }
     : { endnoteOnParagraph: 0, endnoteText: 'placeholder' };
@@ -64,6 +64,14 @@ async function build(story: Story, alias: string, tag: string, bodyText: string)
     );
   expect(next).not.toBe(xml);
   zip.file(path, next);
+  if (sectionBreaks > 0) {
+    // Paragraph-level section breaks: the first (note-anchoring) paragraph
+    // closes section 0, the second closes section 1.
+    const documentXml = await zip.file('word/document.xml')!.async('string');
+    let seen = 0;
+    zip.file('word/document.xml', documentXml.replace(/<w:p>/g, (match) =>
+      seen++ < sectionBreaks ? '<w:p><w:pPr><w:sectPr/></w:pPr>' : match));
+  }
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -148,6 +156,20 @@ describe('content-control property changes inside a footnote or endnote', () => 
       );
     }
   }
+
+  test(
+    'a note anchored in a paragraph that closes its section names that section',
+    async () => {
+      const original = await build('footnote', 'Draft', 'clause', 'First.', 1);
+      const revised = await build('footnote', 'Final', 'clause', 'First.', 1);
+      const result = await compareDocuments(original, revised, OPTIONS);
+      const listed = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl');
+      expect(listed).toHaveLength(1);
+      expect(listed[0]!.sectionIndex).toBe(0);
+      await assertSchema(result.document);
+    },
+    60_000,
+  );
 
   test(
     'an unchanged control in a footnote lists nothing',
