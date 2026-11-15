@@ -222,11 +222,17 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
     const normalized = descriptor.scope === 'section'
       ? buildSectPrBaseSnapshot(property, property.ownerDocument!) as WmlElement
       : property.cloneNode(true) as WmlElement;
+    // A row's pending insertion or deletion (§17.13.5.17, §17.13.5.12) is a
+    // revision of the row, not one of its properties: its attribution may
+    // differ while the row stays the same, and a matched row whose pending
+    // markers differ is replaced whole before publication (#1400).
+    const priorRevisionMarkers = descriptor.scope === 'tableRow' ? ['ins', 'del'] : [];
     const stripPriorRevisionsAndWhitespace = (element: Element): void => {
       for (const child of Array.from(element.childNodes)) {
         if (child.nodeType === 1) {
           const childElement = child as Element;
-          if (childElement.localName.endsWith('PrChange')) {
+          if (childElement.localName.endsWith('PrChange')
+            || (element === normalized && priorRevisionMarkers.includes(childElement.localName))) {
             element.removeChild(childElement);
           } else {
             stripPriorRevisionsAndWhitespace(childElement);

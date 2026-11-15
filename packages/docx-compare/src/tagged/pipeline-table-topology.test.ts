@@ -7,7 +7,7 @@ import { describe, expect } from 'vitest';
 import { DocxArchive, DocxDocument, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
-import { compareDocuments, UnsupportedTableTopologyComparisonError } from '../index.js';
+import { compareDocuments } from '../index.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { bodyTableFootprint } from './tableTopologyGuard.js';
 
@@ -243,25 +243,12 @@ describe('main-body table comparison topology', () => {
   );
 
   test.openspec('[SDX-COMPTABLE-08] unsupported unmatched table shape fails closed')(
-    'refuses a newly added empty or row-wrapped table', async () => {
+    'refuses a newly added row-wrapped table', async () => {
       const before = await docx(paragraph('Before'));
-      const empty = await docx(paragraph('Before') + table(1, []));
-      await expect(compareDocuments(before, empty)).rejects.toMatchObject({ feature: 'emptyTable' });
       const wrapped = await docx(paragraph('Before') + table(1, [
         `<w:sdt><w:sdtPr/><w:sdtContent>${row(['A'])}</w:sdtContent></w:sdt>`,
       ]));
       await expect(compareDocuments(before, wrapped)).rejects.toMatchObject({ feature: 'tableContainer' });
-    },
-  );
-
-  test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
-    'rejects a changed pending cell-topology revision even when geometry is unchanged', async () => {
-      const original = await docx(table(1, [row(['A'])]));
-      const pending = await docx(table(1, [row(['A']).replace('<w:tc>',
-        '<w:tc><w:tcPr><w:cellDel w:id="4"/></w:tcPr>')]));
-      await expect(compareDocuments(original, pending)).rejects.toMatchObject({
-        feature: 'topologyRevision', tableIndex: 0,
-      });
     },
   );
 
@@ -329,19 +316,6 @@ describe('main-body table comparison topology', () => {
       expect(rowMarkers(await xml(band.document))).toEqual([['del'], ['del'], ['ins'], ['ins']]);
       await assertProjections(bandOriginal, bandRevised, band.document);
       await assertSchema(band.document);
-    },
-  );
-
-  test.openspec('[SDX-COMPTABLE-09] cell topology without a native row replacement fails closed')(
-    'keeps refusing a vertical-merge band that would take a pending cell-level topology revision', async () => {
-      const restart = row(['A', 'B']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>');
-      const continuation = row(['', 'D']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge/></w:tcPr>');
-      const pending = (source: string) => source.replace('</w:tc><w:tc>',
-        '</w:tc><w:tc><w:tcPr><w:cellIns w:id="80" w:author="Earlier"/></w:tcPr>');
-      await expect(compareDocuments(
-        await docx(table(2, [row(['A', 'B']), pending(row(['C', 'D']))])),
-        await docx(table(2, [restart, pending(continuation)])),
-      )).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
     },
   );
 });

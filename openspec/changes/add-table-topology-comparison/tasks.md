@@ -38,3 +38,10 @@
 - [x] 6.3 Accept/reject parity with both acceptors on text, footprint and each wrapper; schema gate; the same replacement in header/footer tables and in header, footer and body text boxes.
 - [x] 6.4 LibreOffice Reject All reproduces the original table in every case, and Accept All the revised table when the control is not in the row's first cell; LibreOffice 26.2 ignores `w:trPr/w:del` on a row whose first cell sits in a cell-level control (as it does for a plain whole-row deletion of such a row), so that Accept is not asserted.
 - [ ] 6.5 Real NVCA smoke after merge.
+
+## 7. Pending revisions from an earlier reviewer and tables with no rows (#1400)
+
+- [x] 7.1 Reproduce (RED): a skeleton change in a row whose cell carries a pending `w:cellIns`/`w:cellDel`/`w:cellMerge`, a pending cell-level revision added or removed, a vertical-merge band holding one, a whole table inserted or deleted whose rows carry pending row markers, a matched row whose pending row markers differ, and an inserted or deleted table with no rows. A cell text edit beside pending cell revisions or `w:tblGridChange` already succeeded (not reproduced).
+- [x] 7.2 Replace rows whose pending cell-level revisions or row markers differ, and rows holding pending cell-level revisions whose skeleton changes; stop refusing unmatched tables with pending row markers; leave out an unmatched table with no rows and report it (`table` scope) (SDX-COMPTABLE-09, SDX-COMPTABLE-13, SDX-COMPTABLE-14).
+- [x] 7.3 Accept/reject parity with both acceptors on text and `bodyTableFootprint`; schema gate; the same replacement in header/footer and body text boxes.
+- [ ] 7.4 Real NVCA smoke after merge; Word and LibreOffice reader evidence deferred (staged fixtures listed in the PR).

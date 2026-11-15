@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 70
+- Stable compatibility surface: 71
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
@@ -156,6 +156,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `UnrepresentedContentControlChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedDrawingChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedPictureChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `UnrepresentedTableChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnsupportedBlockContainerRevisionError` | class | `src/tagged/taggedTreeSerializer.ts` | yes | stable compatibility |
 | `UnsupportedTableTopologyComparisonError` | class | `src/tagged/tableTopologyGuard.ts` | yes | stable compatibility |
 | `UnsupportedTextBoxRevisionError` | class | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |
