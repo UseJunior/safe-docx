@@ -49,6 +49,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART2-8-2` | Core Properties part location and media type | 5 | 2 | 8.2 | `spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties` | packages/docx-core/src/primitives/document_properties.ts; packages/docx-core/src/primitives/document_properties.test.ts; packages/docx-mcp/src/tools/document_properties.test.ts |
 | `ECMA-PART2-8-3-4-3` | dcterms:created and dcterms:modified as W3CDTF dates | 5 | 2 | 8.3.4.3 | `spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties` | packages/docx-core/src/primitives/document_properties.ts; packages/docx-core/src/primitives/document_properties.test.ts; packages/docx-core/src/generation/generation-document-properties.test.ts |
 | `ECMA-PART1-22-2` | Extended File Properties part | 5 | 1 | 22.2 | `spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd#type:CT_Properties` | packages/docx-core/src/primitives/document_properties.ts; packages/docx-core/src/primitives/document_properties.test.ts; packages/docx-core/src/generation/generation-document-properties.test.ts |
+| `ECMA-PART1-17-5-2-18` | w:id structured document tag unique ID | 5 | 1 | 17.5.2.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr` | packages/docx-compare/src/tagged/tableTopologyNormalization.ts; packages/docx-compare/src/tagged/tableTopologyCellContentControl.test.ts |
 | `ECMA-PART1-17-5-2-29` | w:sdt block-level structured document tag | 5 | 1 | 17.5.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
 | `ECMA-PART1-17-5-2-31` | w:sdt inline-level structured document tag | 5 | 1 | 17.5.2.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
 | `ECMA-PART1-17-5-2-32` | w:sdt cell-level structured document tag | 5 | 1 | 17.5.2.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtCell` | packages/docx-compare/src/tagged/opaquePassthrough.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
@@ -858,6 +859,20 @@ non-empty values and refuses an `AppVersion` of any other form, keeps every
 other element (statistics, heading pairs, titles of parts) untouched, creates
 a missing part in the strict namespace when the main document relationship is
 strict (§15.2.12.3), and lets generation omit `Application`.
+
+### ECMA-PART1-17-5-2-18 — w:id structured document tag unique ID
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.18
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr`
+- **Verified by:** packages/docx-compare/src/tagged/tableTopologyNormalization.ts; packages/docx-compare/src/tagged/tableTopologyCellContentControl.test.ts
+
+`w:sdtPr/w:id` gives a structured document tag a numerical ID that shall
+persist across sessions. When several tags carry the same value, the first
+in the document keeps it and every later one is assigned a new identifier
+when the document is opened. A row replacement keeps the authored ID on both
+copies of a cell-level control, so each projection holds its source ID.
 
 ### ECMA-PART1-17-5-2-29 — w:sdt block-level structured document tag
 

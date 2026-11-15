@@ -190,6 +190,19 @@ function propertySignature(properties: Element | undefined): string {
  * a merged row, a misplaced cell or a property left behind reads differently.
  */
 function storyView(xml: string): string[] {
+  // A cell-level content control reads as its properties around its cells.
+  const rowCells = (parent: Element): string[] => Array.from(parent.childNodes)
+    .filter((child): child is Element => child.nodeType === 1)
+    .flatMap((child) => {
+      if (isW(child, 'tc')) {
+        return [`${propertySignature(children(child, 'tcPr')[0])}=${children(child, 'p').map(paragraphText).join('/')}`];
+      }
+      if (isW(child, 'sdt')) {
+        const content = children(child, 'sdtContent')[0];
+        return [`sdt{${propertySignature(children(child, 'sdtPr')[0])}}[${content ? rowCells(content).join('|') : ''}]`];
+      }
+      return [];
+    });
   const root = parseXml(xml).documentElement;
   return Array.from(root.childNodes)
     .filter((child): child is Element => child.nodeType === 1)
@@ -198,8 +211,7 @@ function storyView(xml: string): string[] {
       if (isW(block, 'tbl')) {
         return 'tbl:' + children(block, 'tr').map((tr) =>
           `{${propertySignature(children(tr, 'trPr')[0])}}{${propertySignature(children(tr, 'tblPrEx')[0])}}`
-          + children(tr, 'tc').map((tc) =>
-            `${propertySignature(children(tc, 'tcPr')[0])}=${children(tc, 'p').map(paragraphText).join('/')}`).join('|'),
+          + rowCells(tr).join('|'),
         ).join(' ; ');
       }
       return block.localName;
@@ -596,6 +608,13 @@ describe('a header or footer table row holding a field, content control or range
   const CONTROL_ROW = `<w:tr>${cell(text('Client'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr>`
     + `<w:sdt><w:sdtPr><w:alias w:val="Client"/><w:tag w:val="client"/></w:sdtPr><w:sdtContent>${paragraph(text('Acme Corp'))}</w:sdtContent></w:sdt></w:tc></w:tr>`;
   const CELL_CONTROL_ROW = `<w:tr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Client'))}</w:sdtContent></w:sdt>${cell(text('Acme'))}</w:tr>`;
+  const SHORT_CONTROL_ROW = `<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Client'))}</w:sdtContent></w:sdt></w:tr>`;
+  const FIELD_CONTROL = `<w:sdt><w:sdtPr><w:alias w:val="Page"/><w:id w:val="611"/></w:sdtPr><w:sdtContent>${cell(text('Page ') + pageField())}</w:sdtContent></w:sdt>`;
+  const NESTED_CONTROL = `<w:sdt><w:sdtPr><w:alias w:val="Party"/></w:sdtPr><w:sdtContent><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Client'))}</w:sdtContent></w:sdt></w:sdtContent></w:sdt>`;
+  const SHORT_NESTED_CONTROL_ROW = `<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>${NESTED_CONTROL}</w:tr>`;
+  const NESTED_CONTROL_ROW = `<w:tr>${NESTED_CONTROL}${cell(text('Acme'))}</w:tr>`;
+  const SHORT_FIELD_CONTROL_ROW = `<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>${FIELD_CONTROL}</w:tr>`;
+  const FIELD_CONTROL_ROW = `<w:tr>${FIELD_CONTROL}${cell(text('of 3'))}</w:tr>`;
   // A bookmark inside the paragraph, and one around the cell's paragraphs.
   const BOOKMARK_ROW = row('Matter', '<w:bookmarkStart w:id="7" w:name="MatterNumber"/>' + text('2026-001') + '<w:bookmarkEnd w:id="7"/>');
   const CELL_BOOKMARK_ROW = `<w:tr>${cell(text('Office'))}<w:tc><w:tcPr><w:tcW w:w="4500" w:type="dxa"/></w:tcPr>`
@@ -616,6 +635,11 @@ describe('a header or footer table row holding a field, content control or range
     { name: 'a deleted row holding a content control', original: [CONTROL_ROW, COMPANY], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
     { name: 'an inserted row whose cell sits in a cell-level content control', original: [COMPANY], revised: [COMPANY, CELL_CONTROL_ROW], markers: { inserted: 1, deleted: 0 } },
     { name: 'a deleted row whose cell sits in a cell-level content control', original: [CELL_CONTROL_ROW, COMPANY], revised: [COMPANY], markers: { inserted: 0, deleted: 1 } },
+    // A row whose cell skeleton changes beside a cell-level content control is replaced whole (#1483).
+    { name: 'a cell added beside a cell-level content control', original: [COMPANY, SHORT_CONTROL_ROW], revised: [COMPANY, CELL_CONTROL_ROW], markers: { inserted: 1, deleted: 1 } },
+    { name: 'a cell removed beside a cell-level content control', original: [CELL_CONTROL_ROW, COMPANY], revised: [SHORT_CONTROL_ROW, COMPANY], markers: { inserted: 1, deleted: 1 } },
+    { name: 'a cell added beside a nested cell-level content control', original: [COMPANY, SHORT_NESTED_CONTROL_ROW], revised: [COMPANY, NESTED_CONTROL_ROW], markers: { inserted: 1, deleted: 1 } },
+    { name: 'a cell added beside a cell-level content control holding a PAGE field', original: [COMPANY, SHORT_FIELD_CONTROL_ROW], revised: [COMPANY, FIELD_CONTROL_ROW], markers: { inserted: 1, deleted: 1 } },
     { name: 'an inserted row holding a bookmark', original: [COMPANY], revised: [COMPANY, BOOKMARK_ROW], markers: { inserted: 1, deleted: 0 } },
     { name: 'a deleted row holding a bookmark', original: [COMPANY, BOOKMARK_ROW, ADDRESS], revised: [COMPANY, ADDRESS], markers: { inserted: 0, deleted: 1 } },
     { name: 'an inserted row holding a bookmark around its cell paragraphs', original: [COMPANY], revised: [CELL_BOOKMARK_ROW, COMPANY], markers: { inserted: 1, deleted: 0 } },
@@ -653,12 +677,6 @@ describe('header and footer table changes the row revisions cannot carry stay li
       name: 'table-property exceptions added to a row',
       original: story(COMPANY, ADDRESS),
       revised: story(COMPANY, ADDRESS.replace('<w:tr>', '<w:tr><w:tblPrEx><w:tblW w:w="7000" w:type="dxa"/></w:tblPrEx>')),
-    },
-    {
-      // A cell-level content control keeps its row in the scaffold.
-      name: 'a cell added beside a cell-level content control',
-      original: story(`<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr><w:sdt><w:sdtPr><w:alias w:val="Company"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt></w:tr>`),
-      revised: story(`<w:tr><w:sdt><w:sdtPr><w:alias w:val="Company"/></w:sdtPr><w:sdtContent>${cell(text('Acme'))}</w:sdtContent></w:sdt>${cell(text('Corp'))}</w:tr>`),
     },
     {
       name: 'a renamed content control in a kept row',
