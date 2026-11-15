@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 71
+- Stable compatibility surface: 72
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
