@@ -6,16 +6,20 @@
  * whole-row revisions (`w:trPr/w:ins`, `w:trPr/w:del`), as in a part with no
  * box, while the box's own text is tracked inside the box.
  *
- * A cell added beside a cell-level content control in a table inside the box
- * has no native row replacement (the body table path refuses it too,
- * SDX-COMPTABLE-09). The box's story comparison must not publish it as a
- * `w:ins` wrapped around `w:tc`, which the schema forbids: the part is left
- * out of the redline whole, carried as the revised part, and listed.
+ * A row inside the box whose cell skeleton changes beside a cell-level
+ * content control is replaced whole, as in the main body (SDX-COMPTABLE-12,
+ * #1483): the original row deleted, then the revised row inserted, each with
+ * its own whole content control. The box's story comparison never publishes
+ * a `w:ins` wrapped around `w:tc`, which the schema forbids: a change the
+ * row replacement still cannot carry (a pending cell-level topology
+ * revision) leaves a header or footer part out of the redline whole, and
+ * refuses a body text box with a typed error.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @see https://github.com/UseJunior/safe-docx/issues/1469
+ * @see https://github.com/UseJunior/safe-docx/issues/1483
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -391,61 +395,185 @@ describe('a header or footer table row inserted beside a text box the part gains
   }
 });
 
-describe('a cell added beside a cell-level content control in a header or footer text box (#1469)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+/** Content controls (`w:sdt`) anywhere in a part, each as its alias and the text it holds. */
+const controlsIn = (xml: string): string[] =>
+  Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'sdt')).map((sdt) => {
+    const alias = sdt.getElementsByTagNameNS(W_NS, 'alias')[0]?.getAttributeNS(W_NS, 'val') ?? '';
+    const texts = Array.from(sdt.getElementsByTagNameNS(W_NS, '*'))
+      .filter((element) => isW(element, 't', 'delText')).map((element) => element.textContent ?? '');
+    return `${alias}:${texts.join('')}`;
+  });
+
+/** The controls a part (or the body) shows after a projection by each applier. */
+async function projectedControls(buffer: Buffer, part: string, projection: Projection | 'none', applier: 'ast' | 'core'): Promise<string[]> {
+  let archive = await DocxArchive.load(buffer);
+  if (applier === 'core' && projection !== 'none') {
+    const document = await DocxDocument.load(buffer);
+    if (projection === 'accept') await document.acceptChanges();
+    else await document.rejectChanges();
+    archive = await DocxArchive.load((await document.toBuffer()).buffer);
+  }
+  const xml = (await archive.getFile(part))!;
+  const project = projection === 'none' || applier === 'core'
+    ? (value: string) => value
+    : projection === 'accept' ? acceptAllChanges : rejectAllChanges;
+  return controlsIn(project(xml));
+}
+
+/** A cell added or removed beside a cell-level content control: the extra cells of each side's row. */
+const CELL_CONTROL_CASES: ReadonlyArray<{ name: string; original: string[]; revised: string[] }> = [
+  { name: 'a cell added beside', original: [], revised: ['Corp'] },
+  { name: 'a cell removed beside', original: ['Corp'], revised: [] },
+];
+
+/**
+ * A table row inside a text box whose cell skeleton changes beside a
+ * cell-level content control is replaced whole, as in the main body
+ * (SDX-COMPTABLE-12): the original row deleted, then the revised row
+ * inserted, each with its own whole content control, and no revision wrapper
+ * around a cell (#1483).
+ */
+describe('a cell added or removed beside a cell-level content control in a header or footer text box (#1483)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   for (const kind of ['header', 'footer'] as const) {
     for (const flavour of ['VML', 'DrawingML'] as const) {
-      for (const besideOrdinaryEdit of [false, true]) {
-        const name = besideOrdinaryEdit ? ' beside an edit to the part\'s own text' : '';
-        test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
-          `lists the ${kind} instead of wrapping a cell in w:ins, in a ${flavour} text box${name}`,
-          async ({ given, when, then }: AllureBddContext) => {
-            const part = (cells: string[], ownText: string): string =>
-              paragraph(text(ownText)) + textBox(flavour, table(controlRow(...cells)) + paragraph(text('Box')));
-            const [original, revised] = await given(`a ${flavour} text box table whose row gains a cell beside a cell-level content control, beside a body edit`, () =>
-              Promise.all([
-                storyPackage('Body draft', kind, part([], 'Draft')),
-                storyPackage('Body final', kind, part(['Corp'], besideOrdinaryEdit ? 'Final' : 'Draft')),
-              ]));
-            const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
-            await then(`the default ${kind} is listed once and carried as the revised part, with no revision around a cell`, async () => {
-              expect(result.unrepresentedChanges).toEqual([
-                { scope: kind, kind: 'changed', sectionIndex: 0, role: 'default' },
-              ]);
-              expect(await rowRevisions(result.document, kind)).toEqual({ inserted: 0, deleted: 0, wrappedCells: 0 });
-              for (const applier of ['ast', 'core'] as const) {
-                for (const projection of ['accept', 'reject'] as const) {
-                  expect(await projectedPart(result.document, kind, projection, applier), `${projection} ${applier}`)
-                    .toEqual(await projectedPart(revised, kind, 'none', 'ast'));
+      for (const cellCase of CELL_CONTROL_CASES) {
+        for (const besideOrdinaryEdit of [false, true]) {
+          const name = besideOrdinaryEdit ? ' beside an edit to the part\'s own text' : '';
+          test.openspec('[SDX-CMP-STORY-07] Header and footer table rows are tracked as whole-row revisions')(
+            `replaces the row with ${cellCase.name} a cell-level content control in a ${kind} ${flavour} text box${name}`,
+            async ({ given, when, then }: AllureBddContext) => {
+              // The grid holds three columns; a short row leaves the rest after its cells.
+              const part = (cells: string[], ownText: string): string => {
+                const short = controlRow(...cells).replace('<w:tr>', '<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>');
+                const box = table(cells.length > 0 ? controlRow(...cells) : short)
+                  .replace('</w:tblGrid>', '<w:gridCol w:w="3000"/></w:tblGrid>');
+                return paragraph(text(ownText)) + textBox(flavour, box + paragraph(text('Box')));
+              };
+              const [original, revised] = await given(`a ${flavour} text box table whose row has ${cellCase.name} a cell-level content control, beside a body edit`, () =>
+                Promise.all([
+                  storyPackage('Body draft', kind, part(cellCase.original, 'Draft')),
+                  storyPackage('Body final', kind, part(cellCase.revised, besideOrdinaryEdit ? 'Final' : 'Draft')),
+                ]));
+              const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+              await then(`nothing is left unrepresented and the ${kind} replaces the row, with no revision around a cell`, async () => {
+                expect(result.unrepresentedChanges).toBeUndefined();
+                expect(await rowRevisions(result.document, kind)).toEqual({ inserted: 1, deleted: 1, wrappedCells: 0 });
+              });
+              await then('each projection keeps one whole content control, with both appliers', async () => {
+                for (const applier of ['ast', 'core'] as const) {
+                  expect(await projectedControls(result.document, PART_PATH(kind), 'accept', applier), applier)
+                    .toEqual(await projectedControls(revised, PART_PATH(kind), 'none', 'ast'));
+                  expect(await projectedControls(result.document, PART_PATH(kind), 'reject', applier), applier)
+                    .toEqual(await projectedControls(original, PART_PATH(kind), 'none', 'ast'));
                 }
-              }
-            });
-            await then('the body edit is tracked', async () => {
-              expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
-              expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
-            });
-            await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document, kind));
-          },
-        );
+              });
+              await expectProjections({ then }, kind, original, revised, result);
+            },
+          );
+        }
       }
     }
   }
 });
 
 /**
- * A body text box has no part to leave out: the same change is refused with a
- * typed error, as the body table path refuses it (SDX-COMPTABLE-09), instead
- * of publishing a cell wrapped in `w:ins`.
+ * A body text box is compared as its own story under the same table-topology
+ * guard and row replacement (#1483).
  */
-describe('a cell added beside a cell-level content control in a body text box (#1469)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+describe('a cell added or removed beside a cell-level content control in a body text box (#1483)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  for (const flavour of ['VML', 'DrawingML'] as const) {
+    for (const cellCase of CELL_CONTROL_CASES) {
+      test.openspec('[SDX-COMPTABLE-12] a row holding a cell-level content control emits a native row replacement')(
+        `replaces the row with ${cellCase.name} a cell-level content control in a ${flavour} body text box`,
+        async ({ given, when, then }: AllureBddContext) => {
+          const body = (cells: string[], ownText: string): string => {
+            const short = controlRow(...cells).replace('<w:tr>', '<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>');
+            const box = table(cells.length > 0 ? controlRow(...cells) : short)
+              .replace('</w:tblGrid>', '<w:gridCol w:w="3000"/></w:tblGrid>');
+            return paragraph(text(ownText)) + textBox(flavour, box + paragraph(text('Box')));
+          };
+          const [original, revised] = await given(`a ${flavour} body text box table whose row has ${cellCase.name} a cell-level content control, beside a body edit`, () =>
+            Promise.all([
+              buildDocxFromBodyXml(body(cellCase.original, 'Body draft'), [], BODY_NAMESPACE_OPTIONS),
+              buildDocxFromBodyXml(body(cellCase.revised, 'Body final'), [], BODY_NAMESPACE_OPTIONS),
+            ]));
+          const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+          const BODY = 'word/document.xml';
+          const boxes = async (buffer: Buffer, projection: Projection | 'none', applier: 'ast' | 'core') => {
+            let archive = await DocxArchive.load(buffer);
+            if (applier === 'core' && projection !== 'none') {
+              const document = await DocxDocument.load(buffer);
+              if (projection === 'accept') await document.acceptChanges();
+              else await document.rejectChanges();
+              archive = await DocxArchive.load((await document.toBuffer()).buffer);
+            }
+            const xml = (await archive.getFile(BODY))!;
+            const project = projection === 'none' || applier === 'core'
+              ? (value: string) => value
+              : projection === 'accept' ? acceptAllChanges : rejectAllChanges;
+            return partView(project(xml)).boxes;
+          };
+          await then('nothing is left unrepresented and the box table replaces the row, with no revision around a cell', async () => {
+            expect(result.unrepresentedChanges).toBeUndefined();
+            const document = parseXml(await (await DocxArchive.load(result.document)).getDocumentXml());
+            const markers = Array.from(document.getElementsByTagNameNS(W_NS, 'trPr')).flatMap(elementChildren);
+            expect(markers.filter((marker) => isW(marker, 'del'))).toHaveLength(1);
+            expect(markers.filter((marker) => isW(marker, 'ins'))).toHaveLength(1);
+            const wrapped = Array.from(document.getElementsByTagNameNS(W_NS, '*'))
+              .filter((element) => isW(element, 'ins', 'del', 'moveFrom', 'moveTo'))
+              .filter((wrapper) => elementChildren(wrapper).some((child) => isW(child, 'tr', 'tc', 'sdt')));
+            expect(wrapped).toHaveLength(0);
+          });
+          await then('the box shows the revised table and control after Accept All and the original after Reject All, with both appliers', async () => {
+            for (const applier of ['ast', 'core'] as const) {
+              expect(await boxes(result.document, 'accept', applier), applier).toEqual(await boxes(revised, 'none', 'ast'));
+              expect(await boxes(result.document, 'reject', applier), applier).toEqual(await boxes(original, 'none', 'ast'));
+              expect(await projectedControls(result.document, BODY, 'accept', applier), applier)
+                .toEqual(await projectedControls(revised, BODY, 'none', 'ast'));
+              expect(await projectedControls(result.document, BODY, 'reject', applier), applier)
+                .toEqual(await projectedControls(original, BODY, 'none', 'ast'));
+            }
+            expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
+            expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+          });
+          await then('the compared package passes the emitted-document schema gate', async () => {
+            const directory = await mkdtemp(join(tmpdir(), 'sdx-1483-'));
+            try {
+              const path = join(directory, 'compared.docx');
+              await writeFile(path, result.document);
+              const check = spawnSync(process.execPath, [schemaScript, path], { encoding: 'utf8' });
+              expect(check.status, check.stdout + check.stderr).toBe(0);
+            } finally {
+              await rm(directory, { recursive: true, force: true });
+            }
+          });
+        },
+      );
+    }
+  }
+});
+
+/**
+ * What the row replacement still cannot carry: a row whose cell already
+ * holds a pending cell-level topology revision (`w:cellIns`, §17.13.5.2).
+ * Readers resolve a cell revision inside a row revision inconsistently, so
+ * the guard refuses the box story, and the unguarded retry would wrap the new
+ * cell in `w:ins`. A body text box has no part to leave out, so the
+ * comparison is refused with a typed error (#1469, narrowed by #1483).
+ */
+describe('a body text box row whose skeleton changes beside a pending cell insertion (#1483)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
   test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
     'refuses with a typed error instead of wrapping a cell in w:ins',
     async ({ given, when, then }: AllureBddContext) => {
-      const body = (cells: string[]): string =>
-        paragraph(text('Body')) + textBox('DrawingML', table(controlRow(...cells)) + paragraph(text('Box')));
-      const [original, revised] = await given('a body text box table whose row gains a cell beside a cell-level content control', () =>
+      const pending = '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:cellIns w:id="80" w:author="Earlier"/></w:tcPr>'
+        + `${paragraph(text('Corp'))}</w:tc>`;
+      const body = (extra: string, trPr: string): string => paragraph(text('Body')) + textBox('DrawingML',
+        table(`<w:tr>${trPr}${cell(text('Client'))}${pending}${extra}</w:tr>`)
+          .replace('</w:tblGrid>', '<w:gridCol w:w="3000"/></w:tblGrid>') + paragraph(text('Box')));
+      const [original, revised] = await given('a body text box table whose row gains a cell beside a cell carrying a pending w:cellIns', () =>
         Promise.all([
-          buildDocxFromBodyXml(body([]), [], BODY_NAMESPACE_OPTIONS),
-          buildDocxFromBodyXml(body(['Corp']), [], BODY_NAMESPACE_OPTIONS),
+          buildDocxFromBodyXml(body('', '<w:trPr><w:gridAfter w:val="1"/></w:trPr>'), [], BODY_NAMESPACE_OPTIONS),
+          buildDocxFromBodyXml(body(cell(text('Inc')), ''), [], BODY_NAMESPACE_OPTIONS),
         ]));
       const comparison = await when('the pair is compared', () =>
         compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
@@ -457,6 +585,45 @@ describe('a cell added beside a cell-level content control in a body text box (#
       });
     },
   );
+});
+
+/** The same change in a header or footer text box leaves the part listed and carried as revised. */
+describe('a header or footer text box row whose skeleton changes beside a pending cell insertion (#1483)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  for (const kind of ['header', 'footer'] as const) {
+    test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
+      `lists the ${kind} instead of wrapping a cell in w:ins`,
+      async ({ given, when, then }: AllureBddContext) => {
+        const pending = '<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:cellIns w:id="80" w:author="Earlier"/></w:tcPr>'
+          + `${paragraph(text('Corp'))}</w:tc>`;
+        const part = (extra: string, trPr: string): string => paragraph(text('Draft')) + textBox('VML',
+          table(`<w:tr>${trPr}${cell(text('Client'))}${pending}${extra}</w:tr>`)
+            .replace('</w:tblGrid>', '<w:gridCol w:w="3000"/></w:tblGrid>') + paragraph(text('Box')));
+        const [original, revised] = await given(`a ${kind} text box table whose row gains a cell beside a cell carrying a pending w:cellIns, beside a body edit`, () =>
+          Promise.all([
+            storyPackage('Body draft', kind, part('', '<w:trPr><w:gridAfter w:val="1"/></w:trPr>')),
+            storyPackage('Body final', kind, part(cell(text('Inc')), '')),
+          ]));
+        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+        await then(`the default ${kind} is listed once and carried as the revised part, with no revision around a cell`, async () => {
+          expect(result.unrepresentedChanges).toEqual([
+            { scope: kind, kind: 'changed', sectionIndex: 0, role: 'default' },
+          ]);
+          expect(await rowRevisions(result.document, kind)).toEqual({ inserted: 0, deleted: 0, wrappedCells: 0 });
+          for (const applier of ['ast', 'core'] as const) {
+            for (const projection of ['accept', 'reject'] as const) {
+              expect(await projectedPart(result.document, kind, projection, applier), `${projection} ${applier}`)
+                .toEqual(await projectedPart(revised, kind, 'none', 'ast'));
+            }
+          }
+        });
+        await then('the body edit is tracked', async () => {
+          expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
+          expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+        });
+        await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document, kind));
+      },
+    );
+  }
 });
 
 /**

@@ -44,6 +44,7 @@ import {
   wrapRunWithTrackChange,
 } from './revisionMarkup.js';
 import { importRelationshipTarget } from './relationshipIdCollision.js';
+import { rowShape } from './tableTopologyGuard.js';
 import { PayloadFingerprints, resolvePartPath, sectionIndexOf } from './picturePayload.js';
 import type { UnrepresentedChange, UnrepresentedDrawingChange } from '../compare-types.js';
 
@@ -1668,16 +1669,21 @@ function holdsOnlyFieldScaffold(row: Element): boolean {
  * unpaired row is removed when:
  *
  * - it holds only plain paragraphs and carries no revision record (#1393); or
- * - it is a trackable scaffold row (`isTrackableScaffoldRow`) and the other
- *   story's table has no unpaired row, so the comparison has no row to pair
- *   it with; or
+ * - it is a trackable scaffold row (`isTrackableScaffoldRow`) whose cell
+ *   skeleton (`rowShape`) differs from every unpaired row of the other
+ *   story's table (trivially so when there is none). The comparison either
+ *   leaves it unpaired, a whole-row insertion or deletion, or pairs it with a
+ *   row of another skeleton, which the row-replacement pass publishes as the
+ *   original row deleted then the revised row inserted. Either way the row
+ *   goes whole, a cell-level content control with it, and no kept cell gains
+ *   or loses content the scaffold holds (#1483); or
  * - it is a trackable scaffold row holding fields
  *   (`holdsOnlyFieldScaffold`), and every unpaired row of the other story's
  *   table holds only plain paragraphs.
  *
- * Two unpaired scaffold rows facing each other stay, as a paired paragraph's
- * field instruction or content-control change does (SDX-CMP-STORY-06): the
- * comparison may pair them.
+ * Two unpaired scaffold rows of one skeleton facing each other stay, as a
+ * paired paragraph's field instruction or content-control change does
+ * (SDX-CMP-STORY-06): the comparison may pair them as a kept row.
  *
  * A story holding a text box is treated the same way: the box's own content
  * is compared as its own story, and the part's ordinary story is held to the
@@ -1688,6 +1694,7 @@ function holdsOnlyFieldScaffold(row: Element): boolean {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @see https://github.com/UseJunior/safe-docx/issues/1467
  * @see https://github.com/UseJunior/safe-docx/issues/1469
+ * @see https://github.com/UseJunior/safe-docx/issues/1483
  */
 function removeUnpairedTrackableRows(originalRoot: Element, revisedRoot: Element): void {
   const directTables = (root: Element): Element[] =>
@@ -1728,10 +1735,11 @@ function removeUnpairedTrackableRows(originalRoot: Element, revisedRoot: Element
       [unpairedRevised, unpairedOriginal],
     ] as const) {
       const otherOnlyPlain = [...otherUnpaired].every((row) => isPlainTrackableRow(row));
+      const otherShapes = new Set([...otherUnpaired].map((row) => rowShape(row)));
       for (const row of unpaired) {
         const removable = isPlainTrackableRow(row)
           || (isTrackableScaffoldRow(row)
-            && (otherUnpaired.size === 0 || (otherOnlyPlain && holdsOnlyFieldScaffold(row))));
+            && (!otherShapes.has(rowShape(row)) || (otherOnlyPlain && holdsOnlyFieldScaffold(row))));
         if (removable) row.parentNode?.removeChild(row);
       }
     }
