@@ -301,12 +301,38 @@ export interface ReconstructionBookmarkMismatchDetails {
   actualUnmatchedEndIds: string[];
 }
 
+/**
+ * Where a projection's paragraph topology departs from the source projection
+ * it must reproduce. A paragraph is empty when it projects no character other
+ * than spaces (layout characters such as a tab or a page break count).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1027
+ */
+export interface ParagraphTopologyMismatchDetails {
+  expectedParagraphCount: number;
+  actualParagraphCount: number;
+  expectedEmptyParagraphCount: number;
+  actualEmptyParagraphCount: number;
+  /** First paragraph index whose presence or emptiness differs. */
+  firstDifferingParagraphIndex: number;
+  /** Emptiness of the expected paragraph at that index; `null` past its end. */
+  expectedParagraphEmpty: boolean | null;
+  /** Emptiness of the actual paragraph at that index; `null` past its end. */
+  actualParagraphEmpty: boolean | null;
+  /** The last non-empty expected paragraph before that index, to locate it. */
+  precedingExpectedParagraph: string;
+}
+
 /** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionSafetyFailureDetails {
   acceptText?: ReconstructionTextMismatchDetails;
   rejectText?: ReconstructionTextMismatchDetails;
   acceptBookmarks?: ReconstructionBookmarkMismatchDetails;
   rejectBookmarks?: ReconstructionBookmarkMismatchDetails;
+  /** Set by tagged publication when `acceptParagraphTopology` fails. */
+  acceptParagraphTopology?: ParagraphTopologyMismatchDetails;
+  /** Set by tagged publication when `rejectParagraphTopology` fails. */
+  rejectParagraphTopology?: ParagraphTopologyMismatchDetails;
 }
 
 /** @deprecated Retained for one-release compatibility with historical diagnostic types. */
@@ -344,6 +370,8 @@ export interface ReconstructionSafetyFailureSummary {
   rejectText?: ReconstructionTextMismatchSummary;
   acceptBookmarks?: ReconstructionBookmarkMismatchSummary;
   rejectBookmarks?: ReconstructionBookmarkMismatchSummary;
+  acceptParagraphTopology?: ParagraphTopologyMismatchDetails;
+  rejectParagraphTopology?: ParagraphTopologyMismatchDetails;
 }
 
 /** @deprecated The tagged publisher does not make reconstruction attempts. */
@@ -379,9 +407,39 @@ export interface TaggedTreeFallbackDiagnostics {
 
 export type TaggedPublicationSafetyCheckName =
   | ReconstructionSafetyCheckName
+  | 'acceptParagraphTopology'
+  | 'rejectParagraphTopology'
   | 'formattingFidelity';
 
+/**
+ * The final gates a tagged publication must pass. Each is `true` when the
+ * check passed; the failing names are listed in
+ * {@link TaggedPublicationSafetyError.failedChecks}.
+ */
 export interface TaggedPublicationSafetyChecks extends ReconstructionSafetyChecks {
+  /**
+   * The Accept All projection reproduces the revised document's text. The
+   * projected characters are those of `w:t`, `w:delText` and `w:sym`, plus the
+   * run-content layout characters `w:tab`, `w:br` (line, page and column
+   * breaks project differently), `w:cr`, `w:noBreakHyphen` and
+   * `w:softHyphen`, so dropping or adding any of these fails the check.
+   * Whitespace runs collapse and repeated paragraph breaks are not counted
+   * (see {@link acceptParagraphTopology}). Drawings, pictures, embedded
+   * objects, `w:ptab` and `w:pgNum` are outside the check.
+   */
+  acceptText: boolean;
+  /** As {@link acceptText}, for the Reject All projection against the original. */
+  rejectText: boolean;
+  /**
+   * The Accept All projection has the revised document's paragraph topology:
+   * the same number of paragraphs, and the same paragraphs empty. Text box
+   * paragraphs are outside the check, and so are extra empty paragraphs at
+   * the very end of the projection: the residue a resolved final paragraph
+   * mark leaves (#891).
+   */
+  acceptParagraphTopology: boolean;
+  /** As {@link acceptParagraphTopology}, for Reject All against the original. */
+  rejectParagraphTopology: boolean;
   formattingFidelity: boolean;
 }
 

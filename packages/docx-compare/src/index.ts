@@ -47,6 +47,7 @@ export type {
   ReconstructionIdDeltaSummary,
   ReconstructionInplaceSuccessDiagnostics,
   ReconstructionMode,
+  ParagraphTopologyMismatchDetails,
   UnrepresentedChange,
   UnrepresentedChangeKind,
   UnrepresentedChangeScope,

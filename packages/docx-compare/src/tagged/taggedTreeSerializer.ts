@@ -2179,6 +2179,88 @@ function refineSimpleRunGap(
   };
   const hasAuxiliaryContent = [...originals, ...revised].some((run) =>
     childElements(run).some((child) => !['rPr', 't'].includes(child.localName)));
+  /**
+   * Equal `w:t` text whose runs also carry tabs (#1026). The text is common,
+   * but each tab is placed by its own side: at every text offset the tabs
+   * both sides hold there are common, and the rest are a tracked deletion or
+   * insertion. Cutting equal-text fragments from the revised runs instead
+   * carried the revised tabs into both projections, so a tab added or
+   * removed at a run edge, or moved between re-segmented runs, vanished from
+   * Reject All or was duplicated.
+   */
+  const emitEqualTextTabGap = (): WmlElement[] | undefined => {
+    const tabSlots = (runs: readonly WmlElement[]): Map<number, WmlElement[]> => {
+      const slots = new Map<number, WmlElement[]>();
+      let offset = 0;
+      for (const run of runs) {
+        for (const child of childElements(run)) {
+          if (child.localName === 't') offset += (child.textContent ?? '').length;
+          else if (child.localName === 'tab') slots.set(offset, [...(slots.get(offset) ?? []), run]);
+        }
+      }
+      return slots;
+    };
+    const tabRun = (run: WmlElement): WmlElement => {
+      const fragment = cloneElement(run);
+      for (const child of childElements(fragment)) {
+        if (child.localName !== 'rPr') fragment.removeChild(child);
+      }
+      for (const child of childElements(run)) {
+        if (child.localName === 'tab') {
+          fragment.appendChild(cloneElement(child));
+          break;
+        }
+      }
+      return fragment;
+    };
+    const withoutTabs = (run: WmlElement): WmlElement => {
+      for (const child of childElements(run)) {
+        if (child.localName === 'tab') run.removeChild(child);
+      }
+      return run;
+    };
+    const originalTabs = tabSlots(originals);
+    const revisedTabs = tabSlots(revised);
+    const boundaries = new Set<number>([0, before.length, ...originalTabs.keys(), ...revisedTabs.keys()]);
+    for (const runs of [originals, revised]) {
+      let offset = 0;
+      for (const run of runs) { offset += runText(run).length; boundaries.add(offset); }
+    }
+    const offsets = [...boundaries].sort((a, b) => a - b);
+    const ownerAt = (runs: readonly WmlElement[], offset: number): WmlElement => {
+      let end = 0;
+      for (const run of runs) { end += runText(run).length; if (offset < end) return run; }
+      return runs[runs.length - 1]!;
+    };
+    const push = (target: WmlElement[], next: WmlElement): void => { target.push(next); };
+    for (const [index, start] of offsets.entries()) {
+      const originalAt = originalTabs.get(start) ?? [];
+      const revisedAt = revisedTabs.get(start) ?? [];
+      const common = Math.min(originalAt.length, revisedAt.length);
+      for (let tab = 0; tab < common; tab++) {
+        if (!emit(tabRun(revisedAt[tab]!), 0, 0, push)) return undefined;
+      }
+      for (const run of originalAt.slice(common)) {
+        if (!emit(wrapRevision(tabRun(run), 'del', allocateRevision(), provenanceByRun.get(run) ?? []),
+          0, 0, push)) return undefined;
+      }
+      for (const run of revisedAt.slice(common)) {
+        if (!emit(wrapRevision(tabRun(run), 'ins', allocateRevision(), provenanceByRun.get(run) ?? []),
+          0, 0, push)) return undefined;
+      }
+      const next = offsets[index + 1];
+      if (next === undefined) break;
+      const value = before.slice(start, next);
+      if (value && !emit(
+        withoutTabs(emitCommonRun(ownerAt(originals, start), ownerAt(revised, start), value, allocateRevision)),
+        value.length,
+        value.length,
+        appendCoalescedTextEmission,
+      )) return undefined;
+    }
+    flushMarkers();
+    return emitted;
+  };
   if (before === after) {
     if (hasAuxiliaryContent) {
       const propertySignatures = new Set([...originals, ...revised].map((run) => {
@@ -2186,6 +2268,7 @@ function refineSimpleRunGap(
         return property ? new XMLSerializer().serializeToString(property) : '';
       }));
       if (propertySignatures.size > 1) return undefined;
+      return emitEqualTextTabGap();
     }
     const boundaries = new Set<number>([0, before.length]);
     for (const runs of [originals, revised]) {

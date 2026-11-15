@@ -70,6 +70,26 @@ function paragraphHasParaMarker(
   return childElements(rPr).some((c) => c.tagName === tagName);
 }
 
+/**
+ * True iff the paragraph mark's formatting-history snapshot
+ * (`w:pPr > w:rPr > w:rPrChange > w:rPr`, a CT_ParaRPrOriginal) records the
+ * mark itself as a tracked insertion or move destination. Rejecting the
+ * `w:rPrChange` restores that marker, and rejecting the restored marker
+ * removes the paragraph break, so the fully rejected projection treats the
+ * paragraph as mark-inserted. LibreOffice Reject All resolves it the same
+ * way; dropping only the snapshot would leave an empty paragraph that
+ * neither reader produces.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ */
+function paragraphMarkSnapshotHasInsertion(p: Element): boolean {
+  const pPr = getParagraphPPr(p);
+  const rPr = pPr && childElements(pPr).find((c) => c.tagName === 'w:rPr');
+  const change = rPr && childElements(rPr).find((c) => c.tagName === 'w:rPrChange');
+  const snapshot = change && childElements(change).find((c) => c.tagName === 'w:rPr');
+  return !!snapshot && childElements(snapshot).some((c) => c.tagName === 'w:ins' || c.tagName === 'w:moveTo');
+}
+
 function rowsWithRevisionMarker(root: Element, tagName: 'w:ins' | 'w:del'): Element[] {
   const rows = new Set<Element>();
   for (const marker of findAllByTagName(root, tagName)) {
@@ -866,7 +886,8 @@ export function rejectAllChanges(documentXml: string): string {
   // so the mark-based rule covers them without the old content heuristic.
   const markInsertedParagraphs = new Set<Element>();
   for (const p of findAllByTagName(root, 'w:p')) {
-    if (paragraphHasParaMarker(p, 'w:ins') || paragraphHasParaMarker(p, 'w:moveTo')) {
+    if (paragraphHasParaMarker(p, 'w:ins') || paragraphHasParaMarker(p, 'w:moveTo') ||
+        paragraphMarkSnapshotHasInsertion(p)) {
       markInsertedParagraphs.add(p);
     }
   }
@@ -1282,11 +1303,39 @@ export function normalizeText(text: string): string {
 }
 
 /**
+ * Normalize a layout-character round-trip projection for the publication gate.
+ *
+ * The same whitespace tolerance as {@link normalizeText}, except that the
+ * projected layout characters survive: tabs stay tabs instead of becoming
+ * spaces that then collapse, and the document ends are trimmed of whitespace
+ * other than tab, line break and page break. Otherwise dropping one of two
+ * consecutive tabs, a tab beside a space, or a break that ends the story would
+ * normalize away. Repeated paragraph breaks still collapse; empty paragraphs
+ * are the paragraph-topology check's concern, not the text check's.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1026
+ */
+export function normalizeLayoutPreservingText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/ +/g, ' ')
+    .replace(/ \n/g, '\n')
+    .replace(/\n /g, '\n')
+    .replace(/\n+/g, '\n')
+    .replace(/^[^\S\t\v\f]+|[^\S\t\v\f]+$/gu, '');
+}
+
+/**
  * Compare two texts and return detailed differences.
+ *
+ * `normalize` decides `normalizedIdentical`; it defaults to
+ * {@link normalizeText}.
  */
 export function compareTexts(
   expected: string,
-  actual: string
+  actual: string,
+  normalize: (text: string) => string = normalizeText,
 ): {
   identical: boolean;
   normalizedIdentical: boolean;
@@ -1294,8 +1343,8 @@ export function compareTexts(
   actualLength: number;
   differences: string[];
 } {
-  const normalizedExpected = normalizeText(expected);
-  const normalizedActual = normalizeText(actual);
+  const normalizedExpected = normalize(expected);
+  const normalizedActual = normalize(actual);
 
   const differences: string[] = [];
 
