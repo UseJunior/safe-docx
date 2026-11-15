@@ -59,6 +59,9 @@ const NAMESPACES = {
   mc: 'http://schemas.openxmlformats.org/markup-compatibility/2006',
 };
 const DECLARATIONS = Object.entries(NAMESPACES).map(([prefix, uri]) => ` xmlns:${prefix}="${uri}"`).join('');
+/** The body document's extra namespaces: `buildDocxFromBodyXml` declares `w14` and `mc` itself and ignores `w14`. */
+const { w14: _w14, mc: _mc, ...BODY_NAMESPACES } = NAMESPACES;
+const BODY_NAMESPACE_OPTIONS = { namespaces: BODY_NAMESPACES, ignorablePrefixes: ['wps'] };
 // Each case compares, applies twice per applier and runs the schema gate.
 const LOAD_SENSITIVE_TIMEOUT_MS = 30_000;
 const COMPARE_OPTIONS = { author: 'Comparison', date: new Date('2026-11-14T00:00:00.000Z') };
@@ -105,7 +108,7 @@ function textBox(flavour: BoxFlavour, content: string, id = 1): string {
     '<wp:positionH relativeFrom="column"><wp:posOffset>3810000</wp:posOffset></wp:positionH>' +
     '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
     '<wp:extent cx="1905000" cy="635000"/><wp:effectExtent l="0" t="0" r="0" b="0"/>' +
-    '<wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="Text Box 1"/><wp:cNvGraphicFramePr/>' +
+    `<wp:wrapSquare wrapText="bothSides"/><wp:docPr id="${id}" name="Text Box ${id}"/><wp:cNvGraphicFramePr/>` +
     '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
     '<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1905000" cy="635000"/></a:xfrm>' +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>' +
@@ -116,10 +119,7 @@ function textBox(flavour: BoxFlavour, content: string, id = 1): string {
 
 /** One section whose default header or footer part holds `storyContent`. */
 async function storyPackage(bodyText: string, kind: Kind, storyContent: string): Promise<Buffer> {
-  const archive = await DocxArchive.load(await buildDocxFromBodyXml(paragraph(text(bodyText)), [], {
-    namespaces: NAMESPACES,
-    ignorablePrefixes: ['w14', 'wps'],
-  }));
+  const archive = await DocxArchive.load(await buildDocxFromBodyXml(paragraph(text(bodyText)), [], BODY_NAMESPACE_OPTIONS));
   archive.setDocumentXml((await archive.getDocumentXml())
     .replace('<w:sectPr/>', `<w:sectPr><w:${kind}Reference w:type="default" r:id="rIdStory"/></w:sectPr>`));
   archive.setFile(
@@ -444,8 +444,8 @@ describe('a cell added beside a cell-level content control in a body text box (#
         paragraph(text('Body')) + textBox('DrawingML', table(controlRow(...cells)) + paragraph(text('Box')));
       const [original, revised] = await given('a body text box table whose row gains a cell beside a cell-level content control', () =>
         Promise.all([
-          buildDocxFromBodyXml(body([]), [], { namespaces: NAMESPACES, ignorablePrefixes: ['w14', 'wps'] }),
-          buildDocxFromBodyXml(body(['Corp']), [], { namespaces: NAMESPACES, ignorablePrefixes: ['w14', 'wps'] }),
+          buildDocxFromBodyXml(body([]), [], BODY_NAMESPACE_OPTIONS),
+          buildDocxFromBodyXml(body(['Corp']), [], BODY_NAMESPACE_OPTIONS),
         ]));
       const comparison = await when('the pair is compared', () =>
         compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS).then(
@@ -462,7 +462,7 @@ describe('a cell added beside a cell-level content control in a body text box (#
 /**
  * The default header and footer of an ODT export (LibreOffice keeps them in
  * `styles.xml` master pages) as their table rows' text and their text
- * frames' text, in document order.
+ * boxes' text (a custom shape or a text frame), in document order.
  */
 async function odtStoryView(odt: Buffer): Promise<Record<string, { rows: string[]; frames: string[] }>> {
   const zip = await JSZip.loadAsync(odt);
@@ -477,8 +477,10 @@ async function odtStoryView(odt: Buffer): Promise<Record<string, { rows: string[
       rows: story
         ? Array.from(story.getElementsByTagNameNS(TABLE_NS, 'table-row')).map((tableRow) => tableRow.textContent ?? '')
         : [],
+      // LibreOffice reads a DrawingML text box as a custom shape holding its text.
       frames: story
-        ? Array.from(story.getElementsByTagNameNS(DRAW_NS, 'text-box')).map((box) => box.textContent ?? '')
+        ? ['custom-shape', 'text-box'].flatMap((localName) =>
+          Array.from(story.getElementsByTagNameNS(DRAW_NS, localName)).map((box) => box.textContent ?? ''))
         : [],
     };
   }
@@ -516,3 +518,4 @@ reader('LibreOffice accepts and rejects a header or footer table row beside a te
     }, 600_000);
   }
 });
+
