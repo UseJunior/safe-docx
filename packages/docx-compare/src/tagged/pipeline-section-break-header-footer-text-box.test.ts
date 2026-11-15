@@ -519,6 +519,50 @@ describe('a section break beside a retained or a final section whose footer hold
     await expectRoundTrip({ then }, original, revised, result);
   });
 
+  for (const direction of ['added', 'removed'] as const) {
+    test(`pairs a leading footer through the unequal run when its content matches a footer the final sections already pair (break ${direction})`, async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('a first and a final section with boxed footers and one shared boxed header that changes; the leading footer gains a row and takes the content of the old final footer, and the final footer changes its legend', () => {
+        const footer = (id: string, legend: string, rows: readonly string[]): PartSpec =>
+          ({ id: `rId${id}`, kind: 'footer', target: `footer${id}.xml`, xml: storyXml('DrawingML', { ...BASE_STORY, legend, rows: [...rows] }) });
+        const header = (legend: string): PartSpec =>
+          ({ id: 'rIdH', kind: 'header', target: 'header1.xml', xml: storyXml('DrawingML', { ...BASE_STORY, legend }) });
+        const two = sectionedPackage(['First.', 'Last.'],
+          [[footer('1', 'Leading', [COMPANY]), header('Header draft')], [footer('2', 'Shared legend', [COMPANY, ADDRESS])]],
+          [footer('1', 'Leading', [COMPANY]), footer('2', 'Shared legend', [COMPANY, ADDRESS]), header('Header draft')]);
+        const three = sectionedPackage(['First.', 'Middle.', 'Last.'],
+          [[footer('1', 'Shared legend', [COMPANY, ADDRESS]), header('Header final')], [], [footer('2', 'Final legend', [COMPANY, ADDRESS])]],
+          [footer('1', 'Shared legend', [COMPANY, ADDRESS]), footer('2', 'Final legend', [COMPANY, ADDRESS]), header('Header final')]);
+        return direction === 'added' ? Promise.all([two, three]) : Promise.all([three, two]);
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the break is a paragraph-mark revision and nothing is listed', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        expect(sectionBreakRevisions(await (await DocxArchive.load(result.document)).getDocumentXml()))
+          .toEqual(direction === 'added' ? { added: 1, removed: 0 } : { added: 0, removed: 1 });
+      });
+      await expectRoundTrip({ then }, original, revised, result);
+    });
+
+    test(`pairs unchanged boxed headers that change sections when a boxed footer shared by every section changes (break ${direction})`, async ({ given, when, then }: AllureBddContext) => {
+      const [original, revised] = await given('two sections with boxed headers A and B and one shared boxed footer; the revision shows B, B again (inherited) and A, and edits the footer', () => {
+        const header = (id: string, legend: string): PartSpec =>
+          ({ id: `rIdH${id}`, kind: 'header', target: `header${id}.xml`, xml: storyXml('DrawingML', { ...BASE_STORY, legend, boxText: `${legend} box` }) });
+        const a = header('1', 'Header A');
+        const b = header('2', 'Header B');
+        const two = sectionedPackage(['First.', 'Last.'], [[LEADING, a], [b]], [LEADING, a, b]);
+        const three = sectionedPackage(['First.', 'Middle.', 'Last.'], [[LEADING_EDITED, b], [], [a]], [LEADING_EDITED, a, b]);
+        return direction === 'added' ? Promise.all([two, three]) : Promise.all([three, two]);
+      });
+      const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+      await then('the break is a paragraph-mark revision and nothing is listed', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        expect(sectionBreakRevisions(await (await DocxArchive.load(result.document)).getDocumentXml()))
+          .toEqual(direction === 'added' ? { added: 1, removed: 0 } : { added: 0, removed: 1 });
+      });
+      await expectRoundTrip({ then }, original, revised, result);
+    });
+  }
+
   test('tracks the edited first footer when a final section with a footer of its own is added', async ({ given, when, then }: AllureBddContext) => {
     const [original, revised] = await given('one section; the revision edits its footer and adds a final section that names a new boxed footer', () => Promise.all([
       sectionedPackage(['First.'], [[LEADING]], [LEADING]),
