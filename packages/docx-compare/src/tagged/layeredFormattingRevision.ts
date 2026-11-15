@@ -1,6 +1,8 @@
+import { XMLSerializer } from '@xmldom/xmldom';
 import { childElements, type WmlElement } from '@usejunior/docx-core';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 
 /**
  * Run content that may be repeated in a deleted and an inserted copy of a
@@ -81,6 +83,15 @@ export function placeSinglePropertyRevision(
  * run, accepting them gives the revised run, and Reject All / Accept All give
  * the original's rejected view and the revised's accepted view.
  *
+ * The comparison splits text word by word wherever a word also changes, so
+ * one original run reaches this point as many adjacent runs. Each maximal
+ * sequence of adjacent sibling runs with identical original and revised
+ * properties becomes one deleted copy and one inserted copy holding the
+ * sequence's whole content, rather than one pair per word; the changed word
+ * between two such sequences stays the ordinary deletion and insertion the
+ * comparison already made. Runs holding distinct pending records (different
+ * IDs) are never joined, so each prior revision keeps its own record.
+ *
  * A run whose content cannot be repeated (a field character or instruction,
  * a drawing, a note or comment reference) or that sits where a run revision
  * may not, keeps one record instead, as {@link placeSinglePropertyRevision}
@@ -90,6 +101,7 @@ export function placeSinglePropertyRevision(
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
  * @see https://github.com/UseJunior/safe-docx/issues/1461
+ * @see https://github.com/UseJunior/safe-docx/issues/1488
  */
 export function splitLayeredRunFormatting(
   root: WmlElement,
@@ -99,14 +111,15 @@ export function splitLayeredRunFormatting(
     wrap: (run: WmlElement, kind: 'ins' | 'del') => WmlElement;
   },
 ): void {
+  const splits: LayeredRunSplit[] = [];
   const records = (Array.from(root.getElementsByTagNameNS(W_NS, 'rPrChange')) as WmlElement[])
     .filter((record) => options.isComparisonRecord(record));
   for (const record of records) {
     const properties = record.parentNode as WmlElement | null;
     const run = properties?.parentNode as WmlElement | null;
     if (!properties || !run || !isW(properties, 'rPr') || !isW(run, 'r')) continue;
-    const snapshot = childElements(record).find((child) => isW(child, 'rPr'));
-    const originalRecord = snapshot && childElements(snapshot).find((child) => isW(child, 'rPrChange'));
+    const snapshot = childElements(record).find((child) => isW(child, 'rPr'))!;
+    const originalRecord = childElements(snapshot).find((child) => isW(child, 'rPrChange'));
     const revisedRecords = childElements(properties).filter((child) => isW(child, 'rPrChange') && child !== record);
     if (!originalRecord && revisedRecords.length === 0) continue;
     const parent = run.parentNode as WmlElement | null;
@@ -122,7 +135,24 @@ export function splitLayeredRunFormatting(
       }
       continue;
     }
-    const revisedRun = run.cloneNode(true) as WmlElement;
+    splits.push({ run, record, snapshot, signature: layeredRunSignature(run, record, snapshot) });
+  }
+
+  // Coalesce each maximal sequence of adjacent sibling runs whose original
+  // and revised properties are identical, so the layer is one deleted copy and
+  // one inserted copy per span rather than one pair per compared word.
+  const spans: LayeredRunSplit[][] = [];
+  for (const split of splits) {
+    const span = spans[spans.length - 1];
+    const previous = span?.[span.length - 1];
+    if (previous && previous.run.nextSibling === split.run && previous.signature === split.signature) span!.push(split);
+    else spans.push([split]);
+  }
+
+  for (const span of spans) {
+    const [{ run, record, snapshot }] = span as [LayeredRunSplit, ...LayeredRunSplit[]];
+    const parent = run.parentNode as WmlElement;
+    const revisedRun = coalescedRunCopy(span);
     const revisedProperties = childElements(revisedRun).find((child) => isW(child, 'rPr'))!;
     for (const change of childElements(revisedProperties).filter((child) => isW(child, 'rPrChange'))) {
       if (change.getAttributeNS(W_NS, 'id') === record.getAttributeNS(W_NS, 'id')) {
@@ -133,17 +163,72 @@ export function splitLayeredRunFormatting(
       }
     }
     if (childElements(revisedProperties).length === 0) revisedRun.removeChild(revisedProperties);
-    const originalRun = run.cloneNode(true) as WmlElement;
+    const originalRun = coalescedRunCopy(span);
     const originalProperties = childElements(originalRun).find((child) => isW(child, 'rPr'))!;
-    if (childElements(snapshot!).length > 0) {
+    if (childElements(snapshot).length > 0) {
       const restored = originalRun.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
-      for (const child of childElements(snapshot!)) restored.appendChild(child.cloneNode(true));
+      for (const child of childElements(snapshot)) restored.appendChild(child.cloneNode(true));
       originalRun.replaceChild(restored, originalProperties);
     } else {
       originalRun.removeChild(originalProperties);
     }
     parent.insertBefore(options.wrap(originalRun, 'del'), run);
     parent.insertBefore(options.wrap(revisedRun, 'ins'), run);
-    parent.removeChild(run);
+    for (const { run: member } of span) parent.removeChild(member);
   }
+}
+
+interface LayeredRunSplit {
+  run: WmlElement;
+  /** This comparison's `w:rPrChange` on the run. */
+  record: WmlElement;
+  /** The record's old-value `w:rPr`: the original run's properties, its own record included. */
+  snapshot: WmlElement;
+  /** Equal for runs whose deleted and inserted copies may be one run each. */
+  signature: string;
+}
+
+const serializer = new XMLSerializer();
+
+/**
+ * The run's attributes, original properties (the comparison record's
+ * snapshot) and revised properties (without the comparison record, whose ID
+ * differs per run). Pending records keep their IDs in the signature, so runs
+ * holding distinct prior revisions are never merged into one.
+ */
+function layeredRunSignature(run: WmlElement, record: WmlElement, snapshot: WmlElement): string {
+  const attributes = Array.from(run.attributes)
+    .filter((attribute) => !(attribute.localName ?? '').startsWith('rsid'))
+    .map((attribute) => `${attribute.name}=${attribute.value}`).sort().join(' ');
+  const properties = record.parentNode as WmlElement;
+  const revised = childElements(properties).filter((child) => child !== record)
+    .map((child) => serializer.serializeToString(child)).join('');
+  return `${attributes}|${serializer.serializeToString(snapshot)}|${revised}`;
+}
+
+/**
+ * One run holding the first run's attributes and properties and every run's
+ * content in order, adjacent text elements joined into one.
+ */
+function coalescedRunCopy(span: readonly LayeredRunSplit[]): WmlElement {
+  const copy = span[0]!.run.cloneNode(true) as WmlElement;
+  for (const { run } of span.slice(1)) {
+    for (const child of childElements(run)) {
+      if (!isW(child, 'rPr')) copy.appendChild(child.cloneNode(true));
+    }
+  }
+  let previous: WmlElement | undefined;
+  for (const child of childElements(copy)) {
+    if (isW(child, 't') && previous && isW(previous, 't')) {
+      previous.textContent = (previous.textContent ?? '') + (child.textContent ?? '');
+      copy.removeChild(child);
+      continue;
+    }
+    previous = child;
+  }
+  for (const text of childElements(copy).filter((child) => isW(child, 't'))) {
+    const value = text.textContent ?? '';
+    if (/^\s|\s$/.test(value)) text.setAttributeNS(XML_NS, 'xml:space', 'preserve');
+  }
+  return copy;
 }

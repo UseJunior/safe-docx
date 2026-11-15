@@ -160,10 +160,14 @@ function expectSingleRecords(xml: string): void {
   }
 }
 
-async function compareBodies(originalBody: string, revisedBody: string) {
+async function compareBodies(
+  originalBody: string,
+  revisedBody: string,
+  revisionGrouping?: 'token-minimal' | 'readable-semantic',
+) {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+  const result = await compareDocumentsAtomizer(original, revised, { ...COMPARE_OPTIONS, revisionGrouping });
   return {
     original,
     revised,
@@ -261,6 +265,123 @@ describe('formatting change on a run that already carries a pending w:rPrChange 
       for (const record of records) expect(record.getAttributeNS(W_NS, 'author')).toBe('Prior');
     });
   });
+});
+
+/**
+ * A run with a pending `w:rPrChange` that gains bold while one word is also
+ * replaced is compared word by word, so each compared word became its own run
+ * and its own deleted/inserted copy pair. The layer is one pair per maximal
+ * span of identical original and revised formatting; the replaced word stays
+ * an ordinary deletion and insertion (#1488).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1488
+ */
+describe('formatting change and a word replacement on a run with a pending w:rPrChange (#1488)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
+  const spanTest = testAllure
+    .epic('Document Comparison')
+    .withLabels({ feature: 'Layered formatting revisions', severity: 'critical' })
+    .conformance(
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' },
+    );
+  const SENTENCE = 'The Company is not bound by any agreement or understanding with any other person.';
+  const PRIOR_EMPTY = '<w:rPrChange w:id="101" w:author="Prior" w:date="2026-10-01T00:00:00Z"><w:rPr/></w:rPrChange>';
+  const PRIOR_OTHER = '<w:rPrChange w:id="102" w:author="Prior" w:date="2026-10-01T00:00:00Z"><w:rPr/></w:rPrChange>';
+  const wrappers = (xml: string, name: 'del' | 'ins'): Element[] =>
+    Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, name));
+
+  for (const revisionGrouping of ['token-minimal', 'readable-semantic'] as const) {
+    spanTest(`keeps the layer to one pair per span of unchanged text with ${revisionGrouping} grouping`, async ({ given, when, then }: AllureBddContext) => {
+      await given('an underlined run with a pending record that gains bold and has one word replaced', () => undefined);
+      const compared = await when('the pair is compared', () => compareBodies(
+        paragraph(run(SENTENCE, `<w:rPr><w:u w:val="single"/>${PRIOR_EMPTY}</w:rPr>`)),
+        paragraph(run(SENTENCE.replace('bound', 'REVISEDTERM'), `<w:rPr><w:b/><w:u w:val="single"/>${PRIOR_EMPTY}</w:rPr>`)),
+        revisionGrouping,
+      ));
+      await expectFaithfulProjections({ then }, compared);
+      await then('the paragraph holds at most three deleted/inserted pairs: two unchanged spans and the replaced word', () => {
+        const deleted = wrappers(compared.comparedXml, 'del');
+        const inserted = wrappers(compared.comparedXml, 'ins');
+        expect(deleted.length).toBeLessThanOrEqual(3);
+        expect(inserted.length).toBeLessThanOrEqual(3);
+        expect(parseXml(compared.comparedXml).getElementsByTagNameNS(W_NS, 'rPrChange').length).toBeLessThanOrEqual(6);
+        expect(deleted.map((wrapper) => wrapper.textContent)).toEqual(['The Company is not ', 'bound', ' by any agreement or understanding with any other person.']);
+        expect(inserted.map((wrapper) => wrapper.textContent)).toEqual(['The Company is not ', 'REVISEDTERM', ' by any agreement or understanding with any other person.']);
+      });
+      await then('rejecting only the comparison gives the original document, pending record included; accepting it gives the revised one', () => {
+        expect(formattingView(projectComparisonLayer(compared.comparedXml, 'reject'), true))
+          .toEqual(formattingView(compared.originalXml, true));
+        expect(formattingView(projectComparisonLayer(compared.comparedXml, 'accept'), true))
+          .toEqual(formattingView(compared.revisedXml, true));
+      });
+    });
+  }
+
+  spanTest('does not join runs that hold distinct pending records into one copy', async ({ given, when, then }: AllureBddContext) => {
+    await given('two adjacent runs, each with its own pending record, that gain bold while a word in the second is replaced', () => undefined);
+    const compared = await when('the pair is compared', () => compareBodies(
+      paragraph(run('The Company is ', `<w:rPr>${PRIOR_EMPTY}</w:rPr>`) + run('not bound by any agreement.', `<w:rPr>${PRIOR_OTHER}</w:rPr>`)),
+      paragraph(run('The Company is ', `<w:rPr><w:b/>${PRIOR_EMPTY}</w:rPr>`) + run('not free of any agreement.', `<w:rPr><w:b/>${PRIOR_OTHER}</w:rPr>`)),
+    ));
+    await expectFaithfulProjections({ then }, compared);
+    await then('no deleted or inserted copy spans the boundary between the two pending records', () => {
+      for (const wrapper of [...wrappers(compared.comparedXml, 'del'), ...wrappers(compared.comparedXml, 'ins')]) {
+        expect(wrapper.textContent).not.toMatch(/is not/);
+      }
+    });
+    await then('rejecting only the comparison gives the original document, pending records included', () => {
+      expect(formattingView(projectComparisonLayer(compared.comparedXml, 'reject'), true))
+        .toEqual(formattingView(compared.originalXml, true));
+      expect(formattingView(projectComparisonLayer(compared.comparedXml, 'accept'), true))
+        .toEqual(formattingView(compared.revisedXml, true));
+    });
+  });
+
+  spanTest('keeps spans of different revised formatting apart', async ({ given, when, then }: AllureBddContext) => {
+    await given('a run with a pending record whose first words gain bold and last words gain italics, with a word replaced between them', () => undefined);
+    const compared = await when('the pair is compared', () => compareBodies(
+      paragraph(run(SENTENCE, `<w:rPr>${PRIOR_EMPTY}</w:rPr>`)),
+      paragraph(
+        run('The Company is not ', `<w:rPr><w:b/>${PRIOR_EMPTY}</w:rPr>`) +
+        run('free', `<w:rPr>${PRIOR_EMPTY}</w:rPr>`) +
+        run(' by any agreement or understanding with any other person.', `<w:rPr><w:i/>${PRIOR_EMPTY}</w:rPr>`),
+      ),
+    ));
+    await expectFaithfulProjections({ then }, compared);
+    await then('the bold span and the italic span are separate pairs', () => {
+      const inserted = wrappers(compared.comparedXml, 'ins').map((wrapper) => wrapper.textContent);
+      expect(inserted).toContain('The Company is not ');
+      expect(inserted).toContain(' by any agreement or understanding with any other person.');
+    });
+  });
+});
+
+// Explicit opt-in: a requested reader run must fail, never silently skip an
+// unusable LibreOffice.
+const reader = process.env.SAFE_DOCX_LAYERED_FORMATTING_READER_REQUIRED === '1' ? describe : describe.skip;
+reader('LibreOffice accepts and rejects a layered formatting span beside a word replacement as compared (#1488)', () => {
+  test('shows the revised formatting and text after Accept All and the original after Reject All', async () => {
+    const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
+    const sentence = 'The Company is not bound by any agreement or understanding with any other person.';
+    const prior = '<w:rPrChange w:id="101" w:author="Prior" w:date="2026-10-01T00:00:00Z"><w:rPr/></w:rPrChange>';
+    const compared = await compareBodies(
+      paragraph(run(sentence, `<w:rPr><w:u w:val="single"/>${prior}</w:rPr>`)),
+      paragraph(run(sentence.replace('bound', 'REVISEDTERM'), `<w:rPr><w:b/><w:u w:val="single"/>${prior}</w:rPr>`)),
+    );
+    const [comparedAccepted, comparedRejected, revisedAccepted, originalRejected] = await runLibreOfficeOracle([
+      { op: 'accept' as const, documentXml: compared.comparedXml },
+      { op: 'reject' as const, documentXml: compared.comparedXml },
+      { op: 'accept' as const, documentXml: compared.revisedXml },
+      { op: 'reject' as const, documentXml: compared.originalXml },
+    ]);
+    expect(formattingView(comparedAccepted!)).toEqual(formattingView(revisedAccepted!));
+    expect(formattingView(comparedRejected!)).toEqual(formattingView(originalRejected!));
+    expect(formattingView(comparedAccepted!)).not.toEqual(formattingView(comparedRejected!));
+  }, 600_000);
 });
 
 describe('formatting change on a paragraph mark or paragraph that already carries a pending record (#1461)', { timeout: LOAD_SENSITIVE_TIMEOUT_MS }, () => {
