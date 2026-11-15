@@ -1,3 +1,4 @@
+import { DOMParser } from '@xmldom/xmldom';
 import { describe, expect } from 'vitest';
 import { OOXML } from '../primitives/namespaces.js';
 import { parseXml } from '../primitives/xml.js';
@@ -79,6 +80,49 @@ describe('OOXML fixture attribute safety', () => {
             ignorablePrefixes: ['ext injected'],
           }),
         ).rejects.toThrow('Invalid XML namespace prefix');
+      });
+    },
+  );
+
+  test(
+    'buildDocxFromBodyXml declares a restated built-in namespace and Ignorable prefix once',
+    async ({ when, then }: AllureBddContext) => {
+      let documentXml = '';
+
+      await when('a caller restates w14 and mc and lists w14 as ignorable again', async () => {
+        const buffer = await buildDocxFromBodyXml('<w:p/>', [], {
+          namespaces: { w14: OOXML.W14_NS, mc: MC_NS, ext: 'urn:fixture:ext' },
+          ignorablePrefixes: ['w14', 'ext', 'ext'],
+        });
+        documentXml = await (await DocxArchive.load(buffer)).getDocumentXml();
+      });
+
+      await then('the root is well-formed, binds each prefix once and lists each ignorable prefix once', () => {
+        // xmldom's default handler throws on a repeated attribute, unlike
+        // parseXml, which repairs a repeated namespace declaration (#1032).
+        const root = new DOMParser().parseFromString(documentXml, 'application/xml').documentElement!;
+        const declarations = Array.from(root.attributes)
+          .map((attribute) => attribute.name)
+          .filter((name) => name.startsWith('xmlns:'));
+        expect(declarations).toEqual(['xmlns:w', 'xmlns:w14', 'xmlns:mc', 'xmlns:ext']);
+        expect(root.getAttributeNS(MC_NS, 'Ignorable')).toBe('w14 ext');
+      });
+    },
+  );
+
+  test(
+    'buildDocxFromBodyXml rejects a conflicting built-in prefix and an unusable Ignorable prefix',
+    async ({ then }: AllureBddContext) => {
+      await then('each would make the fixture root malformed, so each fails closed', async () => {
+        await expect(
+          buildDocxFromBodyXml('<w:p/>', [], { namespaces: { w14: 'urn:fixture:other' } }),
+        ).rejects.toThrow('Namespace prefix "w14" is already bound');
+        await expect(
+          buildDocxFromBodyXml('<w:p/>', [], { ignorablePrefixes: ['wps'] }),
+        ).rejects.toThrow('Ignorable prefix "wps" is not bound on the fixture root');
+        await expect(
+          buildDocxFromBodyXml('<w:p/>', [], { ignorablePrefixes: ['mc'] }),
+        ).rejects.toThrow('Ignorable prefix "mc" names the Markup Compatibility namespace');
       });
     },
   );

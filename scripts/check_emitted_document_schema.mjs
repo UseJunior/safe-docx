@@ -28,6 +28,13 @@
  *                          Classes, not file hashes: emitted XML embeds
  *                          revision timestamps, so content hashes churn.
  *
+ * Each instance is first checked for well-formedness as emitted, before
+ * any Markup Compatibility preprocessing rewrites it: libxml2 (the parser
+ * LibreOffice reads OOXML with) must report no error, so a repeated
+ * attribute or namespace declaration, or two prefixes that make one element
+ * carry the same expanded attribute name, fails the gate even when the
+ * preprocessed projection would be clean (issue #1484).
+ *
  * Requires xmllint (libxml2). The script fails loudly when xmllint is
  * missing — a gate that silently skips is not a gate.
  */
@@ -52,6 +59,16 @@ const KNOWN_GOOD = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 const KNOWN_BAD = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body><w:r><w:t>bad</w:t></w:r></w:body>
+</w:document>`;
+
+// Not namespace-well-formed (Namespaces in XML 1.0 §6.3): a and b bind one
+// URI, so w:p carries the expanded attribute name {urn:sdx:selftest}k twice.
+// mc:Ignorable drops that namespace, so only the as-emitted check sees it.
+const KNOWN_NOT_WELL_FORMED = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:a="urn:sdx:selftest" xmlns:b="urn:sdx:selftest" mc:Ignorable="a">
+  <w:body><w:p a:k="1" b:k="2"><w:r><w:t>bad</w:t></w:r></w:p></w:body>
 </w:document>`;
 
 function fail(message) {
@@ -105,13 +122,56 @@ function validateBatch(files) {
   return failures;
 }
 
+/**
+ * Run libxml2 over a batch of instance files exactly as emitted, without a
+ * schema. Returns per-file well-formedness errors. libxml2 reports a
+ * namespace error (Namespaces in XML 1.0 §6.3, two prefixes bound to one URI
+ * giving an element the same expanded attribute name twice) without a
+ * non-zero exit, so the error lines decide, not the exit status. Warnings
+ * do not fail the gate.
+ */
+export function checkWellFormedBatch(files) {
+  const failures = [];
+  const CHUNK = 100;
+  for (let i = 0; i < files.length; i += CHUNK) {
+    const chunk = files.slice(i, i + CHUNK);
+    const result = spawnSync('xmllint', ['--noout', '--nonet', ...chunk], {
+      encoding: 'utf-8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (result.error) fail(`xmllint failed to run: ${result.error.message}`);
+    const stderr = (result.stderr ?? '').split('\n');
+    let chunkFailures = 0;
+    for (const file of chunk) {
+      const lines = stderr.filter((line) => line.startsWith(`${file}:`) && / error : /.test(line));
+      if (lines.length > 0) {
+        failures.push({ file, lines: lines.map((line) => `not well-formed: ${line}`) });
+        chunkFailures += 1;
+      }
+    }
+    if (result.status !== 0 && chunkFailures === 0) {
+      fail(`xmllint exited ${result.status} without per-file errors:\n${result.stderr}`);
+    }
+  }
+  return failures;
+}
+
 function selfTest() {
   const dir = mkdtempSync(join(tmpdir(), 'sdx-schema-selftest-'));
   try {
     const goodPath = join(dir, 'known-good.xml');
     const badPath = join(dir, 'known-bad.xml');
+    const notWellFormedPath = join(dir, 'known-not-well-formed.xml');
     writeFileSync(goodPath, KNOWN_GOOD);
     writeFileSync(badPath, KNOWN_BAD);
+    writeFileSync(notWellFormedPath, KNOWN_NOT_WELL_FORMED);
+    const notWellFormed = checkWellFormedBatch([goodPath, notWellFormedPath]).map((f) => f.file);
+    if (notWellFormed.includes(goodPath)) {
+      fail('self-test: known-good instance failed the well-formedness check');
+    }
+    if (!notWellFormed.includes(notWellFormedPath)) {
+      fail('self-test: a repeated expanded attribute name passed the well-formedness check');
+    }
     const failures = validateBatch([goodPath, badPath]);
     const failedFiles = failures.map((f) => f.file);
     if (failedFiles.includes(goodPath)) {
@@ -120,13 +180,79 @@ function selfTest() {
     if (!failedFiles.includes(badPath)) {
       fail('self-test: known-bad instance validated — the schema wrapper is not enforcing anything');
     }
-    console.log('self-test passed: known-good validates, known-bad is rejected');
+    console.log('self-test passed: known-good validates, known-bad and known-not-well-formed are rejected');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+
+/**
+ * Check every element's Markup Compatibility attributes against ECMA-376
+ * Part 3 (5th edition, 2015) §7.2–§7.4, and throw on the first violation:
+ *   - mc:Ignorable and mc:MustUnderstand: each prefix is bound to an
+ *     in-scope namespace that is not the Markup Compatibility namespace
+ *     (§7.2, §7.4).
+ *   - mc:ProcessContent: each token is `prefix:localName` or `prefix:*`, the
+ *     prefix is bound to an in-scope namespace other than the Markup
+ *     Compatibility namespace, and that namespace is declared ignorable at
+ *     the same element or an ancestor (§7.3).
+ *   - No list repeats a token. This rule is the gate's, not Part 3's: §7.2
+ *     does not forbid a repeat, and LibreOffice loads one. No producer needs
+ *     it, though, and a repeated `w14` is what a root that declared `w14`
+ *     twice leaves after a parser drops the second declaration (#1484), so
+ *     the gate treats it as an emitter defect.
+ *
+ * Runs over the whole tree before preprocessing, so markup inside content
+ * that preprocessing removes is still checked.
+ */
+export function checkMarkupCompatibilityAttributes(root) {
+  const visit = (element, inheritedIgnorableNs) => {
+    const ignorableNs = new Set(inheritedIgnorableNs);
+    // Ignorable first: ProcessContent may name a namespace declared ignorable
+    // on the same element.
+    for (const name of ['Ignorable', 'MustUnderstand', 'ProcessContent']) {
+      if (!element.hasAttributeNS(MC_NS, name)) continue;
+      const seen = new Set();
+      for (const token of element.getAttributeNS(MC_NS, name).trim().split(/\s+/).filter(Boolean)) {
+        if (seen.has(token)) {
+          throw new Error(`mc:${name} repeats token '${token}' on ${element.tagName}`);
+        }
+        seen.add(token);
+        let prefix = token;
+        if (name === 'ProcessContent') {
+          const match = /^([^:]+):([^:]+)$/.exec(token);
+          if (!match) {
+            throw new Error(
+              `mc:ProcessContent token '${token}' on ${element.tagName} is not prefix:localName or prefix:*`
+            );
+          }
+          prefix = match[1];
+        }
+        const namespaceUri = element.lookupNamespaceURI(prefix);
+        if (!namespaceUri) {
+          throw new Error(`mc:${name} names unbound prefix '${prefix}' on ${element.tagName}`);
+        }
+        if (namespaceUri === MC_NS) {
+          throw new Error(
+            `mc:${name} names the Markup Compatibility namespace (prefix '${prefix}') on ${element.tagName}`
+          );
+        }
+        if (name === 'Ignorable') ignorableNs.add(namespaceUri);
+        if (name === 'ProcessContent' && !ignorableNs.has(namespaceUri)) {
+          throw new Error(
+            `mc:ProcessContent token '${token}' on ${element.tagName} names a namespace that is not ignorable here`
+          );
+        }
+      }
+    }
+    for (const child of Array.from(element.childNodes)) {
+      if (child.nodeType === 1) visit(child, ignorableNs);
+    }
+  };
+  visit(root, new Set());
+}
 
 /**
  * Markup Compatibility and Extensibility (ECMA-376 Part 3) preprocessing.
@@ -151,22 +277,24 @@ export function applyMcePreprocessing(xml) {
   } catch (error) {
     // Not even well-formed. Surface as a gate failure with the parser's
     // message instead of crashing the whole run.
-    return { parseError: String(error?.message ?? error).split('\n')[0] };
+    return { parseError: `not well-formed: ${String(error?.message ?? error).split('\n')[0]}` };
   }
   const root = doc.documentElement;
   if (!root) return { xml };
+  try {
+    checkMarkupCompatibilityAttributes(root);
+  } catch (error) {
+    return { parseError: `markup compatibility: ${String(error?.message ?? error).split('\n')[0]}` };
+  }
 
   let changed = false;
   const visit = (element, inheritedIgnorableNs) => {
     const ignorableNs = new Set(inheritedIgnorableNs);
     const ignorable = element.getAttributeNS(MC_NS, 'Ignorable');
     if (ignorable) {
+      // checkMarkupCompatibilityAttributes has proved every prefix bound.
       for (const prefix of ignorable.trim().split(/\s+/).filter(Boolean)) {
-        const namespaceUri = element.lookupNamespaceURI(prefix);
-        if (!namespaceUri) {
-          throw new Error(`mc:Ignorable names unbound prefix '${prefix}' on ${element.tagName}`);
-        }
-        ignorableNs.add(namespaceUri);
+        ignorableNs.add(element.lookupNamespaceURI(prefix));
       }
     }
     if (element.namespaceURI === MC_NS && element.localName === 'AlternateContent') {
@@ -199,11 +327,7 @@ export function applyMcePreprocessing(xml) {
       if (child.nodeType === 1) visit(child, ignorableNs);
     }
   };
-  try {
-    visit(root, new Set());
-  } catch (error) {
-    return { parseError: String(error?.message ?? error).split('\n')[0] };
-  }
+  visit(root, new Set());
   if (!changed) return { xml };
   return { xml: new XMLSerializer().serializeToString(doc) };
 }
@@ -238,13 +362,18 @@ async function collectInstances(inputs, scratchDir) {
     writeFileSync(extracted, await part.async('string'));
     xmlFiles.push(extracted);
   }
+  // Well-formedness as emitted, before preprocessing can rewrite (and so
+  // hide) a repeated attribute or namespace declaration.
+  const notWellFormed = new Map(checkWellFormedBatch(xmlFiles).map(({ file, lines }) => [file, lines]));
   // MCE preprocessing: validate the post-MCE projection, written to scratch
   // under the same basename so failures still identify the source instance.
   return xmlFiles.map((file) => {
+    const wellFormedLines = notWellFormed.get(file);
+    if (wellFormedLines) return { path: file, name: basename(file), rejectedLines: wellFormedLines };
     const xml = readFileSync(file, 'utf-8');
     const result = applyMcePreprocessing(xml);
     if (result.parseError) {
-      return { path: file, name: basename(file), parseError: result.parseError };
+      return { path: file, name: basename(file), rejectedLines: [result.parseError] };
     }
     if (result.xml === xml) return { path: file, name: basename(file) };
     const projected = join(scratchDir, basename(file));
@@ -292,9 +421,9 @@ async function main() {
     }
 
     const failures = instances
-      .filter((inst) => inst.parseError)
-      .map((inst) => ({ name: inst.name, lines: [`not well-formed: ${inst.parseError}`] }));
-    const validatable = instances.filter((inst) => !inst.parseError);
+      .filter((inst) => inst.rejectedLines)
+      .map((inst) => ({ name: inst.name, lines: inst.rejectedLines }));
+    const validatable = instances.filter((inst) => !inst.rejectedLines);
     const byPath = new Map(validatable.map((inst) => [inst.path, inst.name]));
     for (const { file, lines } of validateBatch(validatable.map((inst) => inst.path))) {
       failures.push({ name: byPath.get(file) ?? basename(file), lines });
