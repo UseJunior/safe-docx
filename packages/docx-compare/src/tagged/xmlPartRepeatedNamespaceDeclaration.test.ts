@@ -35,9 +35,13 @@ const body = (text: string) =>
 /** `uri`: repeat `xmlns:w` on every part root with it; null: the clean package. */
 type Repeat = string | null;
 
-/** Main part only: the shared builder appends `namespaces` after its own `xmlns:w`. */
-function buildMain(text: string, repeat: Repeat): Promise<Buffer> {
-  return buildDocxFromBodyXml(body(text), [], repeat === null ? {} : { namespaces: { w: repeat } });
+/** Main part only. The shared builder declares each prefix once (#1484), so the repeat is written in here. */
+async function buildMain(text: string, repeat: Repeat): Promise<Buffer> {
+  const built = await buildDocxFromBodyXml(body(text));
+  if (repeat === null) return built;
+  const archive = await DocxArchive.load(built);
+  archive.setDocumentXml((await archive.getDocumentXml()).replace('<w:document ', `<w:document xmlns:w="${repeat}" `));
+  return archive.save();
 }
 
 /** Main part plus a default footer, both repeating `xmlns:w` when `repeat` is set. */

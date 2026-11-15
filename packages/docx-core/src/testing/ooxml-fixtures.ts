@@ -262,27 +262,79 @@ export interface AncillaryDocxFixtureOptions {
   parts?: readonly AncillaryPartFixture[];
 }
 
+/** The `<w:document>` root bindings {@link buildDocxFromBodyXml} always declares. */
+const MINIMAL_DOCUMENT_ROOT_NAMESPACES: Readonly<Record<string, string>> = {
+  w: 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+  w14: 'http://schemas.microsoft.com/office/word/2010/wordml',
+  mc: 'http://schemas.openxmlformats.org/markup-compatibility/2006',
+};
+const MC_NAMESPACE_URI = MINIMAL_DOCUMENT_ROOT_NAMESPACES.mc;
+
+/**
+ * Merge caller bindings into the built-in root bindings so each prefix is
+ * declared once. An element that repeats an attribute name is not
+ * well-formed XML, and a namespace declaration is an attribute, so a second
+ * `xmlns:w14` makes the part unreadable (LibreOffice refused one, #1484). Restating a
+ * built-in binding with the same URI is a no-op; binding a built-in prefix to
+ * a different URI throws, because one element cannot bind a prefix twice.
+ *
+ * @see https://www.w3.org/TR/xml/#uniqattspec XML 1.0 §3.1, Unique Att Spec
+ * @see https://www.w3.org/TR/xml-names/#uniqAttrs Namespaces in XML 1.0 §6.3
+ */
+function mergeRootNamespaceBindings(extra: Readonly<Record<string, string>>): Map<string, string> {
+  const bindings = new Map(Object.entries(MINIMAL_DOCUMENT_ROOT_NAMESPACES));
+  for (const [prefix, uri] of Object.entries(extra)) {
+    assertXmlPrefix(prefix);
+    const existing = bindings.get(prefix);
+    if (existing !== undefined && existing !== uri) {
+      throw new Error(
+        `Namespace prefix ${JSON.stringify(prefix)} is already bound to ${JSON.stringify(existing)} ` +
+          `on the fixture root; it cannot also be bound to ${JSON.stringify(uri)}`,
+      );
+    }
+    bindings.set(prefix, uri);
+  }
+  return bindings;
+}
+
+/**
+ * The root `mc:Ignorable` tokens: `w14`, then each caller prefix once. Every
+ * prefix must be bound on the root and must not name the Markup
+ * Compatibility namespace itself, the rules the emitted-document schema gate
+ * (`scripts/check_emitted_document_schema.mjs`) checks. A repeated token is
+ * dropped rather than written twice.
+ */
+function mergeRootIgnorablePrefixes(
+  bindings: ReadonlyMap<string, string>,
+  extra: readonly string[],
+): string[] {
+  const prefixes = ['w14'];
+  for (const prefix of extra) {
+    assertXmlPrefix(prefix);
+    const uri = bindings.get(prefix);
+    if (uri === undefined) {
+      throw new Error(`Ignorable prefix ${JSON.stringify(prefix)} is not bound on the fixture root`);
+    }
+    if (uri === MC_NAMESPACE_URI) {
+      throw new Error(`Ignorable prefix ${JSON.stringify(prefix)} names the Markup Compatibility namespace`);
+    }
+    if (!prefixes.includes(prefix)) prefixes.push(prefix);
+  }
+  return prefixes;
+}
+
 export async function buildDocxFromBodyXml(
   bodyXml: string,
   hyperlinkRels: HyperlinkRelFixture[] = [],
   namespaceOptions: MinimalDocumentNamespaceOptions = {},
 ): Promise<Buffer> {
-  const namespaceEntries = Object.entries(namespaceOptions.namespaces ?? {});
-  for (const [prefix] of namespaceEntries) assertXmlPrefix(prefix);
-  const additionalIgnorablePrefixes = namespaceOptions.ignorablePrefixes ?? [];
-  for (const prefix of additionalIgnorablePrefixes) assertXmlPrefix(prefix);
-
-  const extraNamespaces = namespaceEntries
-    .map(([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlAttr(uri)}"`)
-    .join('');
-  const ignorable = ['w14', ...additionalIgnorablePrefixes].join(' ');
+  const bindings = mergeRootNamespaceBindings(namespaceOptions.namespaces ?? {});
+  const ignorable = mergeRootIgnorablePrefixes(bindings, namespaceOptions.ignorablePrefixes ?? []);
+  const declarations = Array.from(bindings, ([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlAttr(uri)}"`).join('');
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
-    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
-    ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
-    extraNamespaces +
-    ` mc:Ignorable="${escapeXmlAttr(ignorable)}">` +
+    `<w:document${declarations}` +
+    ` mc:Ignorable="${escapeXmlAttr(ignorable.join(' '))}">` +
     `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
 
   const contentTypesXml =
