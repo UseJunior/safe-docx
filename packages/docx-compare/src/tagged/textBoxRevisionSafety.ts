@@ -1632,9 +1632,11 @@ function rowCarriesRevision(row: Element): boolean {
  * inside the cells.
  */
 function isTrackableScaffoldRow(row: Element): boolean {
+  // A cell-level control holds cells or further cell-level controls (§17.5.2.33).
   const cellLevelControl = (child: Element): boolean => isWordElement(child, 'sdt')
     && directChildElements(child).every((part) => isWordElement(part, 'sdtPr', 'sdtEndPr')
-      || (isWordElement(part, 'sdtContent') && directChildElements(part).every((cell) => isWordElement(cell, 'tc'))));
+      || (isWordElement(part, 'sdtContent')
+        && directChildElements(part).every((cell) => isWordElement(cell, 'tc') || cellLevelControl(cell))));
   if (!directChildElements(row).every((child) => isWordElement(child, 'trPr', 'tc') || cellLevelControl(child))) return false;
   if (rowCarriesRevision(row)) return false;
   return !Array.from(row.getElementsByTagName('*')).some((element) =>

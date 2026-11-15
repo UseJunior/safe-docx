@@ -610,6 +610,9 @@ describe('a header or footer table row holding a field, content control or range
   const CELL_CONTROL_ROW = `<w:tr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Client'))}</w:sdtContent></w:sdt>${cell(text('Acme'))}</w:tr>`;
   const SHORT_CONTROL_ROW = `<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Client'))}</w:sdtContent></w:sdt></w:tr>`;
   const FIELD_CONTROL = `<w:sdt><w:sdtPr><w:alias w:val="Page"/><w:id w:val="611"/></w:sdtPr><w:sdtContent>${cell(text('Page ') + pageField())}</w:sdtContent></w:sdt>`;
+  const NESTED_CONTROL = `<w:sdt><w:sdtPr><w:alias w:val="Party"/></w:sdtPr><w:sdtContent><w:sdt><w:sdtPr><w:alias w:val="Client"/></w:sdtPr><w:sdtContent>${cell(text('Client'))}</w:sdtContent></w:sdt></w:sdtContent></w:sdt>`;
+  const SHORT_NESTED_CONTROL_ROW = `<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>${NESTED_CONTROL}</w:tr>`;
+  const NESTED_CONTROL_ROW = `<w:tr>${NESTED_CONTROL}${cell(text('Acme'))}</w:tr>`;
   const SHORT_FIELD_CONTROL_ROW = `<w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>${FIELD_CONTROL}</w:tr>`;
   const FIELD_CONTROL_ROW = `<w:tr>${FIELD_CONTROL}${cell(text('of 3'))}</w:tr>`;
   // A bookmark inside the paragraph, and one around the cell's paragraphs.
@@ -635,6 +638,7 @@ describe('a header or footer table row holding a field, content control or range
     // A row whose cell skeleton changes beside a cell-level content control is replaced whole (#1483).
     { name: 'a cell added beside a cell-level content control', original: [COMPANY, SHORT_CONTROL_ROW], revised: [COMPANY, CELL_CONTROL_ROW], markers: { inserted: 1, deleted: 1 } },
     { name: 'a cell removed beside a cell-level content control', original: [CELL_CONTROL_ROW, COMPANY], revised: [SHORT_CONTROL_ROW, COMPANY], markers: { inserted: 1, deleted: 1 } },
+    { name: 'a cell added beside a nested cell-level content control', original: [COMPANY, SHORT_NESTED_CONTROL_ROW], revised: [COMPANY, NESTED_CONTROL_ROW], markers: { inserted: 1, deleted: 1 } },
     { name: 'a cell added beside a cell-level content control holding a PAGE field', original: [COMPANY, SHORT_FIELD_CONTROL_ROW], revised: [COMPANY, FIELD_CONTROL_ROW], markers: { inserted: 1, deleted: 1 } },
     { name: 'an inserted row holding a bookmark', original: [COMPANY], revised: [COMPANY, BOOKMARK_ROW], markers: { inserted: 1, deleted: 0 } },
     { name: 'a deleted row holding a bookmark', original: [COMPANY, BOOKMARK_ROW, ADDRESS], revised: [COMPANY, ADDRESS], markers: { inserted: 0, deleted: 1 } },

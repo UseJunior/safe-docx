@@ -36,5 +36,5 @@
 - [x] 6.1 Reproduce (RED) the refusal for a cell added or removed beside or inside a cell-level content control, a controlled cell merged, a control holding a field, a bookmark with a data binding or a pending insertion, a cell-level custom XML element, and a vertical-merge band holding a controlled cell.
 - [x] 6.2 Count cells inside cell-level wrappers in the row skeleton and replace such rows whole; keep only pending cell-level topology revisions with the guard (SDX-COMPTABLE-12, narrowed SDX-COMPTABLE-09).
 - [x] 6.3 Accept/reject parity with both acceptors on text, footprint and each wrapper; schema gate; the same replacement in header/footer tables and in header, footer and body text boxes.
-- [x] 6.4 LibreOffice accept/reject reproduce the revised and original tables.
+- [x] 6.4 LibreOffice Reject All reproduces the original table in every case, and Accept All the revised table when the control is not in the row's first cell; LibreOffice 26.2 ignores `w:trPr/w:del` on a row whose first cell sits in a cell-level control (as it does for a plain whole-row deletion of such a row), so that Accept is not asserted.
 - [ ] 6.5 Real NVCA smoke after merge.
