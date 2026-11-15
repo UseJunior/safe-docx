@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { DocxArchive, DocxDocument, OOXML, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
@@ -461,5 +462,82 @@ describe('a section break beside a header or footer text box whose part is share
         await expectRoundTrip({ then }, original, revised, result);
       });
     }
+  }
+});
+
+/**
+ * What an ODT export shows: the body text (`content.xml`) and the distinct
+ * header and footer texts (LibreOffice keeps them in `styles.xml` master
+ * pages, one per page style a section uses).
+ */
+async function odtView(odt: Buffer): Promise<{ body: string; header: string[]; footer: string[] }> {
+  const zip = await JSZip.loadAsync(odt);
+  const OFFICE_NS = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
+  const STYLE_NS = 'urn:oasis:names:tc:opendocument:xmlns:style:1.0';
+  const content = parseXml(await zip.file('content.xml')!.async('string'));
+  const styles = parseXml(await zip.file('styles.xml')!.async('string'));
+  const stories = (localName: string): string[] => [...new Set(
+    Array.from(styles.getElementsByTagNameNS(STYLE_NS, localName)).map((story) => story.textContent ?? ''),
+  )].sort();
+  return {
+    body: Array.from(content.getElementsByTagNameNS(OFFICE_NS, 'text')).map((body) => body.textContent ?? '').join(''),
+    header: stories('header'),
+    footer: stories('footer'),
+  };
+}
+
+// Explicit opt-in: a requested reader run must fail, never silently skip an
+// unusable LibreOffice. LibreOffice does not resolve a section break tracked
+// on paragraph marks (#1465), so only the text it shows is held here: the
+// body and the header/footer stories.
+const reader = process.env.SAFE_DOCX_SECTION_BREAK_TEXT_BOX_READER_REQUIRED === '1' ? describe : describe.skip;
+reader('LibreOffice reads a footer text-box redline across a section break (#1487)', () => {
+  for (const direction of ['added', 'removed'] as const) {
+    test(`accepts to the revised footer and rejects to the original one when a section break is ${direction}`, async () => {
+      const { runLibreOfficeOracle } = await import('../../../docx-core/dist/integration/libreoffice-oracle.js');
+      const part = (story: Story): PartSpec =>
+        ({ id: 'rIdStory', kind: 'footer', target: 'footer1.xml', xml: storyXml('DrawingML', story) });
+      const before = part(BASE_STORY);
+      const after = part({ ...BASE_STORY, legend: 'Legend final', boxText: 'Confidential draft' });
+      const one = (spec: PartSpec, closing: string): Promise<Buffer> =>
+        sectionedPackage(['Opening clause.', closing], [[spec]], [spec]);
+      const two = (spec: PartSpec, closing: string): Promise<Buffer> =>
+        sectionedPackage(['Opening clause.', closing], [[spec], [spec]], [spec]);
+      const [original, revised] = direction === 'added'
+        ? await Promise.all([one(before, 'Closing clause draft.'), two(after, 'Closing clause final.')])
+        : await Promise.all([two(before, 'Closing clause draft.'), one(after, 'Closing clause final.')]);
+      const { document } = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+      const packages: Buffer[] = [];
+      await runLibreOfficeOracle(
+        [
+          { op: 'reject' as const, docx: original, saveAs: 'odt' as const },
+          { op: 'accept' as const, docx: revised, saveAs: 'odt' as const },
+          { op: 'accept' as const, docx: document, saveAs: 'odt' as const },
+          { op: 'reject' as const, docx: document, saveAs: 'odt' as const },
+        ],
+        undefined,
+        (index: number, bytes: Buffer) => { packages[index] = bytes; },
+      );
+      const [originalRejected, revisedAccepted, accepted, rejected] = await Promise.all(packages.map(odtView));
+      if (process.env.SAFE_DOCX_READER_EVIDENCE) console.log('LO-EVIDENCE', direction, JSON.stringify({ originalRejected, revisedAccepted, accepted, rejected }));
+      expect(originalRejected!.footer.join()).toContain('Legend draft');
+      expect(revisedAccepted!.footer.join()).toContain('Legend final');
+      expect(accepted!.body).toBe(revisedAccepted!.body);
+      expect(rejected!.body).toBe(originalRejected!.body);
+      expect(accepted!.footer).toEqual(revisedAccepted!.footer);
+      if (direction === 'added') {
+        expect(rejected!.footer).toEqual(originalRejected!.footer);
+      } else {
+        // Rejecting a removed break restores a section LibreOffice gives a
+        // page style of its own (#1465); that copy of the footer repeats the
+        // box text. Every footer it shows is still the original story, with
+        // none of the revised text.
+        for (const footer of rejected!.footer) {
+          expect(footer.startsWith(originalRejected!.footer[0]!)).toBe(true);
+          expect(footer).not.toContain('Legend final');
+          expect(footer).not.toContain('Confidential draft');
+        }
+      }
+    }, 600_000);
   }
 });

@@ -197,10 +197,12 @@ export interface TextBoxStoryComparisonPlan {
    */
   ancillaryProjectionOriginal?: Buffer;
   /**
-   * The original package with only the `drawingAccountedPartPaths` parts'
-   * drawings replaced that way: what the finished package's header/footer
-   * entries are judged against, so an entry a changed section count leaves
-   * at another section index is dropped when the part is carried (#1487).
+   * The original package with the listed drawings replaced that way, in the
+   * parts whose listed drawings describe only their own boxes (a group, a
+   * second shape or a shared template keeps the part's entry): what the
+   * finished package's header/footer entries are judged against, so an entry
+   * a changed section count leaves at another section index is dropped when
+   * the part's stories are carried (#1487).
    */
   drawingAccountedOriginal?: Buffer;
 }
@@ -2988,7 +2990,7 @@ async function ancillaryStoryInputs(
   drawingChanges: UnrepresentedChange[];
   drawingAccountedPartPaths: string[];
   drawingAlignedOriginalParts: Map<string, string>;
-  /** `drawingAlignedOriginalParts` restricted to the drawing-accounted pairs, by original part path. */
+  /** `drawingAlignedOriginalParts` restricted to parts whose listed drawings describe only their boxes. */
   drawingAccountedOriginalParts: Map<string, string>;
   lifecyclePartPaths: string[];
 }> {
@@ -3304,6 +3306,10 @@ async function ancillaryStoryInputs(
       const alignedXml = drawingAlignedXml;
       if (alignedXml !== undefined) {
         drawingAlignedOriginalParts.set(original.targetPath, alignedXml);
+        // Its listed drawings name every drawing difference of the part, so
+        // the part's header/footer entries are judged against the original
+        // with those drawings aligned (#1487).
+        if (drawingsDescribeOnlyTheirBoxes) drawingAccountedOriginalParts.set(original.targetPath, alignedXml);
         // The part's entry is represented when its stories and drawings are
         // all it changed: the stories are tracked (and projection-checked),
         // the drawings listed. A drawing that draws more than its box (a
@@ -3315,7 +3321,6 @@ async function ancillaryStoryInputs(
           ) === pair.revised.canonical
         ) {
           drawingAccountedPartPaths.push(pair.revised.targetPath);
-          drawingAccountedOriginalParts.set(original.targetPath, alignedXml);
           representedChanges.push(...pair.revised.bindings.map((binding) => ({
             scope: binding.kind,
             kind: 'changed' as const,
