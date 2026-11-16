@@ -12,12 +12,14 @@ import { formatUnrepresentedChangeWarnings } from '../unrepresented-change-warni
 
 const USAGE =
   'Usage: docx-comparison <original.docx> <revised.docx> [output.docx] ' +
-  '[--author "Name"] [--grouping <' + COMPARE_REVISION_GROUPINGS.join('|') + '>] [--no-moves]\n' +
+  '[--author "Name"] [--grouping <' + COMPARE_REVISION_GROUPINGS.join('|') + '>] [--no-moves] [--no-date]\n' +
   '  --author <name>    Track-changes author (default: Comparison)\n' +
   '  --grouping <mode>  Revision grouping (default: ' + DEFAULT_COMPARE_REVISION_GROUPING + '). ' +
   'readable-semantic shows each rewritten passage as one deletion and one insertion; ' +
   'token-minimal emits the smallest word-level deletion/insertion set.\n' +
   '  --no-moves         Do not detect moved content (moves are detected by default)\n' +
+  '  --no-date          Omit w:date from the revisions this comparison creates (default: current time); ' +
+  'revisions already in the inputs keep their dates\n' +
   'Comparison always publishes the revised-based tagged package; engine, mode, strategy, premerge, ' +
   'and word-refinement selectors have been removed.\n' +
   'Stats: insertions/deletions count contiguous revision ranges; insertedAtoms/deletedAtoms use the tagged-token-v1 unit; ' +
@@ -32,6 +34,7 @@ export interface ParsedCompareCliArgs {
     author: string;
     revisionGrouping: CompareRevisionGrouping;
     detectMoves: boolean;
+    omitDate: boolean;
   };
 }
 
@@ -71,6 +74,7 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
     author: 'Comparison',
     revisionGrouping: DEFAULT_COMPARE_REVISION_GROUPING,
     detectMoves: true,
+    omitDate: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -106,6 +110,9 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
       }
       case '--no-moves':
         options.detectMoves = false;
+        break;
+      case '--no-date':
+        options.omitDate = true;
         break;
       default:
         throw new Error(`Unknown option: ${token}.\n${USAGE}`);
@@ -156,6 +163,7 @@ export async function runCompareCli(
     author: parsed.options.author,
     revisionGrouping: parsed.options.revisionGrouping,
     detectMoves: parsed.options.detectMoves,
+    ...(parsed.options.omitDate ? { date: null } : {}),
   });
 
   await mkdir(dirname(outputAbs), { recursive: true });

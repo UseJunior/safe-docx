@@ -28,6 +28,18 @@ function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
 }
 
+/**
+ * `revision_date`: `'now'`/absent → undefined (current time), `'none'` → null
+ * (no `w:date` on new revisions, #1495), an ISO 8601 date-time → that Date.
+ */
+function parseRevisionDate(value: unknown): Date | null | undefined | 'invalid' {
+  if (value === undefined || value === 'now') return undefined;
+  if (value === 'none') return null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return 'invalid';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'invalid' : parsed;
+}
+
 export async function compareDocuments_tool(
   manager: SessionManager,
   params: {
@@ -39,6 +51,7 @@ export async function compareDocuments_tool(
     ignore_formatting?: boolean;
     compare_moves?: boolean;
     revision_grouping?: CompareRevisionGrouping;
+    revision_date?: string;
   },
 ): Promise<ToolResponse> {
   try {
@@ -65,6 +78,15 @@ export async function compareDocuments_tool(
         'INVALID_PARAMS',
         `Unsupported revision_grouping: ${String(revisionGrouping)}`,
         "Use 'readable-semantic' (default) or 'token-minimal'.",
+      );
+    }
+
+    const revisionDate = parseRevisionDate(params.revision_date);
+    if (revisionDate === 'invalid') {
+      return err(
+        'INVALID_PARAMS',
+        `Unsupported revision_date: ${String(params.revision_date)}`,
+        "Use 'now' (default), 'none' (omit w:date), or an ISO 8601 date-time such as '2026-01-15T09:30:00Z'.",
       );
     }
 
@@ -126,6 +148,7 @@ export async function compareDocuments_tool(
       ignoreFormatting: params.ignore_formatting,
       detectMoves: params.compare_moves,
       revisionGrouping,
+      ...(revisionDate === undefined ? {} : { date: revisionDate }),
     });
 
     // Validate and write output
@@ -154,6 +177,7 @@ export async function compareDocuments_tool(
       package_base: 'revised',
       author,
       revision_grouping: revisionGrouping,
+      revision_date: revisionDate === undefined ? 'now' : revisionDate === null ? 'none' : revisionDate.toISOString(),
       stats: result.stats,
       ...(unrepresented.length > 0
         ? {

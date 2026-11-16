@@ -18,6 +18,8 @@ export interface CompareCommandArgs {
   revisionGrouping?: CompareRevisionGrouping;
   /** Default: true. `--no-moves` sets false. */
   detectMoves?: boolean;
+  /** Default: false (revisions dated now). `--no-date` sets true: new revisions carry no `w:date`. */
+  omitDate?: boolean;
 }
 
 export interface CompareCommandResult {
@@ -76,6 +78,7 @@ export async function runCompareCommand(
     author: args.author ?? 'Comparison',
     revisionGrouping: args.revisionGrouping ?? DEFAULT_COMPARE_REVISION_GROUPING,
     detectMoves: args.detectMoves ?? true,
+    ...(args.omitDate ? { date: null } : {}),
   });
   await writeFileAtomically(outputAbs, result.document);
 

@@ -733,6 +733,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .describe(
           "How DOCX revisions are grouped. 'readable-semantic' (default) shows each rewritten passage as one deletion followed by one insertion, absorbing short unchanged words, spaces and punctuation between changes; runs keep their own formatting, and moves, fields, bookmarks, comment ranges and note references are never absorbed. 'token-minimal' emits the smallest word-level deletion/insertion set, which alternates word by word in heavily rewritten paragraphs. Accept All and Reject All results are the same either way. DOCX only.",
         ),
+      revision_date: z
+        .string()
+        .optional()
+        .describe(
+          "Timestamp (w:date) on the revisions this comparison creates. 'now' (default) uses the current time; 'none' omits w:date, which ECMA-376 makes optional; an ISO 8601 date-time such as '2026-01-15T09:30:00Z' uses that time. Revisions already present in the inputs keep their own dates. DOCX only.",
+        ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },

@@ -6,6 +6,7 @@
  */
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
+import { choosePlaceholderRevisionDate, omitPlaceholderRevisionDates } from './revisionDateOmission.js';
 import { COMPARE_REVISION_GROUPINGS, DEFAULT_COMPARE_REVISION_GROUPING, type CompareOptions, type CompareResult } from './compare-types.js';
 export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
 
@@ -109,9 +110,17 @@ export async function compareDocuments(
     );
   }
 
+  if (date !== undefined && date !== null && !(date instanceof Date && !Number.isNaN(date.getTime()))) {
+    throw new TypeError('Unsupported date: expected a valid Date, null (omit w:date) or undefined (now).');
+  }
+  // `null`: run with a placeholder timestamp absent from both inputs, then
+  // strip exactly that value, so pre-existing revisions keep their dates.
+  const placeholderDate = date === null
+    ? await choosePlaceholderRevisionDate([original, revised])
+    : undefined;
   const tagged = await compareDocumentsAtomizer(original, revised, {
     author,
-    date,
+    date: placeholderDate ?? date ?? undefined,
     formatDetection:
       ignoreFormatting === undefined
         ? undefined
@@ -124,7 +133,9 @@ export async function compareDocuments(
   });
 
   return {
-    document: tagged.document,
+    document: placeholderDate === undefined
+      ? tagged.document
+      : await omitPlaceholderRevisionDates(tagged.document, placeholderDate),
     stats: tagged.stats,
     engine: tagged.engine,
     ...(tagged.unrepresentedChanges === undefined

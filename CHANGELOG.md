@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `compareDocuments` accepts `date: null` to write no `w:date` on the
+  revisions it creates, in the body, headers, footers, notes, comments and
+  text boxes (`w:date` is optional in ECMA-376). Revisions already in the
+  inputs keep their dates; an omitted `date` still means now. Both
+  `docx-comparison` and `safe-docx compare` gain `--no-date`, and the MCP
+  `compare_documents` tool gains `revision_date` (`'now'` default, `'none'`,
+  or an ISO 8601 date-time). (#1495)
+
 - **Behaviour change:** `compareDocuments` in `@usejunior/docx-compare` and
   the `docx-comparison` CLI now default to `revisionGrouping:
   'readable-semantic'`, the default the MCP `compare_documents` tool already

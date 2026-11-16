@@ -30,12 +30,21 @@ and the `docx-comparison` CLI defaulted to `'token-minimal'`; pass
 
 ```sh
 docx-comparison original.docx revised.docx [output.docx] \
-  [--author "Name"] [--grouping readable-semantic|token-minimal] [--no-moves]
+  [--author "Name"] [--grouping readable-semantic|token-minimal] [--no-moves] [--no-date]
 ```
 
 `--grouping` defaults to `readable-semantic`; an unknown value fails with the
 list of accepted values. `--no-moves` turns move detection off (on by default).
-`safe-docx compare` accepts the same flags.
+`--no-date` omits `w:date` from the revisions the comparison creates (by
+default they carry the current time). `safe-docx compare` accepts the same flags.
+
+## Revision dates
+
+`date` sets the `w:date` on every revision the comparison creates. Omitted, it
+is the current time; `date: null` writes no `w:date` at all, which ECMA-376
+Part 1 §17.13.5.14 / §17.13.5.18 allow ("no date information shall be
+associated"). Revisions already present in either input keep their own dates.
+The MCP `compare_documents` tool takes `revision_date: 'now' | 'none' | <ISO 8601>`.
 
 ## Package provenance
 
