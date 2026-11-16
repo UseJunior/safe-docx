@@ -157,6 +157,12 @@ describe('Traceability: keep-with-next and keep-lines on created paragraph layou
         expect(keeps(await paragraphProperties(again.docx), 'Gamma.')).toEqual(keeps(await paragraphProperties(one.docx), 'Alpha.'));
       }
 
+      // A retyped paragraph before a signer keeps the keep-with-next create gives it, without gaining a flag.
+      const closing = 'Intro.\n\nAlpha closing.\n\n{% signer name="Example Corp" /%}\n';
+      const closed = await createDocumentFromMarkdoc(closing);
+      const reclosed = await pullCreationEdits({ source: closing, base: closed, edited: await editDocument(closed.docx, (xml) => xml.replace('Alpha closing.', 'Gamma ending.')) });
+      expect(reclosed).toMatchObject({ complete: true, diagnostics: [], pulledSource: closing.replace('Alpha closing.', 'Gamma ending.') });
+
       const base = await createDocumentFromMarkdoc(NOTICES);
       const edited = await editDocument(base.docx, (xml) => xml.replace('If to the Buyer:', 'If to the Purchaser:'));
       const pulled = await pullCreationEdits({ source: NOTICES, base, edited });

@@ -808,12 +808,13 @@ const LAYOUT_ALIGN: Record<string, string> = { left: 'left', start: 'left', cent
  * alignment, left/hanging indent and keep-with-next/keep-lines, or undefined when it sets none or sets a
  * value the tag's closed vocabulary cannot write (left to the formatting check).
  */
-function paragraphLayoutAttributes(paragraph: PullParagraph): string | undefined {
+function paragraphLayoutAttributes(paragraph: PullParagraph, generatedKeep = false): string | undefined {
   const parts = paragraph.properties.split(';');
   // The raw value: the signature reads `distribute` as `both`, which the tag would rebuild as plain justification.
   const jc = paragraph.alignmentValue;
   const ind = parts.find((part) => part.startsWith('ind(') && part.endsWith(')'))?.slice(4, -1);
-  const keepNext = parts.includes('keepNext=true');
+  // Before a legend or a signature block create sets keep-with-next itself; the tag would only repeat it.
+  const keepNext = parts.includes('keepNext=true') && !generatedKeep;
   const keepLines = parts.includes('keepLines=true');
   if (jc === undefined && ind === undefined && !keepNext && !keepLines) return undefined;
   const attributes: string[] = [];
@@ -843,7 +844,7 @@ function paragraphLayoutAttributes(paragraph: PullParagraph): string | undefined
 type AddedBlock = { kind: 'plain' | 'list' | 'quote'; markdown: string };
 
 /** The creation markup for one added paragraph, by its paragraph style. */
-function addedBlock(paragraph: PullParagraph, notes: PullDiagnostic[], where: string): AddedBlock | PlanProblem {
+function addedBlock(paragraph: PullParagraph, notes: PullDiagnostic[], where: string, next?: PullParagraph): AddedBlock | PlanProblem {
   if (!paragraph.text.trim()) return new PlanProblem('PULL_UNMAPPED_INSERTION', 'an empty paragraph cannot be written in creation Markdoc');
   if (paragraph.text.includes('\t')) return new PlanProblem('PULL_UNEXPRESSIBLE_TEXT', 'the paragraph holds a tab, which creation Markdoc cannot write');
   if (paragraph.text !== paragraph.text.trim()) return new PlanProblem('PULL_UNEXPRESSIBLE_TEXT', 'the paragraph starts or ends with spaces, which creation Markdoc cannot write');
@@ -868,7 +869,7 @@ function addedBlock(paragraph: PullParagraph, notes: PullDiagnostic[], where: st
     case undefined:
     case CREATION_STYLE.body: {
       // A body paragraph with its own alignment or indent, as a retyped `{% paragraph-layout %}` paragraph keeps.
-      const layout = paragraphLayoutAttributes(paragraph);
+      const layout = paragraphLayoutAttributes(paragraph, next?.style === CREATION_STYLE.legend || next?.style === CREATION_STYLE.signature);
       return { kind: 'plain', markdown: layout ? `{% paragraph-layout ${layout} %}${inline}{% /paragraph-layout %}` : inline };
     }
     default:
@@ -1306,7 +1307,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     const blocks: AddedBlock[] = [];
     let problem: PlanProblem | undefined;
     for (const index of run.paragraphs) {
-      const block = addedBlock(E[index]!, notes, `the added paragraph ${quote(E[index]!.text, 40)}`);
+      const block = addedBlock(E[index]!, notes, `the added paragraph ${quote(E[index]!.text, 40)}`, E[index + 1]);
       if (block instanceof PlanProblem) {
         problem = block;
         break;

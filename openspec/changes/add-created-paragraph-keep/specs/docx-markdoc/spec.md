@@ -19,7 +19,7 @@ it, SHALL be part of the layout compared; a `w:keepNext` that `create` sets
 by its own rules on a paragraph whose source does not ask for one SHALL not
 count as a layout. `pull` SHALL write a body paragraph's direct `w:keepNext`
 and `w:keepLines` as the flags when it writes the paragraph in a
-`{% paragraph-layout %}` tag.
+`{% paragraph-layout %}` tag, except a `w:keepNext` on a paragraph just before a legend or a signature block, which `create` sets again by its own rule.
 
 #### Scenario: [SDX-MDOC-PARAKEEP-01] keep flags are written once, in schema order, and verified
 - **GIVEN** a notices section whose caption is in `{% paragraph-layout align="left" indent-left="0.5" keep-with-next=true %}`, an address block in `{% paragraph-layout align="left" indent-left="1" keep-lines=true %}`, and a closing line in `{% paragraph-layout keep-with-next=true %}` just before a first signer
@@ -41,3 +41,4 @@ and `w:keepLines` as the flags when it writes the paragraph in a
 - **GIVEN** created documents whose `{% paragraph-layout %}` paragraphs carry keep flags, edited in Word to retype all of one paragraph's words, and to change a word of another
 - **WHEN** each edit is pulled and the pulled source is created again
 - **THEN** the retyped paragraph SHALL be written in a tag with the same flags, the edited one SHALL keep its tag, each pull SHALL be complete, and the rebuilt document SHALL carry the same `w:keepNext` and `w:keepLines`
+- **AND** a retyped plain paragraph just before a signer SHALL be written without a flag
