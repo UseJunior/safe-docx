@@ -4,7 +4,7 @@ import { OOXML, computeParagraphListLabels, parseNumberingXml, parseStylesXml, p
 import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
 import { createDocumentFromMarkdoc, crossReferenceCheck, type CreationCertificate } from './create.js';
 import { lowerCreationMarkdoc } from './lower.js';
-import { projectSourceText } from './oracle.js';
+import { comparePdfWords, projectSourceText } from './oracle.js';
 import { readCreatedDocx } from './readback.js';
 
 const TEST_FEATURE = 'add-created-run-in-numbering-and-toc';
@@ -133,6 +133,15 @@ describe('Traceability: run-in legal numbering in created documents', () => {
       expect(check.passed).toBe(false);
       expect(JSON.stringify(check.mismatches)).toContain('1.02(a)(i)');
       expect(crossReferenceCheck(projectSourceText(SOURCE), created.readback)!.passed).toBe(true);
+
+      // LibreOffice can break a line right before the "(" inside a reference number ("1.01(a)" then "(i)."):
+      // the PDF check rejoins those tokens only into the source word they spell.
+      const wrapped = '# T\n\n{% run-in-paragraph level="article" heading="A" /%}\n\n{% run-in-paragraph level="section" heading="B" /%}\n\n{% run-in-paragraph level="clause" heading="C" /%}\n\n{% run-in-paragraph level="subclause" #sub /%}\n\nSee {% xref to="sub" /%}.\n';
+      const expected = projectSourceText(wrapped, { reader: 'libreoffice' });
+      const page = (reference: string) => `T\n1. A.\n1.01 B.\n(a) C.\n(i)\nSee ${reference}\n`;
+      expect(comparePdfWords(expected, [page('1.01(a)(i).')]).passed).toBe(true);
+      expect(comparePdfWords(expected, [page('1.01(a)\n(i).')]).passed).toBe(true);
+      expect(comparePdfWords(expected, [page('1.01(a)\n(ii).')]).passed).toBe(false);
     },
   );
 

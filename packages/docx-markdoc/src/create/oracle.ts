@@ -1073,7 +1073,7 @@ export const PDF_WORD_LIMITATIONS =
   'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). pdftotext can break such a word right after the number when text follows it on the baseline ("Closing1 ." for "Closing1."); such a word, and any word spelled like it or like a run of its pieces, is compared on both sides as pieces broken after its numbers, and then each must come out as pdftotext can print it: a word holding the numbers whole or broken only there, into consecutive tokens on one page; any other such word whole. A word holding a footnote number in a table row split across pages must come out whole, or the row is not read back. Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
   'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words and that is its one reading which the pdftotext -layout text of the same page (word boundaries by glyph position) shows more often than the raw text does, each split needing an occurrence of its own; without layout text, or with a different page count, nothing is split. The evidence is counted per page rather than tied to the line\'s position, so a changed run-together line passes only if the page\'s layout text shows the source reading in a place the raw text does not, which another run-together line that alignment placed as a single source word could supply. ' +
-  'A source word holding a dash (Unicode Pd, as in "re-evaluate") can wrap right after the dash, so that one raw line ends with "re-" and the next starts with "evaluate". Such tokens are rejoined only when they are consecutive in one page\'s body (not in a table row read back across pages, and not compared as pieces), every one but the last ends in a dash and is the last word of its raw line, and, within one maximal run of alignment operations that are not matches (including a run at the start or end of the text), none of them was placed and a missing source word is exactly their concatenation; each missing word is used once, and the whole comparison is then repeated on the rejoined words. A dash followed by a space on one line, a dash at a line end whose joined form is not the missing source word, and a word wrapped across a page break are not rejoined and fail. So does a wrap whose fragment the first alignment matched to a neighbouring source word spelled the same ("re-" then "evaluate" for the source words "re-evaluate evaluate"), because only unplaced tokens are rejoined. The raw text cannot tell such a wrap from a line break after the dash, just as no line break between words is checked. ' +
+  'A source word holding a dash (Unicode Pd, as in "re-evaluate") can wrap right after the dash, so that one raw line ends with "re-" and the next starts with "evaluate". Such tokens are rejoined only when they are consecutive in one page\'s body (not in a table row read back across pages, and not compared as pieces), every one but the last ends in a dash and is the last word of its raw line, and, within one maximal run of alignment operations that are not matches (including a run at the start or end of the text), none of them was placed and a missing source word is exactly their concatenation; each missing word is used once, and the whole comparison is then repeated on the rejoined words. The same holds for a word that wraps right before an opening parenthesis ("1.02(b)" ending one line, "(i)." starting the next, for the cross-reference "1.02(b)(i)."). A dash followed by a space on one line, a dash at a line end whose joined form is not the missing source word, and a word wrapped across a page break are not rejoined and fail. So does a wrap whose fragment the first alignment matched to a neighbouring source word spelled the same ("re-" then "evaluate" for the source words "re-evaluate evaluate"), because only unplaced tokens are rejoined. The raw text cannot tell such a wrap from a line break after the dash, just as no line break between words is checked. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
 
@@ -1198,7 +1198,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
    * `page-number-start` (or the previous page's number plus one) and each later page one more, in the
    * section's numerals. No such assignment is a footer mismatch.
    */
-  const pageNumberSequenceMismatches = (): PdfWordComparison['footerMismatches'] => {
+  const pageNumberSequenceMismatches = (pageSections: ReadonlyArray<number | undefined>): PdfWordComparison['footerMismatches'] => {
     if (!numbering || pageTexts.length === 0) return [];
     const tokens = pageTexts.map((text) => words(text));
     const printed = (section: number, page: number, opens: boolean): string | null | undefined => {
@@ -1209,23 +1209,25 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
       const own = printed(section, page, opens);
       return own === null || own === pageNumeral(value, numbering[Math.min(section, numbering.length - 1)]!.numeral);
     };
-    // reachable[s] holds the page number of the current page when it belongs to section s.
-    let reachable = new Map<number, number>();
+    // Every (section, page number) the current page can have: a page holding source words belongs to their section.
+    const allowed = (page: number, section: number) => pageSections[page] === undefined || pageSections[page] === section;
+    let reachable = new Set<string>();
     const first = numbering[0]?.start ?? 1;
-    if (fits(0, 0, first, true)) reachable.set(0, first);
+    if (allowed(0, 0) && fits(0, 0, first, true)) reachable.add(`0:${first}`);
     for (let page = 1; page < pageTexts.length; page += 1) {
-      const next = new Map<number, number>();
-      for (const [section, value] of reachable) {
-        if (fits(section, page, value + 1, false)) next.set(section, value + 1);
+      const next = new Set<string>();
+      for (const state of reachable) {
+        const [section, value] = state.split(':').map(Number) as [number, number];
+        if (allowed(page, section) && fits(section, page, value + 1, false)) next.add(`${section}:${value + 1}`);
         const following = section + 1;
-        if (following < effective.length) {
+        if (following < effective.length && allowed(page, following)) {
           const start = numbering[Math.min(following, numbering.length - 1)]?.start ?? value + 1;
-          if (fits(following, page, start, true) && !next.has(following)) next.set(following, start);
+          if (fits(following, page, start, true)) next.add(`${following}:${start}`);
         }
       }
       reachable = next;
     }
-    if (reachable.has(effective.length - 1)) return [];
+    if ([...reachable].some((state) => state.startsWith(`${effective.length - 1}:`))) return [];
     return [{ page: 0, section: null, expected: 'page numbers in each section\'s numerals, restarting where page-number-start says', found: tokens.map((page, index) => `${index + 1}:${page.slice(0, 3).join(' ')}`).join(' | '), reason: 'no assignment of pages to sections explains the printed page numbers' }];
   };
   const regionFor = (section: number, page: number, opens = false): string[] => resolveRegion(regionWords(section, page, opens), pageTexts[page] === undefined ? [] : words(pageTexts[page]!));
@@ -1288,7 +1290,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
 
     const missing = new Set<number>();
     const extraIdx: number[] = [];
-    const footerMismatches: PdfWordComparison['footerMismatches'] = [...pageNumberSequenceMismatches()];
+    const footerMismatches: PdfWordComparison['footerMismatches'] = [];
     const unverifiedTableHeaders: PdfWordComparison['unverifiedTableHeaders'] = [];
     const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
     if (ops) {
@@ -1319,6 +1321,10 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
       });
       for (const index of model.explained) missing.delete(index);
       footerMismatches.push(...model.footerMismatches);
+      // The section each page's aligned source words belong to pins where the page numbering restarts.
+      const pageSections: Array<number | undefined> = pages.map(() => undefined);
+      for (const { index, page } of aligned) pageSections[page] ??= source.body[expected[index]!.entry]?.section ?? 0;
+      footerMismatches.push(...pageNumberSequenceMismatches(pageSections));
       unverifiedTableHeaders.push(...model.unverified);
       repeatedTableHeaders.push(...model.repeated);
     } else {
@@ -1444,11 +1450,12 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
 }
 
 /**
- * A source word holding a dash ("re-evaluate", "1990–2000") can wrap right after the dash: LibreOffice ends one
+ * A source word holding a dash ("re-evaluate", "1990–2000"), or an opening parenthesis after its first character
+ * ("1.02(b)(i)", a cross-reference number), can wrap right after the dash or right before the parenthesis: LibreOffice ends one
  * line with "re-" and starts the next with "evaluate", and `pdftotext -raw` reads two tokens. The raw text alone
  * cannot tell that wrap from a stray dash, so a rejoin needs both of these: the tokens are consecutive on one page
- * in the body as read (never in a rejoined table row, never compared as pieces), every token but the last ends in
- * a dash (Unicode Pd) and is the last word of its raw line; and, within one maximal run of alignment operations
+ * in the body as read (never in a rejoined table row, never compared as pieces), every token but the last is the last word of its
+ * raw line and ends in a dash (Unicode Pd) or is followed by a token starting with "("; and, within one maximal run of alignment operations
  * that are not matches (a run at the start or end of the text included), the alignment left every one of them
  * unplaced and left a source word missing that is, character for character, their concatenation. Each missing
  * source word is used once. A fragment the alignment matched to a neighbouring source word spelled the same is
@@ -1467,8 +1474,9 @@ function wrappedDashJoins(
     const token = pdf[index];
     return token && !token.piece && token.origin >= 0 ? token : undefined;
   };
-  // A token that can continue onto the next line: it ends in a dash and ends its raw line.
-  const wraps = (token: PdfPiece) => /\p{Pd}$/u.test(token.word) && lineEnds[token.page]?.[token.origin] === true;
+  // A token that continues onto the next line: it ends its raw line and ends in a dash, or the next line starts
+  // with "(", where LibreOffice also breaks a word ("1.02(b)" then "(i)" for the cross-reference "1.02(b)(i)").
+  const wraps = (token: PdfPiece, next: PdfPiece) => lineEnds[token.page]?.[token.origin] === true && (/\p{Pd}$/u.test(token.word) || /^\(/u.test(next.word));
   for (let start = 0; start < ops.length;) {
     if (ops[start]!.kind === 'equal') {
       start += 1;
@@ -1493,7 +1501,7 @@ function wrappedDashJoins(
       for (let next = order[at]! + 1; ; next += 1) {
         const before = pdf[next - 1]!;
         const token = plain(next);
-        if (!wraps(before) || !token || !unplaced.has(next) || token.page !== before.page || token.origin !== before.origin + 1) break;
+        if (!token || !wraps(before, token) || !unplaced.has(next) || token.page !== before.page || token.origin !== before.origin + 1) break;
         joined += token.word;
         const left = missing.get(joined) ?? 0;
         if (left > 0) {

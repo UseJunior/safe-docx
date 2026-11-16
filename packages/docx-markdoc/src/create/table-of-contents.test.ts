@@ -125,6 +125,13 @@ describe('Traceability: table of contents and roman page numbers in created docu
       // A section that inherits the roman footer numbers in roman too.
       expect(upper.readback.pageNumbering).toEqual([{ format: 'upperRoman' }, { format: 'upperRoman' }]);
       expect((await failure('Body.\n\n{% section page-number-start=0 /%}\n\nMore.\n'))?.code).toBe('INVALID_SECTION');
+      // The printed number follows from where each section starts on the pages: footer-less sections still count.
+      const restarted = 'First.\n\n{% page-break /%}\n\nSecond.\n\n{% section page-number-start=7 /%}\n\nThird.\n\n{% page-break /%}\n\nFourth.\n\n{% section page-numbers=true /%}\n\nFifth.\n';
+      const restartedSource = projectSourceText(restarted, { reader: 'libreoffice' });
+      const restartedPages = (last: string) => ['First.', 'Second.', 'Third.', 'Fourth.', `${last}\nFifth.`];
+      expect(comparePdfWords(restartedSource, restartedPages('9')).footerMismatches).toEqual([]);
+      expect(comparePdfWords(restartedSource, restartedPages('10')).footerMismatches.length).toBeGreaterThan(0);
+      expect(comparePdfWords(restartedSource, restartedPages('ix')).footerMismatches.length).toBeGreaterThan(0);
       // A page break before the table of contents stays on its first entry.
       const broken = await createDocumentFromMarkdoc('# T\n\n{% page-break /%}\n\n{% toc /%}\n\n## A\n\nText.\n');
       expect(broken.lowering.spec.sections[0]!.blocks.find((block) => block.kind === 'paragraph' && block.tableOfContents?.opens)).toMatchObject({ pageBreakBefore: true });
