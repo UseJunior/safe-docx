@@ -970,8 +970,22 @@ such as an unclosed tag, and headings below `###`.
   Example City, ST 00000{% /paragraph-layout %}
   ```
 
-  A tag without an attribute or text, a value outside its list, or a hanging
-  indent larger than the left indent fails with `INVALID_PARAGRAPH_LAYOUT`.
+  Two flags control page breaks: `keep-with-next=true` keeps the paragraph on
+  the same page as the paragraph after it (`w:keepNext`), so a caption such as
+  "If to the Buyer:" does not end a page alone, and `keep-lines=true` keeps
+  every line of the paragraph on one page (`w:keepLines`). A flag may stand
+  alone or with the other attributes. On a paragraph that `create` already
+  keeps with the next one (before a legend or a first signer), the flag adds
+  nothing and the paragraph still gets one `w:keepNext`. `pull` writes both
+  flags back:
+
+  ```markdoc
+  {% paragraph-layout align="left" indent-left="0.5" keep-with-next=true %}If to the Buyer:{% /paragraph-layout %}
+  ```
+
+  A tag without an attribute or text, a value outside its list, a flag set to
+  anything but `true`, or a hanging indent larger than the left indent fails
+  with `INVALID_PARAGRAPH_LAYOUT`.
 - `{% run-in-paragraph level="…" heading="…" %}…{% /run-in-paragraph %}` writes a
   paragraph in the run-in house style, its live number and heading running into
   the body text: `level` is `article` ("2."), `section` ("2.01", zero-padded,

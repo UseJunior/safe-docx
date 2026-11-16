@@ -124,7 +124,7 @@ describe('Traceability: paragraph layout in created documents', () => {
         const one = await createDocumentFromMarkdoc(`{% paragraph-layout align="${align}" %}Text.{% /paragraph-layout %}\n`);
         expect((await bodyLayouts(one.docx))[0]).toEqual({ text: 'Text.', jc });
       }
-      expect(creationGrammarHelp().join('\n')).toContain('paragraph-layout (align, indent-left, indent-hanging): {% paragraph-layout ... %}');
+      expect(creationGrammarHelp().join('\n')).toContain('paragraph-layout (align, indent-left, indent-hanging, keep-with-next, keep-lines): {% paragraph-layout ... %}');
     },
   );
 
@@ -206,7 +206,7 @@ describe('Traceability: paragraph layout in created documents', () => {
     'Scenario: a malformed paragraph-layout tag fails closed before any output',
     async () => {
       const cases: Array<[string, string, RegExp]> = [
-        ['{% paragraph-layout %}Text.{% /paragraph-layout %}\n', 'INVALID_PARAGRAPH_LAYOUT', /needs at least one of align, indent-left or indent-hanging/u],
+        ['{% paragraph-layout %}Text.{% /paragraph-layout %}\n', 'INVALID_PARAGRAPH_LAYOUT', /needs at least one of align, indent-left, indent-hanging, keep-with-next or keep-lines/u],
         ['{% paragraph-layout align="both" %}Text.{% /paragraph-layout %}\n', 'INVALID_PARAGRAPH_LAYOUT', /paragraph-layout align must be "left", "center", "right" or "justify", got "both"/u],
         ['{% paragraph-layout indent-left="0.3" %}Text.{% /paragraph-layout %}\n', 'INVALID_PARAGRAPH_LAYOUT', /paragraph-layout indent-left must be "0\.25", .* got "0\.3"/u],
         ['{% paragraph-layout indent-left=0.5 indent-hanging=1 %}Text.{% /paragraph-layout %}\n', 'INVALID_PARAGRAPH_LAYOUT', /indent-hanging="1" needs an indent-left of at least "1"/u],

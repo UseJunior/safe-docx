@@ -126,12 +126,21 @@ export type SourceBodyEntry = {
   /** A paragraph of the table of contents' cached result: one generated entry, not source text. */
   tableOfContents?: true;
   /**
-   * For a paragraph of a `{% paragraph-layout %}`: its direct `w:jc` and `w:ind` as one
-   * token, `jc=<val>` then `ind.left=<twips>` and `ind.hanging=<twips>`
-   * (`jc=left ind.left=720 ind.hanging=720`), in the form the read-back
+   * For a paragraph of a `{% paragraph-layout %}`: its direct `w:jc`, `w:ind`, `w:keepNext` and `w:keepLines` as one
+   * token, `jc=<val>` then `ind.left=<twips>` and `ind.hanging=<twips>`, then
+   * `keepNext` and `keepLines` for `keep-with-next` and `keep-lines`
+   * (`jc=left ind.left=720 ind.hanging=720 keepNext`), in the form the read-back
    * writes. Absent on every other paragraph.
    */
   layout?: string;
+  /**
+   * Create sets `w:keepNext` on this paragraph by its own rule, not the source's flags: it is the last
+   * paragraph before a legend or a first signer, or a run-in article. The round trip admits a
+   * read-back `keepNext` the source does not write only here.
+   */
+  generatedKeepNext?: true;
+  /** A signature block's paragraph (a following signer is not a first signer). */
+  signer?: true;
 };
 
 /** `w:jc` values of the `{% paragraph-layout align %}` words, duplicated on purpose from the lowering. */
@@ -156,6 +165,8 @@ function sourceParagraphLayout(node: MarkdocNode): string {
   const hanging = twips('indent-hanging');
   if (left !== undefined) parts.push(`ind.left=${left}`);
   if (hanging !== undefined) parts.push(`ind.hanging=${hanging}`);
+  if (node.attributes['keep-with-next'] === true) parts.push('keepNext');
+  if (node.attributes['keep-lines'] === true) parts.push('keepLines');
   return parts.join(' ');
 }
 
@@ -675,6 +686,15 @@ export function projectSourceText(source: string, options: { reader?: Projection
     bodyXrefs.push(...xrefs.map((xref) => ({ ...xref, story: 'body' as const, entry: body.length })));
     body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks.map((mark) => mark.offset) } : {}) });
   };
+  // The paragraph before a legend or a first signer in the same section, when it is not a table cell, is kept with
+  // it by create. A table of contents is one block: create gives its keep to its first entry.
+  const keepPrevious = () => {
+    let index = body.length - 1;
+    const previous = body[index];
+    if (!previous || previous.cell || (previous.section ?? 0) !== section) return;
+    if (previous.tableOfContents) while (index > 0 && body[index - 1]!.tableOfContents && body[index - 1]!.section === previous.section) index -= 1;
+    body[index]!.generatedKeepNext = true;
+  };
   const targets: Record<string, string> = {};
   const { headings, clauseContext } = headingLabels(ast);
   const runIn = runInPlaces(ast);
@@ -701,6 +721,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
     switch (node.tag) {
       case 'center':
       case 'legend':
+        if (node.tag === 'legend') keepPrevious();
         for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph);
         return;
       case 'paragraph-layout': {
@@ -711,7 +732,9 @@ export function projectSourceText(source: string, options: { reader?: Projection
       case 'signer': {
         const name = node.attributes.name !== undefined ? String(node.attributes.name) : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
         const date = node.attributes.date === undefined ? '' : `\t${String(node.attributes.date)}`;
+        if (!body.at(-1)?.signer) keepPrevious();
         push(`${SIGNATURE_LINE}\n${name}${date}`, node);
+        body.at(-1)!.signer = true;
         return;
       }
       case 'table': {
@@ -737,7 +760,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
         const heading = runInHeading(node);
         const text = heading && body ? `${heading} ${body}` : heading || body;
         if (node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
-        push(text, node, { marker: runIn.get(node)!.label });
+        push(text, node, { marker: runIn.get(node)!.label, ...(runIn.get(node)!.level === 0 ? { generatedKeepNext: true as const } : {}) });
         return;
       }
       case 'toc':
