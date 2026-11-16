@@ -7,7 +7,7 @@ import { describe, expect } from 'vitest';
 import { itAllure, testAllure } from '../../docx-core/src/testing/allure-test.js';
 import { buildDocxFromBodyXml, COMPLETE_PAGE_FIELD } from '../../docx-core/src/testing/ooxml-fixtures.js';
 import JSZip from 'jszip';
-import { defaultRendererTools, measurePixelBands, verifyRenderedMarkup } from './render.js';
+import { defaultRendererTools, describeSofficeFailure, measurePixelBands, verifyRenderedMarkup } from './render.js';
 import type { RendererTools } from './types.js';
 
 function fakeTools(markup = 'Visible markup text', profiles?: string[], hiddenDeletion = false, pageCount = 1): RendererTools {
@@ -1061,4 +1061,17 @@ describe('renderer verifier real LibreOffice adjacent revision boundaries', () =
     expect(whitespaceChanged).toMatchObject({ status: 'fail', markupTextMatchesPdf: false });
     expect(whitespaceChanged.textBinding?.missingTokenSample).toContain('frag');
   }, REAL_RENDER_TIMEOUT_MS);
+});
+
+describe('LibreOffice render failure reasons', () => {
+  itAllure('name the exit code or signal and whether the PDF was written, dropping benign macOS lines', async () => {
+    const benign = 'soffice[1] ApplePersistenceIgnoreState: Existing state will not be touched.\nsoffice[1] Task policy set failed: 4 ((os/kern) invalid argument)';
+    expect(describeSofficeFailure({ code: 1, stdout: '', stderr: benign }, 'doc.pdf', false)).toBe('exit 1, no doc.pdf written (output: only known-benign macOS LibreOffice messages)');
+    expect(describeSofficeFailure({ code: 0, stdout: '', stderr: '' }, 'doc.pdf', false)).toBe('exit 0, no doc.pdf written');
+    expect(describeSofficeFailure({ code: 1, stdout: '', stderr: `${benign}\nError: bad file` }, 'doc.pdf', true)).toBe('exit 1, doc.pdf written (output: Error: bad file)');
+    expect(describeSofficeFailure({ code: 1, stdout: 'Error: export failed', stderr: benign }, 'doc.pdf', false)).toBe('exit 1, no doc.pdf written (output: Error: export failed)');
+    expect(describeSofficeFailure({ code: 1, stdout: '', stderr: '', signal: 'SIGKILL' }, 'doc.pdf', false)).toBe('killed by SIGKILL, no doc.pdf written');
+    const killed = await defaultRendererTools().run(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"]);
+    expect(killed.signal).toBe('SIGTERM');
+  });
 });

@@ -225,8 +225,13 @@ export function defaultRendererTools(): RendererTools {
         const result = await execFileAsync(command, args, { cwd, timeout: 60_000, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024 });
         return { code: 0, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
       } catch (error) {
-        const failure = error as { code?: number; stdout?: unknown; stderr?: unknown; message?: string };
-        return { code: typeof failure.code === 'number' ? failure.code : 1, stdout: String(failure.stdout ?? ''), stderr: String(failure.stderr ?? failure.message ?? '') };
+        const failure = error as { code?: number; signal?: string | null; stdout?: unknown; stderr?: unknown; message?: string };
+        return {
+          code: typeof failure.code === 'number' ? failure.code : 1,
+          stdout: String(failure.stdout ?? ''),
+          stderr: String(failure.stderr ?? failure.message ?? ''),
+          ...(failure.signal ? { signal: failure.signal } : {}),
+        };
       }
     },
   };
@@ -652,8 +657,22 @@ async function renderOne(
   await configureProfile(profile, mode);
   const result = await renderPdf(tools, soffice, profile, docx, output);
   const pdfPath = path.join(output, `${path.basename(docx, path.extname(docx))}.pdf`);
-  if (result.code !== 0 || !existsSync(pdfPath)) throw new Error(`LibreOffice ${mode} render failed: ${(result.stderr || result.stdout).trim() || 'no PDF output'}`);
+  const pdfWritten = existsSync(pdfPath);
+  if (result.code !== 0 || result.signal || !pdfWritten) throw new Error(`LibreOffice ${mode} render failed: ${describeSofficeFailure(result, path.basename(pdfPath), pdfWritten)}`);
   return { pdfPath, profile };
+}
+
+/** Lines macOS LibreOffice prints on successful runs too (saved-state notice, task-policy warning). */
+const BENIGN_SOFFICE_LINE = /ApplePersistenceIgnoreState|Task policy set failed/;
+
+/** The failed condition (exit code or signal, PDF written or not), then the tool output minus known-benign lines. */
+export function describeSofficeFailure(result: ToolResult, pdfName: string, pdfWritten: boolean): string {
+  const status = result.signal ? `killed by ${result.signal}` : `exit ${result.code}`;
+  const output = `${result.stderr}\n${result.stdout}`.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  const meaningful = output.filter((line) => !BENIGN_SOFFICE_LINE.test(line));
+  const detail = meaningful.length > 0 ? ` (output: ${meaningful.join(' | ')})`
+    : output.length > 0 ? ' (output: only known-benign macOS LibreOffice messages)' : '';
+  return `${status}, ${pdfWritten ? `${pdfName} written` : `no ${pdfName} written`}${detail}`;
 }
 
 async function extractPdfText(tools: RendererTools, command: string, pdfPath: string): Promise<string> {
