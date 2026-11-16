@@ -1191,6 +1191,43 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
     const token = tokens[at + offset];
     return token !== undefined && fitsNumeral(word.slice(1) as PageNumeral, token) ? token : `<${word.slice(1)} page number>`;
   });
+  /**
+   * With roman numerals or restarts, the page numbers the PDF prints must be the ones its sections give, in
+   * order: sections start on new pages and each has at least one, so some assignment of consecutive pages to
+   * sections 0, 1, … must explain every printed number exactly, a section's first page showing its
+   * `page-number-start` (or the previous page's number plus one) and each later page one more, in the
+   * section's numerals. No such assignment is a footer mismatch.
+   */
+  const pageNumberSequenceMismatches = (): PdfWordComparison['footerMismatches'] => {
+    if (!numbering || pageTexts.length === 0) return [];
+    const tokens = pageTexts.map((text) => words(text));
+    const printed = (section: number, page: number, opens: boolean): string | null | undefined => {
+      const slot = regionWords(section, page, opens).findIndex((word) => word.startsWith(NUMERAL_SLOT));
+      return slot === -1 ? null : tokens[page]![slot];
+    };
+    const fits = (section: number, page: number, value: number, opens: boolean) => {
+      const own = printed(section, page, opens);
+      return own === null || own === pageNumeral(value, numbering[Math.min(section, numbering.length - 1)]!.numeral);
+    };
+    // reachable[s] holds the page number of the current page when it belongs to section s.
+    let reachable = new Map<number, number>();
+    const first = numbering[0]?.start ?? 1;
+    if (fits(0, 0, first, true)) reachable.set(0, first);
+    for (let page = 1; page < pageTexts.length; page += 1) {
+      const next = new Map<number, number>();
+      for (const [section, value] of reachable) {
+        if (fits(section, page, value + 1, false)) next.set(section, value + 1);
+        const following = section + 1;
+        if (following < effective.length) {
+          const start = numbering[Math.min(following, numbering.length - 1)]?.start ?? value + 1;
+          if (fits(following, page, start, true) && !next.has(following)) next.set(following, start);
+        }
+      }
+      reachable = next;
+    }
+    if (reachable.has(effective.length - 1)) return [];
+    return [{ page: 0, section: null, expected: 'page numbers in each section\'s numerals, restarting where page-number-start says', found: tokens.map((page, index) => `${index + 1}:${page.slice(0, 3).join(' ')}`).join(' | '), reason: 'no assignment of pages to sections explains the printed page numbers' }];
+  };
   const regionFor = (section: number, page: number, opens = false): string[] => resolveRegion(regionWords(section, page, opens), pageTexts[page] === undefined ? [] : words(pageTexts[page]!));
   const headers = new Map<number, string[]>();
   // A repeated header row is a copy LibreOffice draws without footnote numbers (observed: "Holder1" on the
@@ -1251,7 +1288,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
 
     const missing = new Set<number>();
     const extraIdx: number[] = [];
-    const footerMismatches: PdfWordComparison['footerMismatches'] = [];
+    const footerMismatches: PdfWordComparison['footerMismatches'] = [...pageNumberSequenceMismatches()];
     const unverifiedTableHeaders: PdfWordComparison['unverifiedTableHeaders'] = [];
     const repeatedTableHeaders: PdfWordComparison['knownGenerated']['repeatedTableHeaders'] = [];
     if (ops) {

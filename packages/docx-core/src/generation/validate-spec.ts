@@ -729,6 +729,9 @@ function validateTablesOfContents(section: SectionSpec, path: string): void {
     const blockPath = `${path}/blocks/${blockIndex}`;
     if (block.kind === 'table') {
       if (open !== null) throw new GenerationSpecError('invalid_value', blockPath, `The table of contents opened at ${open} must close before a table`);
+      walkParagraphs([block], `${path}/blocks`, 'body', (paragraph, paragraphPath) => {
+        if (paragraph.tableOfContents !== undefined) throw new GenerationSpecError('invalid_value', `${paragraphPath}/tableOfContents`, 'A table of contents sits in top-level body paragraphs, not in a table cell');
+      });
       return;
     }
     const marks = block.tableOfContents;
@@ -1092,6 +1095,9 @@ function validateParagraph(
   paragraph.runs.forEach((run, runIndex) => {
     validateInline(run, `${path}/runs/${runIndex}`, styleIds, numbering, story);
   });
+  if (paragraph.tableOfContents !== undefined && story !== 'body') {
+    throw new GenerationSpecError('invalid_value', `${path}/tableOfContents`, 'A table of contents sits in top-level body paragraphs, not in a header, footer or footnote');
+  }
   const firstEntry = paragraph.runs.findIndex((run) => run.kind === 'tableOfContentsEntry');
   if (firstEntry >= 0 && paragraph.runs.slice(firstEntry).some((run) => run.kind !== 'tableOfContentsEntry')) {
     throw new GenerationSpecError('invalid_value', `${path}/runs/${firstEntry}`, 'Table of contents entries follow every other inline of their paragraph');

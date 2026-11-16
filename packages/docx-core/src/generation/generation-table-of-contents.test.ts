@@ -113,6 +113,8 @@ describe('Tables of contents and TC entries', () => {
             paragraph({ bookmark: 'target' }),
             paragraph({ tableOfContents: { opens: { levels: { from: 1, to: 3 } }, closes: true } }, [{ kind: 'crossReference', bookmark: 'target' }]),
           ])],
+          ['table cell', tocSpec([{ kind: 'table', columnWidthsTwips: [2000], rows: [{ cells: [{ blocks: [paragraph({ tableOfContents: { opens: { levels: { from: 1, to: 3 } }, closes: true } })] }] }] }])],
+          ['footer toc', { ...tocSpec([paragraph({})]), sections: [{ blocks: [paragraph({})], footers: { default: { blocks: [paragraph({ tableOfContents: { opens: { levels: { from: 1, to: 3 } } } })] } } }] }],
           ['footer entry', { ...tocSpec([paragraph({})]), sections: [{ blocks: [paragraph({})], footers: { default: { blocks: [paragraph({}, [{ kind: 'text', text: 'f' }, { kind: 'tableOfContentsEntry', text: 'F', level: 1 }])] } } }] }],
         ];
         for (const [name, spec] of refused) {

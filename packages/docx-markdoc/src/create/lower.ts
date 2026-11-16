@@ -631,6 +631,10 @@ function fillTableOfContents(sections: SectionSpec[], theme: CreationTheme, refe
       : {}),
   }));
   const replaced = placeholder.blocks[placeholder.index] as ParagraphSpec;
+  // A page break, spacing or keep-with-next the neighbour rules set on the placeholder belongs to the first entry.
+  const { kind: _kind, styleId: _style, runs: _runs, tableOfContents: _toc, ...layout } = replaced;
+  void _kind; void _style; void _runs; void _toc;
+  Object.assign(paragraphs[0]!, layout);
   placeholder.blocks.splice(placeholder.index, 1, ...paragraphs);
   return { placeholder: replaced, paragraphs };
 }

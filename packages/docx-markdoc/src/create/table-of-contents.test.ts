@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
 import { defaultPdfRenderTools } from '../pdf/tools.js';
 import { runCreateCommand } from './cli-create.js';
 import { createDocumentFromMarkdoc, tableOfContentsCheck } from './create.js';
+import { comparePdfWords, projectSourceText } from './oracle.js';
 import { readCreatedDocx } from './readback.js';
 
 const TEST_FEATURE = 'add-created-run-in-numbering-and-toc';
@@ -123,6 +125,9 @@ describe('Traceability: table of contents and roman page numbers in created docu
       // A section that inherits the roman footer numbers in roman too.
       expect(upper.readback.pageNumbering).toEqual([{ format: 'upperRoman' }, { format: 'upperRoman' }]);
       expect((await failure('Body.\n\n{% section page-number-start=0 /%}\n\nMore.\n'))?.code).toBe('INVALID_SECTION');
+      // A page break before the table of contents stays on its first entry.
+      const broken = await createDocumentFromMarkdoc('# T\n\n{% page-break /%}\n\n{% toc /%}\n\n## A\n\nText.\n');
+      expect(broken.lowering.spec.sections[0]!.blocks.find((block) => block.kind === 'paragraph' && block.tableOfContents?.opens)).toMatchObject({ pageBreakBefore: true });
     },
   );
 });
@@ -140,6 +145,16 @@ describeWithLibreOffice('Traceability: table of contents in a real LibreOffice P
         await writeFile(file, SOURCE);
         const result = await runCreateCommand([file, path.join(dir, 'out'), '--require-pdf']);
         expect(result.pdf).toMatchObject({ status: 'passed', words: { passed: true } });
+        // The printed page numbers must be the sections' own: "i" then a restart at "1". A wrong number in
+        // either section's numerals fails, as does a body that numbers on from the front matter.
+        const pages = execFileSync(realTools.resolve('pdftotext')!, ['-raw', path.join(dir, 'out', 'agreement.pdf'), '-'], { encoding: 'utf8' }).split('\f').filter((page) => page.trim());
+        const expected = projectSourceText(SOURCE, { reader: 'libreoffice' });
+        expect(comparePdfWords(expected, pages).footerMismatches).toEqual([]);
+        const renumbered = (from: string, to: string) => pages.map((page, index) => (index === 1 ? page.replace(new RegExp(`^${from}$`, 'mu'), to) : page));
+        expect(pages[1]).toMatch(/^1$/mu);
+        expect(comparePdfWords(expected, renumbered('1', '9999')).footerMismatches.length).toBeGreaterThan(0);
+        expect(comparePdfWords(expected, renumbered('1', '2')).footerMismatches.length).toBeGreaterThan(0);
+        expect(comparePdfWords(expected, pages.map((page, index) => (index === 0 ? page.replace(/^i$/mu, 'mmm') : page))).footerMismatches.length).toBeGreaterThan(0);
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
