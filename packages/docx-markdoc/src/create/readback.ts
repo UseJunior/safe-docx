@@ -30,7 +30,72 @@ export type CreationReadback = {
   footnoteCrossReferences?: Array<CrossReferenceSite & { note: number }>;
   /** Every body bookmark start, in document order, with the paragraph (index into `paragraphs`) it opens in. Absent when there are none. */
   bookmarks?: BookmarkSite[];
+  /** Per section: its `w:pgNumType` format and start, or null without one. */
+  pageNumbering: Array<{ format?: string; start?: number } | null>;
+  /** The body's table of contents and TC entries, when it has either. */
+  tableOfContents?: TableOfContentsReadback;
 };
+
+/**
+ * A table of contents as the DOCX holds it: the TOC field's instruction and
+ * the text of each paragraph of its cached result, with each paragraph's
+ * style; and every TC entry of the body in document order, its text and
+ * level read from its instruction.
+ */
+export type TableOfContentsReadback = {
+  instruction?: string;
+  entries: Array<{ text: string; style: string | null }>;
+  tcEntries: Array<{ text: string; level: number }>;
+};
+
+/** A TC instruction as create writes it: `TC "text" \l level`. */
+const TC_INSTRUCTION = /^\s*TC\s+"([^"]*)"\s+\\l\s+([1-9])\s*$/u;
+
+/**
+ * The body's table of contents: every paragraph from the one holding the
+ * TOC field's separator to the one holding its end is part of its cached
+ * result; and every TC field's text and level, in document order.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.68
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.63
+ */
+function readTableOfContents(body: Element): TableOfContentsReadback | undefined {
+  const out: TableOfContentsReadback = { entries: [], tcEntries: [] };
+  const stack: Array<{ instruction: string; toc: boolean }> = [];
+  let inToc = false;
+  let found = false;
+  for (const paragraph of Array.from(body.getElementsByTagNameNS(W, 'p'))) {
+    const startedIn = inToc;
+    let tocHere = startedIn;
+    for (const node of Array.from(paragraph.getElementsByTagNameNS(W, '*'))) {
+      if (node.localName === 'instrText' && stack.length > 0) stack.at(-1)!.instruction += node.textContent ?? '';
+      if (node.localName !== 'fldChar') continue;
+      const type = node.getAttributeNS(W, 'fldCharType') || node.getAttribute('w:fldCharType');
+      if (type === 'begin') stack.push({ instruction: '', toc: false });
+      else if (type === 'separate' && stack.length > 0 && fieldName(stack.at(-1)!.instruction) === 'TOC') {
+        stack.at(-1)!.toc = true;
+        out.instruction = stack.at(-1)!.instruction;
+        inToc = true;
+        tocHere = true;
+        found = true;
+      } else if (type === 'end' && stack.length > 0) {
+        const field = stack.pop()!;
+        if (field.toc) inToc = false;
+        const tc = fieldName(field.instruction) === 'TC' ? TC_INSTRUCTION.exec(field.instruction) : null;
+        if (fieldName(field.instruction) === 'TC') {
+          found = true;
+          out.tcEntries.push(tc ? { text: tc[1]!, level: Number(tc[2]) } : { text: field.instruction, level: 0 });
+        }
+      }
+    }
+    if (tocHere) {
+      const pPr = elementChildren(paragraph).find((child) => isW(child, 'pPr'));
+      const style = pPr ? elementChildren(pPr).find((child) => isW(child, 'pStyle')) : undefined;
+      out.entries.push({ text: paragraphReadbackText(paragraph), style: style ? style.getAttributeNS(W, 'val') || style.getAttribute('w:val') : null });
+    }
+  }
+  return found ? out : undefined;
+}
 
 /**
  * A bookmark and the paragraph it opens in. `text` is the read-back text
@@ -41,6 +106,11 @@ export type BookmarkSite = { name: string; paragraph: number; text?: string };
 
 /** Where a cross-reference's cached result sits in the read-back text, and the field's instruction. */
 export type CrossReferenceSite = { paragraph: number; offset: number; text: string; instruction: string };
+
+/** A field instruction's field name: its first word. */
+function fieldName(instruction: string): string {
+  return instruction.trim().split(/\s+/)[0] ?? '';
+}
 
 function isW(node: Node, localName: string): node is Element {
   return node.nodeType === 1 && (node as Element).namespaceURI === W && (node as Element).localName === localName;
@@ -89,10 +159,21 @@ export function paragraphReadbackText(
         case 'fldChar': {
           const type = child.getAttributeNS(W, 'fldCharType') || child.getAttribute('w:fldCharType');
           if (type === 'begin') field = { instruction: '', inResult: false, result: '', runs: run ? [run] : [] };
-          else if (type === 'separate' && field) field.inResult = true;
-          else if (type === 'end' && field) {
-            const name = field.instruction.trim().split(/\s+/)[0] ?? '';
+          else if (type === 'separate' && field && fieldName(field.instruction) === 'TOC') {
+            // A table of contents spans paragraphs: its cached result is the
+            // entries' own paragraphs, which read as their text. Its end, in
+            // the last of them, finds no open field and reads as nothing.
             onField?.(text.length, field.instruction);
+            field = null;
+          } else if (type === 'separate' && field) field.inResult = true;
+          else if (type === 'end' && field) {
+            const name = fieldName(field.instruction);
+            onField?.(text.length, field.instruction);
+            // A TC entry shows nothing: it only feeds a table of contents.
+            if (name === 'TC') {
+              field = null;
+              break;
+            }
             if (name === 'REF') onCrossReference?.(text.length, field.result, field.instruction);
             const runs = field.runs;
             append(name === 'PAGE' ? PAGE_FIELD_TOKEN : name === 'REF' ? field.result : `<${name}>`, run, runs);
@@ -271,6 +352,7 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
   const bookmarks: BookmarkSite[] = [];
   const layouts: Array<string | null> = [];
   blockParagraphs(body, paragraphs, inTableCell, false, references, crossReferences, bookmarks, layouts);
+  const tableOfContents = readTableOfContents(body);
   const footnoteCrossReferences: Array<CrossReferenceSite & { note: number }> = [];
   const footnotes = await readFootnotes(read, zip.file('word/footnotes.xml') !== null, references, footnoteCrossReferences);
 
@@ -292,7 +374,12 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
     blockParagraphs(part.documentElement!, lines);
     return lines;
   };
+  const pageNumbering: CreationReadback['pageNumbering'] = [];
   for (const sectPr of Array.from(document.getElementsByTagNameNS(W, 'sectPr'))) {
+    const pgNumType = elementChildren(sectPr).find((child) => isW(child, 'pgNumType'));
+    const format = pgNumType ? pgNumType.getAttributeNS(W, 'fmt') || pgNumType.getAttribute('w:fmt') : null;
+    const start = pgNumType ? pgNumType.getAttributeNS(W, 'start') || pgNumType.getAttribute('w:start') : null;
+    pageNumbering.push(pgNumType ? { ...(format ? { format } : {}), ...(start ? { start: Number(start) } : {}) } : null);
     footers.push(await story(sectPr, 'footer', 'default'));
     headers.push(await story(sectPr, 'header', 'default'));
     // w:titlePg is an on/off property: present and not turned off with w:val.
@@ -313,5 +400,7 @@ export async function readCreatedDocx(buffer: Buffer): Promise<CreationReadback>
     ...(crossReferences.length ? { crossReferences } : {}),
     ...(footnoteCrossReferences.length ? { footnoteCrossReferences } : {}),
     ...(bookmarks.length ? { bookmarks } : {}),
+    pageNumbering,
+    ...(tableOfContents ? { tableOfContents } : {}),
   };
 }

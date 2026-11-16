@@ -225,7 +225,7 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
         expect(lines.some((line) => new RegExp(`^  ${key} +\\S`, 'u').test(line)), `frontmatter key ${key}`).toBe(true);
       }
       const sectionLine = lines.find((line) => line.startsWith('{% section %} attributes: '))!;
-      expect(sectionLine.slice('{% section %} attributes: '.length).split(', ')).toEqual([...RUNNING_TEXT_KEYS]);
+      expect(sectionLine.slice('{% section %} attributes: '.length).split(', ')).toEqual([...RUNNING_TEXT_KEYS, 'page-number-start']);
       for (const [tag, allowed] of [...Object.entries(CREATION_BLOCK_TAGS), ...Object.entries(CREATION_INLINE_TAGS)]) {
         const line = lines.find((candidate) => candidate.startsWith(`  ${tag}:`) || candidate.startsWith(`  ${tag} (`));
         expect(line, `tag ${tag}`).toBeDefined();

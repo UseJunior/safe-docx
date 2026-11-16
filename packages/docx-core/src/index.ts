@@ -103,6 +103,8 @@ export {
   type BookmarkNameErrorCode,
   CROSS_REFERENCE_NUMBERS,
   CROSS_REFERENCE_SHOWS,
+  tableOfContentsEntryInstruction,
+  tableOfContentsInstruction,
 } from './generation/index.js';
 
 export {
@@ -138,6 +140,8 @@ export type {
   StyleSpec,
   TableBorders,
   TableCellSpec,
+  TableOfContentsEntrySpec,
+  TableOfContentsFieldSpec,
   TableRowSpec,
   TableSpec,
   TabSpec,

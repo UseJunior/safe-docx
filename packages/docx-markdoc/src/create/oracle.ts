@@ -82,6 +82,8 @@ const SIGNATURE_LINE = '_'.repeat(30);
 export const PAGE_NUMBER_FIELD = '\u0000PAGE';
 /** Marker for a footer NUMPAGES field (the page count) in the expected projection; any decimal number satisfies it. */
 export const PAGE_COUNT_FIELD = '\u0000NUMPAGES';
+/** What a field marker matches in a read-back line: a page number in decimal or roman numerals, or a page count. */
+const PAGE_NUMBER_PATTERN = '(?:\\d+|[ivxlcdm]+|[IVXLCDM]+)';
 /** Every field marker in an expected header or footer line. */
 const FIELD_MARKERS = /\u0000(?:PAGE|NUMPAGES)(?![A-Z])/gu;
 const hasFieldMarker = (text: string) => /\u0000(?:PAGE|NUMPAGES)(?![A-Z])/u.test(text);
@@ -94,7 +96,19 @@ const PAGE_NUMBER_TEXT: Record<string, string> = {
   plain: PAGE_NUMBER_FIELD,
   dashed: `- ${PAGE_NUMBER_FIELD} -`,
   'page-of-total': `Page ${PAGE_NUMBER_FIELD} of ${PAGE_COUNT_FIELD}`,
+  'lower-roman': PAGE_NUMBER_FIELD,
+  'upper-roman': PAGE_NUMBER_FIELD,
 };
+
+/** The page numerals of each `page-number-format`: roman for the roman formats, decimal otherwise. */
+export type PageNumeral = 'decimal' | 'lower-roman' | 'upper-roman';
+
+/** A page number as the PDF prints it in `numeral`. */
+export function pageNumeral(n: number, numeral: PageNumeral): string {
+  if (numeral === 'decimal') return String(n);
+  const lower = roman(n);
+  return numeral === 'lower-roman' ? lower : lower.toUpperCase();
+}
 
 export type SourceBodyEntry = {
   text: string;
@@ -109,6 +123,8 @@ export type SourceBodyEntry = {
   table?: { id: number; row: number };
   /** Offsets in `text` of the footnote references in this paragraph, in order. */
   footnoteMarks?: number[];
+  /** A paragraph of the table of contents' cached result: one generated entry, not source text. */
+  tableOfContents?: true;
   /**
    * For a paragraph of a `{% paragraph-layout %}`: its direct `w:jc` and `w:ind` as one
    * token, `jc=<val>` then `ind.left=<twips>` and `ind.hanging=<twips>`
@@ -161,6 +177,13 @@ export type SourceProjection = {
   firstPage?: Array<{ header: string[] | null; footer: string[] | null } | null>;
   /** Footnotes in the order of their references in `body`; the note numbered n is entry n - 1. */
   footnotes?: SourceFootnote[];
+  /**
+   * Per section: the numerals its pages number in (the format of the footer
+   * it shows, declared or inherited) and the page number it restarts at
+   * (`page-number-start`), as the section's `w:pgNumType` must say. Absent
+   * when every page numbers in decimal, continuously.
+   */
+  pageNumbering?: Array<{ numeral: PageNumeral; start?: number }>;
   /**
    * Every `{% xref /%}` as written and where its number sits: body
    * references in reading order, then those in footnotes, note by note in
@@ -345,6 +368,42 @@ function headingLabels(ast: MarkdocNode): { headings: Map<MarkdocNode, HeadingPl
   return { headings, clauseContext };
 }
 
+/**
+ * The labels run-in paragraphs show, read from the source alone (#1417):
+ * an article "2.", a section "2.01" (restarting under each article), a
+ * clause "(a)" (restarting under each section) and a subclause "(i)"
+ * (restarting under each clause). `values` holds the value of each level
+ * through the paragraph's own.
+ */
+type RunInPlace = { label: string; level: number; values: number[] };
+const RUN_IN_LEVEL_INDEX: Readonly<Record<string, number>> = { article: 0, section: 1, clause: 2, subclause: 3 };
+
+function runInPlaces(ast: MarkdocNode): Map<MarkdocNode, RunInPlace> {
+  const places = new Map<MarkdocNode, RunInPlace>();
+  const counts = [0, 0, 0, 0];
+  for (const node of ast.children) {
+    const tag = node.type === 'tag' ? node : soleTag(node);
+    if (tag?.tag !== 'run-in-paragraph') continue;
+    const level = RUN_IN_LEVEL_INDEX[String(tag.attributes.level)] ?? 0;
+    counts[level]! += 1;
+    for (let lower = level + 1; lower < counts.length; lower += 1) counts[lower] = 0;
+    const values = counts.slice(0, level + 1);
+    const label = [`${values[0]}.`, `${values[0]}.${String(values[1]).padStart(2, '0')}`, `(${letters(values[2] ?? 0)})`, `(${roman(values[3] ?? 0)})`][level]!;
+    places.set(tag, { label, level, values });
+  }
+  return places;
+}
+
+/** The punctuation that ends a run-in heading as written; any other heading is followed by a period. */
+const RUN_IN_HEADING_END = /[.:;?!]$/u;
+
+/** The heading of a run-in paragraph as it shows: its text, then a period unless it ends in punctuation. */
+function runInHeading(tag: MarkdocNode): string {
+  const heading = tag.attributes.heading;
+  if (typeof heading !== 'string') return '';
+  return RUN_IN_HEADING_END.test(heading.trimEnd()) ? heading : `${heading}.`;
+}
+
 function lineOf(node: MarkdocNode): number | undefined {
   const start = node.lines?.[0];
   return start === undefined ? undefined : start + 1;
@@ -422,6 +481,18 @@ function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): { text
   // The place of every numbered heading and ordered list item, keyed by its node, for the walker's position.
   const places = new Map<MarkdocNode, ListPlace>();
   const { headings, clauseContext } = headingLabels(ast);
+  // A run-in paragraph's full number names its section ("2.01(a)(i)"); an article's drops the period of "2.".
+  for (const [tag, place] of runInPlaces(ast)) {
+    const own = place.level === 0 ? String(place.values[0]) : place.label;
+    const parts = place.level < 2
+      ? [{ level: place.level, text: own }]
+      : [{ level: 1, text: `${place.values[0]}.${String(place.values[1]).padStart(2, '0')}` }, ...place.values.slice(2).map((value, index) => ({ level: index + 2, text: index === 0 ? `(${letters(value)})` : `(${roman(value)})` }))];
+    const listPlace = { list: 'run-in', values: place.values };
+    places.set(tag, listPlace);
+    if (tag.attributes.id !== undefined) {
+      texts.set(String(tag.attributes.id), { full: parts.map((part) => part.text).join(''), paragraph: own, text: '', place: listPlace, parts });
+    }
+  }
   const visit = (list: MarkdocNode, ancestors: readonly number[], context: HeadingPlace | undefined, chain: string) => {
     if (list.attributes.ordered !== true) {
       // Bullets show no number; a text reference may still name one.
@@ -512,7 +583,7 @@ function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map
  * Inline tags (`fill`, `literal`, `u`) are never blocks: a paragraph holding
  * only `{% u %}Defined Term{% /u %}` is still a body paragraph with that text.
  */
-const BLOCK_TAGS: ReadonlySet<string> = new Set(['center', 'legend', 'paragraph-layout', 'signer', 'table', 'section', 'page-break', 'footnote']);
+const BLOCK_TAGS: ReadonlySet<string> = new Set(['center', 'legend', 'paragraph-layout', 'signer', 'table', 'section', 'page-break', 'footnote', 'run-in-paragraph', 'toc']);
 
 /** The one block tag a paragraph stands for when that tag is its only content. */
 function soleTag(paragraph: MarkdocNode): MarkdocNode | undefined {
@@ -534,6 +605,35 @@ function paragraphsOfTag(node: MarkdocNode): MarkdocNode[] {
  * REF fields on load (the PDF check).
  */
 export type ProjectionReader = 'word' | 'libreoffice';
+
+/**
+ * The entries a `{% toc /%}` lists, read from the source alone (#1426): in
+ * document order, each `##` and `###` heading (after its label with
+ * `heading-numbers: legal`: "ARTICLE II Remedies"), each run-in article and
+ * section as its label and heading ("2.01 Engagement"), and each
+ * `{% tc %}` entry's text. A paragraph's `{% tc %}` entries come before its
+ * own heading entry, as the TC fields trail the paragraph in that order.
+ * This is the table of contents' cached result and what Word and
+ * LibreOffice list when they update it (TC entries, no page numbers).
+ */
+function tableOfContentsEntries(ast: MarkdocNode, headings: ReadonlyMap<MarkdocNode, HeadingPlace>, runIn: ReadonlyMap<MarkdocNode, RunInPlace>): string[] {
+  const plain = (node: MarkdocNode): string => scanMarks(inlineText(node)).text;
+  const tcs = (node: MarkdocNode): string[] => (node.type === 'tag' && node.tag === 'tc' ? [plain(node).trim()] : node.children.flatMap(tcs));
+  const entries: string[] = [];
+  for (const node of ast.children) {
+    const tag = node.type === 'tag' ? node : soleTag(node);
+    if (tag?.tag === 'footnote') continue;
+    entries.push(...tcs(node));
+    if (node.type === 'heading' && Number(node.attributes.level) >= 2) {
+      const label = headings.get(node)?.label;
+      const text = plain(node).trim();
+      entries.push(label === undefined ? text : `${label} ${text}`);
+    }
+    const place = tag?.tag === 'run-in-paragraph' ? runIn.get(tag) : undefined;
+    if (place && place.level < 2) entries.push(`${place.label} ${String(tag!.attributes.heading).trim()}`);
+  }
+  return entries;
+}
 
 /** Read the expected plain text straight from the Markdoc source. */
 export function projectSourceText(source: string, options: { reader?: ProjectionReader } = {}): SourceProjection {
@@ -577,6 +677,10 @@ export function projectSourceText(source: string, options: { reader?: Projection
   };
   const targets: Record<string, string> = {};
   const { headings, clauseContext } = headingLabels(ast);
+  const runIn = runInPlaces(ast);
+  // Each section's page numerals: the format of the footer it shows, a section that declares none inheriting.
+  const numeralOf = (format: unknown): PageNumeral => (format === 'lower-roman' || format === 'upper-roman' ? format : 'decimal');
+  const numberings: Array<{ numeral: PageNumeral; start?: number }> = [{ numeral: numeralOf(frontmatter.pageNumbers ? frontmatter.pageNumberFormat : undefined) }];
   const listItems = (list: MarkdocNode, depth: number, clauses: boolean) => {
     const ordered = list.attributes.ordered === true;
     let n = depth === 0 && ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
@@ -627,9 +731,26 @@ export function projectSourceText(source: string, options: { reader?: Projection
         notes.set(String(node.attributes.id), paragraphsOfTag(node).map((paragraph) => scanMarks(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))));
         position.footnote = false;
         return;
+      case 'run-in-paragraph': {
+        reach(node);
+        const body = node.children.length === 0 ? '' : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
+        const heading = runInHeading(node);
+        const text = heading && body ? `${heading} ${body}` : heading || body;
+        if (node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
+        push(text, node, { marker: runIn.get(node)!.label });
+        return;
+      }
+      case 'toc':
+        for (const entry of tableOfContentsEntries(ast, headings, runIn)) push(entry, node, { tableOfContents: true });
+        return;
       case 'section': {
         const { footer, header } = node.attributes;
         const pageNumbers = node.attributes['page-numbers'];
+        numberings.push(footer !== undefined || pageNumbers !== undefined || node.attributes['footer-first'] !== undefined
+          ? { numeral: numeralOf(pageNumbers === true ? node.attributes['page-number-format'] : undefined) }
+          : { numeral: numberings.at(-1)!.numeral });
+        const start = node.attributes['page-number-start'];
+        if (Number.isInteger(start)) numberings.at(-1)!.start = Number(start);
         footers.push(footer !== undefined || pageNumbers !== undefined || node.attributes['footer-first'] !== undefined ? footerOf(footer, pageNumbers, node.attributes['page-number-format'], node.attributes['footer-layout']) : null);
         headers.push(typeof header === 'string' ? [header] : header === false || node.attributes['header-first'] !== undefined ? [] : null);
         headerFirsts.push(variant(node.attributes['header-first'], (text) => [text]));
@@ -681,6 +802,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
   return {
     body,
     footers,
+    ...(numberings.some((entry) => entry.numeral !== 'decimal' || entry.start !== undefined) ? { pageNumbering: numberings } : {}),
     ...(headers.some((header) => header !== null) ? { headers } : {}),
     ...(firstPage.some((entry) => entry !== null) ? { firstPage } : {}),
     ...(footnotes.length ? { footnotes } : {}),
@@ -798,7 +920,7 @@ export function compareParagraphs(expected: Array<{ text: string; line?: number 
   const patternOf = (text: string) => {
     if (!patterns.has(text)) {
       const parts = text.split(FIELD_MARKERS).map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'));
-      patterns.set(text, new RegExp(`^${parts.join('\\d+')}$`, 'u'));
+      patterns.set(text, new RegExp(`^${parts.join(PAGE_NUMBER_PATTERN)}$`, 'u'));
     }
     return patterns.get(text)!;
   };
@@ -1051,11 +1173,25 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
    * PAGE field as the page number and NUMPAGES as the page count. `opens` is true on the section's first page,
    * which shows the first-page header and footer when the section has them (`header-first: none`).
    */
-  const regionFor = (section: number, page: number, opens = false): string[] => {
+  // With roman numerals or a restart (`source.pageNumbering`), a page's number depends on where its section
+  // starts, which only the break model knows: the PAGE field then matches any number in the section's numerals,
+  // and the sections' w:pgNumType is checked against the source on the DOCX itself.
+  const numbering = source.pageNumbering;
+  const fitsNumeral = (numeral: PageNumeral, word: string) => (numeral === 'decimal' ? /^\d+$/u : numeral === 'lower-roman' ? /^[ivxlcdm]+$/u : /^[IVXLCDM]+$/u).test(word);
+  const NUMERAL_SLOT = '\u0007';
+  const regionWords = (section: number, page: number, opens = false): string[] => {
     const own = effective[Math.min(section, effective.length - 1)] ?? { header: [], footer: [] };
     const story = opens && own.first ? own.first : own;
-    return [...story.header, ...story.footer].map((word) => (word === PAGE_NUMBER_FIELD ? String(page + 1) : word === PAGE_COUNT_FIELD ? pageCount : word));
+    const numeral = numbering?.[Math.min(section, numbering.length - 1)]?.numeral;
+    return [...story.header, ...story.footer].map((word) => (word === PAGE_NUMBER_FIELD ? (numeral === undefined ? String(page + 1) : `${NUMERAL_SLOT}${numeral}`) : word === PAGE_COUNT_FIELD ? pageCount : word));
   };
+  /** A region with each numeral slot filled by the page's own token there, when that token is a number in the slot's numerals. */
+  const resolveRegion = (region: readonly string[], tokens: readonly string[], at = 0): string[] => region.map((word, offset) => {
+    if (!word.startsWith(NUMERAL_SLOT)) return word;
+    const token = tokens[at + offset];
+    return token !== undefined && fitsNumeral(word.slice(1) as PageNumeral, token) ? token : `<${word.slice(1)} page number>`;
+  });
+  const regionFor = (section: number, page: number, opens = false): string[] => resolveRegion(regionWords(section, page, opens), pageTexts[page] === undefined ? [] : words(pageTexts[page]!));
   const headers = new Map<number, string[]>();
   // A repeated header row is a copy LibreOffice draws without footnote numbers (observed: "Holder1" on the
   // first page, "Holder" on the pages after), so its words carry none.

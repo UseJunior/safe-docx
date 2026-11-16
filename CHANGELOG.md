@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `docx-markdoc create` writes agreements in the run-in house style
+  ("2.01 Engagement. Text …"): `{% run-in-paragraph level="article|section|clause|subclause" heading="…" %}`
+  gives a paragraph a live legal number carried by a Word multilevel list, and
+  `{% xref %}` to it reads "Section 2.01(a)" with a REF field whose cached
+  result matches. `{% toc /%}` adds a table of contents with its entries already
+  written, from headings, run-in articles and sections and `{% tc %}` entries,
+  and `page-number-format: lower-roman` / `upper-roman` with
+  `{% section page-number-start=1 /%}` numbers a front-matter section i, ii, iii
+  and restarts the body at 1. (#1417, #1426)
+
 - A field that crosses the boundary of a block-level content control
   (`w:sdt`) or custom XML element (`w:customXml`), beginning inside the
   container and ending outside it or the reverse, no longer corrupts the

@@ -1606,6 +1606,49 @@ host, and TOC comparison uses the same instruction classifier to distinguish
 its volatile cached result. The unchanged-publication invariant does not claim
 pagination, cached-result correctness, or complete field-engine equivalence.
 
+## [ECMA-PART1-17-16-5-63] TC field emission for table-of-contents entries
+
+```yaml
+edition: 5
+part: 1
+section: "17.16.5.63"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-table-of-contents.test.ts; packages/docx-markdoc/src/create/readback.ts; packages/docx-markdoc/src/create/table-of-contents.test.ts
+```
+
+A TC field "defines the text and page number for a table of contents ... entry,
+which is used by a TOC field"; its field value is none. Generation writes each
+`TableOfContentsEntrySpec` as a begin/instruction/end complex field with no
+separator or result, `TC "<text>" \l <level>`, without the `\f` list-type
+switch, so "the entry is listed in a table of contents". `\l` sets the entry's
+level, whose built-in `TOC <level>` style Word applies to the entry. TC entries
+trail every other run of their paragraph and are written after its bookmark, so
+a text REF to the paragraph never copies them. Text with a double quote or a
+backslash is refused rather than escaped.
+
+## [ECMA-PART1-17-16-5-68] TOC field emission with a cached result
+
+```yaml
+edition: 5
+part: 1
+section: "17.16.5.68"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/validate-spec.ts; packages/docx-core/src/generation/generation-table-of-contents.test.ts; packages/docx-markdoc/src/create/readback.ts; packages/docx-markdoc/src/create/table-of-contents.test.ts
+```
+
+A TOC field "builds a table of contents ... using the entries specified by TC
+fields" and "each table entry is a separate paragraph". Generation writes
+`TOC \f \l "1-N" \n`: TC entries of levels 1 to N, without page numbers. The
+field opens (begin, instruction, separator) in the first paragraph of its
+cached result and closes (end) in the last, and the caller writes one paragraph
+per entry as that result, so a reader shows the entries before any field
+update. Omitting page numbers keeps the result independent of page layout.
+`\f` is written without its identifier argument, so it selects the TC entries
+that carry no `\f` of their own; LibreOffice 26.2 lists exactly those entries when
+it updates the index (verified headless). Word's update was not checked here.
+
 ## [ECMA-PART1-17-16-5-51] REF field instruction classification and preservation
 
 ```yaml

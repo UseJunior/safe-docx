@@ -340,7 +340,8 @@ function numberingDefinitions(spec: DocumentSpec): { of(paragraph: ParagraphSpec
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
  */
 function validateTextReferenceTarget(bookmark: string, target: ParagraphSpec, path: string): void {
-  const unsupportedRun = target.runs.find((inline) => inline.kind !== 'text' && inline.kind !== 'footnote');
+  // TC entries trail the paragraph and are written after its bookmark, so the reference does not copy them.
+  const unsupportedRun = target.runs.find((inline) => inline.kind !== 'text' && inline.kind !== 'footnote' && inline.kind !== 'tableOfContentsEntry');
   if (unsupportedRun) {
     throw new GenerationSpecError(
       'invalid_value',
@@ -709,6 +710,56 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
   section.blocks.forEach((block, blockIndex) => {
     validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds, numbering, 'body');
   });
+  validateTablesOfContents(section, path);
+}
+
+/**
+ * A table of contents spans consecutive top-level body paragraphs of one
+ * section, from the paragraph that opens it to the one that closes it, and
+ * tables of contents do not nest. Its paragraphs are its cached result, as
+ * Word writes it: text runs and tabs only, with no bookmark, list or note,
+ * so the result holds nothing Word would not regenerate.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.68
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
+function validateTablesOfContents(section: SectionSpec, path: string): void {
+  let open: string | null = null;
+  section.blocks.forEach((block, blockIndex) => {
+    const blockPath = `${path}/blocks/${blockIndex}`;
+    if (block.kind === 'table') {
+      if (open !== null) throw new GenerationSpecError('invalid_value', blockPath, `The table of contents opened at ${open} must close before a table`);
+      return;
+    }
+    const marks = block.tableOfContents;
+    if (marks === undefined && open === null) return;
+    if (marks !== undefined && (typeof marks !== 'object' || marks === null)) {
+      throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents`, 'tableOfContents must be an object');
+    }
+    if (marks?.opens !== undefined) {
+      if (open !== null) throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents/opens`, `Tables of contents do not nest; the one opened at ${open} is still open`);
+      const levels = (marks.opens as { levels?: { from?: unknown; to?: unknown } }).levels;
+      requireInteger(levels?.from, `${blockPath}/tableOfContents/opens/levels/from`, 'A table of contents level is an integer from 1 to 9', 1, 9);
+      requireInteger(levels?.to, `${blockPath}/tableOfContents/opens/levels/to`, 'A table of contents level is an integer from 1 to 9', 1, 9);
+      if ((levels!.from as number) > (levels!.to as number)) {
+        throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents/opens/levels`, 'A table of contents level range runs from its lower level to its higher one');
+      }
+      open = blockPath;
+    }
+    if (open === null) throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents`, 'A table of contents paragraph must follow the paragraph that opens it');
+    if (block.bookmark !== undefined || block.list !== undefined || block.note !== undefined) {
+      throw new GenerationSpecError('invalid_value', blockPath, 'A table of contents paragraph carries no bookmark, list or drafting note');
+    }
+    const other = block.runs.findIndex((inline) => inline.kind !== 'text' && inline.kind !== 'tab');
+    if (other >= 0) {
+      throw new GenerationSpecError('invalid_value', `${blockPath}/runs/${other}`, `A table of contents paragraph holds text and tabs only, not a ${block.runs[other]!.kind}`);
+    }
+    if (marks?.closes !== undefined) {
+      if (marks.closes !== true) throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents/closes`, 'closes must be true');
+      open = null;
+    }
+  });
+  if (open !== null) throw new GenerationSpecError('invalid_value', open, 'A table of contents must close in the section that opens it');
 }
 
 /**
@@ -1041,6 +1092,10 @@ function validateParagraph(
   paragraph.runs.forEach((run, runIndex) => {
     validateInline(run, `${path}/runs/${runIndex}`, styleIds, numbering, story);
   });
+  const firstEntry = paragraph.runs.findIndex((run) => run.kind === 'tableOfContentsEntry');
+  if (firstEntry >= 0 && paragraph.runs.slice(firstEntry).some((run) => run.kind !== 'tableOfContentsEntry')) {
+    throw new GenerationSpecError('invalid_value', `${path}/runs/${firstEntry}`, 'Table of contents entries follow every other inline of their paragraph');
+  }
 }
 
 type ParagraphProperties = NonNullable<StyleSpec['paragraph']>;
@@ -1099,8 +1154,18 @@ function validateInline(
   numbering: Map<string, Set<number>>,
   story: StoryContext,
 ): void {
-  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote' && run.kind !== 'crossReference') {
+  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote' && run.kind !== 'crossReference' && run.kind !== 'tableOfContentsEntry') {
     unsupported(path, `inline kind '${(run as { kind: string }).kind}'`);
+  }
+  if (run.kind === 'tableOfContentsEntry') {
+    if (story !== 'body') {
+      throw new GenerationSpecError('invalid_value', path, 'Table of contents entries may sit only in body paragraphs, not in footnotes, headers or footers');
+    }
+    if (typeof run.text !== 'string' || run.text.trim().length === 0 || /["\\\u0000-\u001f]/u.test(run.text)) {
+      throw new GenerationSpecError('invalid_value', `${path}/text`, 'A table of contents entry has non-blank one-line text without a double quote or backslash');
+    }
+    requireInteger(run.level, `${path}/level`, 'A table of contents entry level is an integer from 1 to 9', 1, 9);
+    return;
   }
   if (run.kind === 'crossReference') {
     if (typeof run.bookmark !== 'string' || run.bookmark.length === 0) {

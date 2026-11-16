@@ -1,5 +1,5 @@
 import { WORD_HIGHLIGHTS } from './cli-options.js';
-import { HEADING_NUMBER_SCHEMES } from './create/list-numbering.js';
+import { HEADING_NUMBER_SCHEMES, RUN_IN_LEVELS } from './create/list-numbering.js';
 import {
   CREATION_BLOCK_TAGS,
   CREATION_FRONTMATTER_KEYS,
@@ -15,6 +15,8 @@ import {
   XREF_FORMATS,
   XREF_NUMBERS,
   XREF_SHOWS,
+  PAGE_NUMBER_START_MAX,
+  TOC_ENTRY_LEVELS,
 } from './create/validate.js';
 
 /**
@@ -289,7 +291,7 @@ const CREATION_KEY_VALUES: Readonly<Record<string, string>> = {
   'footer-first': `<text> | ${FIRST_PAGE_NONE}: the first page's footer text (${FIRST_PAGE_NONE} for an empty footer)`,
   'page-numbers': 'true | false: a page number in the footer',
   'page-number-align': `${alignments}; needs page-numbers`,
-  'page-number-format': `${either(PAGE_NUMBER_FORMATS)} (default ${PAGE_NUMBER_FORMATS[0]}): "1", "- 1 -" or "Page 1 of N"; needs page-numbers`,
+  'page-number-format': `${either(PAGE_NUMBER_FORMATS)} (default ${PAGE_NUMBER_FORMATS[0]}): "1", "- 1 -", "Page 1 of N", "i" or "I"; needs page-numbers`,
   'fill-ins': `${either(FILL_IN_MODES)} (default ${FILL_IN_MODES[0]}): only {% fill %} is a fill-in, or every [...] is`,
   'heading-numbers': `${either(HEADING_NUMBER_SCHEMES)}: ## is ARTICLE I, ### is Section 1.01`,
 };
@@ -301,14 +303,17 @@ const CREATION_TAG_HELP: Readonly<Record<string, string>> = {
   'paragraph-layout': `{% paragraph-layout ... %}...{% /paragraph-layout %}: body paragraphs with their own layout; align=${either(PARAGRAPH_LAYOUT_ALIGNMENTS)}, indent-left=${either(PARAGRAPH_LAYOUT_LEFT_INDENTS)} (inches), indent-hanging=${either(PARAGRAPH_LAYOUT_HANGING_INDENTS)} (inches, at most indent-left)`,
   signer: '{% signer name="..." date="..." /%}: a signature block',
   'page-break': '{% page-break /%}: start the next block on a new page',
-  section: '{% section ... /%}: start a new section; takes the running-text keys above as attributes for the next section (header=false, page-numbers=true)',
+  section: `{% section ... /%}: start a new section; takes the running-text keys above as attributes for the next section (header=false, page-numbers=true), and page-number-start=1 to ${PAGE_NUMBER_START_MAX} to restart its page numbers`,
+  'run-in-paragraph': `{% run-in-paragraph level="..." heading="..." %}...{% /run-in-paragraph %}: a paragraph that starts with a live legal number and a run-in heading ("2.01 Engagement. Text"); level=${either(RUN_IN_LEVELS)} ("2.", "2.01", "(a)", "(i)"); heading is required for an article or a section; a {% #id %} on it is an xref target ("2.01(a)")`,
+  toc: '{% toc /%}: a table of contents (a TOC field with its entries already written, no page numbers) listing ## and ### headings, run-in articles and sections, and {% tc %} entries',
   table: '{% table widths="..." %}: a table with column widths',
   footnote: '{% footnote id="..." %}...{% /footnote %}: the body of the footnote whose {% fnref %} has the same id',
   literal: '{% literal %}...{% /literal %}: literal text, no markup',
   fill: '{% fill %}...{% /fill %}: a fill-in',
   u: '{% u %}...{% /u %}: underlined text',
   fnref: '{% fnref id="..." /%}: a footnote reference mark',
-  xref: `{% xref to="..." /%}: a cross-reference to a {% #id %} heading or list item; show=${either([...XREF_SHOWS])}, number=${either([...XREF_NUMBERS])}, format=${either([...XREF_FORMATS])}`,
+  tc: `{% tc level=${TOC_ENTRY_LEVELS.join(' | ')} %}...{% /tc %}: text that also lists in the table of contents at that level`,
+  xref: `{% xref to="..." /%}: a cross-reference to a {% #id %} heading, list item or run-in paragraph; show=${either([...XREF_SHOWS])}, number=${either([...XREF_NUMBERS])}, format=${either([...XREF_FORMATS])}`,
 };
 
 function attributes(allowed: ReadonlySet<string>): string {
