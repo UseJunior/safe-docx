@@ -10,8 +10,32 @@ const result = await compareDocuments(original, revised, {
   date: new Date('2026-08-17T00:00:00.000Z'),
   ignoreFormatting: false,
   detectMoves: true,
+  revisionGrouping: 'readable-semantic', // the default
 });
 ```
+
+## Revision grouping
+
+`revisionGrouping` defaults to `'readable-semantic'` (exported as
+`DEFAULT_COMPARE_REVISION_GROUPING`): each rewritten passage reads as one
+deletion followed by one insertion. `'token-minimal'` emits the smallest
+word-level deletion/insertion set, which alternates word by word in a heavily
+rewritten paragraph. Accept All and Reject All give the same documents under
+both. The library, the `docx-comparison` CLI, the `safe-docx compare` CLI and
+the MCP `compare_documents` tool share this default. Before #1494 the library
+and the `docx-comparison` CLI defaulted to `'token-minimal'`; pass
+`revisionGrouping: 'token-minimal'` to keep that output.
+
+## Command line
+
+```sh
+docx-comparison original.docx revised.docx [output.docx] \
+  [--author "Name"] [--grouping readable-semantic|token-minimal] [--no-moves]
+```
+
+`--grouping` defaults to `readable-semantic`; an unknown value fails with the
+list of accepted values. `--no-moves` turns move detection off (on by default).
+`safe-docx compare` accepts the same flags.
 
 ## Package provenance
 

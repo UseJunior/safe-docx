@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Behaviour change:** `compareDocuments` in `@usejunior/docx-compare` and
+  the `docx-comparison` CLI now default to `revisionGrouping:
+  'readable-semantic'`, the default the MCP `compare_documents` tool already
+  used, so the library, both compare CLIs and the MCP give the same redline
+  for the same pair. A rewritten passage reads as one deletion and one
+  insertion instead of alternating word by word; Accept All and Reject All
+  are unchanged. To keep the old output pass `revisionGrouping:
+  'token-minimal'` (or `--grouping token-minimal`). The default is defined
+  once as `DEFAULT_COMPARE_REVISION_GROUPING`. Both `docx-comparison` and
+  `safe-docx compare` gain `--grouping <readable-semantic|token-minimal>` and
+  `--no-moves`. (#1494)
+
 - The MCP server reads, edits and attaches headers and footers.
   `get_headers_footers` returns each section's default, first and even
   header and footer, including inherited ones, with paragraph ids that

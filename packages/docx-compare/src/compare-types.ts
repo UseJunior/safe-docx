@@ -11,12 +11,13 @@ export interface CompareOptions {
   /** Detect content moved within the document. Default: true */
   detectMoves?: boolean;
   /**
-   * How generated run revisions are grouped. `'token-minimal'` (the default)
-   * emits the smallest deletion/insertion set, which alternates word by word
-   * in a heavily rewritten paragraph. `'readable-semantic'` regroups each
-   * change cluster as one deletion followed by one insertion, absorbing short
-   * unchanged stretches between changes; Accept All and Reject All projections
-   * are unchanged.
+   * How generated run revisions are grouped. `'readable-semantic'` (the
+   * default, {@link DEFAULT_COMPARE_REVISION_GROUPING}) regroups each change
+   * cluster as one deletion followed by one insertion, absorbing short
+   * unchanged stretches between changes. `'token-minimal'` emits the smallest
+   * deletion/insertion set, which alternates word by word in a heavily
+   * rewritten paragraph. Accept All and Reject All projections are the same
+   * under both.
    */
   revisionGrouping?: CompareRevisionGrouping;
 }
@@ -29,6 +30,29 @@ export const COMPARE_REVISION_GROUPINGS: readonly CompareRevisionGrouping[] = [
   'token-minimal',
   'readable-semantic',
 ];
+
+/**
+ * The one revision-grouping default shared by the library, both compare CLIs
+ * and the MCP `compare_documents` tool, so the same pair yields the same
+ * redline on every surface (#1494). Pass `revisionGrouping: 'token-minimal'`
+ * for the previous library behaviour.
+ */
+export const DEFAULT_COMPARE_REVISION_GROUPING: CompareRevisionGrouping = 'readable-semantic';
+
+/**
+ * Validates a revision-grouping value supplied as text (a CLI flag value),
+ * throwing a message that names the accepted values.
+ */
+export function parseCompareRevisionGrouping(value: string, flagName = '--grouping'): CompareRevisionGrouping {
+  const match = COMPARE_REVISION_GROUPINGS.find((grouping) => grouping === value);
+  if (match === undefined) {
+    throw new Error(
+      `Invalid value for ${flagName}: ${JSON.stringify(value)}. ` +
+      `Expected one of: ${COMPARE_REVISION_GROUPINGS.join(', ')} (default: ${DEFAULT_COMPARE_REVISION_GROUPING}).`,
+    );
+  }
+  return match;
+}
 
 /** @internal A source-side range whose generated revision must remain attributable. */
 export interface RevisionAttributionRange {

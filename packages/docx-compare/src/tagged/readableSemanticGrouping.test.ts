@@ -492,8 +492,8 @@ describe('readable semantic revision grouping (#1411)', () => {
     },
   );
 
-  test.openspec('Token-minimal grouping remains the library default')(
-    'keeps the token-minimal redline when no grouping is requested and rejects unknown values',
+  test.openspec('Readable semantic grouping is the library default')(
+    'gives the readable-semantic redline when no grouping is requested and rejects unknown values',
     async ({ given, when, then, and }: AllureBddContext) => {
       const originalDocx = await given('the issue repro original', () =>
         buildDocxFromBodyXml(paragraph(run(ISSUE_ORIGINAL))));
@@ -501,11 +501,11 @@ describe('readable semantic revision grouping (#1411)', () => {
         buildDocxFromBodyXml(paragraph(...ISSUE_REVISED_RUNS)));
       const defaulted = await when('the pair is compared without a grouping option', async () =>
         documentXml((await compareDocuments(originalDocx, revisedDocx, { date: DATE })).document));
-      const minimal = await when('the pair is compared token-minimally', () =>
-        compareGrouped(originalDocx, revisedDocx, 'token-minimal'));
+      const readable = await when('the pair is compared with readable semantic grouping', () =>
+        compareGrouped(originalDocx, revisedDocx, 'readable-semantic'));
 
-      await then('the default output equals the explicit token-minimal output', () => {
-        expect(defaulted).toBe(minimal.tracked);
+      await then('the default output equals the explicit readable-semantic output', () => {
+        expect(defaulted).toBe(readable.tracked);
       });
       await and('an unknown grouping value is rejected before comparison', async () => {
         await expect(compareDocuments(originalDocx, revisedDocx, {

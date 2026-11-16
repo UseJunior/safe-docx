@@ -24,8 +24,8 @@ words such as "a", "an", "the" and "as" still split each change.
   own `rPr`, so mixed formatting is supported. Anything other than a plain text
   run or a comparison-generated text-only `w:ins`/`w:del` is a barrier.
 - Expose it on the stable facade as `CompareOptions.revisionGrouping`
-  (`'token-minimal' | 'readable-semantic'`). The library default stays
-  `'token-minimal'`; unknown values throw a `TypeError`.
+  (`'token-minimal' | 'readable-semantic'`). The library default was
+  `'token-minimal'` and became `'readable-semantic'` in #1494; unknown values throw a `TypeError`.
 - Add `revision_grouping` to the MCP `compare_documents` tool, defaulting to
   `'readable-semantic'` because its readers review the redline, and echo the
   applied value in the response.

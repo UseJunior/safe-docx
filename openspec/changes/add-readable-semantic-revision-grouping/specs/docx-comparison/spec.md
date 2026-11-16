@@ -3,7 +3,7 @@
 ### Requirement: Readable semantic revision grouping
 
 `compareDocuments` SHALL accept `revisionGrouping: 'token-minimal' | 'readable-semantic'`
-and SHALL default to `'token-minimal'`. Any other value SHALL throw a `TypeError`
+and SHALL default to `'readable-semantic'` (`DEFAULT_COMPARE_REVISION_GROUPING`, #1494). Any other value SHALL throw a `TypeError`
 before comparison.
 
 With `'readable-semantic'`, the system SHALL regroup each paragraph's
@@ -48,9 +48,9 @@ projections SHALL be identical to those of the token-minimal output.
 - **THEN** the atom SHALL stay outside the generated clusters, with a separate cluster on each side of it
 - **AND** both projections SHALL remain exact and schema-valid
 
-#### Scenario: Token-minimal grouping remains the library default
+#### Scenario: Readable semantic grouping is the library default
 
 - **GIVEN** a comparison request without `revisionGrouping`
 - **WHEN** `compareDocuments` runs
-- **THEN** the output SHALL equal the explicit `'token-minimal'` output
+- **THEN** the output SHALL equal the explicit `'readable-semantic'` output
 - **AND** an unsupported grouping value SHALL be rejected with a `TypeError`

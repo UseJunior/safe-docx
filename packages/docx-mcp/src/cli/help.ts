@@ -47,6 +47,8 @@ export function renderTopLevelHelp(): string {
   lines.push('  compare <original> <revised> [output]       Compare two DOCX files and write redline output');
   lines.push('    -o, --output <path>                       Write redline output to this path');
   lines.push('    --author <name>                            Track-changes author (default: Comparison)');
+  lines.push('    --grouping <readable-semantic|token-minimal>  Revision grouping (default: readable-semantic)');
+  lines.push('    --no-moves                                 Do not detect moved content (default: moves detected)');
   lines.push('                                                Output always uses the revised-based tagged package');
   lines.push('                                                Compare stats count revision ranges; atom totals use *Atoms fields');
   lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file (-o required to keep the edit)');
