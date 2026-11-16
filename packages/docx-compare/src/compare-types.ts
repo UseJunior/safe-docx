@@ -371,6 +371,25 @@ export interface ReconstructionSafetyFailureDetails {
   acceptParagraphTopology?: ParagraphTopologyMismatchDetails;
   /** Set by tagged publication when `rejectParagraphTopology` fails. */
   rejectParagraphTopology?: ParagraphTopologyMismatchDetails;
+  /** Set by tagged publication when `acceptParagraphProperties` fails. */
+  acceptParagraphProperties?: ParagraphPropertyMismatchDetails;
+  /** Set by tagged publication when `rejectParagraphProperties` fails. */
+  rejectParagraphProperties?: ParagraphPropertyMismatchDetails;
+}
+
+/**
+ * Where a projection's paragraph properties first depart from the source
+ * projection's, as canonical `w:pPr` signatures (see
+ * {@link TaggedPublicationSafetyChecks.acceptParagraphProperties}).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1493
+ */
+export interface ParagraphPropertyMismatchDetails {
+  paragraphIndex: number;
+  paragraphText: string;
+  expectedProperties: string;
+  actualProperties: string;
+  mismatchedParagraphCount: number;
 }
 
 /** @deprecated Retained for one-release compatibility with historical diagnostic types. */
@@ -410,6 +429,8 @@ export interface ReconstructionSafetyFailureSummary {
   rejectBookmarks?: ReconstructionBookmarkMismatchSummary;
   acceptParagraphTopology?: ParagraphTopologyMismatchDetails;
   rejectParagraphTopology?: ParagraphTopologyMismatchDetails;
+  acceptParagraphProperties?: ParagraphPropertyMismatchDetails;
+  rejectParagraphProperties?: ParagraphPropertyMismatchDetails;
 }
 
 /** @deprecated The tagged publisher does not make reconstruction attempts. */
@@ -447,6 +468,8 @@ export type TaggedPublicationSafetyCheckName =
   | ReconstructionSafetyCheckName
   | 'acceptParagraphTopology'
   | 'rejectParagraphTopology'
+  | 'acceptParagraphProperties'
+  | 'rejectParagraphProperties'
   | 'formattingFidelity';
 
 /**
@@ -479,6 +502,21 @@ export interface TaggedPublicationSafetyChecks extends ReconstructionSafetyCheck
   acceptParagraphTopology: boolean;
   /** As {@link acceptParagraphTopology}, for Reject All against the original. */
   rejectParagraphTopology: boolean;
+  /**
+   * Every paragraph of the Accept All projection has the revised document's
+   * paragraph properties at the same index, so a merge kept the properties of
+   * the mark that should survive. Properties compare as a canonical `w:pPr`
+   * signature without the paragraph mark's `w:rPr` (and its revision
+   * markers), `w:pPrChange`, `w:sectPr` and `w:rsid*` attributes, ignoring
+   * child order. Paragraphs past the shorter projection are the topology
+   * check's concern (#1493).
+   */
+  acceptParagraphProperties: boolean;
+  /**
+   * As {@link acceptParagraphProperties}, for Reject All against the original:
+   * Reject All restores each `w:pPrChange` snapshot before the comparison.
+   */
+  rejectParagraphProperties: boolean;
   formattingFidelity: boolean;
 }
 

@@ -6,6 +6,7 @@ import {
 } from '@usejunior/docx-core';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { EMPTIED_CONTAINER_MARKER } from './tagged/emptiedBlockContainers.js';
+import { paragraphPropertySignature } from './tagged/paragraphPropertyParity.js';
 
 const PAGEREF_IDENTITY_PREFIX = '__safe_docx_pageref__|';
 
@@ -229,6 +230,8 @@ interface RoundTripParagraphProjection {
   insideTextBox: boolean;
   /** The sole paragraph of a block container stamped as emptied. */
   emptiedContainerPlaceholder: boolean;
+  /** {@link paragraphPropertySignature} of the paragraph. */
+  propertySignature: string;
 }
 
 /**
@@ -360,6 +363,7 @@ function projectRoundTripParagraphs(
       text: text.join(''),
       insideTextBox: isInsideTextBox(paragraph),
       emptiedContainerPlaceholder: isEmptiedContainerPlaceholderParagraph(paragraph),
+      propertySignature: paragraphPropertySignature(paragraph),
     });
   }
 
@@ -419,8 +423,28 @@ export function extractRoundTripComparisonText(
  * @see https://github.com/UseJunior/safe-docx/issues/1027
  */
 export function extractRoundTripParagraphTopology(documentXml: string): string[] {
+  return topologyParagraphs(documentXml).map((paragraph) => paragraph.text);
+}
+
+function topologyParagraphs(documentXml: string): RoundTripParagraphProjection[] {
   return projectRoundTripParagraphs(documentXml, { layoutCharacters: true })
     .filter((paragraph) => !paragraph.insideTextBox &&
-      !(paragraph.emptiedContainerPlaceholder && paragraph.text.replace(/ +/gu, '') === ''))
-    .map((paragraph) => paragraph.text);
+      !(paragraph.emptiedContainerPlaceholder && paragraph.text.replace(/ +/gu, '') === ''));
+}
+
+/**
+ * The same paragraphs as {@link extractRoundTripParagraphTopology}, each with
+ * its text and its canonical paragraph-property signature, for the
+ * publication gate's paragraph-property parity check.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1493
+ */
+export function extractRoundTripParagraphProperties(
+  documentXml: string,
+): { texts: string[]; properties: string[] } {
+  const paragraphs = topologyParagraphs(documentXml);
+  return {
+    texts: paragraphs.map((paragraph) => paragraph.text),
+    properties: paragraphs.map((paragraph) => paragraph.propertySignature),
+  };
 }

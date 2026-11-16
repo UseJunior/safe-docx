@@ -42,6 +42,7 @@ import {
 import {
   parseDocumentXml,
   findBody,
+  serializeToXml,
 } from './xmlToWmlElement.js';
 import { childElements, findAllByTagName } from '@usejunior/docx-core';
 import {
@@ -89,8 +90,21 @@ import {
 import {
   extractRoundTripComparisonText,
   extractRoundTripParagraphTopology,
+  extractRoundTripParagraphProperties,
 } from '../fieldComparisonSemantics.js';
 import { markWholeTrackedContainers } from './emptiedBlockContainers.js';
+import { compareParagraphProperties, stampSurvivingMarkProperties } from './paragraphPropertyParity.js';
+
+/** `project(xml)` after {@link stampSurvivingMarkProperties}; `projected` when nothing needed stamping. */
+function survivingMarkProjection(
+  xml: string,
+  projection: 'accept' | 'reject',
+  project: (xml: string) => string,
+  projected: string,
+): string {
+  const root = parseDocumentXml(xml);
+  return stampSurvivingMarkProperties(root, projection) ? project(serializeToXml(root)) : projected;
+}
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import {
   buildTaggedTreePublication,
@@ -754,6 +768,19 @@ export async function buildStandaloneTaggedPackage(
     {
       original: extractRoundTripParagraphTopology(originalProjectionXml),
       revised: extractRoundTripParagraphTopology(revisedProjectionXml),
+    },
+    {
+      // As for formatting fidelity: with format detection off, Reject All may
+      // intentionally keep revised properties, so only Accept is held to them.
+      // Measured under the same surviving-mark reading as the candidate, so
+      // a source that already holds pending mark revisions is not judged by
+      // a different convention than the redline (#1493).
+      original: options.formatDetection.detectFormatChanges
+        ? extractRoundTripParagraphProperties(
+          survivingMarkProjection(originalXml, 'reject', rejectAllChanges, originalProjectionXml)).properties
+        : undefined,
+      revised: extractRoundTripParagraphProperties(
+        survivingMarkProjection(revisedXml, 'accept', acceptAllChanges, revisedProjectionXml)).properties,
     },
   );
   const rejectedOriginalXml = rejectAllChanges(taggedOriginalXml);
@@ -1428,6 +1455,12 @@ function buildFailureSummary(
       failureDetails.rejectParagraphTopology,
     );
   }
+  if (failureDetails.acceptParagraphProperties) {
+    summary.acceptParagraphProperties = failureDetails.acceptParagraphProperties;
+  }
+  if (failureDetails.rejectParagraphProperties) {
+    summary.rejectParagraphProperties = failureDetails.rejectParagraphProperties;
+  }
 
   return Object.keys(summary).length > 0 ? summary : undefined;
 }
@@ -1525,6 +1558,16 @@ export function evaluateSafetyChecks(
     original: readonly string[];
     revised: readonly string[];
   },
+  /**
+   * `extractRoundTripParagraphProperties(...).properties` of the source
+   * projections. Omitted only by direct gate tests that do not exercise the
+   * property check, which then passes.
+   */
+  expectedParagraphProperties?: {
+    /** Omitted when Reject All is not held to the original's properties. */
+    original?: readonly string[];
+    revised: readonly string[];
+  },
 ): {
   safe: boolean;
   checks: PublicationSafetyEvaluatorChecks;
@@ -1542,20 +1585,38 @@ export function evaluateSafetyChecks(
     revision: 'w:ins' | 'w:del',
     project: (xml: string) => string,
     projected: string,
-  ): string[] => {
+  ): { texts: string[]; properties: string[] } => {
     const stamped = markWholeTrackedContainers(candidateXml, revision);
-    return extractRoundTripParagraphTopology(stamped === candidateXml ? projected : project(stamped));
+    const texts = extractRoundTripParagraphProperties(
+      stamped === candidateXml ? projected : project(stamped)).texts;
+    if (!expectedParagraphProperties) return { texts, properties: [] };
+    // Measure properties on a copy whose removed marks already carry the
+    // properties of the mark that survives each merge (#1493).
+    const root = parseDocumentXml(stamped);
+    const survivorStamped = stampSurvivingMarkProperties(root, revision === 'w:del' ? 'accept' : 'reject');
+    const properties = !survivorStamped && stamped === candidateXml
+      ? extractRoundTripParagraphProperties(projected).properties
+      : extractRoundTripParagraphProperties(project(survivorStamped ? serializeToXml(root) : stamped)).properties;
+    return { texts, properties };
   };
+  const acceptParagraphs = topologyProjection('w:del', acceptAllChanges, acceptedXml);
+  const rejectParagraphs = topologyProjection('w:ins', rejectAllChanges, rejectedXml);
   const acceptTopologyMismatch = compareParagraphTopology(
     expectedParagraphTopology.revised,
-    topologyProjection('w:del', acceptAllChanges, acceptedXml),
+    acceptParagraphs.texts,
     finalParagraphMarkResolvesAway(candidateXml, 'accept'),
   );
   const rejectTopologyMismatch = compareParagraphTopology(
     expectedParagraphTopology.original,
-    topologyProjection('w:ins', rejectAllChanges, rejectedXml),
+    rejectParagraphs.texts,
     finalParagraphMarkResolvesAway(candidateXml, 'reject'),
   );
+  // #1493: which mark survives a merge decides the merged paragraph's
+  // properties, and text alone cannot see it.
+  const acceptPropertyMismatch = expectedParagraphProperties && compareParagraphProperties(
+    expectedParagraphProperties.revised, acceptParagraphs.properties, acceptParagraphs.texts);
+  const rejectPropertyMismatch = expectedParagraphProperties?.original && compareParagraphProperties(
+    expectedParagraphProperties.original, rejectParagraphs.properties, rejectParagraphs.texts);
   const acceptedBookmarkDiagnostics = collectBookmarkDiagnostics(acceptedXml);
   const rejectedBookmarkDiagnostics = collectBookmarkDiagnostics(rejectedXml);
   const combinedBookmarkDiagnostics = collectBookmarkDiagnostics(candidateXml);
@@ -1615,6 +1676,8 @@ export function evaluateSafetyChecks(
     // paragraph breaks: an empty paragraph dropped or added changes only this.
     acceptParagraphTopology: acceptTopologyMismatch === undefined,
     rejectParagraphTopology: rejectTopologyMismatch === undefined,
+    acceptParagraphProperties: acceptPropertyMismatch === undefined,
+    rejectParagraphProperties: rejectPropertyMismatch === undefined,
     // Hoisting may intentionally normalize which source marker carries a
     // bookmark name, so source-inventory equality is too strict. Publication
     // still fails closed on new balance, uniqueness, and reference anomalies
@@ -1641,6 +1704,8 @@ export function evaluateSafetyChecks(
   }
   if (acceptTopologyMismatch) failureDetails.acceptParagraphTopology = acceptTopologyMismatch;
   if (rejectTopologyMismatch) failureDetails.rejectParagraphTopology = rejectTopologyMismatch;
+  if (acceptPropertyMismatch) failureDetails.acceptParagraphProperties = acceptPropertyMismatch;
+  if (rejectPropertyMismatch) failureDetails.rejectParagraphProperties = rejectPropertyMismatch;
   if (!acceptBookmarksOk) {
     failureDetails.acceptBookmarks = buildBookmarkMismatchDetails(
       revisedBookmarkDiagnostics,
