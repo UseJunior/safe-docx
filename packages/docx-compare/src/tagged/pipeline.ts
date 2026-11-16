@@ -269,6 +269,11 @@ async function reconcileTaggedNotes(options: {
   stabilizedNoteKinds: Set<'footnote' | 'endnote'>;
   /** Receives each reconciled definition: kept (target) id to discarded id. */
   reconciledNotePairs?: Map<string, string>;
+  /**
+   * Receives each reconciled definition's content-control property changes,
+   * which no revision markup can carry (#1507).
+   */
+  unrepresentedChanges?: UnrepresentedChange[];
 }): Promise<string> {
   const { kind } = options;
   const part = `word/${kind}s.xml`;
@@ -334,6 +339,7 @@ async function reconcileTaggedNotes(options: {
       part,
     );
     let comparedChildren: Element[];
+    const definitionChanges: UnrepresentedChange[] = [];
     try {
       comparedChildren = compareNoteDefinitions(
         importedSide === 'original' ? importedEntry : originalEntry,
@@ -342,6 +348,7 @@ async function reconcileTaggedNotes(options: {
           author: options.author,
           date: options.date,
           formatDetection: options.formatDetection,
+          unrepresentedChanges: definitionChanges,
         },
       );
     } catch (error) {
@@ -369,6 +376,16 @@ async function reconcileTaggedNotes(options: {
     newWrapper.parentNode!.removeChild(newWrapper);
     const discarded = result.entries.get(discardedId);
     if (discarded) discarded.parentNode!.removeChild(discarded);
+    if (definitionChanges.length > 0) {
+      const sectionIndex = sectionIndexOf(document, newReference);
+      for (const change of definitionChanges) {
+        options.unrepresentedChanges?.push({
+          ...change,
+          sectionIndex,
+          contentControl: { ...change.contentControl!, story: kind, partPath: part, noteId: targetId },
+        });
+      }
+    }
     changed = true;
   }
   if (changed) {
@@ -377,6 +394,26 @@ async function reconcileTaggedNotes(options: {
     return serializer.serializeToString(document);
   }
   return options.documentXml;
+}
+
+/**
+ * Zero-based section ordinal of `element` in the main story: the paragraph
+ * `w:sectPr` elements that close a section before it.
+ */
+function sectionIndexOf(document: Document, element: Element): number {
+  // A paragraph's own w:sectPr closes the section the paragraph belongs to,
+  // so counting stops at the paragraph holding the element.
+  let anchor: Element = element;
+  for (let node = element.parentNode; node?.nodeType === 1; node = node.parentNode) {
+    if ((node as Element).localName === 'p') { anchor = node as Element; break; }
+  }
+  let sectionIndex = 0;
+  for (const candidate of Array.from(document.getElementsByTagNameNS(OOXML.W_NS, '*'))) {
+    if (candidate === anchor) break;
+    const parent = candidate.parentNode as Element | null;
+    if (candidate.localName === 'sectPr' && parent?.localName === 'pPr') sectionIndex++;
+  }
+  return sectionIndex;
 }
 
 function relationshipPartPath(ownerPart: string, target: string): string {
@@ -604,6 +641,7 @@ export async function buildStandaloneTaggedPackage(
       formatDetection: options.formatDetection,
       stabilizedNoteKinds,
       reconciledNotePairs: reconciled,
+      unrepresentedChanges,
     });
   }
   resultArchive.setDocumentXml(taggedXml);

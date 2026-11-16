@@ -244,6 +244,21 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
       }
     };
     stripPriorRevisionsAndWhitespace(normalized);
+    // A cell's pending insertion, deletion or merge (§17.13.5.2, §17.13.5.1,
+    // §17.13.5.3) is a revision of the cell, not one of its properties. Word
+    // renumbers revision identifiers on save and the date is when the
+    // revision was made, so neither distinguishes one pending marker from
+    // another: leave both out (#1508). Its author and merge states stay in;
+    // a marker that appears, disappears or changes its merge states makes
+    // the row be replaced whole before publication (#1400).
+    if (descriptor.scope === 'tableCell') {
+      for (const child of childElements(normalized)) {
+        if (['cellIns', 'cellDel', 'cellMerge'].includes(child.localName)) {
+          child.removeAttributeNS(child.namespaceURI, 'id');
+          child.removeAttributeNS(child.namespaceURI, 'date');
+        }
+      }
+    }
     return subtreeSignature(normalized);
   };
   if (propertySignature(originalProperty) === propertySignature(revisedProperty)) return undefined;

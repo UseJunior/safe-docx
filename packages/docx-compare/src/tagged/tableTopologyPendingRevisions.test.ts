@@ -249,6 +249,55 @@ describe('a table holding pending cell-level revisions from an earlier reviewer 
   );
 });
 
+/** The pending cell-level markers of the first table, each as `name:id`, in document order. */
+function cellMarkers(xml: string): string[] {
+  const tbl = parseXml(xml).getElementsByTagNameNS(W_NS, 'tbl')[0]!;
+  return Array.from(tbl.getElementsByTagNameNS(W_NS, '*'))
+    .filter((element) => ['cellIns', 'cellDel', 'cellMerge'].includes(element.localName))
+    .map((element) => `${element.localName}:${element.getAttributeNS(W_NS, 'id')}`);
+}
+
+/**
+ * Word renumbers revision identifiers on save, so the same pending cell
+ * marker can carry a different `w:id` and `w:date` in each document (#1508).
+ */
+describe('a pending cell-level revision renumbered between the documents (#1508)', () => {
+  const renumber = (marker: string) => marker.replace(/w:id="\d+"/, 'w:id="7001"')
+    .replace('2026-01-01T00:00:00Z', '2026-03-04T05:06:07Z');
+  for (const [name, revision] of Object.entries(PENDING)) {
+    test.openspec('[SDX-COMPTABLE-09] a row holding a pending cell-level revision emits a native row replacement')(
+      `records no cell property change for a renumbered pending ${name}`, async () => {
+        const pendingRow = (marker: string, text: string) => row([cell(text), cell('Corp', marker)]);
+        const { xml, result } = await compareChecked(
+          body(table([pendingRow(revision, 'Acme'), plain('Delta', 'Echo')])),
+          body(table([pendingRow(renumber(revision), 'Acme Holdings'), plain('Delta', 'Echo')]), edited),
+        );
+        expect(parseXml(xml).getElementsByTagNameNS(W_NS, 'tcPrChange')).toHaveLength(0);
+        expect(rowMarkers(xml)).toEqual([[], []]);
+        expect(cellMarkers(xml)).toHaveLength(1);
+        expect(cellMarkers(xml)[0]!.startsWith(`${name}:`)).toBe(true);
+        expect(earlierRevisions(xml)).toEqual([name]);
+        expect(result.stats.formatChanges).toBe(0);
+      },
+      30000,
+    );
+  }
+
+  test.openspec('[SDX-COMPTABLE-09] a row holding a pending cell-level revision emits a native row replacement')(
+    'still replaces a row whose pending cell merge records different merge states', async () => {
+      const changed = PENDING.cellMerge.replace('w:id="82"', 'w:id="7002"').replace('w:vMerge="cont"', 'w:vMerge="rest"');
+      const { xml } = await compareChecked(
+        body(table([row([cell('Acme'), cell('Corp', PENDING.cellMerge)]), plain('Delta', 'Echo')])),
+        body(table([row([cell('Acme'), cell('Corp', changed)]), plain('Delta', 'Echo')]), edited),
+      );
+      expect(rowMarkers(xml)).toEqual([['del:Comparison'], ['ins:Comparison'], []]);
+      expect(earlierRevisions(xml)).toEqual(['cellMerge', 'cellMerge']);
+      expect(parseXml(xml).getElementsByTagNameNS(W_NS, 'tcPrChange')).toHaveLength(0);
+    },
+    30000,
+  );
+});
+
 describe('a table whose rows carry pending row revisions from an earlier reviewer (#1400)', () => {
   for (const [name, marker] of [['insertion', rowIns], ['deletion', rowDel]] as const) {
     test.openspec('[SDX-COMPTABLE-13] pending row revisions in a changed table keep each projection')(

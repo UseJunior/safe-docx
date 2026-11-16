@@ -18,7 +18,10 @@ function describeScope(change: UnrepresentedChange): string {
     const noun = control?.element === 'customXmlPr' ? 'custom XML element' : 'content control';
     const ordinal = control ? `${noun} #${control.index + 1}` : noun;
     const element = control?.element ?? 'sdtPr';
-    return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
+    const story = control?.story !== undefined
+      ? ` in ${control.story} ${control.noteId ?? ''} (${control.partPath ?? `word/${control.story}s.xml`})`.replace('  ', ' ')
+      : '';
+    return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}${story}`;
   }
   if (change.scope === 'picture') {
     const picture = change.picture;
