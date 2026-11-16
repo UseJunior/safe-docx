@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 73
+- Stable compatibility surface: 76
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
@@ -44,6 +44,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `COLLAPSED_FIELD_TAG` | value | `src/atomizer.ts` | no | breaking removal |
 | `collapseFieldSequences` | function | `src/atomizer.ts` | no | breaking removal |
 | `collectPreservedMoveNames` | function | `src/move-detection.ts` | no | breaking removal |
+| `COMPARE_REVISION_GROUPINGS` | value | `src/compare-types.ts` | yes | stable compatibility |
 | `compareDocuments` | function | `src/index.ts` | yes | stable compatibility |
 | `compareDocumentsAtomizer` | function | `src/tagged/pipeline.ts` | yes | deprecate one release |
 | `compareFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
@@ -63,6 +64,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `CreateAtomOptions` | interface | `src/atomizer.ts` | no | breaking removal |
 | `createComparisonUnitAtom` | function | `src/atomizer.ts` | no | breaking removal |
 | `createRevisionIdState` | function | `src/move-detection.ts` | no | breaking removal |
+| `DEFAULT_COMPARE_REVISION_GROUPING` | value | `src/compare-types.ts` | yes | stable compatibility |
 | `DEFAULT_RECONSTRUCTION_MODE` | value | `src/comparison-defaults.ts` | no | breaking removal |
 | `detectFormatChangesInAtomList` | function | `src/format-detection.ts` | no | breaking removal |
 | `detectMovesInAtomList` | function | `src/move-detection.ts` | no | breaking removal |
@@ -120,6 +122,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `PARAGRAPH_PROPERTY_FRIENDLY_NAMES` | value | `src/format-detection.ts` | no | breaking removal |
 | `ParagraphPropertyMismatchDetails` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `ParagraphTopologyMismatchDetails` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `parseCompareRevisionGrouping` | function | `src/compare-types.ts` | yes | stable compatibility |
 | `parseDocumentXml` | function | `src/tagged/xmlToWmlElement.ts` | yes | stable compatibility |
 | `ProjectedFormattingFidelity` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `ReconstructionAttemptDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |

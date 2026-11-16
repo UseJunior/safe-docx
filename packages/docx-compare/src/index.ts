@@ -6,7 +6,7 @@
  */
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
-import { COMPARE_REVISION_GROUPINGS, type CompareOptions, type CompareResult } from './compare-types.js';
+import { COMPARE_REVISION_GROUPINGS, DEFAULT_COMPARE_REVISION_GROUPING, type CompareOptions, type CompareResult } from './compare-types.js';
 export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
 
 const REMOVED_COMPARISON_OPTIONS = [
@@ -16,6 +16,12 @@ const REMOVED_COMPARISON_OPTIONS = [
   'premergeRuns',
   'maxWordRefinementChangeRanges',
 ] as const;
+
+export {
+  COMPARE_REVISION_GROUPINGS,
+  DEFAULT_COMPARE_REVISION_GROUPING,
+  parseCompareRevisionGrouping,
+} from './compare-types.js';
 
 export type {
   CompareOptions,
@@ -94,9 +100,9 @@ export async function compareDocuments(
     date,
     ignoreFormatting,
     detectMoves,
-    revisionGrouping,
+    revisionGrouping = DEFAULT_COMPARE_REVISION_GROUPING,
   } = options;
-  if (revisionGrouping !== undefined && !COMPARE_REVISION_GROUPINGS.includes(revisionGrouping)) {
+  if (!COMPARE_REVISION_GROUPINGS.includes(revisionGrouping)) {
     throw new TypeError(
       `Unsupported revisionGrouping: ${String(revisionGrouping)}. ` +
       `Expected one of: ${COMPARE_REVISION_GROUPINGS.join(', ')}.`,
@@ -114,7 +120,7 @@ export async function compareDocuments(
       detectMoves === undefined
         ? undefined
         : { detectMoves },
-    ...(revisionGrouping === undefined ? {} : { revisionGrouping }),
+    revisionGrouping,
   });
 
   return {

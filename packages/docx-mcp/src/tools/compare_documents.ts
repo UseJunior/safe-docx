@@ -8,6 +8,7 @@ import {
   formatUnrepresentedChangeWarnings,
   summarizeUnrepresentedChanges,
   type CompareRevisionGrouping,
+  DEFAULT_COMPARE_REVISION_GROUPING,
 } from '@usejunior/docx-compare';
 import {
   mergeSessionResolutionMetadata,
@@ -18,11 +19,10 @@ import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { conformanceRefusalResponse } from './conformance_refusal.js';
 
 /**
- * The tool's readers are reviewing lawyers, so a rewritten passage reads as
- * one deletion followed by one insertion by default. The library default
- * stays token-minimal; callers can still ask for it explicitly (#1411).
+ * Re-exported from `@usejunior/docx-compare` so the tool, both compare CLIs
+ * and the library share one default (#1411, #1494).
  */
-export const DEFAULT_COMPARE_REVISION_GROUPING: CompareRevisionGrouping = 'readable-semantic';
+export { DEFAULT_COMPARE_REVISION_GROUPING };
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;

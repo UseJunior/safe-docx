@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runServeCommand } from './commands/serve.js';
+import { parseCompareRevisionGrouping } from '@usejunior/docx-compare';
 import { runCompareCommand, type CompareCommandArgs, type CompareCommandResult } from './commands/compare.js';
 import { parseEditArgs, runEditCommand } from './commands/edit.js';
 import { parseGrepArgs, runGrepCommand } from './commands/grep.js';
@@ -66,6 +67,12 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
         break;
       case '--author':
         options.author = consumeValue(token);
+        break;
+      case '--grouping':
+        options.revisionGrouping = parseCompareRevisionGrouping(consumeValue(token), token);
+        break;
+      case '--no-moves':
+        options.detectMoves = false;
         break;
       default:
         throw new Error(`Unknown option for compare command: ${token}`);

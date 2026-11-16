@@ -144,10 +144,15 @@ async function assertParity(original: Buffer, revised: Buffer, compared: Buffer)
   }
 }
 
+// These cases assert word-level marks, so they pin token-minimal grouping
+// explicitly rather than inheriting the readable-semantic default (#1494).
 async function compareChecked(originalBody: string, revisedBody: string, detectMoves?: boolean) {
   const original = await docx(originalBody);
   const revised = await docx(revisedBody);
-  const result = await compareDocuments(original, revised, detectMoves === undefined ? {} : { detectMoves });
+  const result = await compareDocuments(original, revised, {
+    revisionGrouping: 'token-minimal',
+    ...(detectMoves === undefined ? {} : { detectMoves }),
+  });
   await assertParity(original, revised, result.document);
   await assertSchema(result.document);
   return { result, xml: await xmlOf(result.document) };

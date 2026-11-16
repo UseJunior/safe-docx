@@ -69,6 +69,8 @@ describe('docx-comparison CLI argument parsing', () => {
         outputPath: undefined,
         options: {
           author: 'Comparison',
+          revisionGrouping: 'readable-semantic',
+          detectMoves: true,
         },
       });
     });
@@ -84,6 +86,9 @@ describe('docx-comparison CLI argument parsing', () => {
         'out.docx',
         '--author',
         'Junior',
+        '--grouping',
+        'token-minimal',
+        '--no-moves',
       ]);
     });
 
@@ -94,6 +99,8 @@ describe('docx-comparison CLI argument parsing', () => {
         outputPath: 'out.docx',
         options: {
           author: 'Junior',
+          revisionGrouping: 'token-minimal',
+          detectMoves: false,
         },
       });
     });
@@ -115,6 +122,15 @@ describe('docx-comparison CLI argument parsing', () => {
       if ('help' in result! && result!.help) {
         expect(result!.text).toContain('Usage: docx-comparison');
       }
+    });
+  });
+
+  test('rejects an unknown or missing --grouping value', async ({ when }: AllureBddContext) => {
+    await when('--grouping is given a bad value or none', () => {
+      expect(() => parseCompareCliArgs(['a.docx', 'b.docx', '--grouping', 'readable-whitespace']))
+        .toThrow('Invalid value for --grouping: "readable-whitespace". Expected one of: token-minimal, readable-semantic');
+      expect(() => parseCompareCliArgs(['a.docx', 'b.docx', '--grouping']))
+        .toThrow('Missing value for --grouping.');
     });
   });
 
@@ -145,7 +161,7 @@ describe('docx-comparison CLI fixed tagged publication', () => {
     };
   }
 
-  test('forwards only author and reports revised package provenance', async ({
+  test('forwards author, default grouping and moves and reports revised package provenance', async ({
     when,
     then,
     and,
@@ -162,8 +178,8 @@ describe('docx-comparison CLI fixed tagged publication', () => {
       }),
     );
 
-    await then('only the retained author option reaches the public comparison API', () => {
-      expect(receivedOptions).toEqual({ author: 'Junior' });
+    await then('the author and the default grouping and move options reach the public comparison API', () => {
+      expect(receivedOptions).toEqual({ author: 'Junior', revisionGrouping: 'readable-semantic', detectMoves: true });
     });
     await and('the output names and reports the fixed revised package base', async () => {
       if ('help' in result && result.help) throw new Error('expected a run result');
