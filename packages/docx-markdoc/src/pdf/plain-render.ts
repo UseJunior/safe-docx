@@ -5,7 +5,7 @@ import { copyFile, mkdtemp, readFile, realpath, rename, rm, stat } from 'node:fs
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { defaultPdfRenderTools } from './tools.js';
+import { defaultPdfRenderTools, describeSofficeFailure } from './tools.js';
 import type { PdfRenderTools } from './tools.js';
 
 export type PlainPdfRequest = {
@@ -102,8 +102,9 @@ export async function renderPlainPdf(request: PlainPdfRequest): Promise<PlainPdf
       '--convert-to', 'pdf:writer_pdf_Export', '--outdir', output, input,
     ]);
     const pdfPath = path.join(output, 'input.pdf');
-    if (rendered.code !== 0 || !existsSync(pdfPath)) {
-      return { status: 'failed', reason: `LibreOffice render failed: ${(rendered.stderr || rendered.stdout).trim() || 'no PDF output'}` };
+    const pdfWritten = existsSync(pdfPath);
+    if (rendered.code !== 0 || rendered.signal || !pdfWritten) {
+      return { status: 'failed', reason: `LibreOffice render failed: ${describeSofficeFailure(rendered, 'input.pdf', pdfWritten)}` };
     }
     const pdf = await readFile(pdfPath);
     if (pdf.length === 0) return { status: 'failed', reason: 'LibreOffice produced an empty PDF' };

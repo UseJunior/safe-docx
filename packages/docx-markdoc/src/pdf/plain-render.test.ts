@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect } from 'vitest';
 import { itAllure } from '../../../docx-core/src/testing/allure-test.js';
-import { defaultPdfRenderTools } from './tools.js';
+import { defaultPdfRenderTools, describeSofficeFailure } from './tools.js';
 import { renderPlainPdf, splitPdfTextPages } from './plain-render.js';
 import type { PdfRenderTools } from './tools.js';
 
@@ -203,7 +203,57 @@ describe('local PDF tool resolver', () => {
       run: async (command) => (command.endsWith('soffice') ? { code: 1, stdout: '', stderr: 'source file could not be loaded' } : { code: 0, stdout: 'x', stderr: '' }),
     };
     const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: failing });
-    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: source file could not be loaded' });
+    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: exit 1, no input.pdf written (output: source file could not be loaded)' });
     expect(existsSync(pdf)).toBe(false);
+  });
+  const BENIGN_PERSISTENCE = '2026-11-16 10:00:00.000 soffice[123:456] ApplePersistenceIgnoreState: Existing state will not be touched. New state will be written to /tmp/org.libreoffice.script.savedState';
+  const BENIGN_TASK_POLICY = 'soffice[123] Task policy set failed: 4 ((os/kern) invalid argument)';
+
+  /** A soffice stub that returns `result` and writes input.pdf only when `writePdf` is set; pdftotext returns 'x'. */
+  function sofficeStub(result: { code: number; stdout: string; stderr: string; signal?: string }, writePdf = false): PdfRenderTools {
+    return {
+      resolve: (name) => `/fake/${name}`,
+      async run(command, args) {
+        if (!command.endsWith('soffice')) return { code: 0, stdout: 'x', stderr: '' };
+        if (writePdf) {
+          const outdir = args[args.indexOf('--outdir') + 1]!;
+          await mkdir(outdir, { recursive: true });
+          await writeFile(path.join(outdir, 'input.pdf'), '%PDF-fake');
+        }
+        return result;
+      },
+    };
+  }
+
+  itAllure('names the exit code and drops benign macOS stderr when LibreOffice exits non-zero', async () => {
+    const { docx, pdf } = await workspace();
+    const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: sofficeStub({ code: 1, stdout: '', stderr: `${BENIGN_PERSISTENCE}\n${BENIGN_TASK_POLICY}\n` }) });
+    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: exit 1, no input.pdf written (output: only known-benign macOS LibreOffice messages)' });
+    expect(existsSync(pdf)).toBe(false);
+  });
+
+  itAllure('keeps meaningful stderr lines beside benign ones and reports a written PDF on a non-zero exit', async () => {
+    const { docx, pdf } = await workspace();
+    const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: sofficeStub({ code: 81, stdout: '', stderr: `${BENIGN_PERSISTENCE}\nError: source file could not be loaded\n` }, true) });
+    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: exit 81, input.pdf written (output: Error: source file could not be loaded)' });
+    expect(existsSync(pdf)).toBe(false);
+  });
+
+  itAllure('reports exit 0 with no PDF written as the failed condition', async () => {
+    const { docx, pdf } = await workspace();
+    const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: sofficeStub({ code: 0, stdout: '', stderr: BENIGN_PERSISTENCE }) });
+    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: exit 0, no input.pdf written (output: only known-benign macOS LibreOffice messages)' });
+  });
+
+  itAllure('reports the signal when LibreOffice is killed', async () => {
+    const { docx, pdf } = await workspace();
+    const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: sofficeStub({ code: 1, stdout: '', stderr: '', signal: 'SIGKILL' }) });
+    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: killed by SIGKILL, no input.pdf written' });
+  });
+
+  itAllure('the default runner reports the signal that killed the process', async () => {
+    const killed = await defaultPdfRenderTools().run(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"]);
+    expect(killed.signal).toBe('SIGTERM');
+    expect(describeSofficeFailure(killed, 'input.pdf', false)).toMatch(/^killed by SIGTERM, no input.pdf written/);
   });
 });
