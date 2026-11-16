@@ -6,7 +6,7 @@ import { HeaderFooterError } from './header_footer.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 
 const TEST_FEATURE = 'header-footer-attach-primitive';
-const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 
 describe('setHeaderFooter', () => {
   test('a refused call on a section with a foreign sectPrChange leaves the document unchanged', async () => {
