@@ -239,6 +239,12 @@ describe('local PDF tool resolver', () => {
     expect(existsSync(pdf)).toBe(false);
   });
 
+  itAllure('keeps a meaningful stdout line when stderr holds only benign lines', async () => {
+    const { docx, pdf } = await workspace();
+    const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: sofficeStub({ code: 1, stdout: 'Error: PDF export failed\n', stderr: BENIGN_TASK_POLICY }) });
+    expect(verdict).toEqual({ status: 'failed', reason: 'LibreOffice render failed: exit 1, no input.pdf written (output: Error: PDF export failed)' });
+  });
+
   itAllure('reports exit 0 with no PDF written as the failed condition', async () => {
     const { docx, pdf } = await workspace();
     const verdict = await renderPlainPdf({ docxPath: docx, outputPdfPath: pdf, requiredText: [], tools: sofficeStub({ code: 0, stdout: '', stderr: BENIGN_PERSISTENCE }) });

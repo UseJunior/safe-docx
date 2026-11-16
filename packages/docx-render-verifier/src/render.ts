@@ -668,7 +668,7 @@ const BENIGN_SOFFICE_LINE = /ApplePersistenceIgnoreState|Task policy set failed/
 /** The failed condition (exit code or signal, PDF written or not), then the tool output minus known-benign lines. */
 export function describeSofficeFailure(result: ToolResult, pdfName: string, pdfWritten: boolean): string {
   const status = result.signal ? `killed by ${result.signal}` : `exit ${result.code}`;
-  const output = (result.stderr || result.stdout).split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  const output = `${result.stderr}\n${result.stdout}`.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
   const meaningful = output.filter((line) => !BENIGN_SOFFICE_LINE.test(line));
   const detail = meaningful.length > 0 ? ` (output: ${meaningful.join(' | ')})`
     : output.length > 0 ? ' (output: only known-benign macOS LibreOffice messages)' : '';

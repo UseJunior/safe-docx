@@ -1069,6 +1069,7 @@ describe('LibreOffice render failure reasons', () => {
     expect(describeSofficeFailure({ code: 1, stdout: '', stderr: benign }, 'doc.pdf', false)).toBe('exit 1, no doc.pdf written (output: only known-benign macOS LibreOffice messages)');
     expect(describeSofficeFailure({ code: 0, stdout: '', stderr: '' }, 'doc.pdf', false)).toBe('exit 0, no doc.pdf written');
     expect(describeSofficeFailure({ code: 1, stdout: '', stderr: `${benign}\nError: bad file` }, 'doc.pdf', true)).toBe('exit 1, doc.pdf written (output: Error: bad file)');
+    expect(describeSofficeFailure({ code: 1, stdout: 'Error: export failed', stderr: benign }, 'doc.pdf', false)).toBe('exit 1, no doc.pdf written (output: Error: export failed)');
     expect(describeSofficeFailure({ code: 1, stdout: '', stderr: '', signal: 'SIGKILL' }, 'doc.pdf', false)).toBe('killed by SIGKILL, no doc.pdf written');
     const killed = await defaultRendererTools().run(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"]);
     expect(killed.signal).toBe('SIGTERM');
