@@ -101,7 +101,8 @@ export type SetHeaderFooterResult = {
 export type HeaderFooterErrorCode =
   | 'SECTION_NOT_FOUND'
   | 'INVALID_HEADER_FOOTER_REQUEST'
-  | 'RELATIONSHIP_NOT_FOUND';
+  | 'RELATIONSHIP_NOT_FOUND'
+  | 'CONFLICTING_SECTION_REVISION';
 
 export class HeaderFooterError extends Error {
   constructor(public readonly code: HeaderFooterErrorCode, message: string) {
@@ -552,6 +553,18 @@ export async function setHeaderFooter(
 
   const changed = snapshots.size > 0 || rewrittenParts.length > 0;
   if (ctx) {
+    // Another author's w:sectPrChange already holds this section's baseline;
+    // adding the AI change under it would make it unselectable by author.
+    for (const sectPr of snapshots.keys()) {
+      const foreign = getDirectChildrenByName(sectPr, 'sectPrChange')
+        .find((change) => (wAttr(change, 'author') ?? '') !== ctx.author);
+      if (foreign) {
+        throw new HeaderFooterError(
+          'CONFLICTING_SECTION_REVISION',
+          `Section ${sectPrs.indexOf(sectPr)} already has a tracked section-property change by ${wAttr(foreign, 'author') ?? 'another author'}; accept or reject it before changing its header/footer.`,
+        );
+      }
+    }
     for (const [sectPr, old] of snapshots) {
       // An existing w:sectPrChange already holds the properties before the
       // earlier revision; keep it rather than overwrite that baseline.

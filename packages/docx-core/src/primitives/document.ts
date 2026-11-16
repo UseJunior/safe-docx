@@ -2098,6 +2098,11 @@ export class DocxDocument {
     minimalReserialization?: boolean;
     preserveOriginalBookmarks?: boolean;
     fileDate?: Date;
+    /**
+     * Without cleanBookmarks: still remove safe-docx paragraph ids from
+     * header/footer parts, whose comparison baseline never carries them.
+     */
+    cleanStoryBookmarks?: boolean;
   }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
     const zipOptions = opts?.fileDate ? { fileDate: opts.fileDate } : undefined;
     // Capture the latest DOM for this export without writing output-only XML
@@ -2131,7 +2136,8 @@ export class DocxDocument {
       return { buffer, bookmarksRemoved, blocksRestored };
     }
 
-    const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { 'word/document.xml': xmlWithBookmarks } });
+    const storyOverrides = opts?.cleanStoryBookmarks ? await this.cleanStoryBookmarkOverrides() : {};
+    const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { ...storyOverrides, 'word/document.xml': xmlWithBookmarks } });
     return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
   }
 

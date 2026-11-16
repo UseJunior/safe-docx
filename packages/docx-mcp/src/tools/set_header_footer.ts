@@ -119,13 +119,19 @@ export async function setHeaderFooterTool(
       if (result.changed || result.partsCreated.length > 0) {
         manager.markEdited(session);
       }
-      if (result.packagePartsChanged.length > 0) {
-        // Header/footer parts, their relationships and content types have no
-        // tracked-change form; the save report lists them (#1200).
+      if (result.changed) {
+        // Header/footer parts, relationships and content types have no
+        // tracked-change form, and w:sectPrChange cannot hold header/footer
+        // references (CT_SectPrBase), so the reference change itself is not
+        // reversible by rejecting revisions. The save report lists both (#1200).
+        const created = result.partsCreated.length > 0
+          ? `created ${result.partsCreated.join(', ')} with document relationships and content-type overrides; `
+          : '';
+        const rewritten = result.packagePartsChanged.filter((p) => p.startsWith('word/') && !result.partsCreated.includes(p) && !p.includes('_rels'));
         manager.recordNonRevisionChange(session, {
           tool: 'set_header_footer',
-          parts: [...result.packagePartsChanged],
-          description: `${result.partsCreated.length > 0 ? `Created ${result.partsCreated.join(', ')} with document relationships and content-type overrides` : `Rewrote ${result.packagePartsChanged.join(', ')}, created earlier in this session`} for section ${sectionIndex} (${kind}, ${type}). Header/footer part content written this way has no tracked-change form, so it is untracked${ctx ? '; the section reference change is tracked as w:sectPrChange' : ''}.`,
+          parts: ['word/document.xml', ...result.packagePartsChanged],
+          description: `Section ${sectionIndex} ${kind} (${type}) reference set to ${result.relationshipId ?? 'the previous section'}${result.pinnedSections.length > 0 ? ` and section ${result.pinnedSections.map((p) => p.sectionIndex).join(', ')} pinned to its previous ${kind}` : ''}: ${created}${rewritten.length > 0 ? `rewrote ${rewritten.join(', ')}; ` : ''}header/footer references and part content are untracked${ctx ? ' (other section properties are tracked as w:sectPrChange, but rejecting it does not restore the references)' : ''}.`,
         });
       }
       manager.touch(session);

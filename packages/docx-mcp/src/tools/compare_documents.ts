@@ -96,7 +96,7 @@ export async function compareDocuments_tool(
       // Lazily generate comparison baselines if not yet available.
       const baselines = await manager.ensureBaselines(session);
       originalBuffer = baselines.withBookmarks;
-      const revised = await session.doc.toBuffer({ cleanBookmarks: false });
+      const revised = await session.doc.toBuffer({ cleanBookmarks: false, cleanStoryBookmarks: true });
       revisedBuffer = revised.buffer;
       originalFilePath = manager.normalizePath(session.originalPath);
     }

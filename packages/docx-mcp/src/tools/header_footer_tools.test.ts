@@ -311,6 +311,31 @@ describe('Header and footer tools', () => {
     expect(after.sections[0].footers[0].paragraphs[0].text).toBe('Old');
   });
 
+  test('refuses to stack an AI section change on another author\'s sectPrChange', async () => {
+    const sect = '<w:sectPr><w:footerReference w:type="default" r:id="rIdF1"/><w:sectPrChange w:id="90" w:author="Alice" w:date="2026-01-01T00:00:00Z"><w:sectPr/></w:sectPrChange></w:sectPr>';
+    const opened = await open(para('Body.') + sect, ['Default'], true);
+    const result = await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 0, type: 'first', paragraphs: [{ text: 'Cover' }] }).catch((e) => e);
+    assertFailure(result as any, 'CONFLICTING_SECTION_REVISION');
+  });
+
+  test('a reference-only change is listed in the save manifest', async () => {
+    const body = para('A.', '<w:sectPr><w:footerReference w:type="default" r:id="rIdF1"/></w:sectPr>') + para('B.') + '<w:sectPr><w:footerReference w:type="default" r:id="rIdF2"/></w:sectPr>';
+    const opened = await open(body, ['One', 'Two']);
+    const set = await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 1, existing_relationship_id: 'rIdF1' });
+    expect(set.parts_created).toEqual([]);
+    const { result } = await saveAs(opened.mgr, opened.inputPath, 'clean');
+    expect(JSON.stringify(result.non_revision_changes)).toContain('reference set to rIdF1');
+  });
+
+  test('reading headers and footers adds nothing to a session comparison', async () => {
+    const opened = await open(para('Body.') + '<w:sectPr><w:footerReference w:type="default" r:id="rIdF1"/></w:sectPr>', ['Footer text']);
+    await call(opened.mgr, 'get_headers_footers', { file_path: opened.inputPath });
+    const dir = await createTrackedTempDir('hf-compare-');
+    const compared = await call(opened.mgr, 'compare_documents', { file_path: opened.inputPath, save_to_local_path: path.join(dir, 'cmp.docx') });
+    assertSuccess(compared as { success: boolean }, 'compare_documents');
+    expect(JSON.stringify(compared.stats ?? compared)).toMatch(/"insertions":0/);
+  });
+
   test('refuses invalid requests before touching the session', async () => {
     const opened = await open(para('Body.') + '<w:sectPr/>', []);
     assertFailure(await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 0 }) as any, 'VALIDATION_ERROR');
