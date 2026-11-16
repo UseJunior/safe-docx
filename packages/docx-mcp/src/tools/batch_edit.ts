@@ -171,7 +171,7 @@ function validateSteps(
       } else {
         const text = doc.getParagraphTextById(targetId);
         if (text === null) {
-          validation.errors.push(`target_paragraph_id '${targetId}' not found in document.`);
+          validation.errors.push(`target_paragraph_id '${targetId}' not found in the document body. batch_edit does not edit header/footer paragraphs; use replace_text or insert_paragraph for those.`);
         } else {
           const oldStr = step.fields.old_string;
           if (typeof oldStr !== 'string') {
@@ -204,7 +204,7 @@ function validateSteps(
         validation.errors.push('Missing positional_anchor_node_id.');
       } else {
         const text = doc.getParagraphTextById(anchorId);
-        if (text === null) validation.errors.push(`positional_anchor_node_id '${anchorId}' not found in document.`);
+        if (text === null) validation.errors.push(`positional_anchor_node_id '${anchorId}' not found in the document body. batch_edit does not edit header/footer paragraphs; use replace_text or insert_paragraph for those.`);
       }
 
       if (typeof step.fields.new_string !== 'string') validation.errors.push('Missing new_string.');

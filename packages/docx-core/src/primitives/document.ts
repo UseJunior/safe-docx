@@ -8,6 +8,15 @@ import {
   type DocumentPropertiesMutationResult,
 } from './document_properties.js';
 import { attributeXmlParseError, parseXml, serializeXml } from './xml.js';
+import { auditSectPr } from './sectPrAudit.js';
+import {
+  resolveSectionHeaderFooters,
+  readEvenAndOddHeaders,
+  setHeaderFooter as setHeaderFooterImpl,
+  type SectionHeaderFooters,
+  type SetHeaderFooterMutation,
+  type SetHeaderFooterResult,
+} from './header_footer.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
 import { assertTransitionalWordprocessingML } from './conformance.js';
@@ -444,6 +453,14 @@ export class DocxDocument {
    * not created via load().
    */
   private originalDocumentXmlText: string | null;
+  /**
+   * Header/footer part text before safe-docx first wrote paragraph bookmarks
+   * into it. A clean export removes those bookmarks and restores the original
+   * bytes of a part no edit changed.
+   */
+  private storyOriginalTexts = new Map<string, string>();
+  /** Header/footer relationships setHeaderFooter created in this session. */
+  private createdHeaderFooterRelationshipIds = new Set<string>();
 
   private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, themeXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap, originalDocumentXmlText: string | null = null) {
     this.zip = zip;
@@ -480,6 +497,8 @@ export class DocxDocument {
       clone(this.numberingXml), clone(this.footnotesXml), new Map(this.relsMap), this.originalDocumentXmlText,
     );
     fork.mutationVersion = this.mutationVersion;
+    fork.storyOriginalTexts = new Map(this.storyOriginalTexts);
+    fork.createdHeaderFooterRelationshipIds = new Set(this.createdHeaderFooterRelationshipIds);
     if (this.paragraphBookmarkReservation) {
       fork.paragraphBookmarkReservation = {
         usedNames: new Set(this.paragraphBookmarkReservation.usedNames),
@@ -553,8 +572,23 @@ export class DocxDocument {
     return getParagraphText(p);
   }
 
+  /**
+   * Header/footer parts selected by the live section references. Unlike the
+   * archive's document.xml, the live DOM reflects references attached in this
+   * session.
+   */
+  async getSelectedHeaderFooterPartPaths(): Promise<string[]> {
+    const relationshipsXml = await this.zip.readTextOrNull('word/_rels/document.xml.rels');
+    const audit = auditSectPr(serializeXml(this.documentXml), relationshipsXml);
+    const paths = new Set<string>();
+    for (const binding of audit.bindings) {
+      if (this.zip.hasFile(binding.targetPath)) paths.add(binding.targetPath);
+    }
+    return [...paths].sort();
+  }
+
   private async selectedStoryDocument(partPath: string): Promise<Document> {
-    const selected = await enumerateSelectedHeaderFooterPartPaths(this.zip);
+    const selected = await this.getSelectedHeaderFooterPartPaths();
     if (!selected.includes(partPath)) {
       throw new Error(`Header/footer story is not selected by a section relationship: ${partPath}`);
     }
@@ -604,6 +638,10 @@ export class DocxDocument {
     const reservation = this.paragraphBookmarkReservation;
     const result = insertParagraphBookmarks(story, attachmentId, reservation);
     if (result.indexedParagraphs > 0) {
+      if (!this.storyOriginalTexts.has(partPath)) {
+        const original = await this.zip.readTextOrNull(partPath);
+        if (original !== null) this.storyOriginalTexts.set(partPath, original);
+      }
       this.zip.writeText(partPath, serializeXml(story));
       this.markMutated();
     }
@@ -627,12 +665,14 @@ export class DocxDocument {
     start: number;
     end: number;
     replaceText: string | ReplacementPart[];
-  }): Promise<void> {
+  }, ctx?: RevisionContext): Promise<void> {
     const story = await this.selectedStoryDocument(params.partPath);
     const paragraph = findParagraphByBookmarkId(story, params.targetParagraphId);
     if (!paragraph) throw new Error(`Paragraph not found in ${params.partPath}: ${params.targetParagraphId}`);
     assertStoryParagraphMutationSafe(paragraph, 'replace');
-    replaceParagraphTextRange(paragraph, params.start, params.end, params.replaceText);
+    // With a revision context the range is written as w:del/w:ins in the
+    // story part (#1051); without one it is an intended-clean edit.
+    replaceParagraphTextRange(paragraph, params.start, params.end, params.replaceText, ctx);
     this.zip.writeText(params.partPath, serializeXml(story));
     this.markMutated();
   }
@@ -1547,6 +1587,41 @@ export class DocxDocument {
     return getDocumentSections(this.documentXml);
   }
 
+  /** Every section's header and footer references, with inheritance resolved (#1050). */
+  async getHeaderFooterSections(): Promise<{ sections: SectionHeaderFooters[]; evenAndOddHeaders: boolean }> {
+    const relsText = await this.zip.readTextOrNull('word/_rels/document.xml.rels');
+    return {
+      sections: resolveSectionHeaderFooters(this.documentXml, relsText ? parseXml(relsText) : null),
+      evenAndOddHeaders: readEvenAndOddHeaders(await this.zip.readTextOrNull('word/settings.xml')),
+    };
+  }
+
+  /** Paragraphs of a selected header/footer part in document order, with their `_bk_*` ids. */
+  async getStoryParagraphs(partPath: string): Promise<Array<{ id: string | null; text: string }>> {
+    const story = await this.selectedStoryDocument(partPath);
+    return Array.from(story.getElementsByTagNameNS(OOXML.W_NS, W.p)).map((p) => ({
+      id: getParagraphBookmarkId(p),
+      text: getParagraphText(p),
+    }));
+  }
+
+  /** The selected header/footer part holding paragraph `bookmarkId`, or null. */
+  async findStoryPartForParagraph(bookmarkId: string): Promise<string | null> {
+    for (const partPath of await this.getSelectedHeaderFooterPartPaths()) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (xml && xml.includes(bookmarkId) && findParagraphByBookmarkId(parseXml(xml), bookmarkId)) return partPath;
+    }
+    return null;
+  }
+
+  /** Create or reuse a header/footer part and attach it to one section (#1052, #1200). */
+  async setHeaderFooter(mutation: SetHeaderFooterMutation, ctx?: RevisionContext): Promise<SetHeaderFooterResult> {
+    const result = await setHeaderFooterImpl(this.zip, this.documentXml, mutation, ctx, this.createdHeaderFooterRelationshipIds);
+    for (const id of result.createdRelationshipIds) this.createdHeaderFooterRelationshipIds.add(id);
+    if (result.changed) this.markMutated();
+    return result;
+  }
+
   insertSectionBreak(
     mutation: InsertSectionBreakMutation,
     ctx?: RevisionContext,
@@ -1990,6 +2065,24 @@ export class DocxDocument {
    * @see https://github.com/UseJunior/safe-docx/issues/408
    * @see https://github.com/UseJunior/safe-docx/issues/1110
    */
+  /**
+   * Header/footer parts without safe-docx paragraph bookmarks: a part whose
+   * only change is the bookmarks gets its original bytes back, an edited part
+   * keeps its edits without the bookmarks (#1051).
+   */
+  private async cleanStoryBookmarkOverrides(): Promise<Record<string, string>> {
+    const overrides: Record<string, string> = {};
+    for (const [partPath, original] of this.storyOriginalTexts) {
+      const current = await this.zip.readTextOrNull(partPath);
+      if (current === null) continue;
+      const cleaned = parseXml(current);
+      cleanupInternalBookmarks(cleaned, { preserveBookmarkIds: collectNamedBookmarkIds(parseXml(original)) });
+      const cleanedXml = serializeXml(cleaned);
+      overrides[partPath] = cleanedXml === serializeXml(parseXml(original)) ? original : cleanedXml;
+    }
+    return overrides;
+  }
+
   async toBuffer(opts?: {
     cleanBookmarks?: boolean;
     minimalReserialization?: boolean;
@@ -2020,10 +2113,11 @@ export class DocxDocument {
         }
       }
       const cleanedXml = serializeXml(cloned);
+      const storyOverrides = await this.cleanStoryBookmarkOverrides();
 
       // Apply output-only XML to an isolated archive snapshot.
       maybeCaptureEmittedDocumentXml(cleanedXml);
-      const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { 'word/document.xml': cleanedXml } });
+      const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { ...storyOverrides, 'word/document.xml': cleanedXml } });
       return { buffer, bookmarksRemoved, blocksRestored };
     }
 
@@ -2055,6 +2149,7 @@ export class DocxDocument {
     const cleanBookmarks = opts?.cleanBookmarks ?? true;
     const isolated = await DocxDocument.load((await this.toBuffer({ cleanBookmarks: false })).buffer);
     isolated.originalDocumentXmlText = this.originalDocumentXmlText;
+    isolated.storyOriginalTexts = new Map(this.storyOriginalTexts);
     await isolated.acceptAIEdits(selector);
     return isolated.toBuffer({ cleanBookmarks, minimalReserialization: cleanBookmarks });
   }

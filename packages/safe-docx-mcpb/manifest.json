@@ -41,6 +41,10 @@
       "description": "Read DOCX core and extended document properties (title, author, dates, application, company)."
     },
     {
+      "name": "get_headers_footers",
+      "description": "Read DOCX headers and footers per section (default/first/even, inherited parts) with paragraph ids for editing."
+    },
+    {
       "name": "batch_edit",
       "description": "Validate, conflict-check, and apply multiple edit steps in one call."
     },
@@ -79,6 +83,10 @@
     {
       "name": "set_document_properties",
       "description": "Set or remove DOCX core and extended document properties from a closed set (untracked package mutation)."
+    },
+    {
+      "name": "set_header_footer",
+      "description": "Create or reuse a DOCX header/footer part (text, PAGE/NUMPAGES fields) and attach it to one section, keeping other sections unchanged."
     },
     {
       "name": "format_numbering",

@@ -27,6 +27,8 @@ import { formatNumbering } from './tools/format_numbering.js';
 import { formatSection } from './tools/format_section.js';
 import { getDocumentProperties } from './tools/get_document_properties.js';
 import { setDocumentProperties } from './tools/set_document_properties.js';
+import { getHeadersFooters } from './tools/get_headers_footers.js';
+import { setHeaderFooterTool } from './tools/set_header_footer.js';
 import { insertSectionBreakTool } from './tools/insert_section_break.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { acceptAiEdits } from './tools/accept_ai_edits.js';
@@ -183,6 +185,14 @@ export async function dispatchToolCall(
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'get_document_properties');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'get_document_properties');
       return await getDocumentProperties(sessions, args as Parameters<typeof getDocumentProperties>[1]);
+    case 'get_headers_footers':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'get_headers_footers');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'get_headers_footers');
+      return await getHeadersFooters(sessions, args as Parameters<typeof getHeadersFooters>[1]);
+    case 'set_header_footer':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'set_header_footer');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'set_header_footer');
+      return await setHeaderFooterTool(sessions, args as Parameters<typeof setHeaderFooterTool>[1]);
     case 'batch_edit':
       return await batchEdit(sessions, args as Parameters<typeof batchEdit>[1]);
     case 'replace_text':

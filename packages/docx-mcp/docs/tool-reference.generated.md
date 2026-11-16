@@ -51,6 +51,17 @@ Read DOCX main-document sections in document order. Returns zero-based session-r
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 
+## `get_headers_footers`
+
+Read DOCX headers and footers per section, in document order. For each section_index (as in get_sections) it returns the default, first and even header and footer: relationship_id, part_name (e.g. word/footer1.xml), inherited (true when the section has no reference of that type and takes the previous section's, ECMA-376 Part 1 § 17.10.5), source_section_index, displayed (first needs title_page on the section, even needs even_and_odd_headers in settings) and paragraphs as {id, text}. Paragraph ids are the same session-relative `_bk_*` anchors as read_file, so replace_text and insert_paragraph edit header/footer text with them. A part shared by several sections is one story. Read-only apart from assigning paragraph ids. DOCX only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX file. |
+
 ## `get_document_properties`
 
 Read DOCX document properties: core properties from the Core Properties part (docProps/core.xml: title, subject, creator, keywords, description, category, content_status, language, identifier, version, last_modified_by, revision, created, modified, last_printed) and extended properties from the Extended File Properties part (docProps/app.xml: application, app_version, company, manager, template). Each value is the element text, or null when the element or the part is absent; core_part and app_part name the parts (null when the package has none). Read-only.
@@ -110,7 +121,7 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `target_paragraph_id` | `string` | yes | Paragraph anchor. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
+| `target_paragraph_id` | `string` | yes | Paragraph anchor. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers edits that header or footer; plain text only, tracked in a tracked session), or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
 | `old_string` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
@@ -128,7 +139,7 @@ Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX respon
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `positional_anchor_node_id` | `string` | yes | Anchor paragraph. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
+| `positional_anchor_node_id` | `string` | yes | Anchor paragraph. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers inserts into that header or footer; plain text only), or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
 | `position` | `enum("BEFORE", "AFTER")` | no |  |
@@ -219,7 +230,7 @@ Change one DOCX body paragraph’s direct numbering reference. Use remove=true t
 
 ## `format_section`
 
-Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content.
+Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content; use set_header_footer for that.
 
 - readOnly: `false`
 - destructive: `true`
@@ -247,6 +258,23 @@ Insert a tracked DOCX section break after a stable direct-body paragraph. The ne
 | `break_type` | `enum("nextPage", "nextColumn", "continuous", "evenPage", "oddPage")` | yes | OOXML start behavior for the following section. |
 | `inherit_properties` | `boolean` | no | Whether the following section retains current non-relationship properties. Default: true. Header/footer references are always preserved. |
 | `new_section` | `object` | no | Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements. |
+
+## `set_header_footer`
+
+Give one DOCX section its own header or footer. With paragraphs, create a new part (word/headerN.xml or word/footerN.xml) with its document relationship and content-type override and point the section's headerReference/footerReference of the given type at it; with existing_relationship_id, point the section at a part get_headers_footers already reported; with link_to_previous=true, remove the section's own reference so it inherits from the previous section. Other sections keep the header/footer they show: when the change would alter what the next section inherits, that section gets an explicit reference to its previous part (or a new empty part when it had none), reported in pinned_sections. type="first" also sets w:titlePg on the section; type="even" is shown only when even_and_odd_headers is on (the tool reports it and warns, and does not change settings). Paragraph content is text and PAGE/NUMPAGES fields with left/center/right/both alignment, using the document's Header/Footer paragraph style when it has one. Surface: package-mutation + tracked section change — new parts, relationships and content types are untracked and listed in the save report non-revision change manifest; in a tracked session each changed sectPr records w:sectPrChange. Call get_sections first to find section_index (insert_section_break creates sections). DOCX only.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX file. |
+| `kind` | `enum("header", "footer")` | yes | Header or footer. |
+| `section_index` | `integer` | yes | Zero-based session-relative index returned by get_sections or get_headers_footers. |
+| `type` | `enum("default", "first", "even")` | no | Which header/footer of the section: default (all pages unless first/even apply), first (first page; sets w:titlePg) or even (even pages). Default: default. |
+| `paragraphs` | `array<object>` | no | Content of a new part. Exactly one of paragraphs, existing_relationship_id or link_to_previous=true. |
+| `existing_relationship_id` | `string` | no | Reuse the header/footer part of this word/document.xml relationship id. |
+| `link_to_previous` | `boolean` | no | true: remove the section's own reference of this type so it inherits from the previous section (not allowed for section 0). |
 
 ## `set_document_properties`
 

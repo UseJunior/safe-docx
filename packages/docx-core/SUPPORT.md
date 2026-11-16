@@ -31,6 +31,8 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `clear_formatting` | `packages/docx-mcp/src/tools/clear_formatting.ts` | `w:rPrChange` | Run-property clearing is a run formatting revision, not a package mutation. **Verified by [120.8] (#143) regression test.** |
 | `format_layout` | `packages/docx-mcp/src/tools/format_layout.ts` | `w:pPrChange`, `w:trPrChange`, `w:tcPrChange` | Deterministic OOXML geometry edits belong under native property-change revisions. **Verified by [120.8] (#143) regression test.** |
 | `format_numbering` | `packages/docx-mcp/src/tools/format_numbering.ts` | `w:pPrChange` | DOCX-only direct paragraph numbering changes delegate to the canonical numbering primitive and retain the previous `w:numPr` in tracked output. **Verified by the #653 canonical-emission MCP regression test.** |
+| `replace_text` / `insert_paragraph` on a header/footer paragraph | `packages/docx-mcp/src/tools/header_footer_edit.ts` | `w:ins`, `w:del` | A paragraph id from `get_headers_footers` routes the edit to the selected header/footer part; in a tracked session the change is written in that part (#1051). Plain text only. |
+| `set_header_footer` (section reference) | `packages/docx-mcp/src/tools/set_header_footer.ts` | `w:sectPrChange` | Each changed `w:sectPr` (the target section and any pinned following section) retains its prior properties in tracked output (#1052). |
 | `format_section` | `packages/docx-mcp/src/tools/format_section.ts` | `w:sectPrChange` | DOCX-only page-number, page-size/orientation, and margin updates delegate to one atomic section primitive and retain the prior `w:sectPr` in tracked output. **Verified by the #654 canonical-emission MCP regression tests.** |
 | `insert_section_break` | `packages/docx-mcp/src/tools/insert_section_break.ts` | `w:ins` paragraph mark, optional `w:sectPrChange` | DOCX-only anchored section splitting preserves page setup and relationship references, projects shifted section indexes, and restores original topology on reject. **Verified by the #654 MCP and core accept/reject tests.** |
 | `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | `w:ins` (root-comment mode only) | Root-comment mode wraps only the body-story `w:commentReference` run in `w:ins`; range markers and root-comment text in `comments.xml` are not revision-wrapped. **Reply-mode** dispatches through `comments.ts` `addCommentReply` which is Table B (side-part metadata only; no body revision marker). Missing comment infrastructure is also a Table B companion. **Verified by [120.8] (#143) regression test.** |
@@ -57,7 +59,9 @@ Use the alternate contract below whenever a primitive/tool mutates relationships
 | `document_properties.ts` — `setDocumentProperties` | `packages/docx-core/src/primitives/document_properties.ts` | Sets or removes named elements of the Core Properties part (`docProps/core.xml`) and the Extended File Properties part (`docProps/app.xml`), keeping every other element; when a part is missing and a value is set in it, creates the part, adds its package relationship to `_rels/.rels`, and adds its `[Content_Types].xml` override. OOXML has no tracked-change form for document properties. | The primitive itself records nothing; `set_document_properties` records each effective write in the session's non-revision change manifest. |
 | `set_document_properties` | `packages/docx-mcp/src/tools/set_document_properties.ts` | Core and extended document properties from a closed set, through `setDocumentProperties` (see the row above). A write whose values already hold changes nothing and records nothing. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 
-No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement, header/footer part creation, or image-part insertion. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation. `core.xml` / `app.xml` metadata editing is the `set_document_properties` row above.
+| `header_footer.ts` — `setHeaderFooter` / `set_header_footer` | `packages/docx-core/src/primitives/header_footer.ts`, `packages/docx-mcp/src/tools/set_header_footer.ts` | Creates `word/headerN.xml` / `word/footerN.xml`, adds its `word/_rels/document.xml.rels` relationship and its `[Content_Types].xml` override. The section reference change is the Table A `w:sectPrChange` row. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+
+No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement or image-part insertion. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation. `core.xml` / `app.xml` metadata editing is the `set_document_properties` row above.
 
 ### Non-revision change manifest (implemented in [#122](https://github.com/UseJunior/safe-docx/issues/122))
 
@@ -69,7 +73,7 @@ the manifest as `non_revision_changes` (omitted when empty), so package-level
 mutations are accounted for alongside the tracked revisions list rather than
 landing silently. The dual-surface tools that record entries are `add_comment`,
 `delete_comment`, and `add_footnote`; the pure package-mutation tool
-`set_document_properties` records one entry per effective write. The write surface of every tool is
+`set_document_properties` records one entry per effective write, and `set_header_footer` one entry per call that creates a part. The write surface of every tool is
 classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
 (`surface`: `revisionable` | `package-mutation` | `internal`, plus
 `emitsNonRevisionChanges`).
@@ -258,7 +262,9 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `format_numbering.ts` — Table A
 - `format_section.ts` — Table A
 - `insert_section_break.ts` — Table A
+- `get_headers_footers.ts` — Internal / non-contract utilities
 - `get_sections.ts` — Internal / non-contract utilities
+- `header_footer_edit.ts` — Table A
 - `get_document_properties.ts` — Internal / non-contract utilities
 - `get_comments.ts` — Internal / non-contract utilities
 - `get_file_status.ts` — Internal / non-contract utilities
@@ -278,6 +284,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `save.ts` — Table A
 - `session_resolution.ts` — Internal / non-contract utilities
 - `set_document_properties.ts` — Table B
+- `set_header_footer.ts` — Table A + Table B
 - `tag_parser.ts` — Internal / non-contract utilities
 - `types.ts` — Internal / non-contract utilities
 - `update_footnote.ts` — Table A

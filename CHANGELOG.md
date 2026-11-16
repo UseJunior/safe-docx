@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The MCP server reads, edits and attaches headers and footers.
+  `get_headers_footers` returns each section's default, first and even
+  header and footer, including inherited ones, with paragraph ids that
+  `replace_text` and `insert_paragraph` accept, tracked in the header or
+  footer part in a tracked session. `set_header_footer` gives one section its
+  own header or footer from text and PAGE/NUMPAGES fields (or an existing
+  part, or links it to the previous section), writes the part, relationship
+  and content-type override, keeps the following sections' headers and
+  footers, and records `w:sectPrChange` when tracking. (#1050, #1051, #1052,
+  #1200)
+
 - `docx-markdoc create` writes agreements in the run-in house style
   ("2.01 Engagement. Text …"): `{% run-in-paragraph level="article|section|clause|subclause" heading="…" %}`
   gives a paragraph a live legal number carried by a Word multilevel list, and
