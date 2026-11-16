@@ -285,6 +285,32 @@ describe('Header and footer tools', () => {
     },
   );
 
+  test('new content for a session-created part another section inherits gets its own part', async () => {
+    const body = para('A.', '<w:sectPr/>') + para('B.') + '<w:sectPr/>';
+    const opened = await open(body, []);
+    const first = await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 0, paragraphs: [{ text: 'Original' }] });
+    await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 1, link_to_previous: true });
+    const again = await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 0, paragraphs: [{ text: 'Replacement' }] });
+    expect(again.part_name).not.toBe(first.part_name);
+    expect(again.pinned_sections).toEqual([expect.objectContaining({ section_index: 1, part_name: first.part_name })]);
+    const read = await call(opened.mgr, 'get_headers_footers', { file_path: opened.inputPath });
+    const def = (i: number) => read.sections[i].footers.find((f: Json) => f.type === 'default');
+    expect(def(0).paragraphs[0].text).toBe('Replacement');
+    expect(def(1).paragraphs[0].text).toBe('Original');
+  });
+
+  test('reject_ai_edits reaches a tracked edit in a footer attached this session', async () => {
+    const opened = await open(para('Body.') + '<w:sectPr/>', [], true);
+    await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 0, paragraphs: [{ text: 'Old' }] });
+    const read = await call(opened.mgr, 'get_headers_footers', { file_path: opened.inputPath });
+    const id = read.sections[0].footers[0].paragraphs[0].id;
+    await call(opened.mgr, 'replace_text', { file_path: opened.inputPath, target_paragraph_id: id, old_string: 'Old', new_string: 'New', instruction: 'x' });
+    const rejected = await call(opened.mgr, 'reject_ai_edits', { file_path: opened.inputPath, author: 'SafeDocX AI' });
+    expect(rejected.insertionsRemoved).toBeGreaterThan(0);
+    const after = await call(opened.mgr, 'get_headers_footers', { file_path: opened.inputPath });
+    expect(after.sections[0].footers[0].paragraphs[0].text).toBe('Old');
+  });
+
   test('refuses invalid requests before touching the session', async () => {
     const opened = await open(para('Body.') + '<w:sectPr/>', []);
     assertFailure(await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 0 }) as any, 'VALIDATION_ERROR');

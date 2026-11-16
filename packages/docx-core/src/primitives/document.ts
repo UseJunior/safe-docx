@@ -97,7 +97,7 @@ import {
 } from './validate_ai_revisions.js';
 import {
   enumerateSelectedHeaderFooterPartPaths,
-  enumerateSelectedRevisionStoryPartPaths,
+  REVISION_STORY_PART_PATHS,
   getSidePartRevisionSeedDocs,
 } from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
@@ -587,6 +587,16 @@ export class DocxDocument {
     return [...paths].sort();
   }
 
+  /**
+   * Revision-bearing side stories selected by the live DOM, so accept/reject
+   * reach header/footer parts attached in this session (#1052).
+   */
+  private async getSelectedRevisionStoryPartPaths(): Promise<string[]> {
+    const paths = new Set<string>(REVISION_STORY_PART_PATHS);
+    for (const partPath of await this.getSelectedHeaderFooterPartPaths()) paths.add(partPath);
+    return [...paths].sort();
+  }
+
   private async selectedStoryDocument(partPath: string): Promise<Document> {
     const selected = await this.getSelectedHeaderFooterPartPaths();
     if (!selected.includes(partPath)) {
@@ -876,7 +886,7 @@ export class DocxDocument {
     touched?: AiRevisionValidationTouchedContext,
   ): Promise<ValidateAiRevisionsResult> {
     const stories = [{ part: 'word/document.xml', doc: this.documentXml }];
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
       stories.push({ part: partPath, doc: parseXml(xml) });
@@ -908,7 +918,7 @@ export class DocxDocument {
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
 
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
 
@@ -950,7 +960,7 @@ export class DocxDocument {
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
 
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
 
@@ -991,7 +1001,7 @@ export class DocxDocument {
     const stories: Array<{ path: string | null; doc: Document }> = [
       { path: null, doc: this.documentXml },
     ];
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (xml) stories.push({ path: partPath, doc: parseXml(xml) });
     }

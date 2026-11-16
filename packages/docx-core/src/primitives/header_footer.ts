@@ -484,8 +484,26 @@ export async function setHeaderFooter(
   } else {
     const currentOwn = ownReferences(target, kind, type);
     const currentId = currentOwn.length === 1 ? rId(currentOwn[0]!) : null;
-    const reusablePath = source.kind === 'content' && currentId && reusableRelationshipIds.has(currentId)
-      && !sectPrs.some((other) => other !== target && getDirectChildrenByName(other, REFERENCE_NAME[kind]).some((ref) => rId(ref) === currentId))
+    // Rewrite a session-created part only when this section and type is its
+    // sole consumer: no other reference of either kind, and no section showing
+    // it by inheritance under any type.
+    const soleConsumer = (id: string): boolean => {
+      const explicit = sectPrs.flatMap((sectPr) => [
+        ...getDirectChildrenByName(sectPr, W.headerReference),
+        ...getDirectChildrenByName(sectPr, W.footerReference),
+      ]).filter((ref) => rId(ref) === id);
+      if (explicit.length !== 1) return false;
+      for (const k of ['header', 'footer'] as const) {
+        for (const t of HEADER_FOOTER_TYPES) {
+          const effective = effectiveReferences(sectPrs, k, t);
+          for (let i = 0; i < effective.length; i++) {
+            if (effective[i]!.id === id && !(i === sectionIndex && k === kind && t === type)) return false;
+          }
+        }
+      }
+      return true;
+    };
+    const reusablePath = source.kind === 'content' && currentId && reusableRelationshipIds.has(currentId) && soleConsumer(currentId)
       ? targets.get(currentId)?.partName ?? null
       : null;
     let id: string;
