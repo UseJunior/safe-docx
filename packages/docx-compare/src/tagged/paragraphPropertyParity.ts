@@ -121,7 +121,7 @@ function directChild(element: Element, localName: string): Element | undefined {
  * drives the merge stays in place.
  *
  * The tagged acceptor keeps the first paragraph's properties when it merges,
- * as LibreOffice does; ECMA-376 § 17.13.5.15 and Aspose.Words keep the
+ * as LibreOffice does; the spec text and Aspose.Words keep the
  * surviving mark's. Measuring on a stamped copy makes the parity check hold
  * only when both readings agree, which is the only redline that is safe to
  * publish (#1493).
