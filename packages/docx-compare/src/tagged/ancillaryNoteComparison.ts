@@ -7,6 +7,7 @@ import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { refuseUnreportedBlockContainer } from './unrepresentedChanges.js';
+import type { UnrepresentedChange } from '../compare-types.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
 import {
@@ -22,6 +23,12 @@ export interface NoteDefinitionComparisonOptions {
   author: string;
   date: Date;
   formatDetection?: FormatDetectionSettings;
+  /**
+   * Receives the definition's content-control property changes (a changed
+   * `w:sdtPr`, `w:sdtEndPr` or `w:customXmlPr`), which no revision markup can
+   * carry, so the caller can list them instead of dropping them.
+   */
+  unrepresentedChanges?: UnrepresentedChange[];
 }
 
 function namespaceAttributes(entry: Element): string {
@@ -120,6 +127,49 @@ function inlineReferenceSignature(xml: string): string {
   return JSON.stringify(tokens);
 }
 
+const BLOCK_PROPERTY_ELEMENTS = new Set(['sdtPr', 'sdtEndPr', 'customXmlPr']);
+
+/**
+ * The content-control and custom XML properties of a definition, in document
+ * order: each `w:sdtPr`, `w:sdtEndPr` and `w:customXmlPr` (data bindings,
+ * aliases, tags and placeholders included) and each `w:customXml`'s own
+ * attributes. The round-trip text, inline-reference signature and formatting
+ * fidelity all ignore these, so an unchanged-looking definition is passed
+ * through only when they agree as well.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @see https://github.com/UseJunior/safe-docx/issues/1507
+ */
+function blockPropertySignature(xml: string): string {
+  const tokens: string[] = [];
+  const visit = (element: Element): void => {
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue;
+      const node = child as Element;
+      const name = node.namespaceURI === W_NS ? node.localName : '';
+      if (BLOCK_PROPERTY_ELEMENTS.has(name)) {
+        tokens.push(serializer.serializeToString(node));
+        continue;
+      }
+      if (name === 'sdt' || name === 'customXml') {
+        const attributes = Array.from(node.attributes)
+          .filter((attribute) => !attribute.name.startsWith('xmlns'))
+          .map((attribute) => `${attribute.namespaceURI ?? ''}:${attribute.localName}=${attribute.value}`)
+          .sort();
+        tokens.push(JSON.stringify(['open', name, attributes]));
+        visit(node);
+        tokens.push(JSON.stringify(['close', name]));
+        continue;
+      }
+      visit(node);
+    }
+  };
+  const root = parseXml(xml).documentElement;
+  if (root) visit(root);
+  return JSON.stringify(tokens);
+}
+
 /**
  * Compare one corresponding footnote or endnote definition as an independent
  * Word story.
@@ -142,6 +192,7 @@ export function compareNoteDefinitions(
   if (
     extractRoundTripComparisonText(originalXml) === extractRoundTripComparisonText(revisedXml) &&
     inlineReferenceSignature(originalXml) === inlineReferenceSignature(revisedXml) &&
+    blockPropertySignature(originalXml) === blockPropertySignature(revisedXml) &&
     compareSourceProjectedFormattingFidelity(originalXml, revisedXml, revisedXml).reject.score === 1
   ) {
     const unchangedBody = parseXml(revisedXml).getElementsByTagName('w:body').item(0);
@@ -173,6 +224,12 @@ export function compareNoteDefinitions(
   if (actualAccepted !== expectedAccepted || actualRejected !== expectedRejected) {
     throw new Error('Note definition comparison failed accept/reject projection safety');
   }
+  // A content-control property change has no revision markup (CT_SdtPr
+  // admits none), so the redline carries the revised properties and the
+  // change is listed, as in the main story.
+  options.unrepresentedChanges?.push(
+    ...publication.unrepresentedChanges.filter((change) => change.scope === 'contentControl'),
+  );
   const comparedBody = parseXml(comparedXml).getElementsByTagName('w:body').item(0);
   if (!comparedBody) throw new Error('Note definition comparison emitted no story body');
   return Array.from(comparedBody.childNodes)
