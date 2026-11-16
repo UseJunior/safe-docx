@@ -3,9 +3,11 @@ export interface CompareOptions {
   author?: string;
   /**
    * Revision timestamp used for generated track changes (`w:date`).
-   * Default: current time.
+   * Default (`undefined`): current time. `null` omits `w:date` from every
+   * revision this comparison creates (the attribute is optional in
+   * ECMA-376); revisions already present in an input keep their own dates.
    */
-  date?: Date;
+  date?: Date | null;
   /** Ignore formatting differences. Default: false */
   ignoreFormatting?: boolean;
   /** Detect content moved within the document. Default: true */

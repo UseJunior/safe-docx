@@ -74,6 +74,9 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
       case '--no-moves':
         options.detectMoves = false;
         break;
+      case '--no-date':
+        options.omitDate = true;
+        break;
       default:
         throw new Error(`Unknown option for compare command: ${token}`);
     }

@@ -71,6 +71,7 @@ describe('docx-comparison CLI argument parsing', () => {
           author: 'Comparison',
           revisionGrouping: 'readable-semantic',
           detectMoves: true,
+          omitDate: false,
         },
       });
     });
@@ -89,6 +90,7 @@ describe('docx-comparison CLI argument parsing', () => {
         '--grouping',
         'token-minimal',
         '--no-moves',
+        '--no-date',
       ]);
     });
 
@@ -101,6 +103,7 @@ describe('docx-comparison CLI argument parsing', () => {
           author: 'Junior',
           revisionGrouping: 'token-minimal',
           detectMoves: false,
+          omitDate: true,
         },
       });
     });
