@@ -69,8 +69,8 @@ async function twinSessions(body: string) {
   return { standalone, batch };
 }
 
-function conventionWarnings(result: { warnings?: unknown }): string[] {
-  const raw = (result.warnings ?? []) as Array<string | { warning: string }>;
+function conventionWarnings(result: object): string[] {
+  const raw = ((result as { warnings?: unknown }).warnings ?? []) as Array<string | { warning: string }>;
   return raw
     .map((w) => (typeof w === 'string' ? w : w.warning))
     .filter((w) => w.startsWith(FORMATTING_CONVENTION_WARNING_CODE));
