@@ -336,6 +336,51 @@ describe('Header and footer tools', () => {
     expect(JSON.stringify(compared.stats ?? compared)).toMatch(/"insertions":0/);
   });
 
+  test('validates set_header_footer parameters', async () => {
+    const opened = await open(para('Body.') + '<w:sectPr/>', []);
+    const f = opened.inputPath;
+    const bad: Json[] = [
+      { kind: 'side', section_index: 0, paragraphs: [{ text: 'x' }] },
+      { kind: 'footer', section_index: -1, paragraphs: [{ text: 'x' }] },
+      { kind: 'footer', section_index: 0, type: 'odd', paragraphs: [{ text: 'x' }] },
+      { kind: 'footer', section_index: 0, link_to_previous: 'yes' },
+      { kind: 'footer', section_index: 0, paragraphs: [{ text: 'x' }], existing_relationship_id: 'r' },
+      { kind: 'footer', section_index: 0, existing_relationship_id: '' },
+      { kind: 'footer', section_index: 0, paragraphs: [] },
+      { kind: 'footer', section_index: 0, paragraphs: ['x'] },
+      { kind: 'footer', section_index: 0, paragraphs: [{ text: 'x', runs: [] }] },
+      { kind: 'footer', section_index: 0, paragraphs: [{ runs: 'x' }] },
+      { kind: 'footer', section_index: 0, paragraphs: [{ runs: [{ field: 'DATE' }] }] },
+      { kind: 'footer', section_index: 0, paragraphs: [{ text: 3 }] },
+      { kind: 'footer', section_index: 0, paragraphs: [{ text: 'x', alignment: 'middle' }] },
+    ];
+    for (const args of bad) {
+      assertFailure(await call(opened.mgr, 'set_header_footer', { file_path: f, ...args }) as any, 'VALIDATION_ERROR');
+    }
+    const ok = await call(opened.mgr, 'set_header_footer', { file_path: f, kind: 'header', section_index: 0, type: 'even', paragraphs: [{}, { runs: [{ text: 'Page ' }, { field: 'PAGE' }] }] });
+    expect(ok.warnings?.[0]).toContain('evenAndOddHeaders');
+    const same = await call(opened.mgr, 'set_header_footer', { file_path: f, kind: 'header', section_index: 0, type: 'even', existing_relationship_id: ok.relationship_id });
+    expect(same.changed).toBe(false);
+  });
+
+  test('header/footer edits refuse formatting and report match errors', async () => {
+    const opened = await open(para('Body.') + '<w:sectPr><w:footerReference w:type="default" r:id="rIdF1"/></w:sectPr>', ['Page Page footer']);
+    const read = await call(opened.mgr, 'get_headers_footers', { file_path: opened.inputPath });
+    const id = read.sections[0].footers[0].paragraphs[0].id;
+    const base = { file_path: opened.inputPath, target_paragraph_id: id, instruction: 'x' };
+    assertFailure(await call(opened.mgr, 'replace_text', { ...base, old_string: 'footer', new_string: 'x', bold: true }) as any, 'UNSUPPORTED_FOR_HEADER_FOOTER');
+    assertFailure(await call(opened.mgr, 'replace_text', { ...base, old_string: 'footer', new_string: '<b>x</b>' }) as any, 'UNSUPPORTED_FOR_HEADER_FOOTER');
+    assertFailure(await call(opened.mgr, 'replace_text', { ...base, old_string: 'absent', new_string: 'x' }) as any, 'TEXT_NOT_FOUND');
+    assertFailure(await call(opened.mgr, 'replace_text', { ...base, old_string: 'Page', new_string: 'x' }) as any, 'MULTIPLE_MATCHES');
+    const same = await call(opened.mgr, 'replace_text', { ...base, old_string: 'footer', new_string: 'footer' });
+    assertSuccess(same as { success: boolean }, 'replace_text');
+    const ins = { file_path: opened.inputPath, positional_anchor_node_id: id, instruction: 'x' };
+    assertFailure(await call(opened.mgr, 'insert_paragraph', { ...ins, new_string: 'x', target_style: 'Footer' }) as any, 'UNSUPPORTED_FOR_HEADER_FOOTER');
+    assertFailure(await call(opened.mgr, 'insert_paragraph', { ...ins, new_string: '<i>x</i>' }) as any, 'UNSUPPORTED_FOR_HEADER_FOOTER');
+    const before = await call(opened.mgr, 'insert_paragraph', { ...ins, new_string: 'Above', position: 'BEFORE' });
+    expect(before.part_name).toBe('word/footer1.xml');
+  });
+
   test('refuses invalid requests before touching the session', async () => {
     const opened = await open(para('Body.') + '<w:sectPr/>', []);
     assertFailure(await call(opened.mgr, 'set_header_footer', { file_path: opened.inputPath, kind: 'footer', section_index: 0 }) as any, 'VALIDATION_ERROR');
