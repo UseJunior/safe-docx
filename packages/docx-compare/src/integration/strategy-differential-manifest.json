@@ -416,14 +416,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "cfc786540b22da2fb669ed64a7be1f334c5a3c1d74dbc1bc66298b29aef9418d",
+            "xmlSha256": "30c15c0c78523152071149cca650240dda28adde32402ab845d589f27842608f",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "4aad00f4192f7cc5e4bcf99989662efd267856a6b59152e81ba7621ea8e402aa",
+            "xmlSha256": "655ea477111817908262ea93e96c56ebfe4b48bf87593d2291f2348118966d9c",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -493,8 +493,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 928890,
-            "sha256": "d42842a37468b39121b75af03eadcd2e11b2f9bd314f400cd5b897d5ffc39c97",
+            "bytes": 924894,
+            "sha256": "4c6cab11bfe1e3eff9494b9172fb69aac703ad5a0161ff7a41aa51dc49c87871",
             "kind": "xml"
           },
           {
@@ -722,22 +722,22 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 464,
-          "deletions": 409,
+          "insertions": 477,
+          "deletions": 412,
           "modifications": 528,
-          "insertedRanges": 464,
-          "deletedRanges": 409,
-          "insertedAtoms": 3156,
-          "deletedAtoms": 1377,
+          "insertedRanges": 477,
+          "deletedRanges": 412,
+          "insertedAtoms": 3263,
+          "deletedAtoms": 1440,
           "modifiedParagraphs": 528,
           "formatChanges": 16,
           "formatChangeAtoms": 16,
           "insertedTableRows": 0,
           "deletedTableRows": 0,
-          "moves": 21,
+          "moves": 2,
           "movedParagraphs": 0,
-          "moveFromRanges": 21,
-          "moveToRanges": 21
+          "moveFromRanges": 2,
+          "moveToRanges": 2
         },
         "authority": {
           "comparisonStrategyUsed": "tagged-tree"

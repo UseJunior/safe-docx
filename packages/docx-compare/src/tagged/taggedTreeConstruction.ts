@@ -11,9 +11,8 @@ import { getChangedPropertyNames } from '../propertyNaming.js';
 import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignment.js';
 import {
   countWords,
-  jaccardWordSetSimilarity,
-  normalizedWordSet,
-  wordSetContainmentSimilarity,
+  normalizedWordSequence,
+  wordSequenceSimilarity,
 } from '../textSimilarity.js';
 import { computeNumberingIdentities, numberingListMembership } from './numberingIntegration.js';
 import { detectParagraphJoins } from './paragraphJoinDetection.js';
@@ -1604,19 +1603,31 @@ function classifyMoves(
     bound.add(source.node);
     bound.add(destination.node);
   }
+  // Only content the in-order alignment leaves unpaired can move by
+  // similarity (#1498). Side-only content inside a paragraph that pairs in
+  // sequence is an in-place edit of that paragraph: fuzzily pairing it with
+  // another paragraph's edit turns two word-level edits into whole-run
+  // moveFrom/moveTo pairs even when nothing was reordered. Identical content
+  // relocated between paired paragraphs still moves through the exact pass.
   const residualOriginals = originalCandidates.filter((candidate) =>
+    !candidate.paragraphOwner &&
     !bound.has(candidate.node) && countWords(candidate.text) >= settings.moveMinimumWordCount);
   const residualRevised = revisedCandidates.filter((candidate) =>
+    !candidate.paragraphOwner &&
     !bound.has(candidate.node) && countWords(candidate.text) >= settings.moveMinimumWordCount);
-  const originalWords = residualOriginals.map((candidate) =>
-    normalizedWordSet(candidate.text, settings.caseInsensitiveMove));
-  const revisedWords = residualRevised.map((candidate) =>
-    normalizedWordSet(candidate.text, settings.caseInsensitiveMove));
-  const scores = residualOriginals.map((source, sourceIndex) => residualRevised.map((destination, destinationIndex) => {
-    if (source.paragraphOwner && source.paragraphOwner === destination.paragraphOwner) return undefined;
-    const score = Math.max(
-      jaccardWordSetSimilarity(originalWords[sourceIndex]!, revisedWords[destinationIndex]!),
-      wordSetContainmentSimilarity(originalWords[sourceIndex]!, revisedWords[destinationIndex]!),
+  const originalSequences = residualOriginals.map((candidate) =>
+    normalizedWordSequence(candidate.text, settings.caseInsensitiveMove));
+  const revisedSequences = residualRevised.map((candidate) =>
+    normalizedWordSequence(candidate.text, settings.caseInsensitiveMove));
+  // The two sides of a move must resemble each other as spans (#1498): word
+  // sets alone let a short phrase pair with any long paragraph that shares
+  // its vocabulary, or two clauses built from the same words in another
+  // order.
+  const scores = residualOriginals.map((_source, sourceIndex) => residualRevised.map((_destination, destinationIndex) => {
+    const score = wordSequenceSimilarity(
+      originalSequences[sourceIndex]!,
+      revisedSequences[destinationIndex]!,
+      settings.moveSimilarityThreshold,
     );
     return score >= settings.moveSimilarityThreshold ? score : undefined;
   }));
