@@ -15,9 +15,11 @@ The read-back SHALL compare each body paragraph's direct `w:keepNext` and
 `w:keepLines`, with its `w:jc` and `w:ind`, against the lowering's
 projection. The round trip SHALL compare them against the flags the source
 writes: a `w:keepLines`, or a `w:keepNext` on a paragraph whose tag asks for
-it, SHALL be part of the layout compared; a `w:keepNext` that `create` sets
-by its own rules on a paragraph whose source does not ask for one SHALL not
-count as a layout. `pull` SHALL write a body paragraph's direct `w:keepNext`
+it, SHALL be part of the layout compared; a `w:keepNext` on a paragraph whose source
+does not ask for one SHALL be set aside only where the source shows that
+`create` sets it by its own rule (the last paragraph before a legend or a
+first signer, or a run-in article), and SHALL fail the round trip anywhere
+else. `pull` SHALL write a body paragraph's direct `w:keepNext`
 and `w:keepLines` as the flags when it writes the paragraph in a
 `{% paragraph-layout %}` tag, except a `w:keepNext` on a paragraph just before a legend or a signature block, which `create` sets again by its own rule.
 
@@ -31,6 +33,7 @@ and `w:keepLines` as the flags when it writes the paragraph in a
 - **GIVEN** a lowering whose spec drops the caption's `keepNext`
 - **WHEN** it is created
 - **THEN** the build SHALL fail with `CREATION_VERIFICATION_FAILED`, the read-back and the round trip naming the caption
+- **AND** a lowering that adds `keepNext` to an unrelated paragraph in both its spec and its projection SHALL pass the read-back and fail the round trip at that paragraph
 
 #### Scenario: [SDX-MDOC-PARAKEEP-03] a keep flag with any value but true fails closed
 - **GIVEN** sources with `keep-with-next="true"`, `keep-with-next=false` and `keep-lines="yes"`
@@ -41,4 +44,4 @@ and `w:keepLines` as the flags when it writes the paragraph in a
 - **GIVEN** created documents whose `{% paragraph-layout %}` paragraphs carry keep flags, edited in Word to retype all of one paragraph's words, and to change a word of another
 - **WHEN** each edit is pulled and the pulled source is created again
 - **THEN** the retyped paragraph SHALL be written in a tag with the same flags, the edited one SHALL keep its tag, each pull SHALL be complete, and the rebuilt document SHALL carry the same `w:keepNext` and `w:keepLines`
-- **AND** a retyped plain paragraph just before a signer SHALL be written without a flag
+- **AND** a retyped plain paragraph just before a signer or a legend SHALL be written without a flag

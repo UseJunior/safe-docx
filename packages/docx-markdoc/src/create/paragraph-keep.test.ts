@@ -126,6 +126,34 @@ describe('Traceability: keep-with-next and keep-lines on created paragraph layou
       expect(certificate.checks.readback.detail).toContain('keepNext');
       expect(certificate.checks.roundTrip.paragraphLayout?.passed).toBe(false);
       expect(JSON.stringify(certificate.checks.roundTrip.paragraphLayout?.mismatches)).toContain('If to the Buyer:');
+
+      // A keepNext added where neither the source nor create's own rules call for one fails the round trip,
+      // even when the lowering's projection agrees with it.
+      const addKeep = (lowering: CreationLowering): CreationLowering => {
+        const spec = JSON.parse(JSON.stringify(lowering.spec));
+        let done = false;
+        const visit = (value: unknown): void => {
+          if (done || !value || typeof value !== 'object') return;
+          const record = value as Record<string, unknown>;
+          const runs = record.runs as Array<{ text?: string }> | undefined;
+          if (runs?.some((run) => run.text?.startsWith('All notices'))) {
+            record.keepNext = true;
+            done = true;
+            return;
+          }
+          for (const child of Object.values(record)) visit(child);
+        };
+        visit(spec);
+        expect(done).toBe(true);
+        const layouts = lowering.projection.layouts.map((layout, index) => (lowering.projection.paragraphs[index]!.startsWith('All notices') ? 'keepNext' : layout));
+        return { ...lowering, spec, projection: { ...lowering.projection, layouts } };
+      };
+      const extra = await createDocumentFromMarkdoc(NOTICES, { transformLowering: addKeep }).then(() => undefined, (caught: { code?: string; details?: unknown }) => caught);
+      expect(extra?.code).toBe('CREATION_VERIFICATION_FAILED');
+      const extraCertificate = extra!.details as CreationCertificate;
+      expect(extraCertificate.checks.readback.passed).toBe(true);
+      expect(extraCertificate.checks.roundTrip.paragraphLayout?.passed).toBe(false);
+      expect(JSON.stringify(extraCertificate.checks.roundTrip.paragraphLayout?.mismatches)).toContain('All notices');
     },
   );
 
@@ -158,10 +186,11 @@ describe('Traceability: keep-with-next and keep-lines on created paragraph layou
       }
 
       // A retyped paragraph before a signer keeps the keep-with-next create gives it, without gaining a flag.
-      const closing = 'Intro.\n\nAlpha closing.\n\n{% signer name="Example Corp" /%}\n';
+      for (const closing of ['Intro.\n\nAlpha closing.\n\n{% signer name="Example Corp" /%}\n', 'Intro.\n\nAlpha closing.\n\n{% legend %}Signature page follows.{% /legend %}\n']) {
       const closed = await createDocumentFromMarkdoc(closing);
       const reclosed = await pullCreationEdits({ source: closing, base: closed, edited: await editDocument(closed.docx, (xml) => xml.replace('Alpha closing.', 'Gamma ending.')) });
       expect(reclosed).toMatchObject({ complete: true, diagnostics: [], pulledSource: closing.replace('Alpha closing.', 'Gamma ending.') });
+      }
 
       const base = await createDocumentFromMarkdoc(NOTICES);
       const edited = await editDocument(base.docx, (xml) => xml.replace('If to the Buyer:', 'If to the Purchaser:'));

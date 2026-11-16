@@ -592,7 +592,7 @@ function footnoteRoundTrip(expected: SourceProjection, ir: ReturnType<typeof req
 }
 
 /** A body paragraph as compared: its layout token (null for none), then its normalized text. */
-type BodyLayout = { layout: string | null; text: string };
+type BodyLayout = { layout: string | null; text: string; generatedKeepNext?: true };
 
 /**
  * Position by position over the non-empty body paragraphs: a layout must sit on the same paragraph on both sides,
@@ -620,13 +620,13 @@ function bodyLayoutMismatches(expected: readonly BodyLayout[], actual: readonly 
  */
 function paragraphLayoutRoundTrip(expected: SourceProjection, readback: CreationReadback): ParagraphLayoutComparison | undefined {
   const kept = (entry: BodyLayout) => entry.text !== '' || entry.layout !== null;
-  const wanted: BodyLayout[] = expected.body.map((entry) => ({ layout: entry.layout ?? null, text: normalizeOracleText(entry.text) })).filter(kept);
+  const wanted: BodyLayout[] = expected.body.map((entry) => ({ layout: entry.layout ?? null, text: normalizeOracleText(entry.text), ...(entry.generatedKeepNext ? { generatedKeepNext: true as const } : {}) })).filter(kept);
   const raw: BodyLayout[] = readback.paragraphs.map((text, index) => ({ layout: readback.layouts[index] ?? null, text: normalizeOracleText(text) })).filter(kept);
   // Create sets keep-with-next by its own rules (before a legend or a first signer, on a run-in article), which the
-  // source does not spell out: a read-back keepNext is held to the source only where the source asks for one, so an
-  // authored keep that is missing is a mismatch, and a generated one elsewhere is not.
+  // source does not spell out but the source oracle marks: a read-back keepNext the source does not ask for is set
+  // aside only on a paragraph the oracle marks, so an authored keep that is missing and a keep anywhere else both fail.
   const found: BodyLayout[] = raw.map((entry, index) => {
-    if (entry.layout === null || wanted[index]?.layout?.split(' ').includes('keepNext')) return entry;
+    if (entry.layout === null || !wanted[index]?.generatedKeepNext || wanted[index]?.layout?.split(' ').includes('keepNext')) return entry;
     const rest = entry.layout.split(' ').filter((part) => part !== 'keepNext').join(' ');
     return { ...entry, layout: rest === '' ? null : rest };
   });

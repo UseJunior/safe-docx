@@ -133,6 +133,14 @@ export type SourceBodyEntry = {
    * writes. Absent on every other paragraph.
    */
   layout?: string;
+  /**
+   * Create sets `w:keepNext` on this paragraph by its own rule, not the source's flags: it is the last
+   * paragraph before a legend or a first signer, or a run-in article. The round trip admits a
+   * read-back `keepNext` the source does not write only here.
+   */
+  generatedKeepNext?: true;
+  /** A signature block's paragraph (a following signer is not a first signer). */
+  signer?: true;
 };
 
 /** `w:jc` values of the `{% paragraph-layout align %}` words, duplicated on purpose from the lowering. */
@@ -678,6 +686,11 @@ export function projectSourceText(source: string, options: { reader?: Projection
     bodyXrefs.push(...xrefs.map((xref) => ({ ...xref, story: 'body' as const, entry: body.length })));
     body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks.map((mark) => mark.offset) } : {}) });
   };
+  // The paragraph before a legend or a first signer, when it is not a table cell, is kept with it by create.
+  const keepPrevious = () => {
+    const previous = body.at(-1);
+    if (previous && !previous.cell) previous.generatedKeepNext = true;
+  };
   const targets: Record<string, string> = {};
   const { headings, clauseContext } = headingLabels(ast);
   const runIn = runInPlaces(ast);
@@ -704,6 +717,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
     switch (node.tag) {
       case 'center':
       case 'legend':
+        if (node.tag === 'legend') keepPrevious();
         for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph);
         return;
       case 'paragraph-layout': {
@@ -714,7 +728,9 @@ export function projectSourceText(source: string, options: { reader?: Projection
       case 'signer': {
         const name = node.attributes.name !== undefined ? String(node.attributes.name) : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
         const date = node.attributes.date === undefined ? '' : `\t${String(node.attributes.date)}`;
+        if (!body.at(-1)?.signer) keepPrevious();
         push(`${SIGNATURE_LINE}\n${name}${date}`, node);
+        body.at(-1)!.signer = true;
         return;
       }
       case 'table': {
@@ -740,7 +756,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
         const heading = runInHeading(node);
         const text = heading && body ? `${heading} ${body}` : heading || body;
         if (node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
-        push(text, node, { marker: runIn.get(node)!.label });
+        push(text, node, { marker: runIn.get(node)!.label, ...(runIn.get(node)!.level === 0 ? { generatedKeepNext: true as const } : {}) });
         return;
       }
       case 'toc':
