@@ -15,6 +15,7 @@ import { err, ok, type ToolResponse } from './types.js';
 import { RESULT_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { preflightAiRevisionMutation } from './ai_revision_guard.js';
+import { findHeaderFooterPartForParagraph, insertHeaderFooterParagraph } from './header_footer_edit.js';
 import {
   splitTaggedText,
   segmentAddRunProps,
@@ -143,6 +144,32 @@ export async function insertParagraph(
       const positionUpper = (params.position ?? 'AFTER').toUpperCase();
       if (positionUpper !== 'BEFORE' && positionUpper !== 'AFTER') {
         return err('INVALID_POSITION', `Invalid position: ${params.position}. Must be 'BEFORE' or 'AFTER'.`);
+      }
+
+      // A header/footer anchor routes to the story insertion (#1051).
+      const storyPart = await findHeaderFooterPartForParagraph(session.doc, session.sessionId, params.positional_anchor_node_id);
+      if (storyPart) {
+        const storyPreflight = params.skip_ai_revision_preflight
+          ? null
+          : await preflightAiRevisionMutation(session, revisionCtx, async (previewDoc, previewCtx) => {
+            await insertHeaderFooterParagraph(previewDoc, storyPart, params, positionUpper, previewCtx);
+          });
+        if (storyPreflight?.blocked) return storyPreflight.blocked;
+        const story = await insertHeaderFooterParagraph(session.doc, storyPart, params, positionUpper, revisionCtx);
+        if ('success' in story) return story;
+        manager.markEdited(session);
+        return ok(mergeSessionResolutionMetadata({
+          success: true,
+          file_path: manager.normalizePath(session.originalPath),
+          edit_count: session.editCount,
+          anchor_paragraph_id: params.positional_anchor_node_id,
+          part_name: storyPart,
+          new_paragraph_id: story.newParagraphId,
+          new_paragraph_ids: story.newParagraphIds,
+          position: positionUpper,
+          inserted_text: previewText(story.text, RESULT_PREVIEW_CHARS),
+          ...(story.styleSourceFallback ? { style_source_warning: `style_source_id '${params.style_source_id}' not found; fell back to anchor paragraph formatting.` } : {}),
+        }, metadata));
       }
 
       const anchorText = session.doc.getParagraphTextById(params.positional_anchor_node_id);

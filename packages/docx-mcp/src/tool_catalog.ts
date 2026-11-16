@@ -142,6 +142,16 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
+    name: 'get_headers_footers',
+    surface: 'internal',
+    description:
+      'Read DOCX headers and footers per section, in document order. For each section_index (as in get_sections) it returns the default, first and even header and footer: relationship_id, part_name (e.g. word/footer1.xml), inherited (true when the section has no reference of that type and takes the previous section\'s, ECMA-376 Part 1 § 17.10.5), source_section_index, displayed (first needs title_page on the section, even needs even_and_odd_headers in settings) and paragraphs as {id, text}. Paragraph ids are the same session-relative `_bk_*` anchors as read_file, so replace_text and insert_paragraph edit header/footer text with them. A part shared by several sections is one story. Read-only apart from assigning paragraph ids. DOCX only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
     name: 'get_document_properties',
     surface: 'internal',
     description:
@@ -205,7 +215,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       target_paragraph_id: z
         .string()
         .describe(
-          'Paragraph anchor. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
+          'Paragraph anchor. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers edits that header or footer; plain text only, tracked in a tracked session), or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
         ),
       old_string: z.string(),
       new_string: z.string(),
@@ -231,7 +241,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       positional_anchor_node_id: z
         .string()
         .describe(
-          'Anchor paragraph. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
+          'Anchor paragraph. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers inserts into that header or footer; plain text only), or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
         ),
       new_string: z.string(),
       instruction: z.string(),
@@ -413,7 +423,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'format_section',
     surface: 'revisionable',
     description:
-      'Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content.',
+      'Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content; use set_header_footer for that.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -511,6 +521,33 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .strict()
         .optional()
         .describe('Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
+    name: 'set_header_footer',
+    surface: 'package-mutation',
+    description:
+      'Give one DOCX section its own header or footer. With paragraphs, create a new part (word/headerN.xml or word/footerN.xml) with its document relationship and content-type override and point the section\'s headerReference/footerReference of the given type at it; with existing_relationship_id, point the section at a part get_headers_footers already reported; with link_to_previous=true, remove the section\'s own reference so it inherits from the previous section. Other sections keep the header/footer they show: when the change would alter what the next section inherits, that section gets an explicit reference to its previous part (or a new empty part when it had none), reported in pinned_sections. type="first" also sets w:titlePg on the section; type="even" is shown only when even_and_odd_headers is on (the tool reports it and warns, and does not change settings). Paragraph content is text and PAGE/NUMPAGES fields with left/center/right/both alignment, using the document\'s Header/Footer paragraph style when it has one. Surface: package-mutation + tracked section change — new parts, relationships, content types and the header/footer references themselves are untracked and listed in the save report non-revision change manifest (w:sectPrChange cannot hold references, so rejecting revisions does not restore them); in a tracked session each changed sectPr records w:sectPrChange for its other properties, and a section with another author\'s pending sectPrChange is refused. Call get_sections first to find section_index (insert_section_break creates sections). DOCX only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
+      kind: z.enum(['header', 'footer']).describe('Header or footer.'),
+      section_index: z.number().int().nonnegative().describe('Zero-based session-relative index returned by get_sections or get_headers_footers.'),
+      type: z.enum(['default', 'first', 'even']).optional().describe('Which header/footer of the section: default (all pages unless first/even apply), first (first page; sets w:titlePg) or even (even pages). Default: default.'),
+      paragraphs: z
+        .array(z.object({
+          text: z.string().optional().describe('Plain paragraph text (shorthand for runs: [{text}]).'),
+          runs: z.array(z.union([
+            z.object({ text: z.string() }).strict(),
+            z.object({ field: z.enum(['PAGE', 'NUMPAGES']) }).strict(),
+          ])).optional().describe('Text and field runs in order, e.g. [{"text": "Page "}, {"field": "PAGE"}, {"text": " of "}, {"field": "NUMPAGES"}].'),
+          alignment: z.enum(['left', 'center', 'right', 'both']).optional().describe('Paragraph alignment (w:jc).'),
+        }).strict())
+        .min(1)
+        .optional()
+        .describe('Content of a new part. Exactly one of paragraphs, existing_relationship_id or link_to_previous=true.'),
+      existing_relationship_id: z.string().optional().describe('Reuse the header/footer part of this word/document.xml relationship id.'),
+      link_to_previous: z.boolean().optional().describe('true: remove the section\'s own reference of this type so it inherits from the previous section (not allowed for section 0).'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },

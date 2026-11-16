@@ -37,6 +37,7 @@ import {
   parseEmptyNumberedParagraphPolicy,
   type EmptyNumberedParagraphPolicy,
 } from './empty_numbered_paragraph.js';
+import { findHeaderFooterPartForParagraph, replaceHeaderFooterText } from './header_footer_edit.js';
 
 /**
  * Other constructs the paragraph text does not show and a range can take out
@@ -497,6 +498,30 @@ export async function replaceText(
     const { session, metadata } = resolved;
     return await manager.mutateSession(session, async (session) => {
       const revisionCtx = await getRevisionContextForSession(session, ctx);
+
+      // A header/footer paragraph id routes to the story edit (#1051).
+      const storyPart = await findHeaderFooterPartForParagraph(session.doc, session.sessionId, params.target_paragraph_id);
+      if (storyPart) {
+        const storyPreflight = params.skip_ai_revision_preflight
+          ? null
+          : await preflightAiRevisionMutation(session, revisionCtx, async (previewDoc, previewCtx) => {
+            await replaceHeaderFooterText(previewDoc, storyPart, params, previewCtx);
+          });
+        if (storyPreflight?.blocked) return storyPreflight.blocked;
+        const story = await replaceHeaderFooterText(session.doc, storyPart, params, revisionCtx);
+        if ('success' in story) return story;
+        manager.markEdited(session);
+        return ok(mergeSessionResolutionMetadata({
+          success: true,
+          file_path: manager.normalizePath(session.originalPath),
+          edit_count: session.editCount,
+          target_paragraph_id: params.target_paragraph_id,
+          part_name: storyPart,
+          replacements_made: 1,
+          before_text: story.before,
+          after_text: story.after,
+        }, metadata));
+      }
 
       const plan = planReplaceText(session.doc, params, emptyNumberedPolicy);
       if (!plan.ok) return plan.response;
