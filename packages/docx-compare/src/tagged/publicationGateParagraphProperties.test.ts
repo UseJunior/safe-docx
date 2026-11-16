@@ -103,6 +103,10 @@ function relocateDeletedMark(kept: string, deleted: string) {
   };
 }
 
+function paragraphHoldingIn(root: Element, value: string): Element {
+  return Array.from(root.getElementsByTagNameNS(W, 'p')).find((paragraph) => paragraph.textContent === value)!;
+}
+
 function paragraphHolding(xml: string, value: string): Element {
   return Array.from(parseDocumentXml(xml).getElementsByTagNameNS(W, 'p'))
     .find((paragraph) => paragraph.textContent === value)!;
@@ -137,6 +141,30 @@ describe('publication gate: paragraph-property parity (#1493)', () => {
         expect(details?.paragraphText).toBe('SIGNATORY:');
         expect(details?.expectedProperties).toContain('pageBreakBefore');
         expect(details?.actualProperties).not.toContain('pageBreakBefore');
+      });
+    });
+
+  test('measures the same merge target as the acceptor across a block-level bookmark',
+    async ({ when, then }: AllureBddContext) => {
+      const withGap = (xml: string): string => {
+        const relocated = relocateDeletedMark('SIGNATORY:', '[NAME OF SIGNATORY]')(xml);
+        const root = parseDocumentXml(relocated);
+        const heading = paragraphHoldingIn(root, 'SIGNATORY:');
+        const document = root.ownerDocument!;
+        const start = document.createElementNS(W, 'w:bookmarkStart');
+        start.setAttributeNS(W, 'w:id', '9001');
+        start.setAttributeNS(W, 'w:name', 'gap');
+        const end = document.createElementNS(W, 'w:bookmarkEnd');
+        end.setAttributeNS(W, 'w:id', '9001');
+        heading.parentNode!.insertBefore(end, heading.nextSibling);
+        heading.parentNode!.insertBefore(start, end);
+        return serializeToXml(root);
+      };
+      const outcome = await when('the wrong-mark fault has a bookmark between the merged paragraphs', () =>
+        compare(ISSUE_BASE, ISSUE_REVISED, withGap));
+      await then('the accept-side property check still fails', () => {
+        expect(outcome.tampered).toBe(true);
+        expect(outcome.error?.failedChecks).toContain('acceptParagraphProperties');
       });
     });
 

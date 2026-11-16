@@ -16,6 +16,7 @@ import {
 import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
+import { stampSurvivingMarkProperties } from './paragraphPropertyParity.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { buildDocxFromBodyXml, completeField, fldChar, instrText, resultText } from '../testing/ooxml-fixtures.js';
 import { compareDocuments } from '../index.js';
@@ -396,6 +397,19 @@ describe('tagged-tree shadow serializer', () => {
     expect(text(rejectAllChanges(candidateXml))).toBe('AlphaBravoCharlie');
     expect(jcOf(rejectAllChanges(candidateXml), 'Bravo')).toBe('center');
     expect(jcOf(rejectAllChanges(candidateXml), 'Charlie')).toBe('right');
+  });
+
+  test('records the predecessor original properties when a terminal note-bearing insertion moves its mark (#1493)', () => {
+    const { candidateXml } = redline(
+      para('Alpha', 'left') + para('Bravo', 'center'),
+      para('Alpha', 'left') + para('Bravo', 'right') +
+        para('Charlie', 'left').replace('</w:p>', '<w:r><w:footnoteReference w:id="1"/></w:r></w:p>'),
+    );
+    expect(jcOf(acceptAllChanges(candidateXml), 'Bravo')).toBe('right');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Bravo')).toBe('center');
+    const stamped = parseXml(candidateXml).documentElement as unknown as Element;
+    stampSurvivingMarkProperties(stamped, 'reject');
+    expect(jcOf(rejectAllChanges(new XMLSerializer().serializeToString(stamped)), 'Bravo')).toBe('center');
   });
 
   test('places a terminal paragraph deletion on the preceding break with exact projections', () => {

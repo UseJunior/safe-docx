@@ -25,6 +25,7 @@
  */
 
 import { childElements } from '@usejunior/docx-core';
+import { findFollowingSiblingParagraph } from './trackChangesAcceptorAst.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -142,10 +143,10 @@ export function stampSurvivingMarkProperties(
     const resolvesAway = (childElements(markProperties as never) as unknown as Element[])
       .some((child) => child.namespaceURI === W_NS && removed.has(child.localName));
     if (!resolvesAway) continue;
-    let next = paragraph.nextSibling;
-    while (next && next.nodeType !== 1) next = next.nextSibling;
-    const successor = next as Element | null;
-    if (!successor || successor.namespaceURI !== W_NS || successor.localName !== 'p') continue;
+    // The acceptor's own merge-target lookup, which skips block-level range
+    // markers between the paragraphs.
+    const successor = findFollowingSiblingParagraph(paragraph);
+    if (!successor) continue;
     const successorProperties = directChild(successor, 'pPr');
     for (const child of Array.from(pPr.childNodes)) {
       if (child !== markProperties) pPr.removeChild(child);

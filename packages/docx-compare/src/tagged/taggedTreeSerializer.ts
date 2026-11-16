@@ -1255,8 +1255,15 @@ function transferMergeProperties(
     .filter((child) => !MERGE_BASE_EXCLUDED.has(child.localName));
   const ownBase = base(containerProperties);
   const predecessorBase = base(predecessorProperties).map((child) => cloneElement(child));
+  // Reject All shows an inserted container with the predecessor's properties
+  // as the original has them: its pending w:pPrChange snapshot, if any.
+  const predecessorRecord = childElements(predecessorProperties).find((child) => child.localName === 'pPrChange');
+  const predecessorRejected = predecessorRecord && childElements(predecessorRecord).find((child) => child.localName === 'pPr');
+  const predecessorOriginal = predecessorRecord
+    ? (predecessorRejected ? base(predecessorRejected).map((child) => cloneElement(child)) : [])
+    : predecessorBase.map((child) => cloneElement(child));
   const snapshot = document.createElementNS(W_NS, 'w:pPr') as WmlElement;
-  for (const child of kind === 'del' ? ownBase.map((element) => cloneElement(element)) : predecessorBase) {
+  for (const child of kind === 'del' ? ownBase.map((element) => cloneElement(element)) : predecessorOriginal) {
     snapshot.appendChild(child);
   }
   if (kind === 'del') {
