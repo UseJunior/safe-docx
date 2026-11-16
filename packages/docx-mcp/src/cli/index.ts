@@ -147,7 +147,14 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       }
 
       if (command === 'compare') {
-        const parsed = parseCompareArgs(rest);
+        let parsed: CompareCommandArgs;
+        try {
+          parsed = parseCompareArgs(rest);
+        } catch (e: unknown) {
+          // A bad flag or value is a usage error: report the message alone,
+          // without a stack trace (#1494).
+          throw new CliCommandFailure(e instanceof Error ? e.message : String(e));
+        }
         let result: CompareCommandResult;
         try {
           result = await handlers.compare(parsed);

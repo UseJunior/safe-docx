@@ -191,7 +191,10 @@ describe('compare surfaces share one revision-grouping default', () => {
           .rejects.toThrow('Expected one of: token-minimal, readable-semantic');
         await expect(createProgram({ write: () => undefined, writeError: () => undefined }).parseAsync([
           'node', 'safe-docx', 'compare', pair.originalPath, pair.revisedPath, output, '--grouping', 'readable-whitespace',
-        ])).rejects.toThrow('Invalid value for --grouping: "readable-whitespace"');
+        ])).rejects.toMatchObject({
+          name: 'CliCommandFailure',
+          message: expect.stringContaining('Invalid value for --grouping: "readable-whitespace"'),
+        });
       });
       await then('no output file is written', async () => {
         await expect(fs.access(output)).rejects.toThrow();
