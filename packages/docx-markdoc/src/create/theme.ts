@@ -9,10 +9,14 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
-import { CreationListNumbering, type HeadingNumberScheme } from './list-numbering.js';
-import { paragraphLayoutValue, type ParagraphLayoutAlignment } from './validate.js';
+import { CreationListNumbering, type HeadingNumberScheme, type RunInLevel } from './list-numbering.js';
+import { RUN_IN_TOC_LEVEL, paragraphLayoutValue, type ParagraphLayoutAlignment } from './validate.js';
 
 type TextRun = Extract<InlineSpec, { kind: 'text' }>;
+type TableOfContentsEntryRun = Extract<InlineSpec, { kind: 'tableOfContentsEntry' }>;
+
+/** The punctuation that already ends a run-in heading; any other heading takes a period after it. */
+const RUN_IN_HEADING_END = /[.:;?!]$/u;
 
 /** The generation number form of each `{% xref number="…" %}` value (`XREF_NUMBERS`). */
 const XREF_NUMBER_FORMS: Readonly<Record<string, CrossReferenceNumber>> = { full: 'fullContext', paragraph: 'paragraph', relative: 'relative' };
@@ -79,9 +83,53 @@ export class CreationTheme implements Theme {
     this.lists = new CreationListNumbering(headingNumbers);
   }
 
+  /**
+   * Whether the document has a table of contents: headings and run-in
+   * articles and sections then carry a TC entry each. Set before rendering.
+   */
+  tableOfContents = false;
+  /**
+   * TC entries whose text the lowering prefixes with their paragraph's
+   * number once every paragraph is placed ("Section 2.04 Remedies", "2.01
+   * Engagement"): the entries of numbered headings and run-in paragraphs.
+   */
+  readonly numberedEntries = new Set<TableOfContentsEntryRun>();
+
   private paragraph(styleId: string, runs: InlineSpec[], overrides: Partial<Omit<ParagraphSpec, 'kind' | 'runs'>> = {}): ParagraphSpec {
     this.depth = 0;
-    return { kind: 'paragraph', styleId, runs: coalesce(runs), ...overrides };
+    // TC entries trail every other run of their paragraph (docx-core writes them after its bookmark).
+    const merged = coalesce(runs);
+    const ordered = [...merged.filter((run) => run.kind !== 'tableOfContentsEntry'), ...merged.filter((run) => run.kind === 'tableOfContentsEntry')];
+    return { kind: 'paragraph', styleId, runs: ordered, ...overrides };
+  }
+
+  /** A TC entry for a heading's text at `level`, when the document has a table of contents; `numbered` entries get their paragraph's number. */
+  private headingEntry(runs: InlineSpec[], level: number, numbered: boolean): InlineSpec[] {
+    if (!this.tableOfContents) return [];
+    const text = runs.map((run) => (run.kind === 'text' ? run.text : '')).join('').trim();
+    const entry: TableOfContentsEntryRun = { kind: 'tableOfContentsEntry', text, level };
+    if (numbered) this.numberedEntries.add(entry);
+    return [entry];
+  }
+
+  /**
+   * A `{% run-in-paragraph %}`: a body paragraph numbered at its level of
+   * the run-in definition, its heading run in after the number (bold for an
+   * article, underlined below it) and ended with a period unless it ends in
+   * punctuation, then a space and the body text. An article keeps with the
+   * next paragraph. Run-in articles and sections list in a table of
+   * contents as their number and heading ("2.01 Engagement").
+   */
+  runInParagraph(level: RunInLevel, headingRuns: InlineSpec[], bodyRuns: InlineSpec[]): ParagraphSpec {
+    const list = this.lists.placeRunIn(level);
+    const headingText = headingRuns.map((run) => (run.kind === 'text' ? run.text : '')).join('');
+    const style = level === 'article' ? { bold: true as const } : { underline: 'single' as const };
+    const styled = headingRuns.map((run) => (run.kind === 'text' ? { ...run, ...style } : run));
+    const close = headingRuns.length > 0 && !RUN_IN_HEADING_END.test(headingText.trimEnd()) ? [textRun('.', {}, false)] : [];
+    const tocLevel = RUN_IN_TOC_LEVEL[level];
+    const entry = tocLevel === undefined ? [] : this.headingEntry(headingRuns, tocLevel, true);
+    const space = headingRuns.length > 0 && bodyRuns.length > 0 ? [textRun(' ', {}, false)] : [];
+    return this.paragraph(CREATION_STYLE.body, [...styled, ...close, ...space, ...bodyRuns, ...entry], { list, ...(level === 'article' ? { keepNext: true } : {}) });
   }
 
   bodyParagraph(runs: InlineSpec[], overrides: Partial<Omit<ParagraphSpec, 'kind' | 'runs'>> = {}): ParagraphSpec {
@@ -101,13 +149,21 @@ export class CreationTheme implements Theme {
   /** A `##` heading; with heading numbering, its style numbers it ("ARTICLE I"). */
   sectionHeadingParagraph(runs: InlineSpec[]): ParagraphSpec {
     this.lists.placeHeading();
-    return this.paragraph(CREATION_STYLE.heading1, runs);
+    return this.paragraph(CREATION_STYLE.heading1, [...runs, ...this.headingEntry(runs, 1, this.lists.headingNumId !== undefined)]);
   }
 
   /** A `###` heading; with heading numbering, its style numbers it ("Section 1.01"). */
   subHeadingParagraph(runs: InlineSpec[]): ParagraphSpec {
     this.lists.placeHeading();
-    return this.paragraph(CREATION_STYLE.heading2, runs);
+    return this.paragraph(CREATION_STYLE.heading2, [...runs, ...this.headingEntry(runs, 2, this.lists.headingNumId !== undefined)]);
+  }
+
+  /**
+   * Where a `{% toc /%}` sits: one placeholder paragraph that the lowering
+   * replaces with the table of contents once every entry is known.
+   */
+  tableOfContentsPlaceholder(): ParagraphSpec {
+    return this.paragraph(CREATION_STYLE.body, [], { tableOfContents: { opens: { levels: { from: 1, to: 3 } }, closes: true } });
   }
 
   styledParagraph(styleId: string, runs: InlineSpec[], overrides: Partial<Omit<ParagraphSpec, 'kind' | 'runs'>> = {}): ParagraphSpec {
@@ -330,7 +386,27 @@ export function creationPlugins(
       },
     },
   ];
+  blockTags.push(
+    {
+      tag: 'run-in-paragraph',
+      renderBlock: (node, api) => {
+        const heading = node.attributes.heading === undefined ? [] : signerSegment(api, String(node.attributes.heading));
+        const body = node.children.length === 0 ? [] : contentParagraphs(node).flatMap((paragraph) => api.renderInlineChildren(paragraph, {}));
+        return [theme.runInParagraph(node.attributes.level as RunInLevel, heading, body)];
+      },
+    },
+    { tag: 'toc', renderBlock: () => [theme.tableOfContentsPlaceholder()] },
+  );
   const inlineTags: InlineTagPlugin[] = [
+    {
+      // The content shows where it sits; a TC entry with its text trails the paragraph.
+      tag: 'tc',
+      renderInline: (node, api, style) => {
+        const runs = api.renderInlineChildren(node, style);
+        const text = runs.map((run) => (run.kind === 'text' ? run.text : '')).join('').trim();
+        return [...runs, { kind: 'tableOfContentsEntry', text, level: Number(node.attributes.level) }];
+      },
+    },
     { tag: 'literal', renderInline: (node, api, style) => theme.withLiteral(() => api.renderInlineChildren(node, style)) },
     { tag: 'fill', renderInline: (node, api, style) => theme.fill(style, () => api.renderInlineChildren(node, style)) },
     {

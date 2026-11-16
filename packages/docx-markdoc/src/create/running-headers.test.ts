@@ -358,7 +358,7 @@ describe('Traceability: running headers in created documents', () => {
         [['footer-first: none'], 'footer-first: none needs a footer'],
         [['footer-align: left', 'page-numbers: true'], 'footer-align needs footer text'],
         [['footer-italic: maybe', 'footer: F'], 'footer-italic must be true or false'],
-        [['page-number-format: roman', 'page-numbers: true'], 'page-number-format must be plain, dashed or page-of-total'],
+        [['page-number-format: roman', 'page-numbers: true'], 'page-number-format must be plain, dashed, page-of-total, lower-roman or upper-roman'],
         [['page-number-format: dashed'], 'page-number-format needs page-numbers: true'],
         [['page-number-align: left', 'page-numbers: false'], 'page-number-align needs page-numbers: true'],
         [['footer-layout: one-line', 'page-numbers: true'], 'footer-layout one-line puts footer text and the page number on one line'],
@@ -381,7 +381,7 @@ describe('Traceability: running headers in created documents', () => {
         ['header=false header-align="right"', 'header-align needs header text'],
         ['header-first="none"', 'header-first: none needs a header'],
         ['footer-first=""', 'section footer-first="…" must be the first page\'s text'],
-        ['page-numbers=true page-number-format="roman"', 'section page-number-format must be "plain", "dashed" or "page-of-total"'],
+        ['page-numbers=true page-number-format="roman"', 'section page-number-format must be "plain", "dashed", "page-of-total", "lower-roman" or "upper-roman"'],
         ['page-numbers=true footer-italic="no"', 'section footer-italic must be true or false'],
         ['footer="F" footer-layout="one-line"', 'footer-layout one-line puts footer text and the page number on one line'],
       ];
@@ -392,7 +392,7 @@ describe('Traceability: running headers in created documents', () => {
         expect(error?.message, attributes).toContain('(line 3)');
       }
       // The admitted keys are listed by the grammar's own constants, which the frontmatter error message names.
-      expect([...CREATION_BLOCK_TAGS.section!]).toEqual([...RUNNING_TEXT_KEYS]);
+      expect([...CREATION_BLOCK_TAGS.section!]).toEqual([...RUNNING_TEXT_KEYS, 'page-number-start']);
       expect([...RUNNING_TEXT_KEYS].every((key) => CREATION_FRONTMATTER_KEYS.has(key))).toBe(true);
       expect((await frontmatter(['headers: H']))?.message).toContain(`Allowed keys: ${[...CREATION_FRONTMATTER_KEYS].join(', ')}.`);
     },

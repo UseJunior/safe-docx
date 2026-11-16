@@ -1,7 +1,7 @@
 import type { Node as MarkdocNode } from '@markdoc/markdoc';
 import { BookmarkNameError, bookmarkNamesForSlugs } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
-import { HEADING_NUMBER_SCHEMES, type HeadingNumberScheme } from './list-numbering.js';
+import { HEADING_NUMBER_SCHEMES, RUN_IN_LEVELS, type HeadingNumberScheme, type RunInLevel } from './list-numbering.js';
 
 /**
  * The closed creation grammar, checked before any rendering so every
@@ -37,8 +37,11 @@ export type RunningTextAlignment = (typeof RUNNING_TEXT_ALIGNMENTS)[number];
 /**
  * `page-number-format` values: `plain` shows "1", `dashed` "- 1 -", and
  * `page-of-total` "Page 1 of 3" (a PAGE and a NUMPAGES field).
+ * `lower-roman` and `upper-roman` show the page number alone as "i" or "I":
+ * the section's `w:pgNumType w:fmt`, which every section showing that
+ * footer carries, inherited footers included (#1426).
  */
-export const PAGE_NUMBER_FORMATS = ['plain', 'dashed', 'page-of-total'] as const;
+export const PAGE_NUMBER_FORMATS = ['plain', 'dashed', 'page-of-total', 'lower-roman', 'upper-roman'] as const;
 export type PageNumberFormat = (typeof PAGE_NUMBER_FORMATS)[number];
 /**
  * `footer-layout` values: `stacked` puts the footer text and the page number
@@ -96,10 +99,20 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   'paragraph-layout': new Set(Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES)),
   signer: new Set(['name', 'date']),
   'page-break': new Set(),
-  section: new Set(RUNNING_TEXT_KEYS),
+  section: new Set([...RUNNING_TEXT_KEYS, 'page-number-start']),
   table: new Set(['widths']),
   footnote: new Set(['id']),
+  'run-in-paragraph': new Set(['level', 'heading', 'id']),
+  toc: new Set(),
 };
+/** The largest `{% section page-number-start=… %}`: where a section's page numbers restart. */
+export const PAGE_NUMBER_START_MAX = 9999;
+/** The levels a `{% tc level=… %}` entry, and so a table of contents, may take. */
+export const TOC_ENTRY_LEVELS = [1, 2, 3] as const;
+/** The table-of-contents level each run-in paragraph level lists at; clauses are not listed. */
+export const RUN_IN_TOC_LEVEL: Readonly<Partial<Record<RunInLevel, number>>> = { article: 1, section: 2 };
+/** Text a TC field instruction cannot carry: a double quote, a backslash or a control character. */
+export const TOC_ENTRY_UNSUPPORTED_TEXT = /["\\\u0000-\u001f]/u;
 /**
  * Inline tags and the attributes each admits. `literal` makes its content
  * literal text and `fill` marks a fill-in (both checked below); `u` underlines
@@ -121,6 +134,7 @@ export const CREATION_INLINE_TAGS: Record<string, ReadonlySet<string>> = {
   u: new Set(),
   fnref: new Set(['id']),
   xref: new Set(['to', 'show', 'number', 'format']),
+  tc: new Set(['level']),
 };
 /**
  * `{% xref show="…" %}` values: the target's number (a REF field with a number
@@ -140,7 +154,7 @@ export const XREF_FORMATS: ReadonlySet<string> = new Set(['section']);
 /** A target id: lowercase kebab-case starting with a letter, such as `purchase-price-adjustment`. */
 const TARGET_ID_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** Tags that structure the document and may appear only at the top level. */
-const TOP_LEVEL_ONLY = new Set(['page-break', 'section', 'footnote']);
+const TOP_LEVEL_ONLY = new Set(['page-break', 'section', 'footnote', 'run-in-paragraph', 'toc']);
 
 const LEGACY_HINTS: Array<[RegExp, string]> = [
   [/^<center\b/i, '{% center %}…{% /center %}'],
@@ -473,6 +487,10 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
           checkCrossReferenceTag(node, line, literal ? 'literal' : fillDepth > 0 ? 'fill' : null, formatted > 0);
           return;
         }
+        if (node.tag === 'tc') {
+          checkTableOfContentsEntryTag(node, line, literal ? 'literal' : fillDepth > 0 ? 'fill' : inFootnoteBody ? 'footnote' : null);
+          return;
+        }
         if (node.tag === 'fill') {
           if (literal) creationError('INVALID_FILL_IN', '{% fill %} cannot appear inside {% literal %}.', node, line);
           if (!highlight) creationError('INVALID_FILL_IN', '{% fill %} cannot appear in a legend, which is never highlighted.', node, line);
@@ -529,6 +547,25 @@ function checkCrossReferenceTag(node: MarkdocNode, line: number | undefined, ins
   if (format !== undefined && (typeof format !== 'string' || !XREF_FORMATS.has(format))) {
     creationError('INVALID_CROSS_REFERENCE', `{% xref /%} format must be "section", got ${JSON.stringify(format)}.`, node, line);
   }
+}
+
+/**
+ * One `{% tc level=N %}…{% /tc %}`: its content shows where it sits and is
+ * also the text of a table-of-contents entry at `level` (a TC field). The
+ * content is plain text, bold, italic or underlined, on one line, without a
+ * double quote or backslash, which a TC instruction cannot carry.
+ */
+function checkTableOfContentsEntryTag(node: MarkdocNode, line: number | undefined, inside: 'literal' | 'fill' | 'footnote' | null): void {
+  if (inside) creationError('INVALID_TOC_ENTRY', `{% tc %} cannot appear inside ${inside === 'footnote' ? 'a footnote' : `{% ${inside} %}`}.`, node, line);
+  const level = node.attributes.level;
+  if (!(TOC_ENTRY_LEVELS as readonly unknown[]).includes(level)) {
+    creationError('INVALID_TOC_ENTRY', `{% tc %} needs level=1, 2 or 3, the table-of-contents level it lists at; got ${JSON.stringify(level ?? null)}.`, node, line);
+  }
+  const plain = (child: MarkdocNode): boolean => child.type === 'text' || ((child.type === 'strong' || child.type === 'em' || (child.type === 'tag' && child.tag === 'u')) && child.children.every(plain));
+  if (!node.children.every(plain)) creationError('INVALID_TOC_ENTRY', '{% tc %} content must be plain text, bold, italic or underlined: no fill, cross-reference, footnote or line break.', node, line);
+  const text = node.children.map((child) => inlineText(child)).join('');
+  if (!text.trim()) creationError('INVALID_TOC_ENTRY', '{% tc %} needs text, such as {% tc level=1 %}Definitions{% /tc %}.', node, line);
+  if (TOC_ENTRY_UNSUPPORTED_TEXT.test(text)) creationError('INVALID_TOC_ENTRY', `{% tc %} text '${text.slice(0, 40)}' holds a double quote or backslash, which a table-of-contents entry cannot carry.`, node, line);
 }
 
 function checkList(list: MarkdocNode, depth: number): void {
@@ -645,7 +682,13 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
           creationError('INVALID_SECTION', `section ${key} must be ${orList(allowed.map((word) => `"${word}"`))}, got ${JSON.stringify(value)}.`, node, line);
         }
       }
-      const problem = checkRunningTextKeys(node.attributes, { pageNumbers: 'page-numbers=true', footer: 'footer="…"', header: 'header="…"' });
+      const start = node.attributes['page-number-start'];
+      if (start !== undefined && (!Number.isInteger(start) || (start as number) < 1 || (start as number) > PAGE_NUMBER_START_MAX)) {
+        creationError('INVALID_SECTION', `section page-number-start must be a whole number from 1 to ${PAGE_NUMBER_START_MAX}, such as page-number-start=1; got ${JSON.stringify(start)}.`, node, line);
+      }
+      const { 'page-number-start': _start, ...running } = node.attributes;
+      void _start;
+      const problem = checkRunningTextKeys(running, { pageNumbers: 'page-numbers=true', footer: 'footer="…"', header: 'header="…"' });
       if (problem) creationError('INVALID_SECTION', `${problem}.`, node, line);
       return;
     }
@@ -655,7 +698,43 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
     case 'footnote':
       checkFootnoteBlock(node, line);
       return;
+    case 'run-in-paragraph':
+      checkRunInParagraphTag(node, line);
+      return;
+    case 'toc':
+      if (node.children.length > 0) creationError('INVALID_TOC', '{% toc /%} is self-closing; its entries come from the headings, run-in paragraphs and {% tc %} entries.', node, line);
+      return;
   }
+}
+
+/**
+ * One `{% run-in-paragraph level="…" heading="…" %}`: a level from
+ * `RUN_IN_LEVELS`, a heading on one line (required for an article or a
+ * section, which a table of contents lists), and at most one paragraph of
+ * body text, which follows the heading in the same paragraph.
+ */
+function checkRunInParagraphTag(node: MarkdocNode, line: number | undefined): void {
+  const { level, heading } = node.attributes;
+  if (typeof level !== 'string' || !(RUN_IN_LEVELS as readonly string[]).includes(level)) {
+    creationError('INVALID_RUN_IN_PARAGRAPH', `{% run-in-paragraph %} needs level=${orList(RUN_IN_LEVELS.map((word) => `"${word}"`))}; got ${JSON.stringify(level ?? null)}.`, node, line);
+  }
+  if (heading !== undefined && (typeof heading !== 'string' || !heading.trim() || /[\r\n]/u.test(heading))) {
+    creationError('INVALID_RUN_IN_PARAGRAPH', 'run-in-paragraph heading="…" must be one line of text.', node, line);
+  }
+  if (heading === undefined && (level === 'article' || level === 'section')) {
+    creationError('INVALID_RUN_IN_PARAGRAPH', `A run-in ${level} needs heading="…", such as heading="Engagement".`, node, line);
+  }
+  if (typeof heading === 'string') checkInline([{ type: 'text', attributes: { content: heading }, children: [] } as unknown as MarkdocNode], line, true);
+  const paragraphs = node.children.filter((child) => child.type === 'paragraph');
+  if (paragraphs.length === 0) {
+    if (node.children.length > 0) checkInline(node.children, line, true);
+    else if (heading === undefined) creationError('INVALID_RUN_IN_PARAGRAPH', 'A run-in clause needs a heading or text.', node, line);
+    return;
+  }
+  const other = node.children.find((child) => child.type !== 'paragraph');
+  if (other) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% run-in-paragraph %} may contain only one paragraph, not '${other.type}'.`, other);
+  if (paragraphs.length > 1) creationError('INVALID_RUN_IN_PARAGRAPH', '{% run-in-paragraph %} holds one paragraph; start another run-in paragraph or a plain paragraph after it.', paragraphs[1], lineOf(paragraphs[1]));
+  checkInline(paragraphs[0]!.children, lineOf(paragraphs[0]), true);
 }
 
 /**
@@ -798,6 +877,8 @@ export function validateCreationAst(children: MarkdocNode[], options: { fillIns?
   try {
     validateBlocks(children);
     if (options.headingNumbers) checkHeadingNumbering(children);
+    checkRunInParagraphs(children, options.headingNumbers);
+    checkTableOfContents(children);
     checkFootnotePairs(children);
     checkCrossReferenceTargets(children, options.headingNumbers !== undefined);
   } finally {
@@ -920,13 +1001,86 @@ function checkHeadingNumbering(children: MarkdocNode[]): void {
   }
 }
 
+/** A top-level block's tag: a block tag, or a paragraph holding only one. */
+function topLevelTag(node: MarkdocNode): MarkdocNode | undefined {
+  return node.type === 'tag' ? node : soleInlineTag(node);
+}
+
+/**
+ * Run-in paragraphs number as one outline: an article, its sections, their
+ * clauses and the clauses' subclauses. Each level needs the level above it
+ * since the last paragraph of that level, as Word counts it: a section's
+ * number names its article, and a clause placed with no section in its
+ * article would make Word and LibreOffice show different full numbers
+ * ("2(a)" or "2.01(a)", #1250 evidence), so it is refused, as is a section
+ * before any article. Run-in paragraphs are an outline of their own, so they
+ * do not mix with numbered `##`/`###` headings.
+ */
+function checkRunInParagraphs(children: MarkdocNode[], headingNumbers: HeadingNumberScheme | undefined): void {
+  const above: Record<RunInLevel, RunInLevel | null> = { article: null, section: 'article', clause: 'section', subclause: 'clause' };
+  const seen = new Set<RunInLevel>();
+  for (const node of children) {
+    const tag = topLevelTag(node);
+    if (tag?.tag !== 'run-in-paragraph') continue;
+    if (headingNumbers) {
+      creationError('RUN_IN_WITH_HEADING_NUMBERS', 'Run-in paragraphs number their own outline; drop frontmatter heading-numbers, or write the Articles and Sections as ## and ### headings.', node);
+    }
+    const level = tag.attributes.level as RunInLevel;
+    const needs = above[level];
+    if (needs && !seen.has(needs)) {
+      creationError('RUN_IN_SKIPS_LEVEL', `A run-in ${level} follows a run-in ${needs}; put a {% run-in-paragraph level="${needs}" %} before it${needs === 'section' ? ' in this article' : needs === 'clause' ? ' in this section' : ''}.`, node);
+    }
+    // A level restarts the levels below it.
+    for (const lower of RUN_IN_LEVELS.slice(RUN_IN_LEVELS.indexOf(level) + 1)) seen.delete(lower);
+    seen.add(level);
+  }
+}
+
+/** The plain text of a heading's inline content, as its table-of-contents entry shows it. */
+function headingEntryText(node: MarkdocNode): string {
+  return node.children.map((child) => inlineText(child)).join('').trim();
+}
+
+/**
+ * A document has at most one `{% toc /%}`, and it lists at least one entry:
+ * a `##` or `###` heading, a run-in article or section, or a `{% tc %}`
+ * entry. With a table of contents, each heading and run-in heading becomes
+ * an entry (a TC field), so its text must be one a TC instruction can
+ * carry: no cross-reference, double quote or backslash.
+ */
+function checkTableOfContents(children: MarkdocNode[]): void {
+  const tocs = children.filter((node) => topLevelTag(node)?.tag === 'toc');
+  if (tocs.length === 0) return;
+  if (tocs.length > 1) creationError('DUPLICATE_TOC', `A document has one {% toc /%}; the first is at line ${lineOf(tocs[0]) ?? '?'}.`, tocs[1]);
+  let entries = 0;
+  for (const node of children) {
+    const tag = topLevelTag(node);
+    if (node.type === 'heading' && Number(node.attributes.level) >= 2) {
+      entries += 1;
+      const text = headingEntryText(node);
+      if (holdsTag(node, 'xref') || TOC_ENTRY_UNSUPPORTED_TEXT.test(text)) {
+        creationError('TOC_ENTRY_TEXT_UNSUPPORTED', `Heading '${text.slice(0, 40)}' is a table-of-contents entry, which cannot hold a cross-reference, double quote or backslash.`, node);
+      }
+    } else if (tag?.tag === 'run-in-paragraph' && RUN_IN_TOC_LEVEL[tag.attributes.level as RunInLevel] !== undefined) {
+      entries += 1;
+      if (TOC_ENTRY_UNSUPPORTED_TEXT.test(String(tag.attributes.heading))) {
+        creationError('TOC_ENTRY_TEXT_UNSUPPORTED', `Run-in heading '${String(tag.attributes.heading).slice(0, 40)}' is a table-of-contents entry, which cannot hold a double quote or backslash.`, node);
+      }
+    }
+    if (holdsTag(node, 'tc')) entries += 1;
+  }
+  if (entries === 0) {
+    creationError('TOC_WITHOUT_ENTRIES', '{% toc /%} has nothing to list; add ## or ### headings, run-in articles or sections, or {% tc level=1 %}…{% /tc %} entries.', tocs[0]);
+  }
+}
+
 /**
  * Where a target's number comes from: `headingNumbered` marks a numbered
  * heading, or an ordered list item under one, numbered by the heading
  * definition ("Section 1.01", "Section 1.01(a)"); `articleClause` marks such
  * an item directly under an Article, before any Section.
  */
-type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number; headingNumbered?: true; articleClause?: true; node: MarkdocNode };
+type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number; headingNumbered?: true; articleClause?: true; runIn?: RunInLevel; node: MarkdocNode };
 
 /** Which numbered heading a top-level block sits under, with `heading-numbers` on. */
 type HeadingScope = 'none' | 'article' | 'section';
@@ -939,6 +1093,16 @@ type HeadingScope = 'none' | 'article' | 'section';
  */
 function collectTargets(node: MarkdocNode, ordered: boolean, line: number | undefined, out: Map<string, TargetSite>, scope: HeadingScope = 'none'): void {
   const here = lineOf(node) ?? line;
+  if (node.type === 'tag' && node.tag === 'run-in-paragraph' && node.attributes.id !== undefined) {
+    // A run-in paragraph is numbered by the run-in definition: "2.", "2.01", "(a)", "(i)".
+    const id = node.attributes.id;
+    if (typeof id !== 'string' || !TARGET_ID_RE.test(id)) {
+      creationError('INVALID_ID', `Id '${String(id)}' must be lowercase kebab-case starting with a letter, such as purchase-price-adjustment.`, undefined, here);
+    }
+    const earlier = out.get(id);
+    if (earlier) creationError('DUPLICATE_ID', `Id '${id}' is used twice (first at line ${earlier.line ?? '?'}).`, undefined, here);
+    out.set(id, { kind: 'numbered', node, runIn: node.attributes.level as RunInLevel, ...(here === undefined ? {} : { line: here }) });
+  }
   const id = node.type === 'tag' || node.type === 'document' ? undefined : node.attributes.id;
   if (id !== undefined) {
     if (node.type !== 'heading' && node.type !== 'item') {
@@ -1170,6 +1334,16 @@ function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = fa
     const target = targets.get(reference.to);
     if (!target) {
       creationError('XREF_UNKNOWN_ID', `{% xref to="${reference.to}" /%} names no {% #${reference.to} %} target.`, undefined, reference.line);
+    }
+    if (target.runIn && (reference.show === 'text' || reference.number === 'relative')) {
+      creationError(
+        'XREF_RUN_IN_FORM_UNSUPPORTED',
+        reference.show === 'text'
+          ? `{% xref to="${reference.to}" show="text" /%} names a run-in paragraph (line ${target.line ?? '?'}), whose text runs on past its heading into the body; refer to its number instead.`
+          : `{% xref to="${reference.to}" number="relative" /%} names a run-in paragraph (line ${target.line ?? '?'}); use number="full" or number="paragraph".`,
+        undefined,
+        reference.line,
+      );
     }
     if (reference.show === 'text') {
       checkTextReferenceTarget(reference, target);

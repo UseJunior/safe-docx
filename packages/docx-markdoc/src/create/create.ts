@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import Markdoc from '@markdoc/markdoc';
-import { DocxZip, bookmarkNameForSlug, checkGeneratedPackage, generateDocx, readDocumentProperties, type DocumentProperties } from '@usejunior/docx-core';
+import { DocxZip, bookmarkNameForSlug, checkGeneratedPackage, generateDocx, readDocumentProperties, tableOfContentsInstruction, type DocumentProperties } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { requireMarkdoc } from '../markdoc.js';
-import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, sourceCrossReferenceForm, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
+import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, sourceCrossReferenceForm, type PageNumeral, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
 import { CREATION_EPOCH_ISO, lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FirstPageProjection, type FooterProjection } from './lower.js';
 import { readCreatedDocx, type CreationReadback } from './readback.js';
+import { TOC_STYLES } from './profile.js';
 import { creationTimestamp, parseCreationFrontmatter, type CreationFrontmatter } from './validate.js';
 
 export type CreationCheck = { passed: boolean; detail?: string };
@@ -98,6 +99,10 @@ export type CreationCertificate = {
      * relative reference expect its full number instead.
      */
     crossReferences?: CrossReferenceCheck;
+    /** Present when the source or the DOCX numbers a section's pages in roman numerals or restarts them (#1426). */
+    pageNumbering?: PageNumberingCheck;
+    /** Present when the DOCX has a table of contents (#1426). */
+    tableOfContents?: TableOfContentsCheck;
     /**
      * Independent round trip (#1185): the created DOCX re-imported through
      * `docx-markdoc import`, compared with plain text read straight from the
@@ -169,6 +174,12 @@ export type CreationCertificate = {
   /** Present when a section has a first-page header: per section, as read back. */
   firstPage?: FirstPageProjection[];
 };
+
+/** Each section's `w:pgNumType` against the source: see {@link pageNumberingCheck}. */
+export type PageNumberingCheck = CreationCheck & { sections: Array<{ format?: string; start?: number } | null>; negativeControlDetected: boolean };
+
+/** The cached table of contents against the document's TC entries: see {@link tableOfContentsCheck}. */
+export type TableOfContentsCheck = CreationCheck & { entries: number; tcEntries: number; negativeControlDetected: boolean };
 
 /** Laid-out paragraphs from the source against those of the DOCX: see `roundTrip.paragraphLayout`. */
 export type ParagraphLayoutComparison = {
@@ -310,7 +321,73 @@ function shortenBookmark(readback: CreationReadback, name: string): CreationRead
   };
 }
 
-function crossReferenceCheck(expected: SourceProjection, readback: CreationReadback): CrossReferenceCheck | undefined {
+/** The `w:pgNumType w:fmt` of each page numeral. */
+const PAGE_NUMERAL_FORMATS: Readonly<Record<PageNumeral, string | undefined>> = { decimal: undefined, 'lower-roman': 'lowerRoman', 'upper-roman': 'upperRoman' };
+
+/**
+ * Each section's `w:pgNumType` against the source (#1426): the format of
+ * the footer it shows, roman or decimal, and the page number it restarts at.
+ * Recorded when either side has one; the negative control expects the first
+ * section's numbering changed and must fail.
+ */
+export function pageNumberingCheck(expected: SourceProjection, readback: CreationReadback): PageNumberingCheck | undefined {
+  const want = readback.pageNumbering.map((_, section) => {
+    const entry = expected.pageNumbering?.[section];
+    const format = entry ? PAGE_NUMERAL_FORMATS[entry.numeral] : undefined;
+    return format === undefined && entry?.start === undefined ? null : { ...(format ? { format } : {}), ...(entry?.start === undefined ? {} : { start: entry.start }) };
+  });
+  if ([...want, ...readback.pageNumbering].every((entry) => entry === null)) return undefined;
+  const differs = (expectation: typeof want) => JSON.stringify(expectation) !== JSON.stringify(readback.pageNumbering);
+  const negativeControlDetected = differs(want.map((entry, section) => (section === 0 ? (entry === null ? { format: 'lowerRoman' } : null) : entry)));
+  const passed = !differs(want) && negativeControlDetected;
+  return {
+    passed,
+    sections: want,
+    negativeControlDetected,
+    ...(passed ? {} : { detail: differs(want) ? `expected ${JSON.stringify(want)}, read ${JSON.stringify(readback.pageNumbering)}` : 'a negative control was not detected' }),
+  };
+}
+
+/**
+ * The table of contents against the TC entries it lists (#1426): its
+ * instruction is the one create writes, and its cached result holds one
+ * paragraph per TC entry of levels 1 to 3, in document order, with the
+ * entry's text in the `toc n` style of its level. That is what Word and
+ * LibreOffice list when they update the field, so a stale cached result
+ * fails; the negative control expects a changed first entry and must fail.
+ * The source oracle checks the entries themselves (the round trip).
+ */
+export function tableOfContentsCheck(readback: CreationReadback): TableOfContentsCheck | undefined {
+  const toc = readback.tableOfContents;
+  if (!toc?.instruction) return undefined;
+  const instruction = tableOfContentsInstruction({ levels: { from: 1, to: TOC_STYLES.length } });
+  const listed = toc.tcEntries.filter((entry) => entry.level >= 1 && entry.level <= TOC_STYLES.length);
+  const expected = listed.map((entry) => ({ text: entry.text, style: TOC_STYLES[entry.level - 1]! }));
+  const mismatchesOf = (want: typeof expected): string[] => {
+    const out: string[] = [];
+    if (toc.instruction !== instruction) out.push(`instruction ${JSON.stringify(toc.instruction)}, expected ${JSON.stringify(instruction)}`);
+    for (let index = 0; index < Math.max(want.length, toc.entries.length); index += 1) {
+      const entry = want[index];
+      const read = toc.entries[index];
+      if (!entry || !read || normalizeOracleText(entry.text) !== normalizeOracleText(read.text) || entry.style !== read.style) {
+        out.push(`entry ${index + 1}: expected ${JSON.stringify(entry ?? null)}, cached ${JSON.stringify(read ?? null)}`);
+      }
+    }
+    return out;
+  };
+  const mismatches = mismatchesOf(expected);
+  const negativeControlDetected = expected.length === 0 ? false : mismatchesOf([{ ...expected[0]!, text: `${expected[0]!.text} x` }, ...expected.slice(1)]).length > 0;
+  const passed = mismatches.length === 0 && negativeControlDetected;
+  return {
+    passed,
+    entries: toc.entries.length,
+    tcEntries: toc.tcEntries.length,
+    negativeControlDetected,
+    ...(passed ? {} : { detail: mismatches.length > 0 ? mismatches.slice(0, 3).join('; ') : 'a negative control was not detected' }),
+  };
+}
+
+export function crossReferenceCheck(expected: SourceProjection, readback: CreationReadback): CrossReferenceCheck | undefined {
   const xrefs = expected.crossReferences ?? [];
   const inventory = expected.crossReferenceInventory ?? [];
   const sites = (readback.crossReferences?.length ?? 0) + (readback.footnoteCrossReferences?.length ?? 0);
@@ -812,6 +889,8 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
   const sourceProjection = projectSourceText(source);
   const roundTrip = roundTripCheck(sourceProjection, imported.markdoc, readback.footers.length, readback);
   const crossReferences = crossReferenceCheck(sourceProjection, readback);
+  const pageNumbering = pageNumberingCheck(sourceProjection, readback);
+  const tableOfContents = tableOfContentsCheck(readback);
   const placedReferences = readback.footnoteReferences.length;
   const referenceMismatches = footnoteReferenceMismatches(sourceProjection, placedReferences);
   const referenceControl = (sourceProjection.footnoteReferenceInventory?.length ?? 0) === 0
@@ -881,6 +960,8 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
     },
     properties,
     ...(crossReferences ? { crossReferences } : {}),
+    ...(pageNumbering ? { pageNumbering } : {}),
+    ...(tableOfContents ? { tableOfContents } : {}),
   };
   const certificate: CreationCertificate = {
     version: 1,

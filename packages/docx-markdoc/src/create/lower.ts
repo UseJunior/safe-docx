@@ -1,11 +1,12 @@
 import Markdoc, { type Node as MarkdocNode } from '@markdoc/markdoc';
-import { bookmarkNameForSlug, type BlockSpec, type DocumentSpec, type HeaderFooterSpec, type InlineSpec, type NumberingSpec, type ParagraphSpec, type SectionSpec } from '@usejunior/docx-core';
+import { bookmarkNameForSlug, type BlockSpec, type DocumentSpec, type HeaderFooterSpec, type InlineSpec, type NumberingLevelSpec, type NumberingSpec, type ParagraphSpec, type SectionSpec } from '@usejunior/docx-core';
 import { createMarkdocxRenderer, type RenderApi } from '../markdocx/engine.js';
 import {
   CREATION_STYLE,
   FIRST_SIGNER_BEFORE_PT,
   PAGE_HEIGHT_TWIPS,
   PAGE_WIDTH_TWIPS,
+  TOC_STYLES,
   creationDefaults,
   creationStyles,
   resolveCreationProfile,
@@ -14,7 +15,7 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
-import { HEADING_CLAUSE_ILVL } from './list-numbering.js';
+import { HEADING_CLAUSE_ILVL, RUN_IN_NUM_ID_PREFIX } from './list-numbering.js';
 import { CreationTheme, creationPlugins } from './theme.js';
 import {
   FIRST_PAGE_NONE,
@@ -136,7 +137,7 @@ type FooterDeclaration = {
 /** A declared header: its text, or none for an empty header (`header=false`); `first` as for a footer. */
 type HeaderDeclaration = { text?: string; align?: RunningTextAlignment; first?: string };
 type Entry = { kind: CreationBlockKind; line?: number; blocks: BlockSpec[]; pageBreakBefore: boolean; node: number };
-type SectionState = { entries: Entry[]; footer?: FooterDeclaration; header?: HeaderDeclaration };
+type SectionState = { entries: Entry[]; footer?: FooterDeclaration; header?: HeaderDeclaration; pageNumberStart?: number };
 
 /**
  * A soft break (an ordinary line wrap in the source) reads as one space. Turn
@@ -187,8 +188,55 @@ type ReferenceText = {
  * relative reference the values of each list's (`numId`'s) last numbered
  * paragraph at or before it.
  */
-type ReferenceTexts = { texts: ReadonlyMap<string, ReferenceText>; positions: ReadonlyMap<ParagraphSpec, ReadonlyMap<string, readonly number[]>> };
+type ReferenceTexts = {
+  texts: ReadonlyMap<string, ReferenceText>;
+  positions: ReadonlyMap<ParagraphSpec, ReadonlyMap<string, readonly number[]>>;
+  /** Every numbered paragraph's label as Word shows it before the paragraph's text ("ARTICLE II", "2.01", "(a)"). */
+  labels?: ReadonlyMap<ParagraphSpec, string>;
+};
 const NO_REFERENCES: ReferenceTexts = { texts: new Map(), positions: new Map() };
+
+/** A level value in a numbering format, as Word writes it in a label. */
+function formatLevelValue(value: number, numFmt: NumberingLevelSpec['numFmt']): string {
+  switch (numFmt) {
+    case 'decimalZero': return String(value).padStart(2, '0');
+    case 'lowerLetter': return letters(value);
+    case 'upperLetter': return letters(value).toUpperCase();
+    case 'lowerRoman': return roman(value);
+    case 'upperRoman': return roman(value).toUpperCase();
+    default: return String(value);
+  }
+}
+
+/**
+ * The label Word shows for a paragraph at `ilvl` with level values
+ * `values`: the level text with each `%n` replaced by level n's value in its
+ * format; a legal (`w:isLgl`) level shows the levels it names in Arabic
+ * numerals.
+ */
+function levelLabel(levels: readonly NumberingLevelSpec[], values: readonly number[], ilvl: number): string {
+  const level = levels[ilvl]!;
+  return level.lvlText.replace(/%([1-9])/gu, (_, n: string) => {
+    const index = Number(n) - 1;
+    const numFmt = levels[index]?.numFmt ?? 'decimal';
+    // A legal level shows every level in Arabic numerals; a zero-padded level keeps its zero ("Section 2.04").
+    return formatLevelValue(values[index] ?? 0, level.isLgl && numFmt !== 'decimalZero' ? 'decimal' : numFmt);
+  });
+}
+
+/**
+ * What a cross-reference to a run-in paragraph shows (#1417): an article
+ * "2" (Word drops the period of "2."), a section "2.01", a clause
+ * "2.01(a)" and a subclause "2.01(a)(i)" in full; the paragraph form is
+ * the level's own number ("2", "2.01", "(a)", "(i)"). Validation requires a
+ * section before any clause and an article before any section, so every
+ * level a full number names has been numbered.
+ */
+function runInReferenceText(values: readonly number[], ilvl: number): { full: string; paragraph: string } {
+  const own = [String(values[0]), `${values[0]}.${String(values[1]).padStart(2, '0')}`, `(${letters(values[2]!)})`, `(${roman(values[3]!)})`];
+  const full = ilvl < 2 ? own[ilvl]! : [own[1]!, ...own.slice(2, ilvl + 1)].join('');
+  return { full, paragraph: own[ilvl]! };
+}
 
 /**
  * A relative number as Word shows it (`\r`): the full number less the
@@ -211,7 +259,7 @@ function runText(runs: InlineSpec[], references: ReferenceTexts = NO_REFERENCES,
     if (run.kind === 'text') return run.text;
     if (run.kind === 'tab') return '\t';
     if (run.kind === 'break') return '\n';
-    if (run.kind === 'footnote') return '';
+    if (run.kind === 'footnote' || run.kind === 'tableOfContentsEntry') return '';
     if (run.kind === 'crossReference') {
       const target = references.texts.get(run.bookmark);
       const shown = run.show === 'text' ? target?.text
@@ -291,6 +339,7 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
   // Per heading definition: whether a Section has been numbered since the current Article began.
   const sectionSinceArticle = new Map<string, boolean>();
   const texts = new Map<string, ReferenceText>();
+  const labels = new Map<ParagraphSpec, string>();
   // Each list's (numId's) last numbered paragraph so far, and the copy each paragraph holding a relative reference sees.
   const lists = new Map<string, number[]>();
   const positions = new Map<ParagraphSpec, ReadonlyMap<string, readonly number[]>>();
@@ -324,8 +373,13 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
       lists.set(numId, [...values]);
       if (relative) positions.set(block, new Map(lists));
       if (ilvl < HEADING_CLAUSE_ILVL) sectionSinceArticle.set(definition.numId, ilvl === 1);
+      if (levels[ilvl]!.numFmt !== 'bullet') labels.set(block, levelLabel(levels, values, ilvl));
       if (block.bookmark === undefined) continue;
       const place = { numId, values: [...values] };
+      if (definition.numId.startsWith(RUN_IN_NUM_ID_PREFIX)) {
+        texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...place, ...runInReferenceText(values, ilvl) });
+        continue;
+      }
       if (levels[0]!.pStyle !== undefined) {
         texts.set(block.bookmark, { ...texts.get(block.bookmark)!, ...place, ...headingReferenceText(values, ilvl, sectionSinceArticle.get(definition.numId) === true) });
         continue;
@@ -337,7 +391,7 @@ function referenceTexts(sections: SectionSpec[], numbering: readonly NumberingSp
     }
   };
   for (const section of sections) visit(section.blocks);
-  return { texts, positions };
+  return { texts, positions, labels };
 }
 
 /** Drop the space a trailing `{% #id %}` annotation leaves at the end of its heading or list item text. */
@@ -364,6 +418,8 @@ function bookmarkTargets(node: MarkdocNode, blocks: BlockSpec[]): void {
     block.bookmark = bookmarkNameForSlug(String(target.attributes.id));
   };
   if (node.type === 'heading') mark(node, blocks[0]);
+  const tag = node.type === 'tag' ? node : soleInlineTag(node);
+  if (tag?.tag === 'run-in-paragraph') mark(tag, blocks[0]);
   if (node.type === 'list') {
     const items = listItems(node);
     if (items.length !== blocks.length) throw new Error('a list did not render one paragraph per item');
@@ -401,7 +457,8 @@ function projectBlocks(blocks: BlockSpec[], out: BlockProjection = { paragraphs:
 
 /** The runs of a page number in `format`: "1", "- 1 -" or "Page 1 of 3". */
 function pageNumberRuns(format: PageNumberFormat = 'plain'): InlineSpec[] {
-  const page: InlineSpec = { kind: 'field', field: 'PAGE', cachedResult: '1' };
+  // A roman section's first page reads "i" or "I" before fields update.
+  const page: InlineSpec = { kind: 'field', field: 'PAGE', cachedResult: format === 'lower-roman' ? 'i' : format === 'upper-roman' ? 'I' : '1' };
   if (format === 'dashed') return [{ kind: 'text', text: '- ' }, page, { kind: 'text', text: ' -' }];
   if (format === 'page-of-total') return [{ kind: 'text', text: 'Page ' }, page, { kind: 'text', text: ' of ' }, { kind: 'field', field: 'NUMPAGES', cachedResult: '1' }];
   return [page];
@@ -520,6 +577,68 @@ function sectionHeader(attributes: Record<string, unknown>): HeaderDeclaration |
   return { ...(typeof header === 'string' ? { text: header } : {}), ...(align ? { align } : {}), ...(first ? { first } : {}) };
 }
 
+/**
+ * A section's `w:pgNumType`: the numeral format of the footer it shows
+ * (its own or the one it inherits), since Word numbers each section in its
+ * own format, and `page-number-start` where the section restarts its pages.
+ * Undefined for decimal pages that number on from the previous section.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.12
+ */
+function sectionPageNumbering(footer: FooterDeclaration | undefined, start: number | undefined): SectionSpec['pageNumbering'] {
+  const format = footer?.numberFormat === 'lower-roman' ? 'lowerRoman' as const : footer?.numberFormat === 'upper-roman' ? 'upperRoman' as const : undefined;
+  if (format === undefined && start === undefined) return undefined;
+  return { ...(format ? { format } : {}), ...(start === undefined ? {} : { start }) };
+}
+
+/**
+ * Fill in the table of contents (#1426). Each TC entry of a numbered
+ * heading or run-in paragraph takes its paragraph's label before its text
+ * ("2.01 Engagement"), then the `{% toc /%}` placeholder becomes the TOC
+ * field's cached result: one paragraph per TC entry in document order, in
+ * the `toc n` style of its level, its text the entry's. This is what Word
+ * and LibreOffice list when they update a `TOC \f \l "1-3" \n` field: the
+ * TC entries' text, without page numbers.
+ */
+function fillTableOfContents(sections: SectionSpec[], theme: CreationTheme, references: ReferenceTexts): { placeholder: ParagraphSpec; paragraphs: ParagraphSpec[] } | undefined {
+  if (!theme.tableOfContents) return undefined;
+  const entries: Array<{ text: string; level: number }> = [];
+  let placeholder: { blocks: BlockSpec[]; index: number } | undefined;
+  const visit = (blocks: BlockSpec[]) => {
+    blocks.forEach((block, index) => {
+      if (block.kind === 'table') {
+        for (const row of block.rows) for (const cell of row.cells) visit(cell.blocks);
+        return;
+      }
+      if (block.tableOfContents) placeholder = { blocks, index };
+      for (const run of block.runs) {
+        if (run.kind !== 'tableOfContentsEntry') continue;
+        const label = theme.numberedEntries.has(run) ? references.labels?.get(block) : undefined;
+        if (label !== undefined) run.text = `${label} ${run.text}`;
+        entries.push({ text: run.text, level: run.level });
+      }
+    });
+  };
+  for (const section of sections) visit(section.blocks);
+  if (!placeholder) throw new Error('a {% toc /%} did not render its placeholder');
+  // Validation requires at least one entry.
+  const paragraphs: ParagraphSpec[] = entries.map((entry, index) => ({
+    kind: 'paragraph',
+    styleId: TOC_STYLES[entry.level - 1]!,
+    runs: [{ kind: 'text', text: entry.text }],
+    ...(index === 0 || index === entries.length - 1
+      ? { tableOfContents: { ...(index === 0 ? { opens: { levels: { from: 1, to: TOC_STYLES.length } } } : {}), ...(index === entries.length - 1 ? { closes: true as const } : {}) } }
+      : {}),
+  }));
+  const replaced = placeholder.blocks[placeholder.index] as ParagraphSpec;
+  // A page break, spacing or keep-with-next the neighbour rules set on the placeholder belongs to the first entry.
+  const { kind: _kind, styleId: _style, runs: _runs, tableOfContents: _toc, ...layout } = replaced;
+  void _kind; void _style; void _runs; void _toc;
+  Object.assign(paragraphs[0]!, layout);
+  placeholder.blocks.splice(placeholder.index, 1, ...paragraphs);
+  return { placeholder: replaced, paragraphs };
+}
+
 /** Signer, legend, table and page-break rules that relate a block to its neighbours. */
 function applyNeighbourRules(section: SectionState, profile: CreationProfile): void {
   section.entries.forEach((entry, index) => {
@@ -568,6 +687,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   }
 
   const theme = new CreationTheme(profile, frontmatter.fillIns ?? 'markup', frontmatter.headingNumbers);
+  theme.tableOfContents = ast.children.some((node) => (node.type === 'tag' ? node : soleInlineTag(node))?.tag === 'toc');
   const plugins = creationPlugins(theme, footnoteBodies);
   let api!: RenderApi;
   api = createMarkdocxRenderer({
@@ -608,7 +728,8 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       if (current.entries.length === 0) creationError('EMPTY_CREATION_SECTION', '{% section /%} must follow at least one block.', node);
       const footer = sectionFooter(tag.attributes);
       const header = sectionHeader(tag.attributes);
-      sections.push({ entries: [], ...(footer ? { footer } : {}), ...(header ? { header } : {}) });
+      const start = tag.attributes['page-number-start'] as number | undefined;
+      sections.push({ entries: [], ...(footer ? { footer } : {}), ...(header ? { header } : {}), ...(start === undefined ? {} : { pageNumberStart: start }) });
       continue;
     }
     const blocks = api.renderBlocks([node], { listDepth: 0 });
@@ -650,7 +771,9 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       ...(section.footer ? { default: footerSpec(section.footer, profile) } : {}),
       ...(titlePage && runningFooter ? { first: footerSpec(firstPageFooter(runningFooter), profile) } : {}),
     };
+    const pageNumbering = sectionPageNumbering(runningFooter, section.pageNumberStart);
     return {
+      ...(pageNumbering ? { pageNumbering } : {}),
       page: {
         sizeTwips: { w: PAGE_WIDTH_TWIPS, h: PAGE_HEIGHT_TWIPS },
         marginsTwips: { top: margin, right: margin, bottom: margin, left: margin, header: 720, footer: 720, gutter: 0 },
@@ -665,6 +788,12 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   // A section ending in a table gets one empty paragraph after it from docx-core
   // (the dedicated break paragraph, or the closing paragraph of the body).
   const references = referenceTexts(specSections, theme.numbering);
+  const toc = fillTableOfContents(specSections, theme, references);
+  if (toc) {
+    // The entry that rendered the placeholder holds its paragraphs too, for `paragraphEntries`.
+    const entry = sections.flatMap((section) => section.entries).find((candidate) => candidate.blocks.includes(toc.placeholder))!;
+    entry.blocks.splice(entry.blocks.indexOf(toc.placeholder), 1, ...toc.paragraphs);
+  }
   const titleText = titleBlocks ? projectBlocks(titleBlocks, undefined, references).paragraphs[0] : undefined;
   const projected: BlockProjection = { paragraphs: [], layouts: [], footnoteReferences: [], footnotes: [] };
   for (const section of specSections) {
@@ -694,7 +823,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       ...(frontmatter.application === undefined ? {} : { application: frontmatter.application }),
     },
     defaults: creationDefaults(profile),
-    styles: creationStyles(profile, { header: sections.some((section) => section.header !== undefined) }),
+    styles: creationStyles(profile, { header: sections.some((section) => section.header !== undefined), tableOfContents: theme.tableOfContents }),
     ...(theme.numbering.length > 0 ? { numbering: [...theme.numbering] } : {}),
     // A justified line that ends in a manual line break (`\`) is not stretched
     // to the text width (#1196); Word and LibreOffice both honour it.

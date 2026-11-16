@@ -972,6 +972,39 @@ such as an unclosed tag, and headings below `###`.
 
   A tag without an attribute or text, a value outside its list, or a hanging
   indent larger than the left indent fails with `INVALID_PARAGRAPH_LAYOUT`.
+- `{% run-in-paragraph level="…" heading="…" %}…{% /run-in-paragraph %}` writes a
+  paragraph in the run-in house style, its live number and heading running into
+  the body text: `level` is `article` ("2."), `section` ("2.01", zero-padded,
+  restarting under each article), `clause` ("(a)") or `subclause` ("(i)"),
+  carried by a real Word multilevel list. The heading (required for an article
+  or a section) is bold for an article and underlined below it, and gets a
+  period unless it ends in punctuation. A `{% #id %}` on the tag makes it an
+  xref target: `{% xref to="scope" format="section" /%}` reads "Section
+  2.01(a)", and `number="paragraph"` reads "(a)".
+
+  ```markdoc
+  {% run-in-paragraph level="article" heading="Investment Management Services" /%}
+
+  {% run-in-paragraph level="section" heading="Engagement" #engagement %}
+  The Manager is appointed to manage the Account.
+  {% /run-in-paragraph %}
+
+  {% run-in-paragraph level="clause" heading="Scope" #scope %}
+  The Manager shall manage the assets described in {% xref to="engagement" format="section" /%}.
+  {% /run-in-paragraph %}
+  ```
+
+  Each level needs the level above it (`RUN_IN_SKIPS_LEVEL`), run-in paragraphs
+  do not mix with `heading-numbers` (`RUN_IN_WITH_HEADING_NUMBERS`), and a text
+  or relative xref to one fails with `XREF_RUN_IN_FORM_UNSUPPORTED`. `pull`
+  does not yet map edits inside run-in paragraphs; it reports them unmapped.
+- `{% toc /%}` writes a table of contents: a TOC field (`TOC \f \l "1-3" \n`,
+  no page numbers) whose entries are already written, so it reads right before
+  anyone updates fields. It lists each `##` and `###` heading (with its number
+  under `heading-numbers: legal`), each run-in article and section ("2.01
+  Engagement"), and each `{% tc level=1 %}…{% /tc %}` entry, whose content also
+  shows where it sits. The build checks the cached entries against the
+  document's TC fields (`checks.tableOfContents`), so a stale one fails.
 - `{% page-break /%}` starts the next block on a new page.
 - `{% section %}` starts a next-page section. With no `footer` or
   `page-numbers` attribute, the section keeps the previous section's footer.
@@ -996,7 +1029,8 @@ keys as `{% section %}` attributes set the next section's:
 | `footer-first` | the first page's footer text, or `none` | the footer |
 | `page-numbers` | `true`, `false` | `false` |
 | `page-number-align` | `left`, `center`, `right` | `center` |
-| `page-number-format` | `plain` (`1`), `dashed` (`- 1 -`), `page-of-total` (`Page 1 of 3`) | `plain` |
+| `page-number-format` | `plain` (`1`), `dashed` (`- 1 -`), `page-of-total` (`Page 1 of 3`), `lower-roman` (`i`), `upper-roman` (`I`); a section showing a roman footer, its own or inherited, carries `w:pgNumType w:fmt` | `plain` |
+| `page-number-start` | `{% section %}` only: the page number the section restarts at, 1 to 9999 (`w:pgNumType w:start`) | numbering continues |
 
 ```markdoc
 ---

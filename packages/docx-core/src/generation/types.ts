@@ -199,12 +199,45 @@ export type ParagraphSpec = {
    * restyle its own paragraph (§ 17.16.5.51).
    */
   bookmark?: string;
+  /**
+   * Marks this paragraph as part of a table of contents: a TOC field whose
+   * cached result is the paragraphs from the one that `opens` it to the one
+   * that `closes` it (the same paragraph for a one-entry table), as Word
+   * writes a table of contents. See {@link TableOfContentsFieldSpec}.
+   */
+  tableOfContents?: { opens?: TableOfContentsFieldSpec; closes?: true };
   runs: InlineSpec[];
   /** Drafting-note annotation anchored to this paragraph (separable layer). */
   note?: DraftingNoteSpec;
 };
 
-export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec | FootnoteSpec | CrossReferenceSpec;
+export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec | FootnoteSpec | CrossReferenceSpec | TableOfContentsEntrySpec;
+
+/**
+ * A table of contents: a TOC field built from TC entries
+ * ({@link TableOfContentsEntrySpec}) of levels `levels.from` to
+ * `levels.to`, without page numbers, written as
+ * `TOC \f \l "from-to" \n`. The field's cached result is the text of the
+ * paragraphs it spans, which the caller writes as the entries Word lists
+ * when it updates the field: one paragraph per TC entry in document order,
+ * its text the entry's text, in the `TOC n` style of its level. Without
+ * page numbers the result depends on no page layout, so the cached result
+ * can equal what Word shows after a field update.
+ *
+ * The paragraphs of a table of contents are consecutive top-level body
+ * paragraphs of one section, carry text runs and tabs only, and have no
+ * bookmark, list or drafting note.
+ */
+export type TableOfContentsFieldSpec = { levels: { from: number; to: number } };
+
+/**
+ * A table-of-contents entry: a TC field (`TC "text" \l level`) that shows
+ * nothing and that a TOC field built with `\f` lists as `text` at `level`
+ * (1 to 9). TC entries follow every other inline of their paragraph, so they
+ * sit after the paragraph's bookmark and a text cross-reference to it does
+ * not copy them. The text is one line with no double quote or backslash.
+ */
+export type TableOfContentsEntrySpec = { kind: 'tableOfContentsEntry'; text: string; level: number };
 
 /**
  * The fixed set of text-highlight values (CT_HighlightColor). Single source of
