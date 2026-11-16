@@ -805,7 +805,7 @@ const LAYOUT_ALIGN: Record<string, string> = { left: 'left', start: 'left', cent
 
 /**
  * The `{% paragraph-layout %}` attributes that write a body paragraph's own
- * alignment and left/hanging indent, or undefined when it sets neither or sets a
+ * alignment, left/hanging indent and keep-with-next/keep-lines, or undefined when it sets none or sets a
  * value the tag's closed vocabulary cannot write (left to the formatting check).
  */
 function paragraphLayoutAttributes(paragraph: PullParagraph): string | undefined {
@@ -813,7 +813,9 @@ function paragraphLayoutAttributes(paragraph: PullParagraph): string | undefined
   // The raw value: the signature reads `distribute` as `both`, which the tag would rebuild as plain justification.
   const jc = paragraph.alignmentValue;
   const ind = parts.find((part) => part.startsWith('ind(') && part.endsWith(')'))?.slice(4, -1);
-  if (jc === undefined && ind === undefined) return undefined;
+  const keepNext = parts.includes('keepNext=true');
+  const keepLines = parts.includes('keepLines=true');
+  if (jc === undefined && ind === undefined && !keepNext && !keepLines) return undefined;
   const attributes: string[] = [];
   if (jc !== undefined) {
     if (!LAYOUT_ALIGN[jc]) return undefined;
@@ -833,6 +835,8 @@ function paragraphLayoutAttributes(paragraph: PullParagraph): string | undefined
     if (left !== undefined) attributes.push(`indent-left="${left}"`);
     if (hanging !== undefined) attributes.push(`indent-hanging="${hanging}"`);
   }
+  if (keepNext) attributes.push('keep-with-next=true');
+  if (keepLines) attributes.push('keep-lines=true');
   return attributes.length > 0 ? attributes.join(' ') : undefined;
 }
 

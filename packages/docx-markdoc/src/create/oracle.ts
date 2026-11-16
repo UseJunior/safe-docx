@@ -126,9 +126,10 @@ export type SourceBodyEntry = {
   /** A paragraph of the table of contents' cached result: one generated entry, not source text. */
   tableOfContents?: true;
   /**
-   * For a paragraph of a `{% paragraph-layout %}`: its direct `w:jc` and `w:ind` as one
-   * token, `jc=<val>` then `ind.left=<twips>` and `ind.hanging=<twips>`
-   * (`jc=left ind.left=720 ind.hanging=720`), in the form the read-back
+   * For a paragraph of a `{% paragraph-layout %}`: its direct `w:jc`, `w:ind`, `w:keepNext` and `w:keepLines` as one
+   * token, `jc=<val>` then `ind.left=<twips>` and `ind.hanging=<twips>`, then
+   * `keepNext` and `keepLines` for `keep-with-next` and `keep-lines`
+   * (`jc=left ind.left=720 ind.hanging=720 keepNext`), in the form the read-back
    * writes. Absent on every other paragraph.
    */
   layout?: string;
@@ -156,6 +157,8 @@ function sourceParagraphLayout(node: MarkdocNode): string {
   const hanging = twips('indent-hanging');
   if (left !== undefined) parts.push(`ind.left=${left}`);
   if (hanging !== undefined) parts.push(`ind.hanging=${hanging}`);
+  if (node.attributes['keep-with-next'] === true) parts.push('keepNext');
+  if (node.attributes['keep-lines'] === true) parts.push('keepLines');
   return parts.join(' ');
 }
 

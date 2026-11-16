@@ -621,7 +621,15 @@ function bodyLayoutMismatches(expected: readonly BodyLayout[], actual: readonly 
 function paragraphLayoutRoundTrip(expected: SourceProjection, readback: CreationReadback): ParagraphLayoutComparison | undefined {
   const kept = (entry: BodyLayout) => entry.text !== '' || entry.layout !== null;
   const wanted: BodyLayout[] = expected.body.map((entry) => ({ layout: entry.layout ?? null, text: normalizeOracleText(entry.text) })).filter(kept);
-  const found: BodyLayout[] = readback.paragraphs.map((text, index) => ({ layout: readback.layouts[index] ?? null, text: normalizeOracleText(text) })).filter(kept);
+  const raw: BodyLayout[] = readback.paragraphs.map((text, index) => ({ layout: readback.layouts[index] ?? null, text: normalizeOracleText(text) })).filter(kept);
+  // Create sets keep-with-next by its own rules (before a legend or a first signer, on a run-in article), which the
+  // source does not spell out: a read-back keepNext is held to the source only where the source asks for one, so an
+  // authored keep that is missing is a mismatch, and a generated one elsewhere is not.
+  const found: BodyLayout[] = raw.map((entry, index) => {
+    if (entry.layout === null || wanted[index]?.layout?.split(' ').includes('keepNext')) return entry;
+    const rest = entry.layout.split(' ').filter((part) => part !== 'keepNext').join(' ');
+    return { ...entry, layout: rest === '' ? null : rest };
+  });
   const laidOut = (entries: readonly BodyLayout[]) => entries.filter((entry) => entry.layout !== null).length;
   if (laidOut(wanted) === 0 && laidOut(found) === 0) return undefined;
   const mismatches = bodyLayoutMismatches(wanted, found);

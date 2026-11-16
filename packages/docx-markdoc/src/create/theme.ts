@@ -293,11 +293,11 @@ function contentParagraphs(node: MarkdocNode): MarkdocNode[] {
 }
 
 /**
- * The direct paragraph properties of a `{% paragraph-layout %}`: its alignment, and its
- * left and hanging indents in twips. Validation has already held each value
+ * The direct paragraph properties of a `{% paragraph-layout %}`: its alignment, its
+ * left and hanging indents in twips, and its keep-with-next and keep-lines flags. Validation has already held each value
  * to its closed list.
  */
-export function paragraphLayoutOf(attributes: Record<string, unknown>): Pick<ParagraphSpec, 'alignment' | 'indent'> {
+export function paragraphLayoutOf(attributes: Record<string, unknown>): Pick<ParagraphSpec, 'alignment' | 'indent' | 'keepNext' | 'keepLines'> {
   const align = paragraphLayoutValue(attributes.align) as ParagraphLayoutAlignment | undefined;
   const left = paragraphLayoutValue(attributes['indent-left']);
   const hanging = paragraphLayoutValue(attributes['indent-hanging']);
@@ -305,7 +305,12 @@ export function paragraphLayoutOf(attributes: Record<string, unknown>): Pick<Par
     ...(left === undefined ? {} : { leftTwips: twipsFromIn(Number(left)) }),
     ...(hanging === undefined ? {} : { hangingTwips: twipsFromIn(Number(hanging)) }),
   };
-  return { ...(align ? { alignment: align } : {}), ...(Object.keys(indent).length > 0 ? { indent } : {}) };
+  return {
+    ...(align ? { alignment: align } : {}),
+    ...(Object.keys(indent).length > 0 ? { indent } : {}),
+    ...(attributes['keep-with-next'] === true ? { keepNext: true } : {}),
+    ...(attributes['keep-lines'] === true ? { keepLines: true } : {}),
+  };
 }
 
 function columnWidths(raw: unknown, columns: number, total: number): number[] {

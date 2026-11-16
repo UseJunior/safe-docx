@@ -86,6 +86,12 @@ export const PARAGRAPH_LAYOUT_ATTRIBUTES: Readonly<Record<string, readonly strin
   'indent-left': PARAGRAPH_LAYOUT_LEFT_INDENTS,
   'indent-hanging': PARAGRAPH_LAYOUT_HANGING_INDENTS,
 };
+/**
+ * `{% paragraph-layout %}` pagination flags, each `true` when given: `keep-with-next`
+ * keeps the paragraph on the page of the one after it (`w:keepNext`), and
+ * `keep-lines` keeps all its lines on one page (`w:keepLines`).
+ */
+export const PARAGRAPH_LAYOUT_FLAGS = ['keep-with-next', 'keep-lines'] as const;
 /** A `{% paragraph-layout %}` attribute value as written: a number (`indent-left=0.5`) reads as its decimal text. */
 export function paragraphLayoutValue(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -96,7 +102,7 @@ export function paragraphLayoutValue(value: unknown): string | undefined {
 export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   center: new Set(),
   legend: new Set(),
-  'paragraph-layout': new Set(Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES)),
+  'paragraph-layout': new Set([...Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES), ...PARAGRAPH_LAYOUT_FLAGS]),
   signer: new Set(['name', 'date']),
   'page-break': new Set(),
   section: new Set([...RUNNING_TEXT_KEYS, 'page-number-start']),
@@ -755,12 +761,16 @@ function checkTextBlockContent(node: MarkdocNode, line: number | undefined): voi
 
 /**
  * `{% paragraph-layout %}` attributes: at least one, each from its closed list
- * (`PARAGRAPH_LAYOUT_ATTRIBUTES`), and an `indent-hanging` no larger than its
+ * (`PARAGRAPH_LAYOUT_ATTRIBUTES`) or a flag set to `true` (`PARAGRAPH_LAYOUT_FLAGS`), and an `indent-hanging` no larger than its
  * `indent-left`, so the first line never starts in the left margin.
  */
 function checkParagraphLayoutAttributes(node: MarkdocNode, line: number | undefined): void {
   const given = Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES).filter((key) => node.attributes[key] !== undefined);
-  if (given.length === 0) creationError('INVALID_PARAGRAPH_LAYOUT', `{% paragraph-layout %} needs at least one of ${orList(Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES))}.`, node, line);
+  const flags = PARAGRAPH_LAYOUT_FLAGS.filter((key) => node.attributes[key] !== undefined);
+  if (given.length === 0 && flags.length === 0) creationError('INVALID_PARAGRAPH_LAYOUT', `{% paragraph-layout %} needs at least one of ${orList([...Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES), ...PARAGRAPH_LAYOUT_FLAGS])}.`, node, line);
+  for (const key of flags) {
+    if (node.attributes[key] !== true) creationError('INVALID_PARAGRAPH_LAYOUT', `paragraph-layout ${key} must be true (written ${key}=true), got ${JSON.stringify(node.attributes[key])}.`, node, line);
+  }
   for (const key of given) {
     const allowed = PARAGRAPH_LAYOUT_ATTRIBUTES[key]!;
     const value = paragraphLayoutValue(node.attributes[key]);

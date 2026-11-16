@@ -300,7 +300,7 @@ const CREATION_KEY_VALUES: Readonly<Record<string, string>> = {
 const CREATION_TAG_HELP: Readonly<Record<string, string>> = {
   center: '{% center %}...{% /center %}: a centred paragraph',
   legend: '{% legend %}...{% /legend %}: a legend, such as a signature-page notice, kept with the block before it',
-  'paragraph-layout': `{% paragraph-layout ... %}...{% /paragraph-layout %}: body paragraphs with their own layout; align=${either(PARAGRAPH_LAYOUT_ALIGNMENTS)}, indent-left=${either(PARAGRAPH_LAYOUT_LEFT_INDENTS)} (inches), indent-hanging=${either(PARAGRAPH_LAYOUT_HANGING_INDENTS)} (inches, at most indent-left)`,
+  'paragraph-layout': `{% paragraph-layout ... %}...{% /paragraph-layout %}: body paragraphs with their own layout; align=${either(PARAGRAPH_LAYOUT_ALIGNMENTS)}, indent-left=${either(PARAGRAPH_LAYOUT_LEFT_INDENTS)} (inches), indent-hanging=${either(PARAGRAPH_LAYOUT_HANGING_INDENTS)} (inches, at most indent-left), keep-with-next=true (stay on the page of the next paragraph), keep-lines=true (keep all lines on one page)`,
   signer: '{% signer name="..." date="..." /%}: a signature block',
   'page-break': '{% page-break /%}: start the next block on a new page',
   section: `{% section ... /%}: start a new section; takes the running-text keys above as attributes for the next section (header=false, page-numbers=true), and page-number-start=1 to ${PAGE_NUMBER_START_MAX} to restart its page numbers`,

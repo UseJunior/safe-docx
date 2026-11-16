@@ -87,10 +87,10 @@ const JC_VALUES: Readonly<Record<NonNullable<ParagraphSpec['alignment']>, string
 /**
  * A paragraph's direct alignment and indents as one token, in the form the
  * read-back writes from `w:pPr`: `jc=<val>` then `ind.<attribute>=<twips>`
- * for each indent, such as `jc=left ind.left=720 ind.hanging=720`; null when
- * the paragraph sets neither.
+ * for each indent, then `keepNext` and `keepLines` when set, such as
+ * `jc=left ind.left=720 ind.hanging=720 keepNext`; null when the paragraph sets none.
  */
-export function paragraphLayoutToken(paragraph: Pick<ParagraphSpec, 'alignment' | 'indent'>): string | null {
+export function paragraphLayoutToken(paragraph: Pick<ParagraphSpec, 'alignment' | 'indent' | 'keepNext' | 'keepLines'>): string | null {
   const parts: string[] = [];
   if (paragraph.alignment) parts.push(`jc=${JC_VALUES[paragraph.alignment]}`);
   const indent = paragraph.indent ?? {};
@@ -98,6 +98,8 @@ export function paragraphLayoutToken(paragraph: Pick<ParagraphSpec, 'alignment' 
   if (indent.rightTwips !== undefined) parts.push(`ind.right=${indent.rightTwips}`);
   if (indent.firstLineTwips !== undefined) parts.push(`ind.firstLine=${indent.firstLineTwips}`);
   if (indent.hangingTwips !== undefined) parts.push(`ind.hanging=${indent.hangingTwips}`);
+  if (paragraph.keepNext) parts.push('keepNext');
+  if (paragraph.keepLines) parts.push('keepLines');
   return parts.length > 0 ? parts.join(' ') : null;
 }
 

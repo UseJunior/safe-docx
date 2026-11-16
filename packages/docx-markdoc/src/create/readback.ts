@@ -240,11 +240,13 @@ const IND_ATTRIBUTE_ORDER = ['left', 'start', 'right', 'end', 'firstLine', 'hang
 /**
  * A paragraph's direct alignment and indents, read from its own `w:pPr`
  * (style formatting is not included): `jc=<val>`, then `ind.<attribute>=<value>`
- * for every attribute of `w:ind`, such as `jc=left ind.left=720 ind.hanging=720`.
- * Null when the paragraph has neither.
+ * for every attribute of `w:ind`, then `keepNext` and `keepLines` when on,
+ * such as `jc=left ind.left=720 ind.hanging=720 keepNext`. Null when the paragraph has none.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.15
  */
 export function paragraphLayoutReadback(paragraph: Element): string | null {
   const pPr = elementChildren(paragraph).find((child) => isW(child, 'pPr'));
@@ -262,6 +264,12 @@ export function paragraphLayoutReadback(paragraph: Element): string | null {
         return rank(a) - rank(b) || a.localeCompare(b);
       });
     for (const [name, value] of attributes) parts.push(`ind.${name}=${value}`);
+  }
+  // On/off properties: present and not switched off (ST_OnOff), as Word reads them.
+  for (const name of ['keepNext', 'keepLines']) {
+    const element = elementChildren(pPr).find((child) => isW(child, name));
+    const value = element ? element.getAttributeNS(W, 'val') || element.getAttribute('w:val') || '' : undefined;
+    if (value !== undefined && !['false', '0', 'off'].includes(value)) parts.push(name);
   }
   return parts.length > 0 ? parts.join(' ') : null;
 }
