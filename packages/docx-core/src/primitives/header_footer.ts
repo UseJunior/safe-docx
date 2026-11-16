@@ -559,9 +559,13 @@ export async function setHeaderFooter(
       const foreign = getDirectChildrenByName(sectPr, 'sectPrChange')
         .find((change) => (wAttr(change, 'author') ?? '') !== ctx.author);
       if (foreign) {
+        // Nothing has been written to the archive yet; restore every changed
+        // sectPr so a refused call leaves the document as it was.
+        const index = sectPrs.indexOf(sectPr);
+        for (const [changed, original] of snapshots) changed.parentNode?.replaceChild(original, changed);
         throw new HeaderFooterError(
           'CONFLICTING_SECTION_REVISION',
-          `Section ${sectPrs.indexOf(sectPr)} already has a tracked section-property change by ${wAttr(foreign, 'author') ?? 'another author'}; accept or reject it before changing its header/footer.`,
+          `Section ${index} already has a tracked section-property change by ${wAttr(foreign, 'author') ?? 'another author'}; accept or reject it before changing its header/footer.`,
         );
       }
     }
