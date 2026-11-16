@@ -116,6 +116,139 @@ function buildReplacementPartsForInsert(
   return parts.some((p) => !!p.addRunProps) ? parts : null;
 }
 
+type InsertParagraphParams = Pick<
+  Parameters<typeof insertParagraph>[1],
+  'positional_anchor_node_id' | 'new_string' | 'instruction' | 'position' | 'style_source_id' | 'target_style'
+>;
+
+type InsertParagraphPlan =
+  | { ok: false; response: ToolResponse }
+  | {
+      ok: true;
+      positionUpper: 'BEFORE' | 'AFTER';
+      inputText: string;
+      plainParagraphs: string[];
+      structuralWarnings: ReturnType<typeof validateStructuralInsertions>;
+      mutate: (doc: DocxDocument, activeCtx: RevisionContext | undefined) => ReturnType<DocxDocument['insertParagraph']>;
+    };
+
+function failed(code: string, message: string): InsertParagraphPlan {
+  return { ok: false, response: err(code, message) };
+}
+
+/**
+ * Resolve an insert_paragraph request against `doc` (anchor, style source,
+ * hyperlink stripping, paragraph splitting, tag parsing) and build the
+ * mutation that applies it. The tool runs the mutation on the session
+ * document; batch_edit's dry runs run the same plan on a copy, so both apply
+ * identical insertion semantics (issue #1478). Body paragraphs only: the tool
+ * routes header/footer anchors before planning.
+ */
+function planInsertParagraph(doc: DocxDocument, params: InsertParagraphParams): InsertParagraphPlan {
+  const positionUpper = (params.position ?? 'AFTER').toUpperCase();
+  if (positionUpper !== 'BEFORE' && positionUpper !== 'AFTER') {
+    return failed('INVALID_POSITION', `Invalid position: ${params.position}. Must be 'BEFORE' or 'AFTER'.`);
+  }
+
+  const anchorText = doc.getParagraphTextById(params.positional_anchor_node_id);
+  if (anchorText === null) {
+    return failed('ANCHOR_NOT_FOUND', `Paragraph ID ${params.positional_anchor_node_id} not found in document`);
+  }
+
+  let styleSourceId = params.style_source_id;
+  if (!styleSourceId && params.target_style) {
+    const { nodes } = doc.buildDocumentView({ includeSemanticTags: false });
+    const anchorIdx = nodes.findIndex((n) => n.id === params.positional_anchor_node_id);
+    if (anchorIdx >= 0) {
+      let bestDist = Infinity;
+      let bestId: string | null = null;
+      for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i]!.style === params.target_style) {
+          const dist = Math.abs(i - anchorIdx);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestId = nodes[i]!.id;
+          }
+        }
+      }
+      if (bestId) styleSourceId = bestId;
+    }
+  }
+
+  const structuralWarnings = validateStructuralInsertions(
+    doc.buildDocumentView({ includeSemanticTags: false, showFormatting: true }).nodes,
+    [{
+      operationId: 'insert_paragraph',
+      position: positionUpper as 'BEFORE' | 'AFTER',
+      anchorId: params.positional_anchor_node_id,
+      styleSourceId,
+    }],
+    { runInHeadingIds: collectRunInHeadingIds(doc.getParagraphs()) },
+  );
+
+  let inputText = params.new_string;
+  if (hasHyperlinkTags(inputText)) inputText = stripHyperlinkTags(inputText);
+
+  const paragraphInputs = inputText.replace(/\r\n/g, '\n').split(/\n{2,}/);
+  let parsedParagraphs: ReturnType<typeof splitTaggedText>[];
+  try {
+    parsedParagraphs = paragraphInputs.map((p) => splitTaggedText(p));
+  } catch (e: unknown) {
+    return failed(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
+  }
+  const plainParagraphs = paragraphInputs.map((p) => stripAllInlineTags(p));
+
+  const mutate = (target: DocxDocument, activeCtx: RevisionContext | undefined) => {
+    const res = target.insertParagraph({
+      positionalAnchorNodeId: params.positional_anchor_node_id,
+      relativePosition: positionUpper as 'BEFORE' | 'AFTER',
+      newText: plainParagraphs.join('\n\n'),
+      styleSourceId: styleSourceId,
+    }, activeCtx);
+
+    const needsHeaderRoleModel = parsedParagraphs.some((segs) => segs.some((s) => s.header));
+    const headerAddProps = needsHeaderRoleModel
+      ? findHeaderRoleModelAddRunProps(target, params.positional_anchor_node_id)
+      : null;
+
+    for (let i = 0; i < res.newParagraphIds.length; i++) {
+      const newPid = res.newParagraphIds[i]!;
+      const segs = parsedParagraphs[i] ?? [];
+      const plainText = plainParagraphs[i] ?? '';
+      const pEl = target.getParagraphElementById(newPid);
+      if (!pEl) continue;
+      const runs = getParagraphRuns(pEl);
+      const templateRun = chooseRunByOverlap(runs, 0, Math.max(plainText.length, 1)) ?? runs[0]?.r ?? null;
+
+      const replacementParts = buildReplacementPartsForInsert(segs, templateRun, headerAddProps);
+      if (!replacementParts || replacementParts.length === 0) continue;
+      target.replaceText({ targetParagraphId: newPid, findText: plainText, replaceText: replacementParts });
+    }
+
+    return res;
+  };
+
+  return { ok: true, positionUpper, inputText, plainParagraphs, structuralWarnings, mutate };
+}
+
+/**
+ * Apply an insert_paragraph request to a body paragraph outside any session,
+ * with the tool's exact semantics. batch_edit uses it to dry-run a batch on a
+ * copy. Throws when the request does not apply.
+ */
+export function applyInsertParagraphToDocument(
+  doc: DocxDocument,
+  params: InsertParagraphParams,
+  ctx: RevisionContext | undefined,
+): void {
+  const plan = planInsertParagraph(doc, params);
+  if (!plan.ok) {
+    const error = (plan.response as { error?: { code?: string; message?: string } }).error;
+    throw new Error(`${error?.code ?? 'INSERT_ERROR'}: ${error?.message ?? 'insert_paragraph could not be applied'}`);
+  }
+  plan.mutate(doc, ctx);
+}
+
 export async function insertParagraph(
   manager: SessionManager,
   params: {
@@ -172,83 +305,9 @@ export async function insertParagraph(
         }, metadata));
       }
 
-      const anchorText = session.doc.getParagraphTextById(params.positional_anchor_node_id);
-      if (anchorText === null) {
-        return err('ANCHOR_NOT_FOUND', `Paragraph ID ${params.positional_anchor_node_id} not found in document`);
-      }
-
-      let styleSourceId = params.style_source_id;
-      if (!styleSourceId && params.target_style) {
-        const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
-        const anchorIdx = nodes.findIndex((n) => n.id === params.positional_anchor_node_id);
-        if (anchorIdx >= 0) {
-          let bestDist = Infinity;
-          let bestId: string | null = null;
-          for (let i = 0; i < nodes.length; i++) {
-            if (nodes[i]!.style === params.target_style) {
-              const dist = Math.abs(i - anchorIdx);
-              if (dist < bestDist) {
-                bestDist = dist;
-                bestId = nodes[i]!.id;
-              }
-            }
-          }
-          if (bestId) styleSourceId = bestId;
-        }
-      }
-
-      const structuralWarnings = validateStructuralInsertions(
-        session.doc.buildDocumentView({ includeSemanticTags: false, showFormatting: true }).nodes,
-        [{
-          operationId: 'insert_paragraph',
-          position: positionUpper as 'BEFORE' | 'AFTER',
-          anchorId: params.positional_anchor_node_id,
-          styleSourceId,
-        }],
-        { runInHeadingIds: collectRunInHeadingIds(session.doc.getParagraphs()) },
-      );
-
-      let inputText = params.new_string;
-      if (hasHyperlinkTags(inputText)) inputText = stripHyperlinkTags(inputText);
-
-      const paragraphInputs = inputText.replace(/\r\n/g, '\n').split(/\n{2,}/);
-      let parsedParagraphs: ReturnType<typeof splitTaggedText>[];
-      try {
-        parsedParagraphs = paragraphInputs.map((p) => splitTaggedText(p));
-      } catch (e: unknown) {
-        return err(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
-      }
-      const plainParagraphs = paragraphInputs.map((p) => stripAllInlineTags(p));
-
-      const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) => {
-        const res = doc.insertParagraph({
-          positionalAnchorNodeId: params.positional_anchor_node_id,
-          relativePosition: positionUpper as 'BEFORE' | 'AFTER',
-          newText: plainParagraphs.join('\n\n'),
-          styleSourceId: styleSourceId,
-        }, activeCtx);
-
-        const needsHeaderRoleModel = parsedParagraphs.some((segs) => segs.some((s) => s.header));
-        const headerAddProps = needsHeaderRoleModel
-          ? findHeaderRoleModelAddRunProps(doc, params.positional_anchor_node_id)
-          : null;
-
-        for (let i = 0; i < res.newParagraphIds.length; i++) {
-          const newPid = res.newParagraphIds[i]!;
-          const segs = parsedParagraphs[i] ?? [];
-          const plainText = plainParagraphs[i] ?? '';
-          const pEl = doc.getParagraphElementById(newPid);
-          if (!pEl) continue;
-          const runs = getParagraphRuns(pEl);
-          const templateRun = chooseRunByOverlap(runs, 0, Math.max(plainText.length, 1)) ?? runs[0]?.r ?? null;
-
-          const replacementParts = buildReplacementPartsForInsert(segs, templateRun, headerAddProps);
-          if (!replacementParts || replacementParts.length === 0) continue;
-          doc.replaceText({ targetParagraphId: newPid, findText: plainText, replaceText: replacementParts });
-        }
-
-        return res;
-      };
+      const plan = planInsertParagraph(session.doc, params);
+      if (!plan.ok) return plan.response;
+      const { inputText, plainParagraphs, structuralWarnings, mutate } = plan;
 
       const revisionPreflight = params.skip_ai_revision_preflight
         ? null

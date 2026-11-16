@@ -3,7 +3,9 @@ import {
   DocxDocument,
   SafeDocxError,
   findUniqueSubstringMatch,
-  replaceParagraphTextRange,
+  hasHyperlinkTags,
+  stripAllInlineTags,
+  stripHyperlinkTags,
   isRecognizedBondedInsertionPair,
   collectRunInHeadingIds,
   getParagraphText,
@@ -15,7 +17,7 @@ import { errorMessage } from '../error_utils.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { applyReplaceTextToDocument, replaceText, stripSearchTags } from './replace_text.js';
-import { insertParagraph } from './insert_paragraph.js';
+import { applyInsertParagraphToDocument, insertParagraph } from './insert_paragraph.js';
 import { resolveSessionForTool } from './session_resolution.js';
 import { cloneRevisionContext, preflightAiRevisionMutation } from './ai_revision_guard.js';
 import {
@@ -577,35 +579,29 @@ async function executeSteps(
   return { completed_step_ids: completedStepIds, step_results: stepResults };
 }
 
-function invalidateDocumentCaches(doc: DocxDocument): void {
-  doc.markMutated();
-}
-
+/**
+ * Apply one step to a copy of the document with the standalone tool's own
+ * planner, so every dry run of a batch (the AI-revision preflight and the
+ * empty-numbered-paragraph preview) judges the edit that then runs (#1478).
+ * batch_edit has no replace or insert logic of its own.
+ */
 function executeStepOnDoc(doc: DocxDocument, step: NormalizedStep, ctx?: RevisionContext): void {
   if (step.operation === 'replace_text') {
-    const targetParagraphId = step.fields.target_paragraph_id as string;
-    const oldString = stripSearchTags(step.fields.old_string as string);
-    const newString = step.fields.new_string as string;
-    if (step.fields.normalize_first) doc.mergeRunsOnly();
-    const pEl = doc.getParagraphElementById(targetParagraphId);
-    if (!pEl) throw new Error(`Paragraph ID ${targetParagraphId} not found in document`);
-    const text = doc.getParagraphTextById(targetParagraphId) ?? '';
-    const match = findUniqueSubstringMatch(text, oldString);
-    if (match.status !== 'unique') throw new Error(`replace_text preview failed for paragraph ${targetParagraphId}`);
-    if (ctx) {
-      replaceParagraphTextRange(pEl, match.start, match.end, newString, ctx);
-      invalidateDocumentCaches(doc);
-    } else {
-      doc.replaceText({ targetParagraphId, findText: match.matchedText, replaceText: newString });
-    }
+    applyReplaceTextToDocument(doc, {
+      target_paragraph_id: step.fields.target_paragraph_id as string,
+      old_string: step.fields.old_string as string,
+      new_string: step.fields.new_string as string,
+      instruction: step.fields.instruction as string,
+      normalize_first: step.fields.normalize_first as boolean | undefined,
+    }, ctx);
     return;
   }
-
-  doc.insertParagraph({
-    positionalAnchorNodeId: step.fields.positional_anchor_node_id as string,
-    relativePosition: (step.fields.position as 'BEFORE' | 'AFTER' | undefined) ?? 'AFTER',
-    newText: step.fields.new_string as string,
-    styleSourceId: step.fields.style_source_id as string | undefined,
+  applyInsertParagraphToDocument(doc, {
+    positional_anchor_node_id: step.fields.positional_anchor_node_id as string,
+    new_string: step.fields.new_string as string,
+    instruction: step.fields.instruction as string,
+    position: step.fields.position as string | undefined,
+    style_source_id: step.fields.style_source_id as string | undefined,
   }, ctx);
 }
 
@@ -616,11 +612,9 @@ function executeStepsOnDoc(doc: DocxDocument, steps: NormalizedStep[], ctx?: Rev
 /**
  * Run the batch on a copy of the document to find the empty numbered
  * paragraphs its end state would have, before any step touches the session.
- * replace_text steps go through replace_text's own plan
- * (`applyReplaceTextToDocument`: the same matching, prefix/suffix trimming
- * and formatting-tag parsing as the tool), so the preview and the real run
- * leave the same text; insert_paragraph steps cannot empty an existing
- * paragraph and only need to run for later anchors.
+ * Every step goes through its tool's own planner (`executeStepOnDoc`), so the
+ * preview and the real run leave the same text; insert_paragraph steps cannot
+ * empty an existing paragraph and only need to run for later anchors.
  */
 function previewEmptyNumberedParagraphs(
   doc: DocxDocument,
@@ -635,13 +629,7 @@ function previewEmptyNumberedParagraphs(
     }
     const paragraphId = step.fields.target_paragraph_id as string;
     const before = tracker.before(doc, paragraphId);
-    applyReplaceTextToDocument(doc, {
-      target_paragraph_id: paragraphId,
-      old_string: step.fields.old_string as string,
-      new_string: step.fields.new_string as string,
-      instruction: step.fields.instruction as string,
-      normalize_first: step.fields.normalize_first as boolean | undefined,
-    }, ctx);
+    executeStepOnDoc(doc, step, ctx);
     tracker.after(doc, paragraphId, step.step_id, before);
   }
   return tracker.findings(doc);
@@ -698,8 +686,16 @@ function collectInsertedText(steps: NormalizedStep[]): string {
   return steps
     .map((step) => step.fields.new_string)
     .filter((value): value is string => typeof value === 'string')
-    .map((value) => stripSearchTags(value))
+    .map((value) => gateInsertedText(value))
     .join('\n');
+}
+
+/**
+ * A step's inserted text as the standalone tools hand it to the convention
+ * gate: hyperlink tags stripped, then every inline formatting tag (#687, #1478).
+ */
+function gateInsertedText(newString: string): string {
+  return stripAllInlineTags(hasHyperlinkTags(newString) ? stripHyperlinkTags(newString) : newString);
 }
 
 /**
@@ -719,7 +715,7 @@ function attributeConventionWarnings(
   const byStep = steps.map((step) => ({
     stepId: step.step_id,
     keys: insertedConstructKeys(
-      typeof step.fields.new_string === 'string' ? stripSearchTags(step.fields.new_string) : '',
+      typeof step.fields.new_string === 'string' ? gateInsertedText(step.fields.new_string) : '',
     ),
   }));
   const normalize = (value: string): string => value.trim().replace(/\s+/g, ' ').toLowerCase();
