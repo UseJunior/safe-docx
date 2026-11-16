@@ -148,6 +148,13 @@ describe('Traceability: keep-with-next and keep-lines on created paragraph layou
         const layouts = lowering.projection.layouts.map((layout, index) => (lowering.projection.paragraphs[index]!.startsWith('All notices') ? 'keepNext' : layout));
         return { ...lowering, spec, projection: { ...lowering.projection, layouts } };
       };
+      // The oracle marks create's own keep only where create sets one: not across a section break, and on a
+      // table of contents' first entry.
+      const sectioned = projectSourceText('Alpha.\n\n{% section /%}\n\n{% legend %}New section.{% /legend %}\n').body;
+      expect(sectioned.find((entry) => entry.text === 'Alpha.')?.generatedKeepNext).toBeUndefined();
+      const contents = await createDocumentFromMarkdoc('{% toc /%}\n\n{% legend %}Signature page follows.{% /legend %}\n\n## A\n\nText.\n\n## B\n\nMore.\n');
+      expect(contents.certificate.passed).toBe(true);
+
       const extra = await createDocumentFromMarkdoc(NOTICES, { transformLowering: addKeep }).then(() => undefined, (caught: { code?: string; details?: unknown }) => caught);
       expect(extra?.code).toBe('CREATION_VERIFICATION_FAILED');
       const extraCertificate = extra!.details as CreationCertificate;

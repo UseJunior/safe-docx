@@ -686,10 +686,14 @@ export function projectSourceText(source: string, options: { reader?: Projection
     bodyXrefs.push(...xrefs.map((xref) => ({ ...xref, story: 'body' as const, entry: body.length })));
     body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks.map((mark) => mark.offset) } : {}) });
   };
-  // The paragraph before a legend or a first signer, when it is not a table cell, is kept with it by create.
+  // The paragraph before a legend or a first signer in the same section, when it is not a table cell, is kept with
+  // it by create. A table of contents is one block: create gives its keep to its first entry.
   const keepPrevious = () => {
-    const previous = body.at(-1);
-    if (previous && !previous.cell) previous.generatedKeepNext = true;
+    let index = body.length - 1;
+    const previous = body[index];
+    if (!previous || previous.cell || (previous.section ?? 0) !== section) return;
+    if (previous.tableOfContents) while (index > 0 && body[index - 1]!.tableOfContents && body[index - 1]!.section === previous.section) index -= 1;
+    body[index]!.generatedKeepNext = true;
   };
   const targets: Record<string, string> = {};
   const { headings, clauseContext } = headingLabels(ast);
