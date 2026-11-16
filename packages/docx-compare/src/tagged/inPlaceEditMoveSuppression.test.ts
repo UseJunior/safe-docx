@@ -9,6 +9,8 @@ import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js
  * Move detection only relocates content the in-order alignment leaves
  * unpaired, and only when both sides resemble each other as spans (#1498).
  * In-place edits of a sequence whose order is unchanged produce no moves.
+ * Verbatim text relocated between paired paragraphs is still a move: that
+ * exact pass is unchanged and pinned by paragraphMoveReview.test.ts.
  */
 const TEST_FEATURE = 'refactor-tracked-paragraph-move-ownership';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
