@@ -352,7 +352,7 @@ describe('tagged-tree shadow serializer', () => {
     expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
   });
 
-  test('places a terminal paragraph deletion on the preceding break with exact projections', () => {
+  test('keeps a terminal paragraph deletion on its own mark when the preceding paragraph has other properties (#1493)', () => {
     const original = documentBody(
       '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
       '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>' +
@@ -361,6 +361,36 @@ describe('tagged-tree shadow serializer', () => {
     const revised = documentBody(
       '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
       '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>',
+    );
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const paragraphs = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'p'));
+    const markRevisions = (paragraph: Element) => Array.from(paragraph.getElementsByTagNameNS(W_NS, 'rPr'))
+      .filter((rPr) => (rPr.parentNode as Element).localName === 'pPr')
+      .flatMap((rPr) => Array.from(rPr.getElementsByTagNameNS(W_NS, 'del')));
+
+    // Relocating the mark would make Bravo merge into Charlie's container,
+    // and a reader that keeps the surviving mark's properties would show
+    // Bravo right-aligned.
+    expect(paragraphs).toHaveLength(3);
+    expect(markRevisions(paragraphs[1]!)).toHaveLength(0);
+    expect(markRevisions(paragraphs[2]!)).toHaveLength(1);
+    const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
+    expect(text(acceptAllChanges(candidateXml))).toBe('AlphaBravo');
+    expect(text(rejectAllChanges(candidateXml))).toBe('AlphaBravoCharlie');
+  });
+
+  test('places a terminal paragraph deletion on the preceding break with exact projections', () => {
+    const original = documentBody(
+      '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Charlie</w:t></w:r></w:p>',
+    );
+    const revised = documentBody(
+      '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>',
     );
     const constructed = constructTaggedTree(original, revised);
     const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {

@@ -48,6 +48,7 @@ export type {
   ReconstructionInplaceSuccessDiagnostics,
   ReconstructionMode,
   ParagraphTopologyMismatchDetails,
+  ParagraphPropertyMismatchDetails,
   UnrepresentedChange,
   UnrepresentedChangeKind,
   UnrepresentedChangeScope,

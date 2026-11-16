@@ -13,6 +13,7 @@ import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
 import { isBlockContainer } from './blockContainer.js';
+import { paragraphPropertySignature } from './paragraphPropertyParity.js';
 import { placeSinglePropertyRevision, splitLayeredRunFormatting } from './layeredFormattingRevision.js';
 import {
   addRowExceptionRevisionCompanions,
@@ -1189,6 +1190,27 @@ function normalizeTerminalWholeParagraphMoveOwnership(
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/891
  */
+/**
+ * Whether two paragraphs carry the same paragraph properties, including any
+ * `w:pPrChange` snapshot, so merging one into the other keeps the same
+ * properties whichever mark survives.
+ */
+function sameMergeProperties(left: WmlElement, right: WmlElement): boolean {
+  if (paragraphPropertySignature(left) !== paragraphPropertySignature(right)) return false;
+  const snapshot = (paragraph: WmlElement): string => {
+    const pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
+    const change = pPr && childElements(pPr).find((child) => child.localName === 'pPrChange');
+    const properties = change && childElements(change).find((child) => child.localName === 'pPr');
+    if (!change) return 'none';
+    if (!properties) return '';
+    const holder = properties.cloneNode(true) as WmlElement;
+    const wrapper = paragraph.ownerDocument!.createElementNS(W_NS, 'w:p') as WmlElement;
+    wrapper.appendChild(holder);
+    return paragraphPropertySignature(wrapper);
+  };
+  return snapshot(left) === snapshot(right);
+}
+
 function normalizeWholeParagraphRevisionBoundaries(
   root: WmlElement,
   generatedRevisionIds: ReadonlySet<number>,
@@ -1227,6 +1249,12 @@ function normalizeWholeParagraphRevisionBoundaries(
     if (carriesParagraphMarkRevision(predecessor)) return;
     // A w:sectPr boundary changes how the merged paragraph resolves on Reject All.
     if (carriesSection(paragraph) || carriesSection(predecessor)) return;
+    // Accept All merges the predecessor into the deleted container (Reject
+    // All, for an inserted one), and readers disagree on whose properties the
+    // merged paragraph keeps: LibreOffice and the tagged acceptor keep the
+    // predecessor's, ECMA-376 § 17.13.5.15 and Aspose.Words the surviving
+    // mark's. Relocate only when that choice cannot matter (#1493).
+    if (!sameMergeProperties(predecessor, paragraph)) return;
     const predecessorPropertiesBefore = paragraphProperties(predecessor);
     const predecessorRevisions = predecessorPropertiesBefore
       ? revisionElements(predecessorPropertiesBefore)
@@ -1575,7 +1603,16 @@ function buildSectionBoundaryParagraph(
   const paragraph = document.createElementNS(W_NS, 'w:p') as WmlElement;
   const properties = document.createElementNS(W_NS, 'w:pPr') as WmlElement;
   const originalChildren = original ? childElements(original) : [];
-  for (const child of originalChildren) {
+  // Reject All merges the leading paragraph's content into this one. Readers
+  // that keep the surviving mark's properties (ECMA-376 § 17.13.5.15,
+  // Aspose.Words) then show these base properties, so they are the ones the
+  // original rejects to: a pending w:pPrChange's snapshot when the original
+  // has one (the record itself stays on the leading paragraph), otherwise its
+  // base properties (#1493).
+  const pendingRecord = originalChildren.find((child) => child.localName === 'pPrChange');
+  const rejectedProperties = pendingRecord && childElements(pendingRecord).find((child) => child.localName === 'pPr');
+  const baseChildren = pendingRecord ? (rejectedProperties ? childElements(rejectedProperties) : []) : originalChildren;
+  for (const child of baseChildren) {
     if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) properties.appendChild(cloneElement(child));
   }
   const mark = document.createElementNS(W_NS, 'w:rPr') as WmlElement;
