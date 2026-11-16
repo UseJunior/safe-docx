@@ -25,7 +25,7 @@
  */
 
 import { childElements } from '@usejunior/docx-core';
-import { findFollowingSiblingParagraph } from './trackChangesAcceptorAst.js';
+import { findFollowingSiblingParagraph, paragraphMarkSnapshotHasInsertion } from './trackChangesAcceptorAst.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -141,7 +141,9 @@ export function stampSurvivingMarkProperties(
     const markProperties = pPr && directChild(pPr, 'rPr');
     if (!pPr || !markProperties) continue;
     const resolvesAway = (childElements(markProperties as never) as unknown as Element[])
-      .some((child) => child.namespaceURI === W_NS && removed.has(child.localName));
+      .some((child) => child.namespaceURI === W_NS && removed.has(child.localName)) ||
+      // Reject All also removes a mark whose w:rPrChange snapshot records it as inserted.
+      (projection === 'reject' && paragraphMarkSnapshotHasInsertion(paragraph));
     if (!resolvesAway) continue;
     // The acceptor's own merge-target lookup, which skips block-level range
     // markers between the paragraphs.

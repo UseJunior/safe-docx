@@ -207,6 +207,16 @@ describe('publication gate: paragraph-property parity (#1493)', () => {
       await then('the redline publishes', () => expect(outcome.error).toBeUndefined());
     });
 
+  test('judges sources with pending mark history by the same reading as the redline',
+    async ({ when, then }: AllureBddContext) => {
+      const history = '<w:rPr><w:b/><w:rPrChange w:id="91" w:author="Prior" w:date="2026-01-01T00:00:00Z">' +
+        '<w:rPr><w:ins w:id="92" w:author="Prior" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:rPrChange></w:rPr>';
+      const body = p('Alpha', `<w:jc w:val="center"/>${history}`) + p('Beta', '<w:jc w:val="right"/>');
+      const outcome = await when('a document with a pending inserted-mark snapshot is compared with an edited copy', () =>
+        compare(body, body.replace('Beta', 'Beta edited')));
+      await then('the redline publishes', () => expect(outcome.error).toBeUndefined());
+    });
+
   test('normalizes rsid attributes, child order and the mark run properties',
     async ({ then }: AllureBddContext) => {
       await then('equivalent w:pPr spellings share one signature and a real difference does not', () => {
@@ -235,6 +245,20 @@ describe('publication gate: paragraph-property parity (#1493)', () => {
         expect(paragraphs.map((paragraph) => paragraphPropertySignature(paragraph))).toEqual([center, center, center]);
         expect(paragraphs[0]!.getElementsByTagNameNS(W, 'del')).toHaveLength(1);
         expect(stampSurvivingMarkProperties(root, 'reject')).toBe(false);
+      });
+    });
+
+  test('stamps a mark whose w:rPrChange snapshot records an insertion on the reject side',
+    async ({ then }: AllureBddContext) => {
+      await then('Reject All removes that mark, so it takes the surviving mark properties', () => {
+        const history = '<w:rPr><w:b/><w:rPrChange w:id="2" w:author="a" w:date="2026-01-01T00:00:00Z">' +
+          '<w:rPr><w:ins w:id="3" w:author="a" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:rPrChange></w:rPr>';
+        const root = parseDocumentXml(`<w:document xmlns:w="${W}"><w:body>` +
+          p('A', `<w:jc w:val="center"/>${history}`) + p('B', '<w:jc w:val="right"/>') + '</w:body></w:document>');
+        expect(stampSurvivingMarkProperties(root, 'accept')).toBe(false);
+        expect(stampSurvivingMarkProperties(root, 'reject')).toBe(true);
+        const [first, second] = Array.from(root.getElementsByTagNameNS(W, 'p'));
+        expect(paragraphPropertySignature(first!)).toBe(paragraphPropertySignature(second!));
       });
     });
 });

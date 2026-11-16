@@ -94,6 +94,17 @@ import {
 } from '../fieldComparisonSemantics.js';
 import { markWholeTrackedContainers } from './emptiedBlockContainers.js';
 import { compareParagraphProperties, stampSurvivingMarkProperties } from './paragraphPropertyParity.js';
+
+/** `project(xml)` after {@link stampSurvivingMarkProperties}; `projected` when nothing needed stamping. */
+function survivingMarkProjection(
+  xml: string,
+  projection: 'accept' | 'reject',
+  project: (xml: string) => string,
+  projected: string,
+): string {
+  const root = parseDocumentXml(xml);
+  return stampSurvivingMarkProperties(root, projection) ? project(serializeToXml(root)) : projected;
+}
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import {
   buildTaggedTreePublication,
@@ -761,10 +772,15 @@ export async function buildStandaloneTaggedPackage(
     {
       // As for formatting fidelity: with format detection off, Reject All may
       // intentionally keep revised properties, so only Accept is held to them.
+      // Measured under the same surviving-mark reading as the candidate, so
+      // a source that already holds pending mark revisions is not judged by
+      // a different convention than the redline (#1493).
       original: options.formatDetection.detectFormatChanges
-        ? extractRoundTripParagraphProperties(originalProjectionXml).properties
+        ? extractRoundTripParagraphProperties(
+          survivingMarkProjection(originalXml, 'reject', rejectAllChanges, originalProjectionXml)).properties
         : undefined,
-      revised: extractRoundTripParagraphProperties(revisedProjectionXml).properties,
+      revised: extractRoundTripParagraphProperties(
+        survivingMarkProjection(revisedXml, 'accept', acceptAllChanges, revisedProjectionXml)).properties,
     },
   );
   const rejectedOriginalXml = rejectAllChanges(taggedOriginalXml);

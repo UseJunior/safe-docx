@@ -82,7 +82,7 @@ function paragraphHasParaMarker(
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
  */
-function paragraphMarkSnapshotHasInsertion(p: Element): boolean {
+export function paragraphMarkSnapshotHasInsertion(p: Element): boolean {
   const pPr = getParagraphPPr(p);
   const rPr = pPr && childElements(pPr).find((c) => c.tagName === 'w:rPr');
   const change = rPr && childElements(rPr).find((c) => c.tagName === 'w:rPrChange');
