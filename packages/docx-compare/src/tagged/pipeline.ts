@@ -718,11 +718,13 @@ export async function buildStandaloneTaggedPackage(
       revised: extractRoundTripParagraphTopology(revisedProjectionXml),
     },
   );
+  const rejectedOriginalXml = rejectAllChanges(taggedOriginalXml);
+  const acceptedRevisedXml = acceptAllChanges(taggedRevisedXml);
   const formattingFidelity = (
     options.formattingFidelityEvaluator ?? compareSourceProjectedFormattingFidelity
   )(
-    rejectAllChanges(taggedOriginalXml),
-    acceptAllChanges(taggedRevisedXml),
+    rejectedOriginalXml,
+    acceptedRevisedXml,
     taggedXml,
   );
   // A section entry the redline already carries (a tracked break mark, a
@@ -747,7 +749,16 @@ export async function buildStandaloneTaggedPackage(
       report.unalignedExpectedParagraphs === 0 &&
       report.unalignedActualParagraphs === 0 &&
       report.divergences.every((divergence) =>
-        sectionDivergenceIsReported(divergence, reportedChanges)),
+        sectionDivergenceIsReported(
+          divergence,
+          reportedChanges,
+          report === formattingFidelity.reject
+            ? {
+              projectedSectionCount: countSections(rejectedOriginalXml),
+              revisedSectionCount: countSections(acceptedRevisedXml),
+            }
+            : undefined,
+        )),
     );
   // Disabling detection opts out of representing original-to-revised format
   // differences; it does not opt out of validating the published package.
@@ -811,12 +822,36 @@ const STORY_SCOPE_BY_REFERENCE_PROPERTY: Readonly<Record<string, 'header' | 'foo
 export function sectionDivergenceIsReported(
   divergence: Pick<FormattingDivergence, 'scope' | 'property' | 'sectionIndex'>,
   unrepresentedChanges: readonly UnrepresentedChange[],
+  rejectProjection?: { projectedSectionCount: number; revisedSectionCount: number },
 ): boolean {
   if (divergence.scope !== 'section') return false;
   const storyScope = STORY_SCOPE_BY_REFERENCE_PROPERTY[divergence.property];
   if (!storyScope) return unrepresentedChanges.some((change) => change.scope === 'section');
+  // Unrepresented changes are indexed by the revised document's sections. A
+  // Reject All divergence is indexed by the projection's sections, and when
+  // the redline adds a section break the two differ: the projection's final
+  // section is the body-level w:sectPr, which is the revised final section and
+  // still carries its references (#1420). Only an added break shifts the
+  // index this way; a removed break keeps its own rules (#1203).
+  const reportedIndexes = new Set([divergence.sectionIndex]);
+  if (
+    rejectProjection &&
+    rejectProjection.projectedSectionCount < rejectProjection.revisedSectionCount &&
+    divergence.sectionIndex === rejectProjection.projectedSectionCount - 1
+  ) {
+    reportedIndexes.add(rejectProjection.revisedSectionCount - 1);
+  }
   return unrepresentedChanges.some((change) =>
-    change.scope === storyScope && change.sectionIndex === divergence.sectionIndex);
+    change.scope === storyScope &&
+    change.sectionIndex !== undefined &&
+    reportedIndexes.has(change.sectionIndex));
+}
+
+/** Count of `w:sectPr` sections in a document, leaving out `w:sectPrChange` snapshots. */
+function countSections(documentXml: string): number {
+  return Array.from(parseXml(documentXml).getElementsByTagName('w:sectPr'))
+    .filter((sectPr) => (sectPr.parentNode as Element | null)?.nodeName !== 'w:sectPrChange')
+    .length;
 }
 
 async function relationshipClosureDigest(

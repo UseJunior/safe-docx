@@ -70,6 +70,13 @@ export interface TextBoxRevisionChange {
   reason?: string;
   originalParagraphId?: string;
   revisedParagraphId?: string;
+  /**
+   * The container the change is in when it is not a `w:txbxContent`, such as
+   * a header/footer story page the package projection check compared. When
+   * set it replaces the `w:txbxContent[index]` locator, so the error does not
+   * point at a text box a document without one does not have (#1420).
+   */
+  container?: string;
 }
 
 export class UnsupportedTextBoxRevisionError extends Error {
@@ -77,21 +84,24 @@ export class UnsupportedTextBoxRevisionError extends Error {
 
   constructor(changes: TextBoxRevisionChange[]) {
     const locations = changes
-      .map(({ index, partPath, reason, originalParagraphId, revisedParagraphId }) => {
+      .map(({ index, partPath, reason, originalParagraphId, revisedParagraphId, container }) => {
         const paragraphIds = [...new Set(
           [originalParagraphId, revisedParagraphId].filter(
             (value): value is string => value !== undefined,
           ),
         )];
-        const locator = `${partPath ?? 'word/document.xml'}#w:txbxContent[${index}]`;
+        const locator = container ?? `${partPath ?? 'word/document.xml'}#w:txbxContent[${index}]`;
         const paragraphSuffix = paragraphIds.length > 0
           ? ` (paragraph ${paragraphIds.join(' → ')})`
           : '';
         return `${locator}${paragraphSuffix}${reason ? `: ${reason}` : ''}`;
       })
       .join(', ');
+    const subject = changes.length > 0 && changes.every((change) => change.container !== undefined)
+      ? 'header/footer story'
+      : 'w:txbxContent';
     super(
-      `The requested w:txbxContent change is outside the comparison engine's ` +
+      `The requested ${subject} change is outside the comparison engine's ` +
         `supported Word-readable story subset. Changed container(s): ${locations}`,
     );
     this.name = 'UnsupportedTextBoxRevisionError';
@@ -5906,12 +5916,52 @@ export async function assertAncillaryTextBoxStoryProjection(
     throw new UnsupportedTextBoxRevisionError([{
       index: 0,
       partPath: 'word/document.xml',
+      container: divergentStoryPages([
+        ['Reject All', expectedRejectedPages, rejectedComparedPages],
+        ['Accept All', expectedRevisedPages, acceptedComparedPages],
+      ]),
       reason:
         'assembled relationship-selected stories failed accept/reject package projection validation ' +
         `(original ${digest(expectedRejectedPages)} != ${digest(rejectedComparedPages)}; ` +
         `revised ${digest(expectedRevisedPages)} != ${digest(acceptedComparedPages)})`,
     }]);
   }
+}
+
+/**
+ * Names the header/footer pages whose displayed story differs between the
+ * expected and the compared projection, from the `key|content` entries the
+ * package projection check compares (`DisplayedStoryPage.key` is the section
+ * ordinal, story kind and kind of page, or `sections`).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1420
+ */
+function divergentStoryPages(
+  projections: ReadonlyArray<readonly [string, readonly string[], readonly string[]]>,
+): string {
+  const pages: string[] = [];
+  for (const [projection, expected, actual] of projections) {
+    const byKey = (entries: readonly string[]): Map<string, string> => {
+      const map = new Map<string, string>();
+      for (const entry of entries) {
+        const parts = entry.split('|');
+        const keyLength = parts[0] === 'sections' ? 1 : 3;
+        map.set(parts.slice(0, keyLength).join('|'), parts.slice(keyLength).join('|'));
+      }
+      return map;
+    };
+    const expectedByKey = byKey(expected);
+    const actualByKey = byKey(actual);
+    const keys = [...new Set([...expectedByKey.keys(), ...actualByKey.keys()])].sort();
+    for (const key of keys) {
+      if (expectedByKey.get(key) === actualByKey.get(key)) continue;
+      const [ordinal, kind, page] = key.split('|');
+      pages.push(key === 'sections'
+        ? `${projection} section count`
+        : `${projection} section ${Number(ordinal) + 1} ${page} ${kind}`);
+    }
+  }
+  return `word/document.xml header/footer story binding (${pages.join('; ') || 'unlocated'})`;
 }
 
 /**
