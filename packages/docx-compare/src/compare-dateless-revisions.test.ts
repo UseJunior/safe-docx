@@ -8,7 +8,9 @@
  * @see https://github.com/UseJunior/safe-docx/issues/1495
  */
 
-import { DocxArchive, buildSyntheticDocx } from '@usejunior/docx-core';
+import { DocxArchive, buildSyntheticDocx, parseXml } from '@usejunior/docx-core';
+
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 import { describe, expect } from 'vitest';
 import { compareDocuments, type CompareOptions } from './index.js';
 import { acceptAllChanges, rejectAllChanges } from './tagged/trackChangesAcceptorAst.js';
@@ -175,6 +177,26 @@ describe('compareDocuments date: null', () => {
       const result = await when('the pair is compared with date: null', () => compareDocuments(pair.original, pair.revised, { date: null }));
       await then('the comparison succeeds with no w:date', async () => {
         expect(count((await storyParts(result.document)).get('word/document.xml')!, /w:date="/g)).toBe(0);
+      });
+    },
+  );
+
+  test.openspec('Dateless comparison omits w:date from every revision it creates')(
+    'an author whose name spells the placeholder date attribute is kept intact',
+    async ({ given, when, then }: AllureBddContext) => {
+      const pair = await given('the footer pair', () => footerPair());
+      const author = "Reviewer w:date='1901-01-01T00:00:00Z'";
+      const result = await when('it is compared with date: null and that author', () =>
+        compareDocuments(pair.original, pair.revised, { date: null, author }));
+      await then('every generated revision keeps the full author and has no w:date attribute', async () => {
+        const archive = await DocxArchive.load(result.document);
+        const doc = parseXml((await archive.getDocumentXml()));
+        const revisions = Array.from(doc.getElementsByTagNameNS(W_NS, 'ins')).concat(Array.from(doc.getElementsByTagNameNS(W_NS, 'del')));
+        expect(revisions.length).toBeGreaterThan(0);
+        for (const revision of revisions) {
+          expect(revision.getAttributeNS(W_NS, 'author')).toBe(author);
+          expect(revision.hasAttributeNS(W_NS, 'date')).toBe(false);
+        }
       });
     },
   );

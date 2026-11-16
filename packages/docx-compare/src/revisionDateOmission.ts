@@ -10,7 +10,7 @@
  * input keep their own dates, because none of them carries the placeholder.
  */
 
-import { DocxArchive } from '@usejunior/docx-core';
+import { DocxArchive, parseXml, serializeXml } from '@usejunior/docx-core';
 import { formatDate } from './tagged/revisionMarkup.js';
 
 const XML_PART = /\.(xml|rels)$/i;
@@ -55,15 +55,33 @@ export async function choosePlaceholderRevisionDate(inputs: readonly Buffer[]): 
   }
 }
 
-/** Remove every `w:date` attribute whose value is the placeholder date. */
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+
+/**
+ * Remove every WordprocessingML `date` attribute whose value is the
+ * placeholder. The part is parsed so only real attributes are touched, never
+ * text or another attribute's value that happens to spell the same stamp.
+ */
 export async function omitPlaceholderRevisionDates(document: Buffer, placeholder: Date): Promise<Buffer> {
   const stamp = formatDate(placeholder);
-  const attribute = new RegExp(`\\s+w:date\\s*=\\s*(?:"${stamp}"|'${stamp}')`, 'g');
   const archive = await DocxArchive.load(document);
   let changed = false;
   for (const { path, xml } of await packageXmlParts(archive)) {
     if (!xml.includes(stamp)) continue;
-    archive.setFile(path, xml.replace(attribute, ''));
+    const doc = parseXml(xml);
+    let removed = 0;
+    const elements = doc.getElementsByTagName('*');
+    for (let index = 0; index < elements.length; index++) {
+      const element = elements[index]!;
+      if (element.getAttributeNS(W_NS, 'date') === stamp) {
+        element.removeAttributeNS(W_NS, 'date');
+        removed += 1;
+      }
+    }
+    if (removed === 0) continue;
+    const serialized = serializeXml(doc);
+    archive.setFile(path, serialized.startsWith('<?xml') ? serialized : XML_DECLARATION + serialized);
     changed = true;
   }
   return changed ? archive.save() : document;
