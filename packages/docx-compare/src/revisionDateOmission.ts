@@ -30,10 +30,12 @@ const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quo
 
 /** Decode XML character and predefined entity references, as the parser will. */
 function decodeXmlReferences(xml: string): string {
-  return xml.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g, (_, ref: string) => {
-    if (ref.startsWith('#x')) return String.fromCodePoint(Number.parseInt(ref.slice(2), 16));
-    if (ref.startsWith('#')) return String.fromCodePoint(Number.parseInt(ref.slice(1), 10));
-    return NAMED_ENTITIES[ref]!;
+  // Decoding comments/CDATA too only widens the collision search, which is
+  // harmless; an out-of-range reference (literal text there) is left as is.
+  return xml.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g, (match, ref: string) => {
+    if (!ref.startsWith('#')) return NAMED_ENTITIES[ref]!;
+    const code = ref.startsWith('#x') ? Number.parseInt(ref.slice(2), 16) : Number.parseInt(ref.slice(1), 10);
+    return code <= 0x10ffff ? String.fromCodePoint(code) : match;
   });
 }
 

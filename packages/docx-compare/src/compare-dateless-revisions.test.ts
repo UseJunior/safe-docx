@@ -162,6 +162,23 @@ describe('compareDocuments date: null', () => {
     },
   );
 
+  test.openspec('Dateless comparison omits w:date from every revision it creates')(
+    'an out-of-range character reference inside an XML comment does not break the collision scan',
+    async ({ given, when, then }: AllureBddContext) => {
+      const pair = await given('a revised document.xml holding a comment with literal &#x110000;', async () => {
+        const base = await footerPair();
+        const archive = await DocxArchive.load(base.revised);
+        const xml = await archive.getDocumentXml();
+        archive.setDocumentXml(xml.replace('<w:body>', '<w:body><!-- literal &#x110000; -->'));
+        return { original: base.original, revised: await archive.save() };
+      });
+      const result = await when('the pair is compared with date: null', () => compareDocuments(pair.original, pair.revised, { date: null }));
+      await then('the comparison succeeds with no w:date', async () => {
+        expect(count((await storyParts(result.document)).get('word/document.xml')!, /w:date="/g)).toBe(0);
+      });
+    },
+  );
+
   test.openspec('Dateless comparison projects exactly like a dated comparison')(
     'Accept All and Reject All of the dateless output equal the dated output',
     async ({ given, when, then }: AllureBddContext) => {
