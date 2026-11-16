@@ -1211,9 +1211,71 @@ function sameMergeProperties(left: WmlElement, right: WmlElement): boolean {
   return snapshot(left) === snapshot(right);
 }
 
+const MERGE_BASE_EXCLUDED = new Set(['rPr', 'sectPr', 'pPrChange']);
+
+/**
+ * Whether a whole-paragraph revision whose properties differ from its
+ * predecessor's can still move its mark there by transferring properties:
+ * only when nothing but a table or the end of the story follows it (the
+ * LibreOffice case #891 repairs), neither paragraph is numbered (a synthetic
+ * w:pPrChange loses numbering on LibreOffice Reject) and the container has
+ * no pending w:pPrChange of its own.
+ */
+function canTransferMergeProperties(paragraph: WmlElement, predecessor: WmlElement): boolean {
+  let next = paragraph.nextSibling;
+  while (next && next.nodeType !== 1) next = next.nextSibling;
+  if (next && (next as WmlElement).namespaceURI === W_NS && (next as WmlElement).localName === 'p') return false;
+  const pPr = (element: WmlElement) => childElements(element).find((child) => child.localName === 'pPr');
+  for (const element of [paragraph, predecessor]) {
+    const properties = pPr(element);
+    if (properties && properties.getElementsByTagNameNS(W_NS, 'numPr').length > 0) return false;
+  }
+  const own = pPr(paragraph);
+  return !own || !childElements(own).some((child) => child.localName === 'pPrChange');
+}
+
+/**
+ * Make the container's properties right in both projections once the merge
+ * relocates its mark (#1493). For a deleted container, Accept All shows the
+ * predecessor's content in it, so its live base becomes the predecessor's
+ * and a w:pPrChange restores its own on Reject All. For an inserted one,
+ * Reject All shows the predecessor's content in it, so it keeps its live base
+ * and the w:pPrChange records the predecessor's.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ */
+function transferMergeProperties(
+  containerProperties: WmlElement,
+  predecessorProperties: WmlElement,
+  kind: 'del' | 'ins',
+  revision: ComparisonRevision,
+): void {
+  const document = containerProperties.ownerDocument!;
+  const base = (properties: WmlElement) => childElements(properties)
+    .filter((child) => !MERGE_BASE_EXCLUDED.has(child.localName));
+  const ownBase = base(containerProperties);
+  const predecessorBase = base(predecessorProperties).map((child) => cloneElement(child));
+  const snapshot = document.createElementNS(W_NS, 'w:pPr') as WmlElement;
+  for (const child of kind === 'del' ? ownBase.map((element) => cloneElement(element)) : predecessorBase) {
+    snapshot.appendChild(child);
+  }
+  if (kind === 'del') {
+    for (const child of ownBase) containerProperties.removeChild(child);
+    const anchor = childElements(containerProperties).find((child) => MERGE_BASE_EXCLUDED.has(child.localName));
+    for (const child of predecessorBase) containerProperties.insertBefore(child, anchor ?? null);
+  }
+  const change = document.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
+  appendChangeMetadata(change, revision);
+  // Part of the same whole-paragraph revision, not a format change of its own.
+  change.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+  change.appendChild(snapshot);
+  containerProperties.appendChild(change);
+}
+
 function normalizeWholeParagraphRevisionBoundaries(
   root: WmlElement,
   generatedRevisionIds: ReadonlySet<number>,
+  allocateRevision: () => ComparisonRevision,
 ): void {
   const revisionElements = (scope: WmlElement): WmlElement[] => {
     const revisions: WmlElement[] = [];
@@ -1253,8 +1315,13 @@ function normalizeWholeParagraphRevisionBoundaries(
     // All, for an inserted one), and readers disagree on whose properties the
     // merged paragraph keeps: LibreOffice and the tagged acceptor keep the
     // predecessor's, ECMA-376 § 17.13.5.15 and Aspose.Words the surviving
-    // mark's. Relocate only when that choice cannot matter (#1493).
-    if (!sameMergeProperties(predecessor, paragraph)) return;
+    // mark's (#1493). With equal properties the choice cannot matter. With
+    // different ones, a container followed by another paragraph keeps its own
+    // mark; one followed by a table or the end of its story, where
+    // LibreOffice cannot resolve its own mark, takes the predecessor's
+    // properties live and records its own in a w:pPrChange (see transfer).
+    const sameProperties = sameMergeProperties(predecessor, paragraph);
+    if (!sameProperties && !canTransferMergeProperties(paragraph, predecessor)) return;
     const predecessorPropertiesBefore = paragraphProperties(predecessor);
     const predecessorRevisions = predecessorPropertiesBefore
       ? revisionElements(predecessorPropertiesBefore)
@@ -1299,6 +1366,9 @@ function normalizeWholeParagraphRevisionBoundaries(
       const boundary = childElements(predecessorProperties).find((child) =>
         ['sectPr', 'pPrChange'].includes(child.localName));
       predecessorProperties.insertBefore(predecessorMarkProperties, boundary ?? null);
+    }
+    if (!sameProperties) {
+      transferMergeProperties(pPr, predecessorProperties, marker.localName as 'del' | 'ins', allocateRevision());
     }
     marker.parentNode!.removeChild(marker);
     placeParagraphMarkRevisionMarker(predecessorMarkProperties, marker, marker.localName === 'del' ? 'w:del' : 'w:ins');
@@ -3105,7 +3175,7 @@ export function serializeTaggedTree(
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);
   normalizeWholeParagraphMoveRangeStarts(emitted, options.moves ?? []);
-  normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);
+  normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds, allocateRevision);
   hoistFieldCharactersFromDeletions(emitted);
   // After hoisting: partial-field hoisting lifts every field character out of
   // a deletion, which must not include fields re-expressed from simple ones.

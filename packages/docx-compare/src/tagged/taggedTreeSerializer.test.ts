@@ -352,34 +352,50 @@ describe('tagged-tree shadow serializer', () => {
     expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
   });
 
-  test('keeps a terminal paragraph deletion on its own mark when the preceding paragraph has other properties (#1493)', () => {
-    const original = documentBody(
-      '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
-      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>' +
-      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Charlie</w:t></w:r></w:p>',
-    );
-    const revised = documentBody(
-      '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
-      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>',
-    );
+  const redline = (originalBody: string, revisedBody: string) => {
+    const original = documentBody(originalBody);
+    const revised = documentBody(revisedBody);
     const constructed = constructTaggedTree(original, revised);
     const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
       author: 'Comparator', date: '2026-08-17T00:00:00Z',
     }));
     const paragraphs = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'p'));
-    const markRevisions = (paragraph: Element) => Array.from(paragraph.getElementsByTagNameNS(W_NS, 'rPr'))
+    const markDeleted = (paragraph: Element) => Array.from(paragraph.getElementsByTagNameNS(W_NS, 'rPr'))
       .filter((rPr) => (rPr.parentNode as Element).localName === 'pPr')
-      .flatMap((rPr) => Array.from(rPr.getElementsByTagNameNS(W_NS, 'del')));
+      .some((rPr) => rPr.getElementsByTagNameNS(W_NS, 'del').length > 0);
+    return { paragraphs, markDeleted, candidateXml: `<w:document xmlns:w="${W_NS}">${output}</w:document>` };
+  };
+  const jcOf = (xml: string, value: string) => Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'p'))
+    .find((paragraph) => paragraph.textContent === value)!
+    .getElementsByTagNameNS(W_NS, 'jc')[0]!.getAttributeNS(W_NS, 'val');
+  const jc = (value: string) => `<w:pPr><w:jc w:val="${value}"/></w:pPr>`;
+  const para = (value: string, alignment: string) => `<w:p>${jc(alignment)}<w:r><w:t>${value}</w:t></w:r></w:p>`;
 
-    // Relocating the mark would make Bravo merge into Charlie's container,
-    // and a reader that keeps the surviving mark's properties would show
-    // Bravo right-aligned.
-    expect(paragraphs).toHaveLength(3);
-    expect(markRevisions(paragraphs[1]!)).toHaveLength(0);
-    expect(markRevisions(paragraphs[2]!)).toHaveLength(1);
-    const candidateXml = `<w:document xmlns:w="${W_NS}">${output}</w:document>`;
+  test('keeps a deleted paragraph mark on the deleted paragraph when another paragraph follows and properties differ (#1493)', () => {
+    const { paragraphs, markDeleted, candidateXml } = redline(
+      para('Alpha', 'left') + para('Bravo', 'center') + para('Charlie', 'right') + para('Delta', 'left'),
+      para('Alpha', 'left') + para('Bravo', 'center') + para('Delta', 'left'),
+    );
+    expect(paragraphs.map(markDeleted)).toEqual([false, false, true, false]);
+    expect(jcOf(acceptAllChanges(candidateXml), 'Bravo')).toBe('center');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Charlie')).toBe('right');
+  });
+
+  test('moves a terminal deletion mark with the predecessor properties and a w:pPrChange when properties differ (#1493)', () => {
+    const { paragraphs, markDeleted, candidateXml } = redline(
+      para('Alpha', 'left') + para('Bravo', 'center') + para('Charlie', 'right'),
+      para('Alpha', 'left') + para('Bravo', 'center'),
+    );
+    // LibreOffice cannot resolve a terminal deleted mark (#891), so the mark
+    // moves to Bravo; Charlie's container carries Bravo's properties live and
+    // its own in a w:pPrChange, so every reader agrees on both projections.
+    expect(paragraphs.map(markDeleted)).toEqual([false, true, false]);
+    expect(paragraphs[2]!.getElementsByTagNameNS(W_NS, 'pPrChange')).toHaveLength(1);
     expect(text(acceptAllChanges(candidateXml))).toBe('AlphaBravo');
+    expect(jcOf(acceptAllChanges(candidateXml), 'Bravo')).toBe('center');
     expect(text(rejectAllChanges(candidateXml))).toBe('AlphaBravoCharlie');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Bravo')).toBe('center');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Charlie')).toBe('right');
   });
 
   test('places a terminal paragraph deletion on the preceding break with exact projections', () => {
