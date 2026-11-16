@@ -26,12 +26,25 @@ async function packageXmlParts(archive: DocxArchive): Promise<Array<{ path: stri
   return parts;
 }
 
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+/** Decode XML character and predefined entity references, as the parser will. */
+function decodeXmlReferences(xml: string): string {
+  return xml.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g, (_, ref: string) => {
+    if (ref.startsWith('#x')) return String.fromCodePoint(Number.parseInt(ref.slice(2), 16));
+    if (ref.startsWith('#')) return String.fromCodePoint(Number.parseInt(ref.slice(1), 10));
+    return NAMED_ENTITIES[ref]!;
+  });
+}
+
 /** Choose a placeholder revision date whose formatted value appears in neither input. */
 export async function choosePlaceholderRevisionDate(inputs: readonly Buffer[]): Promise<Date> {
   const texts: string[] = [];
   for (const input of inputs) {
     const archive = await DocxArchive.load(input);
-    for (const { xml } of await packageXmlParts(archive)) texts.push(xml);
+    // Search decoded text too: a reference such as `&#90;` serializes as the
+    // literal character, so the encoded form would otherwise hide a collision.
+    for (const { xml } of await packageXmlParts(archive)) texts.push(xml, decodeXmlReferences(xml));
   }
   for (let offset = 0; ; offset += 1) {
     const candidate = new Date(FIRST_PLACEHOLDER_MS + offset * 1000);

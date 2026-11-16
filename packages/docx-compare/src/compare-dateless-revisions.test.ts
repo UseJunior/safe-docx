@@ -143,6 +143,25 @@ describe('compareDocuments date: null', () => {
     },
   );
 
+  test.openspec('Dateless comparison keeps the dates of pre-existing revisions')(
+    'a pre-existing date written with a character reference is not mistaken for a generated one',
+    async ({ given, when, then }: AllureBddContext) => {
+      const pair = await given('a revised input whose insertion date encodes Z as &#90;', async () => {
+        const base = await notesPair();
+        const archive = await DocxArchive.load(base.revised);
+        const xml = await archive.getDocumentXml();
+        archive.setDocumentXml(xml.replace(`w:date="${PRIOR_STAMP}"`, 'w:date="1901-01-01T00:00:00&#90;"'));
+        return { original: base.original, revised: await archive.save() };
+      });
+      const result = await when('the pair is compared with date: null', () => compareDocuments(pair.original, pair.revised, { date: null }));
+      await then('the preserved insertion keeps that date', async () => {
+        const xml = (await storyParts(result.document)).get('word/document.xml')!;
+        expect(xml).toMatch(/w:date="1901-01-01T00:00:00(Z|&#90;)"/);
+        expect(count(xml, /w:date="/g)).toBe(1);
+      });
+    },
+  );
+
   test.openspec('Dateless comparison projects exactly like a dated comparison')(
     'Accept All and Reject All of the dateless output equal the dated output',
     async ({ given, when, then }: AllureBddContext) => {
