@@ -9,6 +9,7 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
+import { runInKeepsWithNext } from './keep-next-rules.js';
 import { CreationListNumbering, type HeadingNumberScheme, type RunInLevel } from './list-numbering.js';
 import { RUN_IN_TOC_LEVEL, paragraphLayoutValue, type ParagraphLayoutAlignment } from './validate.js';
 
@@ -129,7 +130,7 @@ export class CreationTheme implements Theme {
     const tocLevel = RUN_IN_TOC_LEVEL[level];
     const entry = tocLevel === undefined ? [] : this.headingEntry(headingRuns, tocLevel, true);
     const space = headingRuns.length > 0 && bodyRuns.length > 0 ? [textRun(' ', {}, false)] : [];
-    return this.paragraph(CREATION_STYLE.body, [...styled, ...close, ...space, ...bodyRuns, ...entry], { list, ...(level === 'article' ? { keepNext: true } : {}) });
+    return this.paragraph(CREATION_STYLE.body, [...styled, ...close, ...space, ...bodyRuns, ...entry], { list, ...(runInKeepsWithNext(level) ? { keepNext: true } : {}) });
   }
 
   bodyParagraph(runs: InlineSpec[], overrides: Partial<Omit<ParagraphSpec, 'kind' | 'runs'>> = {}): ParagraphSpec {

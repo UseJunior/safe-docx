@@ -1,4 +1,5 @@
 import Markdoc, { type Node as MarkdocNode } from '@markdoc/markdoc';
+import { keepsPreviousWithNext, runInKeepsWithNext } from './keep-next-rules.js';
 import { parseCreationFrontmatter } from './validate.js';
 
 /**
@@ -721,7 +722,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
     switch (node.tag) {
       case 'center':
       case 'legend':
-        if (node.tag === 'legend') keepPrevious();
+        if (node.tag === 'legend' && keepsPreviousWithNext('legend', body.at(-1)?.signer ? 'signer' : 'other')) keepPrevious();
         for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph);
         return;
       case 'paragraph-layout': {
@@ -732,7 +733,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
       case 'signer': {
         const name = node.attributes.name !== undefined ? String(node.attributes.name) : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
         const date = node.attributes.date === undefined ? '' : `\t${String(node.attributes.date)}`;
-        if (!body.at(-1)?.signer) keepPrevious();
+        if (keepsPreviousWithNext('signer', body.at(-1)?.signer ? 'signer' : 'other')) keepPrevious();
         push(`${SIGNATURE_LINE}\n${name}${date}`, node);
         body.at(-1)!.signer = true;
         return;
@@ -760,7 +761,7 @@ export function projectSourceText(source: string, options: { reader?: Projection
         const heading = runInHeading(node);
         const text = heading && body ? `${heading} ${body}` : heading || body;
         if (node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
-        push(text, node, { marker: runIn.get(node)!.label, ...(runIn.get(node)!.level === 0 ? { generatedKeepNext: true as const } : {}) });
+        push(text, node, { marker: runIn.get(node)!.label, ...(runInKeepsWithNext(String(node.attributes.level)) ? { generatedKeepNext: true as const } : {}) });
         return;
       }
       case 'toc':
