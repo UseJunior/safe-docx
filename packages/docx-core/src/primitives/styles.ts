@@ -22,8 +22,8 @@ function childElements(parent: Element, localName: string): Element[] {
 }
 
 /**
- * The first direct `w:` child named `localName`. Unlike getFirstChild (a
- * descendant search) it never reaches into a nested `w:tblPrChange` /
+ * The first direct `w:` child named `localName`. Like getFirstChild,
+ * it never reaches into a nested `w:tblPrChange` /
  * `w:trPrChange` (the previous state) or a nested table.
  */
 function ownChild(parent: Element, localName: string): Element | null {
@@ -36,10 +36,13 @@ function ownChild(parent: Element, localName: string): Element | null {
 }
 
 /**
- * A table-style `w:rPr` without its `w:rPrChange`, which records the
- * previous state of a tracked formatting change. The property readers search
- * descendants, so the change record would otherwise read as current. The
- * copy is detached and only ever read.
+ * A current `w:rPr` view without its previous tracked formatting snapshot.
+ * Direct-child property readers ignore snapshots; removing them from stored
+ * style/default views also keeps downstream consumers from treating history
+ * as current formatting. The source DOM is preserved by a detached copy.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @see https://github.com/UseJunior/safe-docx/issues/1179
  */
 function currentRPr(rPr: Element | null): Element | null {
   if (!rPr || !ownChild(rPr, 'rPrChange')) return rPr;
@@ -182,7 +185,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
 
   const docDefaults = stylesDoc.getElementsByTagNameNS(OOXML.W_NS, W.docDefaults).item(0);
   const rPrDefault = docDefaults ? getFirstChild(docDefaults, OOXML.W_NS, W.rPrDefault) : null;
-  const docDefaultsRPr = rPrDefault ? getFirstChild(rPrDefault, OOXML.W_NS, W.rPr) : null;
+  const docDefaultsRPr = currentRPr(rPrDefault ? getFirstChild(rPrDefault, OOXML.W_NS, W.rPr) : null);
   const tableStyleRPrs: Element[] = [];
   let defaultTableStyleId: string | null = null;
   let defaultParagraphStyleId: string | null = null;
@@ -194,12 +197,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
     const nameEl = getFirstChild(st, OOXML.W_NS, W.name);
     const basedOnEl = getFirstChild(st, OOXML.W_NS, W.basedOn);
     const styleType = getWAttr(st, 'type');
-    // getFirstChild searches descendants. A table style nests further pPr /
-    // rPr / tblPr inside each w:tblStylePr, so its own properties must be read
-    // from direct children, or a style without its own rPr would take the
-    // first conditional's as if it applied to the whole table.
-    const styleChild = (localName: string): Element | null =>
-      styleType === 'table' ? ownChild(st, localName) : getFirstChild(st, OOXML.W_NS, localName);
+    const styleChild = (localName: string): Element | null => ownChild(st, localName);
     const pPr = styleChild(W.pPr);
     const rPr = styleChild(W.rPr);
 
@@ -211,7 +209,7 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
       name,
       basedOn,
       pPr: pPr ?? null,
-      rPr: (styleType === 'table' ? currentRPr(rPr) : rPr) ?? null,
+      rPr: currentRPr(rPr) ?? null,
     };
     if (styleType === 'table') {
       if (def.rPr) tableStyleRPrs.push(def.rPr);

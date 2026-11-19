@@ -17,6 +17,7 @@ import {
   hasHighlightTags,
   hasHyperlinkTags,
   paragraphHasVisibleContent,
+  isParagraphMarkTrackedDeleted,
   replaceParagraphTextRange,
   stripHyperlinkTags,
   stripAllInlineTags,
@@ -104,6 +105,9 @@ function hiddenConstructRemovalWarning(label: string, tracked: boolean): string 
   const article = /^[aeiou]/iu.test(label) ? 'an' : 'a';
   return `The replaced range spanned ${article} ${label} not shown in the paragraph text; it was ${outcome}.${aftermath}`;
 }
+
+export type { AffectedRefField } from './bookmark_references.js';
+import { collectLocalUserBookmarks, collectTargetingRefFields, type AffectedRefField } from './bookmark_references.js';
 
 function mergeAddRunProps(
   a: NonNullable<ReplacementPart['addRunProps']> | null | undefined,
@@ -238,6 +242,7 @@ type ReplaceTextPlan =
       paraText: string;
       newStr: string;
       editWarnings: string[];
+      affectedRefFields: AffectedRefField[];
       mutate: (doc: DocxDocument, activeCtx: RevisionContext | undefined) => void;
     };
 
@@ -315,9 +320,11 @@ function planReplaceText(
   // Filled by the last run of `mutate` (the preflight preview runs it on a
   // copy first; the session run comes last and is the one reported).
   const editWarnings: string[] = [];
+  const affectedRefFields: AffectedRefField[] = [];
 
   const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
     editWarnings.length = 0;
+    affectedRefFields.length = 0;
     if (params.normalize_first) {
       doc.mergeRunsOnly();
     }
@@ -328,6 +335,8 @@ function planReplaceText(
     }
     // A w:sym symbol character is part of the paragraph text the caller
     // matched (issue #1046), so a range that removes one needs no warning.
+    const paragraphIsNumbered = doc.isParagraphNumbered(pEl);
+    const localBookmarksBefore = collectLocalUserBookmarks(pEl);
     const hiddenBefore = collectLiveHiddenConstructs(pEl);
     // Scoped to the touched paragraph: only an edit that empties a
     // paragraph which had visible content is reported (issue #1047).
@@ -345,6 +354,12 @@ function planReplaceText(
       if (outcome.kind !== 'none') editWarnings.push(outcome.message);
     };
     const reportRemovedHiddenConstructs = (): void => {
+      if (localBookmarksBefore.length > 0 && (!pEl.parentNode || isParagraphMarkTrackedDeleted(pEl))) {
+        affectedRefFields.push(...collectTargetingRefFields(doc, pEl, localBookmarksBefore));
+        for (const ref of affectedRefFields) {
+          editWarnings.push(`The deleted paragraph held bookmark "${ref.bookmark}", which is targeted by field "${ref.instruction}"${ref.paragraph_id ? ` in paragraph ${ref.paragraph_id}` : ''}; update or remove the cross-reference.`);
+        }
+      }
       for (const label of removedHiddenConstructs(hiddenBefore, collectLiveHiddenConstructs(pEl))) {
         editWarnings.push(hiddenConstructRemovalWarning(label, !!activeCtx));
       }
@@ -386,14 +401,15 @@ function planReplaceText(
             parts.map((part) => ({ length: part.text.length, addRunProps: part.addRunProps, clearHighlight: part.clearHighlight })),
             activeCtx,
           );
-        if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
+        if (!formattedInPlace) replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx, { paragraphIsNumbered, removeBookmarkedNumberedParagraph: emptyNumberedPolicy === 'remove_paragraph' });
         invalidateDocumentCaches(doc);
       } else {
-        doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
+        replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, undefined, { paragraphIsNumbered, removeBookmarkedNumberedParagraph: emptyNumberedPolicy === 'remove_paragraph' });
+        invalidateDocumentCaches(doc);
       }
-      reportRemovedHiddenConstructs();
       verifyPostCondition();
       applyEmptyNumberedPolicy();
+      reportRemovedHiddenConstructs();
       return;
     }
 
@@ -422,18 +438,19 @@ function planReplaceText(
     }
 
     if (activeCtx) {
-      replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx);
+      replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx, { paragraphIsNumbered, removeBookmarkedNumberedParagraph: emptyNumberedPolicy === 'remove_paragraph' });
       invalidateDocumentCaches(doc);
     } else {
-      doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
+      replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, undefined, { paragraphIsNumbered, removeBookmarkedNumberedParagraph: emptyNumberedPolicy === 'remove_paragraph' });
+      invalidateDocumentCaches(doc);
     }
-    reportRemovedHiddenConstructs();
     doc.mergeRunsOnly({ preserveRsidIdentity: true });
     verifyPostCondition();
     applyEmptyNumberedPolicy();
+    reportRemovedHiddenConstructs();
   };
 
-  return { ok: true, pid, paraText, newStr, editWarnings, mutate };
+  return { ok: true, pid, paraText, newStr, editWarnings, affectedRefFields, mutate };
 }
 
 /**
@@ -525,7 +542,7 @@ export async function replaceText(
 
       const plan = planReplaceText(session.doc, params, emptyNumberedPolicy);
       if (!plan.ok) return plan.response;
-      const { pid, paraText, newStr, editWarnings, mutate } = plan;
+      const { pid, paraText, newStr, editWarnings, affectedRefFields, mutate } = plan;
 
       const revisionPreflight = params.skip_ai_revision_preflight
         ? null
@@ -551,6 +568,7 @@ export async function replaceText(
         before_text: previewText(paraText.trim(), RESULT_PREVIEW_CHARS),
         after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
         ...(warnings.length > 0 ? { warnings } : {}),
+        ...(affectedRefFields.length > 0 ? { affected_ref_fields: affectedRefFields } : {}),
       }, metadata));
     });
   } catch (e: unknown) {

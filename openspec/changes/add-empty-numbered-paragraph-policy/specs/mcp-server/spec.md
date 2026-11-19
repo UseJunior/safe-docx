@@ -54,7 +54,7 @@ error code `EMPTY_NUMBERED_PARAGRAPH` and leave the document unchanged.
 paragraph's remaining whitespace through the same rules as blanking its
 complete text: untracked, the paragraph SHALL be removed; tracked, its
 remaining text and its paragraph mark SHALL be deleted as tracked changes.
-A paragraph those rules keep SHALL NOT be removed, and the response SHALL
+Under explicit `remove_paragraph`, local bookmarks wholly contained in an emptied numbered paragraph SHALL NOT keep it alive; their targeting REF fields SHALL be reported. Bookmarks spanning outside the paragraph and all other protected holders SHALL remain protected. A paragraph those rules keep SHALL NOT be removed, and the response SHALL
 say what keeps it. Any other value SHALL be rejected with `INVALID_PARAMS`
 before the document is changed.
 
@@ -79,10 +79,10 @@ before the document is changed.
 - **THEN** the remaining whitespace and the paragraph mark SHALL be tracked deletions
 - **AND** accepting all changes SHALL leave two numbered items, and rejecting all changes SHALL restore the original item text
 
-#### Scenario: remove_paragraph keeps a paragraph the blanking rules keep
-- **GIVEN** a numbered list item holding a bookmark that is not a paragraph id
+#### Scenario: remove_paragraph removes a local bookmarked numbered paragraph
+- **GIVEN** a numbered list item holding a bookmark wholly contained in the paragraph
 - **WHEN** `replace_text` with `on_empty_numbered_paragraph` `remove_paragraph` blanks its complete text
-- **THEN** the paragraph SHALL remain and the warning SHALL name the bookmark that keeps it
+- **THEN** the paragraph SHALL be removed and any fields targeting its bookmark SHALL be reported
 
 #### Scenario: An unknown policy value is rejected
 - **WHEN** `replace_text` or `batch_edit` is called with an `on_empty_numbered_paragraph` value outside the four

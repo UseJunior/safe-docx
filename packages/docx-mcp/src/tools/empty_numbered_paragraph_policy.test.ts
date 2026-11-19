@@ -342,8 +342,8 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
       },
     );
 
-    test.openspec('remove_paragraph keeps a paragraph the blanking rules keep')(
-      'remove_paragraph: a list item holding a bookmark is kept and the bookmark is named',
+    test.openspec('remove_paragraph removes a local bookmarked numbered paragraph')(
+      'remove_paragraph: a list item holding only a local bookmark is removed explicitly',
       async ({ given, when, then }: AllureBddContext) => {
         const s = await given('a numbered list item holding a cross-reference bookmark', () =>
           openList(item(`<w:bookmarkStart w:id="91" w:name="_Ref200000002"/>${run('second obligation')}<w:bookmarkEnd w:id="91"/>`), 'untracked'),
@@ -352,13 +352,11 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
         const result = await when('replace_text with remove_paragraph blanks its complete text', () =>
           replaceText(s.mgr, { file_path: s.inputPath, target_paragraph_id: id, old_string: 'second obligation', new_string: '', instruction: 'delete item (b)', on_empty_numbered_paragraph: 'remove_paragraph' }),
         );
-        await then('the paragraph remains and the warning names the bookmark', () => {
+        await then('the paragraph and local bookmark are removed by the explicit policy', () => {
           assertSuccess(result, 'replace_text');
           const warnings = emptyNumberedWarnings(result);
-          expect(warnings).toHaveLength(1);
-          expect(warnings[0]).toContain('"remove_paragraph", but the paragraph was not removed');
-          expect(warnings[0]).toContain('bookmark "_Ref200000002"');
-          expect(s.session.doc.getParagraphElementById(id)).not.toBeNull();
+          expect(warnings).toHaveLength(0);
+          expect(s.session.doc.getParagraphElementById(id)).toBeNull();
         });
       },
     );
@@ -479,13 +477,13 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
             ],
           }),
         );
-        await then('drop-second gets a tracked-removal notice, drop-kept a kept warning naming the bookmark, and accept-all leaves one empty item', async () => {
+        await then('both deletions get tracked-removal notices, the local bookmark is named, and accept-all removes both items', async () => {
           assertSuccess(result, 'batch_edit');
           const warnings = result.warnings as Array<{ step_id: string; warning: string }>;
           expect(warnings.find((w) => w.step_id === 'drop-second')?.warning).toContain('deleted as a tracked change');
           expect(warnings.find((w) => w.step_id === 'drop-kept')?.warning).toContain('bookmark "_Ref300000003"');
           const clean = await savedDocumentXml(s.mgr, s.inputPath, path.join(s.tmpDir, 'clean.docx'), 'clean');
-          expect(numberedTexts(clean)).toEqual(['first obligation', '', 'third obligation']);
+          expect(numberedTexts(clean)).toEqual(['first obligation', 'third obligation']);
         });
       },
     );
