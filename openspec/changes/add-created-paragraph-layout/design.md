@@ -52,27 +52,27 @@ must not carry, and it has no indents.
 
 ## #1425: a section break on a justified paragraph's mark
 
-`create` binds each non-final section's `w:sectPr` to its last paragraph
-(`breakPlacement: 'lastParagraph'`, #1165), so the break adds no empty
-paragraph. The issue reports that Word then justifies that paragraph's last
-line as if it ended in a line break. LibreOffice does not, so the build's PDF
-cannot show it.
+Creation gives a non-final section its own break paragraph when the last
+content paragraph is effectively justified. Direct paragraph alignment wins
+over its creation style; headings, centred content and other non-justified
+endings keep `lastParagraph`. Table endings keep their dedicated break.
+The decision follows table-of-contents expansion, so its actual final style
+controls placement.
 
-- `doNotExpandShiftReturn` is the cheap candidate, but §17.15.3.5 covers lines
-  that end in a soft line break, and a section break is not one. Whether Word
-  applies it to a line ended by a section mark was not verified: Word could
-  not be driven in the background on the build machine, so this change makes
-  no claim either way.
-- Giving the paragraph a non-justified alignment would make all of its lines
-  ragged, which is wrong for a justified document.
-- A real fix ends such a section with its own empty paragraph
-  (`breakPlacement: 'ownParagraph'`), as a section ending in a table already
-  does. The read-back, round trip and `pull` already treat that paragraph as
-  generated for tables. But the empty paragraph prints as a blank line at the
-  foot of the section and, on a full page, spills onto a blank page: the
-  regressions #1165 removed. Making it harmless needs a collapsed break
-  paragraph (no spacing, a 1 pt mark) in docx-core and a Word check of the
-  result, so #1425 stays open.
+The generated break has zero before/after spacing, an exact one-twip line,
+and a one-point paragraph mark in both script ranges. Its `sectPr` follows
+those properties in schema order. Projection and pull mapping classify this
+empty paragraph as generated, as they do the paragraph after a table; it is
+not authored text. Body paragraphs retain their full justification.
+
+Local Word 16.115 exported the actual public-NDA-derived output with a short
+last line, and the 45-line full-page boundary remained two nonempty pages.
+The current Word version also exported the old `lastParagraph` shape without
+stretching, even with the soft-break compatibility setting removed. Thus the
+reported visual defect was not reproduced on that version: the fix enforces
+separate paragraph/section marks and verifies the resulting layout, rather
+than claiming a measured before/after spacing correction. LibreOffice is not
+the oracle for the reported Word-only stretching behavior.
 
 ## Risks / Trade-offs
 

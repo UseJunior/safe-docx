@@ -238,9 +238,11 @@ describe('Traceability: Markdoc document creation without a template', () => {
       const { docx, readback } = await createDocumentFromMarkdoc(source);
       const document = await part(docx, 'word/document.xml');
       const paragraphs = bodyParagraphs(document);
-      expect(paragraphs.map((paragraph) => runs(paragraph).map((run) => run.text).join(''))).toEqual(['Resolutions.', 'Signature page.', 'Exhibit.']);
-      expect(paragraphs[0]!.getElementsByTagNameNS(W, 'sectPr')).toHaveLength(1);
+      expect(paragraphs.map((paragraph) => runs(paragraph).map((run) => run.text).join(''))).toEqual(['Resolutions.', '', 'Signature page.', '', 'Exhibit.']);
+      expect(paragraphs[0]!.getElementsByTagNameNS(W, 'sectPr')).toHaveLength(0);
       expect(paragraphs[1]!.getElementsByTagNameNS(W, 'sectPr')).toHaveLength(1);
+      expect(paragraphs[2]!.getElementsByTagNameNS(W, 'sectPr')).toHaveLength(0);
+      expect(paragraphs[3]!.getElementsByTagNameNS(W, 'sectPr')).toHaveLength(1);
       expect(readback.footers).toEqual([['<PAGE>'], ['[Signature Page to Consent]'], null]);
       const sectPrs = Array.from(document.getElementsByTagNameNS(W, 'sectPr'));
       expect(sectPrs.map((sectPr) => sectPr.getElementsByTagNameNS(W, 'footerReference').length)).toEqual([1, 1, 0]);

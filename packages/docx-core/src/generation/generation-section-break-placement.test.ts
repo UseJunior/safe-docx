@@ -63,6 +63,24 @@ function paragraphText(p: Element): string {
 }
 
 describe('Traceability: section break placement', () => {
+  conforming('dedicated section paragraphs override body line, spacing and paragraph-mark size', async () => {
+    const xml = (await readZipText(await generateDocx({
+      defaults: { run: { sizePt: 18 }, paragraph: { spacing: { beforeTwips: 240, afterTwips: 240, lineTwips: 480 } } },
+      sections: [{ blocks: [paragraph('First.')] }, { blocks: [paragraph('Next.')] }],
+    }), 'word/document.xml'))!;
+    const body = parseXml(xml).getElementsByTagName('w:body')[0]!;
+    const paragraphs = childElements(body).filter(node => node.localName === 'p');
+    expect(paragraphs.map(paragraphText)).toEqual(['First.', '', 'Next.']);
+    const props = childElements(paragraphs[1]!)[0]!;
+    expect(childElements(props).map(node => node.localName)).toEqual(['spacing', 'rPr', 'sectPr']);
+    const spacing = props.getElementsByTagName('w:spacing')[0]!;
+    expect(['before', 'after', 'line', 'lineRule'].map(name => spacing.getAttribute(`w:${name}`)))
+      .toEqual(['0', '0', '1', 'exact']);
+    expect(props.getElementsByTagName('w:sz')[0]!.getAttribute('w:val')).toBe('2');
+    expect(props.getElementsByTagName('w:szCs')[0]!.getAttribute('w:val')).toBe('2');
+    validateAgainstSchema(xml);
+  });
+
   conforming.openspec("[SDX-GEN-111] a section break can bind to the section's last paragraph")(
     "Scenario: a section break can bind to the section's last paragraph",
     async ({ given, when, then, attachPrettyJson, attachPrettyXml }: AllureBddContext) => {
