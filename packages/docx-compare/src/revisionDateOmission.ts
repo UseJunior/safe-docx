@@ -13,6 +13,9 @@
  * neither input package, and the attribute carrying exactly that value is
  * removed from the finished package. Revisions that already existed in an
  * input keep their own dates, because none of them carries the placeholder.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
  */
 
 import { DocxArchive, parseXml, serializeXml } from '@usejunior/docx-core';
