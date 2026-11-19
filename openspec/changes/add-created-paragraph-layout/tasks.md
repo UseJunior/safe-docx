@@ -39,5 +39,5 @@
 - [x] 5.1 Select a dedicated break for effective justification after TOC expansion; collapse generated break spacing and mark size in docx-core.
 - [x] 5.2 Verify style/direct-alignment cases, schema ordering, real public NDA creation, certificate and pull mapping; retain footer linking and numbering checks.
 - [x] 5.3 Verify actual output in Word, including the full-page no-blank-page boundary; record that the original stretching was not reproduced on Word 16.115.
-- [ ] 5.4 Complete dynamic Codex review and the required repository checks.
+- [x] 5.4 Complete dynamic Codex review and the required repository checks.
 - [ ] 5.5 Merge and complete isolated real-document post-merge smoke.
