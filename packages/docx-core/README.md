@@ -75,3 +75,20 @@ invalidate a view. Compare versions only within the same loaded document.
 ## Bounded table-cell editing
 
 `DocxDocument.splitTableCell({ anchorParagraphId, splitColumnIndex, existingSide, newCellText })` splits a horizontally spanning physical cell at the boundary before zero-based logical column `splitColumnIndex`, retaining its authored content on `existingSide` and returning the new cell's paragraph anchor. `DocxDocument.absorbTableCell({ anchorParagraphId, absorbSide })` removes the anchored physical cell, **discards its content**, and expands the adjacent cell on `absorbSide` to cover the vacated grid slots. Neither changes `tblGrid` or other rows. A bookmark or comment range cut by removal loses its surviving partner endpoint even if that endpoint is in another cell or row. Both operations are clean-only and require direct body-level, non-vertically-merged tables with resolvable affected widths; percentage-width splits and percentage-width absorbing cells fail closed. Pending row/cell topology, revisions in a removed cell, nested tables, offsets, and tracked requests also fail before mutation. These APIs do not perform Word's shift-right/down insertion or shift-left/up deletion; those remain separate work under #1042.
+
+### Portable runtimes
+
+The default entry bundles for browsers and Word add-ins without Node polyfills.
+`DocxDocument.load` accepts `Uint8Array` (including Node `Buffer`). Archive output
+is a `Buffer` in Node and a `Uint8Array` when `Buffer` is unavailable; use byte
+operations when writing portable code. Existing output declarations retain their
+Node `Buffer` type for compatibility.
+
+Node resolution retains the LibreOffice oracle and opt-in `SDX_SCHEMA_CORPUS_DIR`
+filesystem capture. These are also available explicitly from
+`@usejunior/docx-core/node`. The portable entry exposes
+`setEmittedDocumentXmlCapture` for a host-provided synchronous capture sink.
+
+`npm run check:browser-runtime` bundles both public entries with all reachable
+imports checked for Node built-ins, then executes generation, editing and comparison
+in a browser-like context without Node globals. It also checks hash compatibility.

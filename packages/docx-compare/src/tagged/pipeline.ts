@@ -1,8 +1,8 @@
 /** Revised-base tagged comparison package pipeline. */
 
 import { XMLSerializer } from '@xmldom/xmldom';
-import { createHash } from 'node:crypto';
-import { posix } from 'node:path';
+import { createHash } from '@usejunior/docx-core';
+import { posix } from '@usejunior/docx-core';
 import {
   assertTransitionalWordprocessingML,
   auditSectPr,
@@ -170,7 +170,7 @@ const PACKAGE_RELATIONSHIP_NS = 'http://schemas.openxmlformats.org/package/2006/
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
 function debugTaggedComparison(message: string, data?: unknown): void {
-  const setting = process.env.DOCX_COMPARISON_DEBUG;
+  const setting = typeof process === 'undefined' ? undefined : process.env.DOCX_COMPARISON_DEBUG;
   if (!setting) return;
   const enabled = ['1', 'true', '*'].includes(setting) || setting
     .split(',')
@@ -961,7 +961,7 @@ async function relationshipClosureDigest(
     let semanticBytes = bytes;
     if (/\.(?:xml|rels)$/iu.test(partPath)) {
       try {
-        const document = parseXml(bytes.toString('utf8'));
+        const document = parseXml(new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes));
         for (const element of Array.from(document.getElementsByTagName('*'))) {
           for (const attribute of Array.from(element.attributes)) {
             if (attribute.namespaceURI !== OFFICE_RELATIONSHIP_NS) continue;
@@ -969,7 +969,7 @@ async function relationshipClosureDigest(
             if (semantics) attribute.value = semantics;
           }
         }
-        semanticBytes = Buffer.from(serializer.serializeToString(document));
+        semanticBytes = new TextEncoder().encode(serializer.serializeToString(document)) as Buffer;
       } catch {
         // An unused malformed auxiliary part is rejected only if publication
         // provenance selects it. Relationship identity must remain readable

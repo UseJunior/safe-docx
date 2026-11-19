@@ -17,7 +17,7 @@
  * @see https://github.com/UseJunior/safe-docx/issues/1236
  */
 
-import { createHash } from 'node:crypto';
+import { createHash } from '../runtime/hash.js';
 
 /** The longest bookmark name Word's Bookmark dialog accepts. */
 export const BOOKMARK_NAME_MAX_LENGTH = 40;

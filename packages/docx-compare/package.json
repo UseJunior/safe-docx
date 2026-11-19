@@ -66,5 +66,21 @@
   "bin": {
     "docx-comparison": "dist/cli/index.js",
     "safe-docx-compare": "dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/node.d.ts",
+        "default": "./dist/node.js"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
   }
 }

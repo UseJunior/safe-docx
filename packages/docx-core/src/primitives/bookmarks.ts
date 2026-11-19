@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash } from '../runtime/hash.js';
 import { OOXML, W } from './namespaces.js';
 import { getParagraphText } from './text.js';
 

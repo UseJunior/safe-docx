@@ -40,7 +40,7 @@ export class DocxArchive {
    * @param buffer - The DOCX file contents
    * @returns A DocxArchive instance
    */
-  static async load(buffer: Buffer): Promise<DocxArchive> {
+  static async load(buffer: Uint8Array): Promise<DocxArchive> {
     const zip = await JSZip.loadAsync(buffer);
 
     // Verify this is a valid DOCX
@@ -137,7 +137,7 @@ export class DocxArchive {
   async getFileBuffer(path: string): Promise<Buffer | null> {
     const file = this.zip.file(path);
     if (!file) return null;
-    return file.async('nodebuffer');
+    return file.async(typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer') as Promise<Buffer>;
   }
 
   /**
@@ -199,11 +199,11 @@ export class DocxArchive {
       if (entry.dir) delete this.zip.files[entry.name];
     }
     const content = await this.zip.generateAsync({
-      type: 'nodebuffer',
+      type: typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer',
       compression: 'DEFLATE',
       compressionOptions: { level: 6 },
     });
-    return content;
+    return content as Buffer;
   }
 
   /**

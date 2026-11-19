@@ -46,7 +46,7 @@ export class DocxZip {
     this.zip = zip;
   }
 
-  static async load(buffer: Buffer): Promise<DocxZip> {
+  static async load(buffer: Uint8Array): Promise<DocxZip> {
     const zip = await JSZip.loadAsync(buffer);
     return new DocxZip(zip);
   }
@@ -126,7 +126,7 @@ export class DocxZip {
     }
     // jszip defaults to STORE, which inflated saves ~6x.
     const out = await snapshot.generateAsync({
-      type: 'nodebuffer',
+      type: typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer',
       compression: 'DEFLATE',
       compressionOptions: { level: 6 },
       comment: comment ?? undefined,
@@ -151,7 +151,7 @@ export async function createZipBuffer(
     });
   }
   const out = await zip.generateAsync({
-    type: 'nodebuffer',
+    type: typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer',
     compression: opts?.compression ?? 'STORE',
     compressionOptions: { level: opts?.compressionLevel ?? 9 },
   });

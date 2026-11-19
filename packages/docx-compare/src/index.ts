@@ -84,8 +84,8 @@ export type {
  * @returns The comparison result with track changes markup.
  */
 export async function compareDocuments(
-  original: Buffer,
-  revised: Buffer,
+  original: Uint8Array,
+  revised: Uint8Array,
   options: CompareOptions = {},
 ): Promise<CompareResult> {
   for (const option of REMOVED_COMPARISON_OPTIONS) {
@@ -116,9 +116,9 @@ export async function compareDocuments(
   // `null`: run with a placeholder timestamp absent from both inputs, then
   // strip exactly that value, so pre-existing revisions keep their dates.
   const placeholderDate = date === null
-    ? await choosePlaceholderRevisionDate([original, revised])
+    ? await choosePlaceholderRevisionDate([original as Buffer, revised as Buffer])
     : undefined;
-  const tagged = await compareDocumentsAtomizer(original, revised, {
+  const tagged = await compareDocumentsAtomizer(original as Buffer, revised as Buffer, {
     author,
     date: placeholderDate ?? date ?? undefined,
     formatDetection:

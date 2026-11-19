@@ -75,7 +75,7 @@ export default defineConfig({
         'src/benchmark/**',
       ],
     },
-    setupFiles: hasAllure ? [allureSetup!] : [],
+    setupFiles: [resolve(__dirname, '../docx-core/src/runtime/node-capture.ts'), ...(hasAllure ? [allureSetup!] : [])],
     reporters: hasAllure
       ? [
           'default',

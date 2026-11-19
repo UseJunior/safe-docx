@@ -90,7 +90,8 @@
     "build:tests-corpus": "npm run build -w @usejunior/test-narrative && node scripts/build_tests_corpus.mjs",
     "check:test-narratives": "npm run build -w @usejunior/test-narrative && node scripts/check_test_narratives.mjs",
     "sync:readme": "node scripts/sync_readme_blocks.mjs",
-    "check:readme-sync": "node scripts/sync_readme_blocks.mjs --check"
+    "check:readme-sync": "node scripts/sync_readme_blocks.mjs --check",
+    "check:browser-runtime": "node scripts/check_browser_runtime.mjs"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.56.0",
@@ -99,6 +100,7 @@
     "@xmldom/xmldom": "^0.9.12",
     "ajv": "^8.18.0",
     "allure": "3.15.0",
+    "esbuild": "0.28.1",
     "eslint": "^10.0.1",
     "fast-xml-parser": "^5.12.0",
     "jszip": "^3.10.1",

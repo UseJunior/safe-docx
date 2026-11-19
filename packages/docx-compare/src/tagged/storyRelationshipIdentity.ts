@@ -12,8 +12,8 @@
  * @see https://github.com/UseJunior/safe-docx/issues/1390
  */
 
-import { createHash } from 'node:crypto';
-import { posix } from 'node:path';
+import { createHash } from '@usejunior/docx-core';
+import { posix } from '@usejunior/docx-core';
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { canonicalNode } from './opaquePassthrough.js';
 

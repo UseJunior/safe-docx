@@ -393,7 +393,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   for (const entry of Object.values(zip.files)) {
     if (entry.dir) delete zip.files[entry.name];
   }
-  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+  return (await zip.generateAsync({ type: typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer' })) as Buffer;
 }
 
 /** Parts for {@link buildDocxFromParts}. Only the body XML is required. */
@@ -466,7 +466,7 @@ export async function buildDocxFromParts(opts: DocxPartsOptions): Promise<Buffer
   for (const entry of Object.values(zip.files)) {
     if (entry.dir) delete zip.files[entry.name];
   }
-  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+  return (await zip.generateAsync({ type: typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer' })) as Buffer;
 }
 
 export interface SyntheticResultParts {

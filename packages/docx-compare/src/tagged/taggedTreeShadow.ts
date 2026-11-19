@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash } from '@usejunior/docx-core';
 import { XMLSerializer } from '@xmldom/xmldom';
 import {
   childElements,
