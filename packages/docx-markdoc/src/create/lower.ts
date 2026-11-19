@@ -15,6 +15,7 @@ import {
   twipsFromPt,
   type CreationProfile,
 } from './profile.js';
+import { keepsPreviousWithNext, type KeepNextBlockKind } from './keep-next-rules.js';
 import { HEADING_CLAUSE_ILVL, RUN_IN_NUM_ID_PREFIX } from './list-numbering.js';
 import { CreationTheme, creationPlugins } from './theme.js';
 import {
@@ -641,6 +642,11 @@ function fillTableOfContents(sections: SectionSpec[], theme: CreationTheme, refe
   return { placeholder: replaced, paragraphs };
 }
 
+/** A block's kind as the keep-with-next rules see it. */
+function keepNextKind(kind: CreationBlockKind): KeepNextBlockKind {
+  return kind === 'legend' || kind === 'signer' ? kind : 'other';
+}
+
 /** Signer, legend, table and page-break rules that relate a block to its neighbours. */
 function applyNeighbourRules(section: SectionState, profile: CreationProfile): void {
   section.entries.forEach((entry, index) => {
@@ -651,11 +657,10 @@ function applyNeighbourRules(section: SectionState, profile: CreationProfile): v
       if (first?.kind !== 'paragraph') creationError('PAGE_BREAK_BEFORE_TABLE', '{% page-break /%} cannot precede a table; put a paragraph first.', undefined, entry.line);
       first.pageBreakBefore = true;
     }
-    if (entry.kind === 'signer' && previous?.kind !== 'signer') {
-      if (first?.kind === 'paragraph') first.spacing = { ...first.spacing, beforeTwips: twipsFromPt(FIRST_SIGNER_BEFORE_PT) };
-      if (previousLast && previous?.blocks.at(-1) === previousLast) previousLast.keepNext = true;
+    if (entry.kind === 'signer' && previous?.kind !== 'signer' && first?.kind === 'paragraph') {
+      first.spacing = { ...first.spacing, beforeTwips: twipsFromPt(FIRST_SIGNER_BEFORE_PT) };
     }
-    if (entry.kind === 'legend' && previousLast && previous?.blocks.at(-1) === previousLast) previousLast.keepNext = true;
+    if (keepsPreviousWithNext(keepNextKind(entry.kind), previous && keepNextKind(previous.kind)) && previousLast && previous?.blocks.at(-1) === previousLast) previousLast.keepNext = true;
     // A table ends without paragraph spacing; the next paragraph takes the house after-spacing above it.
     if (previous?.blocks.at(-1)?.kind === 'table' && first?.kind === 'paragraph' && first.spacing?.beforeTwips === undefined) {
       first.spacing = { ...first.spacing, beforeTwips: twipsFromPt(profile.spacingAfterPt) };
