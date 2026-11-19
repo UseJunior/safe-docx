@@ -77,7 +77,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-7-4-18` | w:styles style-definitions part emission | 5 | 1 | 17.7.4.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles` | packages/docx-core/src/generation/emit/styles-part.ts |
 | `ECMA-PART1-17-7-4-17` | w:style style-definition emission | 5 | 1 | 17.7.4.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style` | packages/docx-core/src/generation/schema-enum-domains.ts; packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/generation/validate-spec.ts |
 | `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | packages/docx-core/src/generation/emit/styles-part.ts; packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-doc-defaults.test.ts; packages/docx-core/src/primitives/styles-unresolved.test.ts |
-| `ECMA-PART1-17-6-18` | w:sectPr paragraph-level section break emission | 5 | 1 | 17.6.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
+| `ECMA-PART1-17-6-18` | w:sectPr paragraph-level section break emission | 5 | 1 | 17.6.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | packages/docx-core/src/generation/emit/document-part.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-section-break-placement.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-markdoc/src/create/section-break-layout.test.ts |
 | `ECMA-PART1-17-6-22` | w:type section start kind | 5 | 1 | 17.6.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-6-12` | w:pgNumType page-numbering settings emission | 5 | 1 | 17.6.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgNumType` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/tools/format_section.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts |
 | `ECMA-PART1-17-10-5` | w:headerReference binding | 5 | 1 | 17.10.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:headerReference` | packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.ts; packages/docx-compare/src/tagged/ancillaryFieldSafety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
@@ -1296,14 +1296,18 @@ level).
 - **Part / Section:** Part 1 § 17.6.18
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr`
-- **Verified by:** packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
+- **Verified by:** packages/docx-core/src/generation/emit/document-part.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-section-break-placement.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-markdoc/src/create/section-break-layout.test.ts
 
-A non-final section's properties bind through a `w:sectPr` inside the
-`w:pPr` of a dedicated break paragraph — the shape Word itself produces on
-Insert → Section Break, and the one that sidesteps the trailing-table case
-(a table cannot carry section properties). The generation document emitter
-appends such a break paragraph after every non-final section's blocks;
-`auditSectPr` verifies the pPr-only placement on the way back out. The editing
+A non-final section's properties bind through a `w:sectPr` inside `w:pPr`.
+Generation defaults to a dedicated break paragraph, which also handles the
+trailing-table case (a table cannot carry section properties); callers may
+instead bind the properties to their last content paragraph. Generated
+dedicated breaks have zero before/after spacing, an exact one-twip line and
+a one-point paragraph mark. Markdoc creation selects a dedicated break for
+an effectively justified final paragraph so its text does not share the
+section mark, and treats that break as generated content for verification
+and pull mapping. `auditSectPr` verifies paragraph-level placement on the
+way back out. The editing
 primitive inserts the same dedicated shape after a stable direct-body paragraph,
 preserves the containing `w:sectPr`, and verifies that exactly one ordered live
 section is added.

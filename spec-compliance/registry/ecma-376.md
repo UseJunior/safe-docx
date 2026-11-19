@@ -1337,15 +1337,19 @@ part: 1
 section: "17.6.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr
-verifiedBy: packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/document-part.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/generation/generation-section-break-placement.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-markdoc/src/create/section-break-layout.test.ts
 ```
 
-A non-final section's properties bind through a `w:sectPr` inside the
-`w:pPr` of a dedicated break paragraph — the shape Word itself produces on
-Insert → Section Break, and the one that sidesteps the trailing-table case
-(a table cannot carry section properties). The generation document emitter
-appends such a break paragraph after every non-final section's blocks;
-`auditSectPr` verifies the pPr-only placement on the way back out. The editing
+A non-final section's properties bind through a `w:sectPr` inside `w:pPr`.
+Generation defaults to a dedicated break paragraph, which also handles the
+trailing-table case (a table cannot carry section properties); callers may
+instead bind the properties to their last content paragraph. Generated
+dedicated breaks have zero before/after spacing, an exact one-twip line and
+a one-point paragraph mark. Markdoc creation selects a dedicated break for
+an effectively justified final paragraph so its text does not share the
+section mark, and treats that break as generated content for verification
+and pull mapping. `auditSectPr` verifies paragraph-level placement on the
+way back out. The editing
 primitive inserts the same dedicated shape after a stable direct-body paragraph,
 preserves the containing `w:sectPr`, and verifies that exactly one ordered live
 section is added.

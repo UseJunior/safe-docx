@@ -400,14 +400,17 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
         bodyKids = childElements(doc.getElementsByTagName('w:body').item(0)!);
       });
 
-      await then('the first section ends with a paragraph whose pPr contains only its sectPr', async () => {
+      await then('the first section ends with a collapsed paragraph carrying its sectPr', async () => {
         const breakParagraph = bodyKids[1]!;
         expect(breakParagraph.tagName).toBe('w:p');
         const pPrKids = childElements(childElements(breakParagraph)[0]!);
         await attachPrettyJson('break-paragraph-ppr-children', pPrKids.map((k) => k.tagName));
         expect(childElements(breakParagraph)).toHaveLength(1);
-        expect(pPrKids.map((k) => k.tagName)).toEqual(['w:sectPr']);
-        const pgSz = pPrKids[0]!.getElementsByTagName('w:pgSz').item(0)!;
+        expect(pPrKids.map((k) => k.tagName)).toEqual(['w:spacing', 'w:rPr', 'w:sectPr']);
+        expect(pPrKids[0]!.getAttribute('w:line')).toBe('1');
+        expect(pPrKids[0]!.getAttribute('w:lineRule')).toBe('exact');
+        expect(pPrKids[1]!.getElementsByTagName('w:sz')[0]!.getAttribute('w:val')).toBe('2');
+        const pgSz = pPrKids.find(node => node.tagName === 'w:sectPr')!.getElementsByTagName('w:pgSz').item(0)!;
         expect(pgSz.getAttribute('w:orient')).toBeNull();
       });
 

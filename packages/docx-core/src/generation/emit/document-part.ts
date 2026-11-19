@@ -16,6 +16,7 @@ import type { DocumentSpec } from '../types.js';
 import type { BlockEmitContext } from './emit-context.js';
 import { buildSectPr, type SectionHeaderFooterRefs } from './section.js';
 import { buildBlock } from './table.js';
+import { buildParagraphPropsElement, buildRunPropsElement } from './properties.js';
 
 const DOCUMENT_SKELETON =
   `<w:document xmlns:w="${OOXML.W_NS}" xmlns:r="${OOXML.R_NS}" xmlns:w14="${OOXML.W14_NS}">` +
@@ -24,8 +25,8 @@ const DOCUMENT_SKELETON =
 /**
  * Compile the body: each section's blocks in order. By default every
  * non-final section ends with a dedicated break paragraph whose pPr contains
- * only that section's sectPr (what Word itself emits on Insert → Section
- * Break; it also sidesteps the trailing-table case). With
+ * that section's sectPr and collapsed spacing/paragraph-mark formatting
+ * (it also sidesteps the trailing-table case). With
  * `breakPlacement: 'lastParagraph'` the sectPr instead binds to the section's
  * final paragraph, adding no empty paragraph. The final section's properties
  * bind as the body's last child.
@@ -72,7 +73,12 @@ export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterR
       pPr.appendChild(sectPr);
     } else {
       const breakParagraph = createWmlElement(doc, W.p);
-      const pPr = createWmlElement(doc, W.pPr);
+      // A structural section mark must not inherit the body's font-sized line
+      // or after-spacing, which can add a blank line or page at the boundary.
+      const pPr = buildParagraphPropsElement(doc, {
+        spacing: { beforeTwips: 0, afterTwips: 0, lineTwips: 1, lineRule: 'exact' },
+      })!;
+      pPr.appendChild(buildRunPropsElement(doc, { sizePt: 1 })!);
       pPr.appendChild(sectPr);
       breakParagraph.appendChild(pPr);
       body.appendChild(breakParagraph);
