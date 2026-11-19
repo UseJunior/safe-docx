@@ -15,13 +15,13 @@ with the current time, and a `Date` SHALL stamp them with that time.
 - **GIVEN** a pair with body, footnote, endnote, footer and move changes
 - **WHEN** it is compared with `date: null`
 - **THEN** no story part SHALL contain a generated `w:date` outside the move-range start markers
-- **AND** the output SHALL equal the dated output with `w:date` removed, with the same revision count
+- **AND** the output SHALL equal the dated output with `w:date` removed, except that generated move-range start markers keep the neutral date, with the same revision count
 
 #### Scenario: Dateless move-range markers keep a neutral date
 
 - **GIVEN** a pair whose comparison detects moves
 - **WHEN** it is compared with `date: null`
-- **THEN** every `w:moveFromRangeStart` and `w:moveToRangeStart` SHALL carry `w:date="1970-01-01T00:00:00Z"`
+- **THEN** every generated `w:moveFromRangeStart` and `w:moveToRangeStart` SHALL carry `w:date="1970-01-01T00:00:00Z"`
 - **AND** the output SHALL pass the emitted-document schema check
 
 #### Scenario: Dateless comparison keeps the dates of pre-existing revisions
