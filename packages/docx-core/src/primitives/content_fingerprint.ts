@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash } from '../runtime/hash.js';
 
 /**
  * Cf-category and bidi/joiner invisibles that change a paragraph's bytes

@@ -1,4 +1,4 @@
-import { posix } from 'node:path';
+import { posix } from '../runtime/posix.js';
 
 export type OpcRelationshipTargetMode = 'Internal' | 'External';
 

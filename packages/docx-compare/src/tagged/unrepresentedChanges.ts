@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash } from '@usejunior/docx-core';
 import {
   auditSectPr,
   DocxArchive,
@@ -1050,7 +1050,7 @@ async function storyFormattingEnvironment(
     const normalized = onlyNormalizingRoles && (revisionParts.has(path) || sessionIdParts.has(path) || stylesParts.has(path) ||
       path === settingsPath || (propertyParts.has(path) && !keepVolatileProperties));
     if (normalized) {
-      const xml = bytes.toString('utf8');
+      const xml = new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
       let text = xml;
       // Accept/Reject All applies only where WordprocessingML revisions
       // live; elsewhere (custom XML) a w:ins element is data (Codex round 17).

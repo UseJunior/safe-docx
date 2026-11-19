@@ -40,7 +40,7 @@ export class DocxArchive {
    * @param buffer - The DOCX file contents
    * @returns A DocxArchive instance
    */
-  static async load(buffer: Buffer): Promise<DocxArchive> {
+  static async load(buffer: Uint8Array): Promise<DocxArchive> {
     const zip = await JSZip.loadAsync(buffer);
 
     // Verify this is a valid DOCX
@@ -134,10 +134,10 @@ export class DocxArchive {
   }
 
   /** Get an arbitrary archive entry without decoding binary payloads as text. */
-  async getFileBuffer(path: string): Promise<Buffer | null> {
+  async getFileBuffer(path: string): Promise<Uint8Array | null> {
     const file = this.zip.file(path);
     if (!file) return null;
-    return file.async('nodebuffer');
+    return file.async(typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer');
   }
 
   /**
@@ -146,7 +146,7 @@ export class DocxArchive {
    * @param path - Path within the archive
    * @param content - File contents
    */
-  setFile(path: string, content: string | Buffer, options?: { date?: Date }): void {
+  setFile(path: string, content: string | Uint8Array, options?: { date?: Date }): void {
     this.zip.file(path, content, {
       createFolders: false,
       ...(options?.date ? { date: options.date } : {}),
@@ -199,11 +199,11 @@ export class DocxArchive {
       if (entry.dir) delete this.zip.files[entry.name];
     }
     const content = await this.zip.generateAsync({
-      type: 'nodebuffer',
+      type: typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer',
       compression: 'DEFLATE',
       compressionOptions: { level: 6 },
     });
-    return content;
+    return content as Buffer;
   }
 
   /**

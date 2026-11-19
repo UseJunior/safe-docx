@@ -46,7 +46,7 @@
  * @see https://github.com/UseJunior/safe-docx/issues/944
  */
 
-import { posix } from 'node:path';
+import { posix } from '@usejunior/docx-core';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { DocxArchive, OOXML, parseXml } from '@usejunior/docx-core';
 import {

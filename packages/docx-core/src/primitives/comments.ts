@@ -6,7 +6,7 @@
  */
 
 import { buildBodyFieldRuns, groupBodyFieldRuns, type BodyRunField } from './body_fields.js';
-import { createHash } from 'node:crypto';
+import { createHash } from '../runtime/hash.js';
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';

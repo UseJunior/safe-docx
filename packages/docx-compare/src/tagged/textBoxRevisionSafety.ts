@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { posix } from 'node:path';
+import { createHash } from '@usejunior/docx-core';
+import { posix } from '@usejunior/docx-core';
 import { XMLSerializer } from '@xmldom/xmldom';
 import {
   auditSectPr,

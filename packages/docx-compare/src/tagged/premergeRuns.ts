@@ -6,7 +6,7 @@
  * save identifiers are bookkeeping and therefore do not prevent a merge.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash } from '@usejunior/docx-core';
 import { getLeafText, childElements, NODE_TYPE } from '@usejunior/docx-core';
 
 const SAFE_RUN_CHILD_TAGS = new Set([

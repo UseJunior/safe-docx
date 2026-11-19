@@ -37,7 +37,7 @@
  * @see https://github.com/UseJunior/safe-docx/issues/582
  */
 
-import { posix } from 'node:path';
+import { posix } from '@usejunior/docx-core';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { normalizeOpcRelationshipTarget, parseXml } from '@usejunior/docx-core';
 import type { DocxArchive } from '@usejunior/docx-core';
@@ -314,7 +314,8 @@ async function copyPartClosure(
   // chart XML. Reusing the base's chart would bind the import to the base's
   // workbook (#1430). Deciding before any relationship below is written keeps
   // a cycle's back-edge pointing at the part's final landing place.
-  const reused = existing !== null && existing.equals(bytes) &&
+  const reused = existing !== null && existing.length === bytes.length &&
+    existing.every((byte, index) => byte === bytes[index]) &&
     await payloads.source.closureOf(partPath) === await payloads.result.closureOf(partPath);
   if (existing === null) {
     resultArchive.setFile(partPath, bytes);

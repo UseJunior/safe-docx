@@ -1,4 +1,4 @@
-import path from 'node:path';
+import { posix } from '../runtime/posix.js';
 import { parseXml, serializeXml } from './xml.js';
 import { OOXML } from './namespaces.js';
 import { DocxZip } from './zip.js';
@@ -334,13 +334,13 @@ function relsSourceBase(relsPath: string): string {
   if (relsPath === '_rels/.rels') return '';
   const marker = '/_rels/';
   const idx = relsPath.indexOf(marker);
-  if (idx < 0) return path.posix.dirname(relsPath);
+  if (idx < 0) return posix.dirname(relsPath);
   return relsPath.slice(0, idx);
 }
 
 function resolveRelationshipTarget(relsPath: string, target: string): string {
   const base = relsSourceBase(relsPath);
-  return path.posix.normalize(path.posix.join(base, target)).replace(/^\.\//, '');
+  return posix.normalize(posix.join(base, target)).replace(/^\.\//, '');
 }
 
 async function checkPackageInvariants(

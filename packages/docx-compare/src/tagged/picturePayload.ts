@@ -35,8 +35,8 @@
  * @see https://github.com/UseJunior/safe-docx/issues/1430
  */
 
-import { createHash } from 'node:crypto';
-import { posix } from 'node:path';
+import { createHash } from '@usejunior/docx-core';
+import { posix } from '@usejunior/docx-core';
 import { auditSectPr, normalizeOpcRelationshipTarget, OOXML, parseXml } from '@usejunior/docx-core';
 import type { DocxArchive } from '@usejunior/docx-core';
 import type { UnrepresentedChange, UnrepresentedPictureChange } from '../compare-types.js';

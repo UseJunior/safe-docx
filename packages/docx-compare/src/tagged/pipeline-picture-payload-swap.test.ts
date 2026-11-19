@@ -433,7 +433,7 @@ describe('Pictures and objects whose payload changes under the same markup (#143
         .getElementsByTagNameNS(PKG_NS, 'Relationship'))
         .find((relationship) => relationship.getAttribute('Id') === id)!.getAttribute('Target')!;
       const bytes = await archive.getFileBuffer(posix.join('word', decodeURIComponent(target)));
-      expect(bytes?.equals(PNG)).toBe(true);
+      expect(bytes && Array.from(bytes)).toEqual(Array.from(PNG));
       await assertSchema(result.document);
     });
   });

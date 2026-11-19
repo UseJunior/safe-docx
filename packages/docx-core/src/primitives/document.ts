@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash } from '../runtime/hash.js';
 import { DocxZip, ZIP_EPOCH } from './zip.js';
 import {
   readDocumentProperties,
@@ -476,13 +476,13 @@ export class DocxDocument {
     this.originalDocumentXmlText = originalDocumentXmlText;
   }
 
-  static async load(buffer: Buffer): Promise<DocxDocument> {
+  static async load(buffer: Uint8Array): Promise<DocxDocument> {
     try {
-      return await DocxDocument.loadUnattributed(buffer);
+      return await DocxDocument.loadUnattributed(buffer as Buffer);
     } catch (error) {
       // Name the offending part when a parse failure surfaced from a helper
       // that only held the part's text (#1024).
-      throw await attributeXmlParseError(error, buffer);
+      throw await attributeXmlParseError(error, buffer as Buffer);
     }
   }
 
