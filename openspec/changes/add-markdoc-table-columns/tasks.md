@@ -12,6 +12,6 @@
 ## 3. Verification and delivery
 
 - [x] 3.1 Cover append/beginning/interior insertion, inherited properties, empty and multiple-paragraph cells, invalid shapes/arguments/conflicts and clean source preservation.
-- [ ] 3.2 Verify real public NDA import/compile and Word/native Accept/Reject grids, widths, content and orientation; schema and reader checks.
-- [ ] 3.3 Document the grammar and run strict OpenSpec/repository checks and dynamic Codex review.
+- [x] 3.2 Verify real public NDA import/compile and Word/native Accept/Reject grids, widths, content and orientation; schema and reader checks.
+- [x] 3.3 Document the grammar and run strict OpenSpec/repository checks and dynamic Codex review.
 - [ ] 3.4 Merge after the earlier ordered issues and finish isolated real-document smoke and reporting.
