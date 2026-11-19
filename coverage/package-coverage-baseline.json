@@ -21,8 +21,8 @@
       }
     },
     "docx-compare": {
-      "lines": 94.02,
-      "branches": 82.95,
+      "lines": 95.0,
+      "branches": 84.9,
       "functions": 94.52,
       "statements": 90.8,
       "deltas": {

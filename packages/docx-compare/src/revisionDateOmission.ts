@@ -3,11 +3,19 @@
  * own revisions without a `w:date` attribute.
  *
  * `w:date` is optional on every CT_TrackChange-derived revision element, so a
- * dateless revision is valid. Rather than threading "no date" through every
- * emitter, the comparison runs with a placeholder timestamp that occurs in
+ * dateless revision is valid. The move-range start markers
+ * (`w:moveFromRangeStart`, `w:moveToRangeStart`) are the exception: they are
+ * CT_MoveBookmark, whose `w:date` is required (ECMA-376 Part 1 transitional
+ * wml.xsd: `date use="required"`). Those markers carry the fixed neutral date
+ * {@link MOVE_RANGE_NEUTRAL_DATE} instead, so the package stays schema-valid.
+ *
+ * Rather than threading "no date" through every emitter, the comparison runs with a placeholder timestamp that occurs in
  * neither input package, and the attribute carrying exactly that value is
  * removed from the finished package. Revisions that already existed in an
  * input keep their own dates, because none of them carries the placeholder.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
  */
 
 import { DocxArchive, parseXml, serializeXml } from '@usejunior/docx-core';
@@ -56,11 +64,22 @@ export async function choosePlaceholderRevisionDate(inputs: readonly Buffer[]): 
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/**
+ * The date written on move-range start markers under `date: null`, because
+ * CT_MoveBookmark requires `w:date`. It is the Unix epoch, so it carries no
+ * information about when the comparison ran.
+ */
+export const MOVE_RANGE_NEUTRAL_DATE = '1970-01-01T00:00:00Z';
+
+/** CT_MoveBookmark elements, whose `w:date` is required by the schema. */
+const DATE_REQUIRED_LOCAL_NAMES = new Set(['moveFromRangeStart', 'moveToRangeStart']);
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
 /**
  * Remove every WordprocessingML `date` attribute whose value is the
- * placeholder. The part is parsed so only real attributes are touched, never
+ * placeholder, except on move-range start markers, where it becomes
+ * {@link MOVE_RANGE_NEUTRAL_DATE}. The part is parsed so only real attributes are touched, never
  * text or another attribute's value that happens to spell the same stamp.
  */
 export async function omitPlaceholderRevisionDates(document: Buffer, placeholder: Date): Promise<Buffer> {
@@ -75,7 +94,11 @@ export async function omitPlaceholderRevisionDates(document: Buffer, placeholder
     for (let index = 0; index < elements.length; index++) {
       const element = elements[index]!;
       if (element.getAttributeNS(W_NS, 'date') === stamp) {
-        element.removeAttributeNS(W_NS, 'date');
+        if (element.namespaceURI === W_NS && DATE_REQUIRED_LOCAL_NAMES.has(element.localName ?? '')) {
+          element.setAttributeNS(W_NS, 'w:date', MOVE_RANGE_NEUTRAL_DATE);
+        } else {
+          element.removeAttributeNS(W_NS, 'date');
+        }
         removed += 1;
       }
     }

@@ -737,7 +737,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .string()
         .optional()
         .describe(
-          "Timestamp (w:date) on the revisions this comparison creates. 'now' (default) uses the current time; 'none' omits w:date, which ECMA-376 makes optional; an ISO 8601 date-time such as '2026-01-15T09:30:00Z' uses that time. Revisions already present in the inputs keep their own dates. DOCX only.",
+          "Timestamp (w:date) on the revisions this comparison creates. 'now' (default) uses the current time; 'none' omits w:date from every revision where ECMA-376 makes it optional; move-range start markers (w:moveFromRangeStart/w:moveToRangeStart), where the schema requires w:date, get the fixed placeholder 1970-01-01T00:00:00Z, which records nothing about when the comparison ran; an ISO 8601 date-time such as '2026-01-15T09:30:00Z' uses that time. Revisions already present in the inputs keep their own dates. DOCX only.",
         ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },

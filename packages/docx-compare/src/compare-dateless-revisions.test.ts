@@ -8,11 +8,17 @@
  * @see https://github.com/UseJunior/safe-docx/issues/1495
  */
 
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DocxArchive, buildSyntheticDocx, parseXml } from '@usejunior/docx-core';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 import { describe, expect } from 'vitest';
 import { compareDocuments, type CompareOptions } from './index.js';
+import { MOVE_RANGE_NEUTRAL_DATE } from './revisionDateOmission.js';
 import { acceptAllChanges, rejectAllChanges } from './tagged/trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import { buildDocxWithDefaultFooter } from './testing/footer-story-fixture.js';
@@ -29,6 +35,9 @@ const test = testAllure
 const FIXED_DATE = new Date('2026-03-04T05:06:07Z');
 const FIXED_STAMP = '2026-03-04T05:06:07Z';
 const PRIOR_STAMP = '2019-08-01T10:00:00Z';
+const SCHEMA_SCRIPT = fileURLToPath(new URL('../../../scripts/check_emitted_document_schema.mjs', import.meta.url));
+const REDLINE_DIR = new URL('../../../tests/test_documents/redline/', import.meta.url);
+const MOVE_RANGE_START = /<w:(moveFromRangeStart|moveToRangeStart)\b[^>]*>/g;
 const STORY_PART = /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/;
 const REVISION_ELEMENT =
   /<w:(ins|del|moveFrom|moveTo|moveFromRangeStart|moveToRangeStart|rPrChange|pPrChange|sectPrChange|tblPrChange|trPrChange|tcPrChange|tblGridChange|numberingChange|cellIns|cellDel|cellMerge)\b/g;
@@ -44,6 +53,11 @@ async function storyParts(docx: Buffer): Promise<Map<string, string>> {
 
 function count(xml: string, pattern: RegExp): number {
   return xml.match(pattern)?.length ?? 0;
+}
+
+/** Neutral dates on move-range start markers, which the schema requires (#1528). */
+function neutralMoveDates(xml: string): number {
+  return count(xml, new RegExp(`w:date="${MOVE_RANGE_NEUTRAL_DATE}"`, 'g'));
 }
 
 function stripDates(xml: string): string {
@@ -117,7 +131,9 @@ describe('compareDocuments date: null', () => {
           expect([...run.datelessParts.keys()]).toEqual([...run.datedParts.keys()]);
           for (const [path, xml] of run.datelessParts) {
             const datedXml = run.datedParts.get(path)!;
-            const generated = count(xml, /w:date="/g) - count(xml, new RegExp(`w:date="${PRIOR_STAMP}"`, 'g'));
+            const generated = count(xml, /w:date="/g)
+              - count(xml, new RegExp(`w:date="${PRIOR_STAMP}"`, 'g'))
+              - count(xml, new RegExp(`w:date="${MOVE_RANGE_NEUTRAL_DATE}"`, 'g'));
             expect(generated, path).toBe(0);
             expect(count(xml, REVISION_ELEMENT), path).toBe(count(datedXml, REVISION_ELEMENT));
             expect(stripDates(xml), path).toBe(stripDates(datedXml));
@@ -132,6 +148,44 @@ describe('compareDocuments date: null', () => {
     },
   );
 
+  test.openspec('Dateless move-range markers keep a neutral date')(
+    'date: null gives move-range start markers the neutral date and the ILPA output passes the schema check',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const pairs = await given('the synthetic move pair and the ILPA Deal-By-Deal v1 / WOF v2 pair', async () => ({
+        notes: await notesPair(),
+        ilpa: {
+          original: await readFile(new URL('ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx', REDLINE_DIR)),
+          revised: await readFile(new URL('ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx', REDLINE_DIR)),
+        },
+      }));
+      const outputs = await when('both pairs are compared with date: null', async () => ({
+        notes: (await compareDocuments(pairs.notes.original, pairs.notes.revised, { date: null })).document,
+        ilpa: (await compareDocuments(pairs.ilpa.original, pairs.ilpa.revised, { date: null })).document,
+      }));
+      for (const label of ['notes', 'ilpa'] as const) {
+        await then(`${label}: every move-range start marker carries exactly the neutral date`, async () => {
+          const xml = (await storyParts(outputs[label])).get('word/document.xml')!;
+          const markers = xml.match(MOVE_RANGE_START) ?? [];
+          expect(markers.length).toBeGreaterThan(0);
+          for (const marker of markers) expect(marker).toContain(`w:date="${MOVE_RANGE_NEUTRAL_DATE}"`);
+          expect(count(xml, new RegExp(`w:date="${MOVE_RANGE_NEUTRAL_DATE}"`, 'g'))).toBe(markers.length);
+        });
+        await and(`${label}: the dateless output passes the emitted-document schema check`, async () => {
+          const dir = await mkdtemp(join(tmpdir(), 'dateless-moves-'));
+          try {
+            const path = join(dir, `${label}.docx`);
+            await writeFile(path, outputs[label]);
+            const check = spawnSync(process.execPath, [SCHEMA_SCRIPT, path], { encoding: 'utf8' });
+            expect(check.status, `${check.stdout}\n${check.stderr}`).toBe(0);
+          } finally {
+            await rm(dir, { recursive: true, force: true });
+          }
+        });
+      }
+    },
+    400_000, // ~60 s locally; over 120 s under CI coverage instrumentation
+  );
+
   test.openspec('Dateless comparison keeps the dates of pre-existing revisions')(
     'a pre-dated insertion in the revised input keeps its w:date under date: null',
     async ({ given, when, then }: AllureBddContext) => {
@@ -140,7 +194,7 @@ describe('compareDocuments date: null', () => {
       await then('the preserved insertion still carries its own author and date', async () => {
         const xml = (await storyParts(result.document)).get('word/document.xml')!;
         expect(xml).toMatch(new RegExp(`w:author="Prior Reviewer"[^>]*w:date="${PRIOR_STAMP}"|w:date="${PRIOR_STAMP}"[^>]*w:author="Prior Reviewer"`));
-        expect(count(xml, /w:date="/g)).toBe(count(xml, new RegExp(`w:date="${PRIOR_STAMP}"`, 'g')));
+        expect(count(xml, /w:date="/g) - neutralMoveDates(xml)).toBe(count(xml, new RegExp(`w:date="${PRIOR_STAMP}"`, 'g')));
       });
     },
   );
@@ -159,7 +213,7 @@ describe('compareDocuments date: null', () => {
       await then('the preserved insertion keeps that date', async () => {
         const xml = (await storyParts(result.document)).get('word/document.xml')!;
         expect(xml).toMatch(/w:date="1901-01-01T00:00:00(Z|&#90;)"/);
-        expect(count(xml, /w:date="/g)).toBe(1);
+        expect(count(xml, /w:date="/g) - neutralMoveDates(xml)).toBe(1);
       });
     },
   );
