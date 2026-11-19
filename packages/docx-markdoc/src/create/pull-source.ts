@@ -441,9 +441,9 @@ export function buildSourceMap(source: string, paragraphEntries: readonly number
   const paragraphs: SourceParagraph[] = [];
   for (const [index, entry] of paragraphEntries.entries()) {
     if (entry === -1) {
-      // The empty paragraph docx-core adds after a section-ending table: anchor it to the table before it.
+      // Anchor a generated section break or table-closing paragraph to the preceding block.
       const before = paragraphs[index - 1];
-      paragraphs.push({ index, entry, kind: 'generated', line: before?.endLine ?? 1, endLine: before?.endLine ?? 1, problem: 'it is the empty paragraph generation adds after a table' });
+      paragraphs.push({ index, entry, kind: 'generated', line: before?.endLine ?? 1, endLine: before?.endLine ?? 1, problem: 'it is an empty structural paragraph added by generation' });
       continue;
     }
     const indexes = byEntry.get(entry)!;

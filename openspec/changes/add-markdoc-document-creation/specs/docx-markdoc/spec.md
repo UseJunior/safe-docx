@@ -56,6 +56,7 @@ unlinked with declared content.
 - **GIVEN** frontmatter `page-numbers: true`, a `section` tag with a footer, and a later `section` tag with no footer attributes
 - **WHEN** it is created
 - **THEN** the document SHALL have three sections, and each non-final `w:sectPr` SHALL sit on the last paragraph of its section
+- **AND** when the section's final content paragraph is effectively justified, or it ends in a table, that last paragraph SHALL be a generated dedicated break with zero before/after spacing, an exact one-twip line and a one-point paragraph mark; other content endings SHALL retain last-content-paragraph placement
 - **AND** the first footer SHALL contain a centred PAGE field, the second SHALL be unlinked with the declared centred italic text, and the third SHALL have no footer reference so it inherits the second
 - **AND** a section declaring only `page-numbers=false` SHALL get an unlinked empty footer instead of inheriting
 

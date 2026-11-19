@@ -119,8 +119,8 @@ export type CreationLowering = {
   /**
    * Parallel to `projection.paragraphs`: the index into the parsed source's
    * top-level nodes (`Markdoc.parse(source).children`) of the block each
-   * paragraph came from, or -1 for a paragraph generation adds (the empty
-   * paragraph after a section-ending table). `pull` maps read-back
+   * paragraph came from, or -1 for a generated section break or the closing
+   * paragraph after a table. `pull` maps read-back
    * paragraphs back to the source through it. Not part of the certificate.
    */
   paragraphEntries: number[];
@@ -764,10 +764,10 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     effective.push({ ...(header ? { header } : {}), ...(footer ? { footer } : {}) });
   }
   const firstPageOff = (index: number) => effective[index]!.header?.first !== undefined || effective[index]!.footer?.first !== undefined;
+  const styles = creationStyles(profile, { header: sections.some((section) => section.header !== undefined), tableOfContents: theme.tableOfContents });
   const specSections: SectionSpec[] = sections.map((section, index) => {
     const blocks = section.entries.flatMap((entry) => entry.blocks);
     const isFinal = index === sections.length - 1;
-    const endsWithTable = blocks.at(-1)?.kind === 'table';
     const titlePage = firstPageOff(index);
     const { header: runningHeader, footer: runningFooter } = effective[index]!;
     const headers = {
@@ -785,15 +785,13 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
         sizeTwips: { w: PAGE_WIDTH_TWIPS, h: PAGE_HEIGHT_TWIPS },
         marginsTwips: { top: margin, right: margin, bottom: margin, left: margin, header: 720, footer: 720, gutter: 0 },
       },
-      ...(isFinal ? {} : { breakType: 'nextPage' as const, breakPlacement: endsWithTable ? 'ownParagraph' as const : 'lastParagraph' as const }),
+      ...(isFinal ? {} : { breakType: 'nextPage' as const }),
       ...(titlePage ? { titlePg: true } : {}),
       ...(Object.keys(headers).length > 0 ? { headers } : {}),
       ...(Object.keys(footers).length > 0 ? { footers } : {}),
       blocks,
     };
   });
-  // A section ending in a table gets one empty paragraph after it from docx-core
-  // (the dedicated break paragraph, or the closing paragraph of the body).
   const references = referenceTexts(specSections, theme.numbering);
   const toc = fillTableOfContents(specSections, theme, references);
   if (toc) {
@@ -801,11 +799,25 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
     const entry = sections.flatMap((section) => section.entries).find((candidate) => candidate.blocks.includes(toc.placeholder))!;
     entry.blocks.splice(entry.blocks.indexOf(toc.placeholder), 1, ...toc.paragraphs);
   }
+  // Select after TOC expansion, so the actual final paragraph's style decides.
+  // A justified content paragraph keeps its ordinary paragraph mark: its own
+  // collapsed structural paragraph carries the section mark instead (#1425).
+  for (const [index, section] of specSections.entries()) {
+    if (index === specSections.length - 1) continue;
+    const last = section.blocks.at(-1);
+    const alignment = last?.kind === 'paragraph'
+      ? last.alignment ?? styles.find(style => style.styleId === last.styleId)?.paragraph?.alignment
+      : undefined;
+    section.breakPlacement = last?.kind === 'table' || alignment === 'justify' ? 'ownParagraph' : 'lastParagraph';
+  }
+  const generatedTrailingParagraph = (section: SectionSpec, index: number): boolean =>
+    section.blocks.at(-1)?.kind === 'table'
+    || (index < specSections.length - 1 && section.breakPlacement === 'ownParagraph');
   const titleText = titleBlocks ? projectBlocks(titleBlocks, undefined, references).paragraphs[0] : undefined;
   const projected: BlockProjection = { paragraphs: [], layouts: [], footnoteReferences: [], footnotes: [] };
-  for (const section of specSections) {
+  for (const [index, section] of specSections.entries()) {
     projectBlocks(section.blocks, projected, references);
-    if (section.blocks.at(-1)?.kind === 'table') {
+    if (generatedTrailingParagraph(section, index)) {
       projected.paragraphs.push('');
       projected.layouts.push(null);
     }
@@ -814,9 +826,9 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
   const paragraphEntries: number[] = [];
   const countParagraphs = (blocks: readonly BlockSpec[]): number => blocks.reduce((sum, block) => sum
     + (block.kind === 'table' ? block.rows.reduce((cells, row) => cells + row.cells.reduce((total, cell) => total + countParagraphs(cell.blocks), 0), 0) : 1), 0);
-  for (const section of sections) {
+  for (const [index, section] of sections.entries()) {
     for (const entry of section.entries) paragraphEntries.push(...Array.from({ length: countParagraphs(entry.blocks) }, () => entry.node));
-    if (section.entries.at(-1)?.blocks.at(-1)?.kind === 'table') paragraphEntries.push(-1);
+    if (generatedTrailingParagraph(specSections[index]!, index)) paragraphEntries.push(-1);
   }
   if (paragraphEntries.length !== paragraphs.length) throw new Error('the lowering lost track of which block a paragraph came from');
   const title = frontmatter.title ?? titleText;
@@ -830,7 +842,7 @@ export function lowerCreationMarkdoc(source: string, profileInput?: unknown): Cr
       ...(frontmatter.application === undefined ? {} : { application: frontmatter.application }),
     },
     defaults: creationDefaults(profile),
-    styles: creationStyles(profile, { header: sections.some((section) => section.header !== undefined), tableOfContents: theme.tableOfContents }),
+    styles,
     ...(theme.numbering.length > 0 ? { numbering: [...theme.numbering] } : {}),
     // A justified line that ends in a manual line break (`\`) is not stretched
     // to the text width (#1196); Word and LibreOffice both honour it.
