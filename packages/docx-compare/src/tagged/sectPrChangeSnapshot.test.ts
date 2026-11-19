@@ -182,6 +182,7 @@ describe('w:sectPrChange snapshots are CT_SectPrBase (#944)', () => {
       .getElementsByTagNameNS(OOXML.W_NS, 'sectPrChange').item(0)!
       .getElementsByTagNameNS(OOXML.W_NS, 'pgSz').item(0)!;
     expect(snapshot.getAttributeNS(OOXML.W_NS, 'w')).toBe('12240');
+    expect(snapshot.getAttributeNS(OOXML.W_NS, 'orient')).toBe('portrait');
 
     const expected = ['0:footer:default=word/footer1.xml', '0:header:default=word/header1.xml'];
     for (const projection of [
@@ -222,6 +223,9 @@ describe('w:sectPrChange snapshots are CT_SectPrBase (#944)', () => {
 
     expect(sectPrChangeCount(documentXml)).toBe(1);
     expect(snapshotStoryReferences(documentXml)).toBe(0);
+    const oldSize = parseXml(documentXml).getElementsByTagNameNS(OOXML.W_NS, 'sectPrChange').item(0)!
+      .getElementsByTagNameNS(OOXML.W_NS, 'pgSz').item(0)!;
+    expect(oldSize.getAttributeNS(OOXML.W_NS, 'orient')).toBe('portrait');
     const expected = ['0:footer:default=word/footer1.xml', '0:header:default=word/header1.xml'];
     for (const projection of [
       acceptAllChanges(documentXml),
@@ -487,6 +491,7 @@ describe('sections that differ only in header/footer references emit no w:sectPr
       .getElementsByTagNameNS(OOXML.W_NS, 'sectPrChange').item(0)!
       .getElementsByTagNameNS(OOXML.W_NS, 'pgSz').item(0)!;
     expect(snapshot.getAttributeNS(OOXML.W_NS, 'w')).toBe('12240');
+    expect(snapshot.getAttributeNS(OOXML.W_NS, 'orient')).toBe('portrait');
     expect(rejectAllChanges(documentXml)).toContain('w:w="12240"');
     expect(acceptAllChanges(documentXml)).toContain('w:orient="landscape"');
     // The dropped footer is tracked as deleted content (#1394); the page

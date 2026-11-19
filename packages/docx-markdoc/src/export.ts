@@ -5,15 +5,15 @@ import type {
   EditPair,
   InsertOperation,
   MarkdocEditIR,
-  TableRowOperation,
+  TableOperation,
 } from './types.js';
 
 function isInsertOperation(operation: EditOperation): operation is InsertOperation {
   return operation.kind === 'insert-before' || operation.kind === 'insert-after';
 }
 
-function isTableRowOperation(operation: EditOperation): operation is TableRowOperation {
-  return operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row';
+function isTableOperation(operation: EditOperation): operation is TableOperation {
+  return operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row' || operation.kind === 'insert-table-column';
 }
 
 export function exportEditPairs(
@@ -23,10 +23,10 @@ export function exportEditPairs(
   if ([...ir.scaffold, ...(ir.storyScaffold ?? [])].some((paragraph) => paragraph.originalTextFromSource)) {
     throw new DocxMarkdocError('UNRESOLVED_SOURCE_TEXT', 'Compile source-only edits against the pinned DOCX before exporting edit pairs.');
   }
-  if (ir.operations.some(isTableRowOperation)) {
+  if (ir.operations.some(isTableOperation)) {
     throw new DocxMarkdocError(
       'STRUCTURAL_EDIT_PAIR_EXPORT_UNSUPPORTED',
-      'Table-row operations cannot be represented losslessly as paragraph edit pairs; compile the canonical Markdoc directly.',
+      'Table structural operations cannot be represented losslessly as paragraph edit pairs; compile the canonical Markdoc directly.',
     );
   }
   const context = Math.max(0, options.contextParagraphs ?? 1);
@@ -35,7 +35,7 @@ export function exportEditPairs(
     const existing = rationales.get(item.operationId) ?? [];
     rationales.set(item.operationId, [...existing, item]);
   }
-  const paragraphOperations = ir.operations.filter((operation): operation is Exclude<EditOperation, TableRowOperation> => !isTableRowOperation(operation));
+  const paragraphOperations = ir.operations.filter((operation): operation is Exclude<EditOperation, TableOperation> => !isTableOperation(operation));
   return paragraphOperations.map((operation) => {
     const anchorId = isInsertOperation(operation) ? operation.anchorId : operation.id;
     const story = 'story' in operation ? operation.story : undefined;
@@ -77,6 +77,9 @@ export function exportAdjacentRevisionPairs(
   }
   if (before.source.sha256 !== after.source.sha256) {
     throw new Error('Adjacent revisions must reference the same pinned source DOCX.');
+  }
+  if ([before, after].some(ir => ir.operations.some(operation => operation.kind === 'insert-table-column'))) {
+    throw new DocxMarkdocError('STRUCTURAL_EDIT_PAIR_EXPORT_UNSUPPORTED', 'Table columns cannot be represented losslessly as paragraph edit pairs; compile the canonical Markdoc directly.');
   }
   const context = Math.max(0, options.contextParagraphs ?? 1);
   const beforeById = new Map(before.scaffold.map((paragraph) => [paragraph.id, paragraph.revisedText]));

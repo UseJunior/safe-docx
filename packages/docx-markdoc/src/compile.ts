@@ -30,6 +30,7 @@ import { sha256 } from './hash.js';
 import { documentBookmarkTargets, paragraphCrossReferences, sameReference, unsupportedCrossReferenceError, type BookmarkTarget } from './xref.js';
 import { admittedStoryParagraphs, projectedStoryParagraphs, selectedStories, type SelectedStory } from './story-inventory.js';
 import { requireMarkdoc } from './markdoc.js';
+import { applyTableColumn, assertTableColumnConflicts } from './table-column-operations.js';
 import { assessDraftCompleteness } from './completeness.js';
 import { projectAnnotations, type AnnotationProjectionResult } from './presentation.js';
 import { verifyRevisionPreservation, type RevisionSnapshot } from './revision-preservation.js';
@@ -49,6 +50,7 @@ import type {
   RunFormat,
   RunFormatSpan,
   TableRowOperation,
+  TableOperation,
   TableTopologyReport,
   StoryProjectionReport,
   ValidationIssue,
@@ -926,7 +928,7 @@ function validateRunFormatScopes(ir: MarkdocEditIR, source: DocxDocument): Resol
   const retained: ResolvedRetainedSpan[] = [];
   for (const operation of ir.operations) {
     if ('story' in operation && operation.story) continue;
-    if (isTableRowOperation(operation)) continue;
+    if (isTableOperation(operation)) continue;
     if (!operation.runFormat && !(operation.runFormatSpans?.length) && !(operation.retainedFormatSpans?.length)) continue;
     if (isInsertOperation(operation)) {
       if (operation.retainedFormatSpans?.length) {
@@ -980,8 +982,12 @@ function isTableRowOperation(operation: EditOperation): operation is TableRowOpe
   return operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row';
 }
 
+function isTableOperation(operation: EditOperation): operation is TableOperation {
+  return isTableRowOperation(operation) || operation.kind === 'insert-table-column';
+}
+
 function sourceOperationId(operation: EditOperation): string | null {
-  return isInsertOperation(operation) || isTableRowOperation(operation) ? null : operation.id;
+  return isInsertOperation(operation) || isTableOperation(operation) ? null : operation.id;
 }
 
 function nearestTableCell(paragraph: Element | null): Element | undefined {
@@ -1524,7 +1530,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     const story = operationStory(operation);
     const donor = operation.styleSourceId ?? operation.anchorId;
     const conflict = ir.operations.find((candidate) =>
-      !isInsertOperation(candidate) && !isTableRowOperation(candidate)
+      !isInsertOperation(candidate) && !isTableOperation(candidate)
       && operationStory(candidate) === story
       && candidate.kind === 'delete-source'
       && (candidate.id === operation.anchorId || candidate.id === donor));
@@ -1638,6 +1644,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     }
   }
 
+  assertTableColumnConflicts(source, bodyOperations);
   const structuralRows = new Map<Element, TableRowOperation>();
   const deletedRows = new Map<Element, TableRowOperation>();
   for (const operation of bodyOperations.filter(isTableRowOperation)) {
@@ -1653,6 +1660,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (operation.kind === 'delete-table-row') deletedRows.set(row, operation);
   }
   for (const operation of bodyOperations) {
+    if (operation.kind === 'insert-table-column') continue;
     if (isTableRowOperation(operation)) {
       if (operation.kind === 'insert-table-rows') {
         const row = nearestTableRow(source.getParagraphElementById(operation.anchorId));
@@ -1802,7 +1810,7 @@ async function validateStoriesAgainstSource(
   // miss cumulative cell/root deletion and stale-anchor combinations.
   const trial = await DocxDocument.load(sourceBuffer);
   for (const operation of ir.operations) {
-    if (isTableRowOperation(operation)) continue;
+    if (isTableOperation(operation)) continue;
     const storyId = operationStory(operation);
     if (!storyId) continue;
     const story = storyById.get(storyId);
@@ -1956,7 +1964,7 @@ async function applyOperations(
     const storyId = operationStory(operation);
     if (storyId) {
       const story = stories.get(storyId);
-      if (!story || isTableRowOperation(operation)) throw new DocxMarkdocError('UNDECLARED_STORY', `Operation ${operation.operationId} has no admitted story.`);
+      if (!story || isTableOperation(operation)) throw new DocxMarkdocError('UNDECLARED_STORY', `Operation ${operation.operationId} has no admitted story.`);
       let storyDom = sourceStoryDocs.get(story.partPath);
       if (!storyDom) {
         storyDom = parseXml(await sourceZip.readText(story.partPath));
@@ -2049,6 +2057,15 @@ async function applyOperations(
           });
         }
       }
+      continue;
+    }
+    if (operation.kind === 'insert-table-column') {
+      const authored = applyTableColumn(document, operation).filter(paragraph => paragraph.text.length > 0);
+      if (authored.length > 0) ranges.push({
+        operationId: operation.operationId, projection: 'clean',
+        startParagraphId: authored[0]!.id, start: 0,
+        endParagraphId: authored.at(-1)!.id, end: authored.at(-1)!.text.length,
+      });
       continue;
     }
     if (operation.kind === 'insert-table-rows') {
@@ -2235,14 +2252,18 @@ async function applyOperations(
   return { buffer: (await document.toBuffer({ cleanBookmarks: false })).buffer, ranges };
 }
 
-async function preflightTableRowOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise<void> {
-  const operations = ir.operations.filter(isTableRowOperation);
+async function preflightTableOperations(sourceBuffer: Buffer, ir: MarkdocEditIR): Promise<void> {
+  const operations = ir.operations.filter(isTableOperation);
   if (operations.length === 0) return;
   const document = await DocxDocument.load(sourceBuffer);
-  let activeOperation: TableRowOperation | undefined;
+  let activeOperation: TableOperation | undefined;
   try {
     for (const operation of operations) {
       activeOperation = operation;
+      if (operation.kind === 'insert-table-column') {
+        applyTableColumn(document, operation);
+        continue;
+      }
       if (operation.kind === 'delete-table-row') {
         document.deleteTableRow({ targetParagraphId: operation.anchorId });
         continue;
@@ -2261,8 +2282,8 @@ async function preflightTableRowOperations(sourceBuffer: Buffer, ir: MarkdocEdit
     if (error instanceof DocxMarkdocError) throw error;
     const cause = error as Error & { code?: string; detail?: unknown };
     throw new DocxMarkdocError(
-      'TABLE_ROW_PREFLIGHT_FAILED',
-      `Table-row operation ${activeOperation?.operationId ?? '<unknown>'} failed structural preflight: ${cause.message}`,
+      activeOperation?.kind === 'insert-table-column' ? 'TABLE_COLUMN_PREFLIGHT_FAILED' : 'TABLE_ROW_PREFLIGHT_FAILED',
+      `Table operation ${activeOperation?.operationId ?? '<unknown>'} failed structural preflight: ${cause.message}`,
       { operationId: activeOperation?.operationId, causeCode: cause.code, causeDetail: cause.detail },
     );
   }
@@ -2409,7 +2430,7 @@ export async function compileMarkdoc(
     );
   }
   await assertRewrittenAnnotationReferences(sourceDocument, ir);
-  await preflightTableRowOperations(sourceBuffer, ir);
+  await preflightTableOperations(sourceBuffer, ir);
   const applied = await applyOperations(sourceBuffer, ir, retainedSpans, storyById);
   const clean = applied.buffer;
   const rangesByOperation = new Map(applied.ranges.map((range) => [range.operationId, range]));
@@ -2563,7 +2584,7 @@ export async function compileMarkdoc(
     });
   }
   let tableTopology: TableTopologyReport | undefined;
-  if (ir.operations.some(isTableRowOperation)) {
+  if (ir.operations.some(isTableOperation)) {
     const [acceptedBuffer, rejectedBuffer] = await Promise.all([
       acceptedDoc.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),
       rejectedDoc.toBuffer({ cleanBookmarks: false }).then((result) => result.buffer),

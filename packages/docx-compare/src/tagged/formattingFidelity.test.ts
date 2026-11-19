@@ -173,6 +173,18 @@ describe('Formatting-fidelity comparison check', () => {
     },
   );
 
+  humanReadableTest.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' })(
+    'implicit portrait equals explicit portrait while landscape and dimension changes remain divergent',
+    () => {
+      const section = (attributes: string) => docXml(`<w:p><w:r><w:t>content</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840" ${attributes}/></w:sectPr>`);
+      const implicit = section('');
+      expect(compareFormattingFidelity(implicit, section('w:orient="portrait"')).score).toBe(1);
+      expect(compareFormattingFidelity(section('w:orient="portrait"'), implicit).score).toBe(1);
+      expect(compareFormattingFidelity(implicit, section('w:orient="landscape"')).sectionFormatting.divergent).toBe(1);
+      expect(compareFormattingFidelity(implicit, section('').replace('15840', '15000')).sectionFormatting.divergent).toBe(1);
+    },
+  );
+
   humanReadableTest.openspec('namespace declaration placement does not register as formatting divergence')(
     'Scenario: namespace declaration placement does not register as formatting divergence',
     (_: AllureBddContext) => {

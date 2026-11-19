@@ -137,12 +137,18 @@ const PPR_EXCLUDED_TAGS = new Set([...REVISION_PROPERTY_TAGS, 'w:sectPr']);
  * Namespace declarations (`xmlns`, `xmlns:*`) are skipped: they record where
  * a prefix is bound, not formatting, and emitters legitimately declare the
  * same binding at different depths (inline vs inherited from the root).
+ * Explicit portrait and omitted orientation have the same page-size semantics.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.13
  */
 function canonicalizeElement(el: Element): string {
   const attrs: string[] = [];
   for (let i = 0; i < el.attributes.length; i++) {
     const attr = el.attributes[i]!;
     if (attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
+    if (el.namespaceURI === 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+      && el.localName === 'pgSz' && attr.namespaceURI === el.namespaceURI
+      && attr.localName === 'orient' && attr.value === 'portrait') continue;
     attrs.push(`${attr.name}="${attr.value}"`);
   }
   attrs.sort();

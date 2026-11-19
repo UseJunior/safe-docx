@@ -457,6 +457,39 @@ can still compile, but an attached rationale may be refused as ambiguous rather
 than being placed on a potentially wrong physical duplicate. Omit that
 rationale or make the authored row text distinguishable.
 
+To add responses across an existing simple rectangular table, anchor a column
+to any paragraph in that table and supply one `column-cell` per source row:
+
+```markdoc
+{% insert-table-column anchor="_bk_inventory" width-twips=1800 landscape=true edit="responses" %}
+{% column-cell text="Response" /%}
+{% column-cell %}
+Reviewed with the team.
+
+No further comments.
+{% /column-cell %}
+{% /insert-table-column %}
+```
+
+The default appends; `column-index=0` inserts before the first column and an
+explicit zero-based index identifies any boundary up to the source column
+count. Width is a positive integer in twips. Use `text=""` for an empty cell;
+a body accepts plain paragraphs without inline formatting, lists or nested
+tags. Each new cell inherits its neighbour's properties and the declared width.
+Original cells retain their content and properties. The compiler certifies
+both tracked projections against the source and clean table topology.
+
+`landscape=true` rotates the containing section and swaps its explicit page
+width and height; other sections are preserved. `clean.docx` has no revisions;
+the redline tracks the layout change so Reject restores the original page
+setup. Tables must be direct body children, without merges, offsets, nested
+tables, wrapped rows/cells or pending revisions. One column edit per table is
+allowed per compilation; a row edit cannot target that same table. These
+requests fail before any output is published. Column edits cannot be exported
+as paragraph revision pairs. Selected column rationales are refused when the
+whole-row comparison representation cannot provide an exact comment range;
+omit that rationale rather than attaching it to an unrelated revision.
+
 Mixed-format paragraphs are edited surgically: unchanged spans retain their
 source runs, and a replacement inherits the one formatting class occupied by
 the deleted source span. When an insertion lands exactly between incompatible

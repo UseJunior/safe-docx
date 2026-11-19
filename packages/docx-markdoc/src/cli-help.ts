@@ -106,6 +106,10 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       '<output-dir>/verification.json: the verification certificate, also printed on stdout.',
       'Exit code 1 with DELIVERY_NOT_READY when draft completeness blocks delivery.',
     ],
+    more: () => [
+      'Add a table column with {% insert-table-column anchor="..." width-twips=1800 edit="responses" %} and one {% column-cell text="..." /%} per source row.',
+      'Omit column-index to append, or set a zero-based grid boundary. A column-cell body accepts multiple plain paragraphs. landscape=true rotates the containing section in clean output.',
+    ],
   },
   verify: {
     synopsis: ['verify <anchored.docx> <document.mdoc> [options]'],

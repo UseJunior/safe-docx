@@ -3816,7 +3816,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz",
-      "claimRationale": "`w:pgSz` carries the page width/height in twentieths of a point and an\noptional orientation. The generation section emitter\n(`packages/docx-core/src/generation/emit/section.ts`) emits explicit\n`w:w`/`w:h` for every section (defaulting to US Letter) and sets\n`w:orient=\"landscape\"` with swapped dimensions when the spec requests\nlandscape, so readers never fall back to printer-driver defaults.\nThe section editing primitive updates explicit width, height, and orientation\nattributes atomically, preserves untargeted attributes such as paper code, and\nrequires both dimensions before creating a missing `w:pgSz`.",
+      "claimRationale": "`w:pgSz` carries the page width/height in twentieths of a point and an\noptional orientation. The generation section emitter\n(`packages/docx-core/src/generation/emit/section.ts`) emits explicit\n`w:w`/`w:h` for every section (defaulting to US Letter) and sets\n`w:orient=\"landscape\"` with swapped dimensions when the spec requests\nlandscape, so readers never fall back to printer-driver defaults.\nThe section editing primitive updates explicit width, height, and orientation\nattributes atomically, preserves untargeted attributes such as paper code, and\nrequires both dimensions before creating a missing `w:pgSz`.\n\nComparison snapshots explicitly record an old implicit portrait orientation when\nthe live page size changes to landscape, so Word Reject restores both the\noriginal dimensions and orientation.",
       "evidence": [
         {
           "kind": "source",

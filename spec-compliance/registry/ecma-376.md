@@ -971,6 +971,10 @@ verifiedBy: packages/docx-core/src/primitives/sections.ts; packages/docx-core/sr
   - packages/docx-core/src/integration/canonical-emission-regression.test.ts
   - packages/docx-mcp/src/tools/format_section_page_setup.test.ts
   - packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
+  - packages/docx-compare/src/tagged/taggedTreeSerializer.ts
+  - packages/docx-compare/src/tagged/sectPrChangeSnapshot.test.ts
+  - packages/docx-compare/src/tagged/formattingFidelity.ts
+  - packages/docx-compare/src/tagged/formattingFidelity.test.ts
 ```
 
 `w:pgSz` carries the page width/height in twentieths of a point and an
@@ -982,6 +986,10 @@ landscape, so readers never fall back to printer-driver defaults.
 The section editing primitive updates explicit width, height, and orientation
 attributes atomically, preserves untargeted attributes such as paper code, and
 requires both dimensions before creating a missing `w:pgSz`.
+
+Comparison snapshots explicitly record an old implicit portrait orientation when
+the live page size changes to landscape, so Word Reject restores both the
+original dimensions and orientation.
 
 ## [ECMA-PART1-17-6-11] w:pgMar page margin emission
 
