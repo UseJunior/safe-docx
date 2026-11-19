@@ -2841,7 +2841,7 @@ part: 1
 section: "17.13.5.33"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange
-verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
+verifiedBy: packages/docx-core/src/primitives/table_cell_revisions.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/table_cell_revisions.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 ```
 
 The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
@@ -2850,7 +2850,7 @@ grid, reject restores the snapshot's `w:gridCol` list. Comparison never
 diffs `w:tblGrid` child by child: it keeps a pending `w:tblGridChange` that
 only the original carries and drops one only the revised document carries.
 It does not emit a new `w:tblGridChange` (grid changes are still refused),
-and docx-core's native accept/reject do not yet resolve it.
+and docx-core's native accept/reject resolve the same grid snapshots.
 
 ## [ECMA-PART1-17-13-5-34] Table-property revisions (w:tblPrChange)
 
@@ -2876,7 +2876,7 @@ part: 1
 section: "17.13.5.35"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange
-verifiedBy: packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
+verifiedBy: packages/docx-core/src/primitives/table_cell_revisions.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/table_cell_revisions.test.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts; packages/docx-compare/src/tagged/tableLevelProperties.ts; packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts
 ```
 
 The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in
@@ -2885,7 +2885,7 @@ exceptions, reject restores the snapshot's `w:tblPrEx` content. Comparison
 emits `w:tblPrExChange` for a changed row `w:tblPrEx`, and on every row of a
 table whose published `w:tblPr` gains a `w:tblPrChange` (Word shows a
 table-property revision only through a row-level `w:tblPrExChange`).
-docx-core's native accept/reject do not yet resolve it.
+docx-core's native accept/reject also resolve these snapshots and remove empty row exceptions.
 
 Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
 safe-docx validates its documented API-supported enum and safe-integer subset,
@@ -3076,6 +3076,44 @@ names the conformance class, instead of being read as an empty document. This
 entry claims detection and refusal of the Strict class; it does not claim Strict
 consumption or conversion.
 
+## [ECMA-PART1-17-13-5-1] Table cell deletion (w:cellDel)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellDel
+verifiedBy: packages/docx-core/src/primitives/table_cell_revisions.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/table_cell_revisions.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+Accept removes a deleted cell and transfers its width and grid slots to its preceding neighbour (following for a first cell). Reject keeps the cell and drops the marker. Unused grid boundaries collapse.
+
+## [ECMA-PART1-17-13-5-2] Table cell insertion (w:cellIns)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellIns
+verifiedBy: packages/docx-core/src/primitives/table_cell_revisions.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/table_cell_revisions.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+Accept keeps an inserted cell and drops the marker. Reject removes it with the same width and grid-slot transfer as an accepted cell deletion.
+
+## [ECMA-PART1-17-13-5-3] Vertically merged or split table cells (w:cellMerge)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.3"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellMerge
+verifiedBy: packages/docx-core/src/primitives/table_cell_revisions.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/table_cell_revisions.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+Accept selects `vMerge`; reject selects `vMergeOrig`. The annotation values map to live vertical-merge states; an absent state removes the merge.
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the
@@ -3114,45 +3152,3 @@ not broaden this §17.3 claim.
 A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use
 `@conformance-gap` with a reason instead.
-
-## [ECMA-PART1-17-13-5-1] Table cell deletion (w:cellDel)
-
-```yaml
-edition: 5
-part: 1
-section: "17.13.5.1"
-url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellDel
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
-```
-
-safe-docx validates placement and preserves sampled `w:cellDel` records, but
-does not apply table-topology deletion semantics.
-
-## [ECMA-PART1-17-13-5-2] Table cell insertion (w:cellIns)
-
-```yaml
-edition: 5
-part: 1
-section: "17.13.5.2"
-url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellIns
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
-```
-
-safe-docx validates placement and preserves sampled `w:cellIns` records, but
-does not apply table-topology insertion semantics.
-
-## [ECMA-PART1-17-13-5-3] Vertically merged or split table cells (w:cellMerge)
-
-```yaml
-edition: 5
-part: 1
-section: "17.13.5.3"
-url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellMerge
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
-```
-
-safe-docx validates placement and preserves sampled `w:cellMerge` records,
-but does not interpret vertical merge/split topology.

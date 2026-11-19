@@ -69,3 +69,5 @@ export {
   insertSingleParagraphBookmark,
 } from './bookmarks.js';
 export type { ParagraphBookmark } from './bookmarks.js';
+
+export { resolveTableCellRevisions } from './table_cell_revisions.js';

@@ -13,15 +13,14 @@
  * markers gets ordinary whole-table row markers. An unmatched table with no
  * rows, which no row marker can carry, is left out and reported.
  *
- * Neither acceptor resolves `w:cellIns`/`w:cellDel`/`w:cellMerge` (docx-core:
- * #1401), so the projections are compared with the same acceptor's
- * projection of each source.
+ * Both acceptors resolve the pending cell revisions, so each comparison
+ * projection is checked against the corresponding resolved source.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5.1 — pending w:cellDel is preserved in place, not resolved by either acceptor
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5.2 — pending w:cellIns is preserved in place, not resolved by either acceptor
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5.3 — pending w:cellMerge is preserved in place, not resolved by either acceptor
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.3
  * @see https://github.com/UseJunior/safe-docx/issues/1400
  */
 

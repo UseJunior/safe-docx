@@ -20,6 +20,7 @@ import {
   acceptedSectionBreakRemovalContainer,
   carryHeaderFooterRefsFromRemovedBoundary,
   NODE_TYPE,
+  resolveTableCellRevisions,
 } from '@usejunior/docx-core';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -833,6 +834,8 @@ export function acceptAllChanges(documentXml: string): string {
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
 
+  resolveTableCellRevisions(root, 'accept');
+
   // Strip paragraph-level markers now that changes are accepted.
   removeParaMarkers(root);
   removeEmptyParagraphMarkerContainers(root);
@@ -993,6 +996,7 @@ export function rejectAllChanges(documentXml: string): string {
   removeAllByTagName(root, 'w:tcPrChange');
   acceptTableLevelPropertyChanges(root);
   removeAllByTagName(root, 'w:sectPrChange');
+  resolveTableCellRevisions(root, 'reject');
   removeEmptyTablePropertyContainers(root);
 
   // Resolve property history on each original paragraph BEFORE choosing the
@@ -1020,8 +1024,9 @@ function restoreRunPropertiesFromChanges(root: Element): void {
     if (!live || live.tagName !== 'w:rPr') continue;
     const snapshot = childElements(change).find((child) => child.tagName === 'w:rPr');
     if (!snapshot) continue;
+    const restored = childElements(snapshot).map(n => n.cloneNode(true));
     for (const child of childElements(live)) live.removeChild(child);
-    for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));
+    for (const child of restored) live.appendChild(child);
   }
 }
 
@@ -1035,8 +1040,13 @@ function restoreContainerPropertiesFromChanges(
     if (!live || live.tagName !== propertyTag) continue;
     const snapshot = childElements(change).find((child) => child.tagName === propertyTag);
     if (!snapshot) continue;
+    const survivors = propertyTag === 'w:tcPr'
+      ? childElements(live).filter(n => ['w:cellIns', 'w:cellDel', 'w:cellMerge'].includes(n.tagName)).map(n => n.cloneNode(true) as Element) : [];
+    const restored = childElements(snapshot).map(n => n.cloneNode(true) as Element);
     for (const child of childElements(live)) live.removeChild(child);
-    for (const child of childElements(snapshot)) live.appendChild(child.cloneNode(true));
+    for (const child of restored) if (!(survivors.length && ['w:cellIns', 'w:cellDel', 'w:cellMerge'].includes(child.tagName))) live.appendChild(child);
+    for (const marker of survivors) live.appendChild(marker);
+
   }
 }
 

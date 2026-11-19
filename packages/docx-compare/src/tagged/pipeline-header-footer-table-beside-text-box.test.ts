@@ -281,17 +281,17 @@ async function expectProjections(
   result: TaggedCompareResult,
 ): Promise<void> {
   await then(`the ${kind} shows the revised table and box after Accept All and the original after Reject All, with both appliers`, async () => {
-    const expectedAccepted = await projectedPart(revised, kind, 'none', 'ast');
-    const expectedRejected = await projectedPart(original, kind, 'none', 'ast');
-    expect(expectedAccepted).not.toEqual(expectedRejected);
     for (const applier of ['ast', 'core'] as const) {
+      const expectedAccepted = await projectedPart(revised, kind, 'accept', applier);
+      const expectedRejected = await projectedPart(original, kind, 'reject', applier);
+      expect(expectedAccepted).not.toEqual(expectedRejected);
       expect(await projectedPart(result.document, kind, 'accept', applier), applier).toEqual(expectedAccepted);
       expect(await projectedPart(result.document, kind, 'reject', applier), applier).toEqual(expectedRejected);
     }
   });
   await then('body text round-trips', async () => {
-    expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
-    expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+    expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised, acceptAllChanges));
+    expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original, rejectAllChanges));
   });
   await then('the compared package passes the emitted-document schema gate', () => assertSchema(result.document, kind));
 }
@@ -532,8 +532,8 @@ describe('a cell added or removed beside a cell-level content control in a body 
               expect(await projectedControls(result.document, BODY, 'reject', applier), applier)
                 .toEqual(await projectedControls(original, BODY, 'none', 'ast'));
             }
-            expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
-            expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+            expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised, acceptAllChanges));
+            expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original, rejectAllChanges));
           });
           await then('the compared package passes the emitted-document schema gate', async () => {
             const directory = await mkdtemp(join(tmpdir(), 'sdx-1483-'));
@@ -617,8 +617,8 @@ describe('a body text box row whose skeleton changes beside a pending cell inser
           expect(await boxes(result.document, 'accept', applier), applier).toEqual(await boxes(revised, 'accept', applier));
           expect(await boxes(result.document, 'reject', applier), applier).toEqual(await boxes(original, 'reject', applier));
         }
-        expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
-        expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
+        expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised, acceptAllChanges));
+        expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original, rejectAllChanges));
       });
       await then('the compared package passes the emitted-document schema gate', async () => {
         const directory = await mkdtemp(join(tmpdir(), 'sdx-1400-'));
