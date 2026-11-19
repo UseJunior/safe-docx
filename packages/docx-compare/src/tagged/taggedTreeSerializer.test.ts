@@ -1288,7 +1288,9 @@ describe('mixed-format run re-segmentation (#1142)', () => {
     const publication = publish(
       [paragraph(run('Old', bold) + run(' red') + run('wood'))],
       [paragraph(run('New', bold) + run(' blue') + run('stone'))],
-      { revisionAttributionRanges: [range('A', 4, 8), range('B', 8, 13)] },
+      // Token-minimal on purpose: this pins per-operation run splitting, which
+      // readable-semantic regrouping (now the default, #1526) would merge.
+      { revisionAttributionRanges: [range('A', 4, 8), range('B', 8, 13)], revisionGrouping: 'token-minimal' },
     );
     const inserted = Array.from(parseXml(publication.xml).getElementsByTagNameNS(W_NS, 'ins'))
       .map((wrapper) => [wrapper.getAttribute('data-safe-docx-operation'), wrapper.textContent]);

@@ -81,8 +81,12 @@ async function produceRedline(
     // with the library default. Switching the benchmark to measure the
     // shipped default is a deliberate decision — record requested/used mode
     // and fallback reason in the artifacts when making it.
+    // Grouping is pinned for the same reason: benchmark scores predate the
+    // readable-semantic default (#1494, #1526), so historical comparability
+    // keeps the token-minimal presentation explicitly.
     const result = await compareDocumentsAtomizer(originalBuffer, revisedBuffer, {
       author,
+      revisionGrouping: 'token-minimal',
     });
     return result.document;
   }

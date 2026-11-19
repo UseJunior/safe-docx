@@ -9,6 +9,7 @@ import {
 } from '@usejunior/docx-core';
 import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignment.js';
 import type { RevisionAttribution, RevisionGroupingPolicy } from '../compare-types.js';
+import { DEFAULT_COMPARE_REVISION_GROUPING } from '../compare-types.js';
 import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
 import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
@@ -3096,7 +3097,9 @@ export interface TaggedTreeSerializerOptions {
    * Presentation policy for generated run revisions: `readable-whitespace`
    * clones eligible inter-word spaces into both revision sides;
    * `readable-semantic` regroups each paragraph's change clusters
-   * (see `readableSemanticGrouping.ts`).
+   * (see `readableSemanticGrouping.ts`). Omitted, it falls back to the public
+   * default {@link DEFAULT_COMPARE_REVISION_GROUPING} (#1526); a caller that
+   * needs `token-minimal` must ask for it explicitly.
    */
   revisionGrouping?: RevisionGroupingPolicy;
 }
@@ -3161,6 +3164,7 @@ export function serializeTaggedTree(
     paragraphJoinParts(node).forEach(findSplitBookmarkIds);
   };
   findSplitBookmarkIds(tree);
+  const revisionGrouping = options.revisionGrouping ?? DEFAULT_COMPARE_REVISION_GROUPING;
   const emitted = emitNode(
     tree,
     plan,
@@ -3170,7 +3174,7 @@ export function serializeTaggedTree(
     () => nextBookmarkId++,
     originalBookmarkIds,
     splitBookmarkIds,
-    options.revisionGrouping ?? 'token-minimal',
+    revisionGrouping,
   );
   splitRunsAroundRevisionWrappers(emitted, allocateRevision);
   splitLayeredRunFormatting(emitted, {
@@ -3188,7 +3192,7 @@ export function serializeTaggedTree(
   // a deletion, which must not include fields re-expressed from simple ones.
   expandRevisionWrappedSimpleFields(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
-  if (options.revisionGrouping === 'readable-semantic') {
+  if (revisionGrouping === 'readable-semantic') {
     groupReadableSemanticRevisions(emitted, {
       allocateRevision,
       comparisonRevisionAttribute: COMPARISON_REVISION_ATTRIBUTE,

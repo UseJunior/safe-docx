@@ -514,4 +514,42 @@ describe('readable semantic revision grouping (#1411)', () => {
       });
     },
   );
+  test.openspec('Readable semantic grouping is the library default')(
+    'groups a rewritten footnote like the body when no grouping is requested (#1526)',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      const footnoteDocx = (footnoteText: string) => buildSyntheticDocx({
+        paragraphs: ['Body text.'],
+        footnoteOnParagraph: 0,
+        footnoteText,
+      });
+      const originalDocx = await given('a footnote holding the issue repro original', () =>
+        footnoteDocx(ISSUE_ORIGINAL));
+      const revisedDocx = await given('the same footnote rewritten', () =>
+        footnoteDocx('This Agreement is made by Gamma Fund LP, a Delaware limited partnership, [NAME OF GENERAL PARTNER], a Delaware limited liability company, and Alpha Holdings LLC, a Delaware limited liability company located at 1 Main Street.'));
+      const footnotesOf = async (revisionGrouping?: CompareRevisionGrouping) => {
+        const result = await compareDocuments(originalDocx, revisedDocx, {
+          date: DATE,
+          ...(revisionGrouping ? { revisionGrouping } : {}),
+        });
+        const xml = await (await DocxArchive.load(result.document)).getFile('word/footnotes.xml');
+        if (!xml) throw new Error('comparison emitted no footnotes part');
+        return xml;
+      };
+      const defaulted = await when('the pair is compared without a grouping option', () => footnotesOf());
+      const readable = await when('the pair is compared with readable semantic grouping', () =>
+        footnotesOf('readable-semantic'));
+      const minimal = await when('the pair is compared token-minimally', () => footnotesOf('token-minimal'));
+
+      await then('the default footnote redline equals the explicit readable-semantic one', () => {
+        expect(defaulted).toBe(readable);
+      });
+      await and('the footnote story honours the grouping instead of staying token-minimal', () => {
+        expect(wrapperCount(readable)).toBeLessThan(wrapperCount(minimal));
+        expect(extractTextWithParagraphs(acceptAllChanges(readable)))
+          .toBe(extractTextWithParagraphs(acceptAllChanges(minimal)));
+        expect(extractTextWithParagraphs(rejectAllChanges(readable)))
+          .toBe(extractTextWithParagraphs(rejectAllChanges(minimal)));
+      });
+    },
+  );
 });

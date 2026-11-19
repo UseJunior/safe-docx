@@ -1,16 +1,21 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { buildDocxWithTitlePage } from '../testing/footer-story-fixture.js';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
+import { DocxArchive, parseXml } from '@usejunior/docx-core';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Bin Symlink Entrypoint' });
 
 const CLI_SOURCE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'index.ts');
 const PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+const BUILT_CLI_PATH = join(PACKAGE_DIR, 'dist', 'cli', 'index.js');
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 const tempDirs: string[] = [];
 
@@ -100,6 +105,57 @@ describe('docx-comparison bin entry guard', () => {
         { scope: 'section', kind: 'changed', sectionIndex: 0 },
       ]);
       expect(parsed.warnings).toHaveLength(1);
+    });
+  });
+  test('the built bin defaults to readable-semantic grouping when --grouping is omitted (#1526)', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let dir!: string;
+    const runBuilt = (output: string, extra: string[]) =>
+      spawnSync(process.execPath, [
+        BUILT_CLI_PATH, join(dir, 'original.docx'), join(dir, 'revised.docx'), join(dir, output), '--no-date', ...extra,
+      ], { cwd: PACKAGE_DIR, encoding: 'utf8' });
+    const bodyParagraphChildren = async (output: string) => {
+      const xml = await (await DocxArchive.load(readFileSync(join(dir, output)))).getDocumentXml();
+      const paragraph = parseXml(xml).getElementsByTagNameNS(W_NS, 'body')[0]!.getElementsByTagNameNS(W_NS, 'p')[0]!;
+      return { xml, names: Array.from(paragraph.childNodes)
+        .filter((node): node is Element => node.nodeType === 1)
+        .map((node) => node.localName)
+        .filter((name) => name !== 'pPr') };
+    };
+
+    await given('the built CLI and a rewritten one-paragraph pair', async () => {
+      expect(existsSync(BUILT_CLI_PATH), `run npm run build first: ${BUILT_CLI_PATH}`).toBe(true);
+      dir = mkdtempSync(join(tmpdir(), 'docx-comparison-built-default-'));
+      tempDirs.push(dir);
+      writeFileSync(join(dir, 'original.docx'), await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t xml:space="preserve">This Agreement is made by Alpha Holdings LLC, a Texas limited liability company located at 1 Main Street, and Beta Fund, LP, a Texas limited partnership.</w:t></w:r></w:p>'));
+      writeFileSync(join(dir, 'revised.docx'), await buildDocxFromBodyXml(
+        '<w:p><w:r><w:t xml:space="preserve">This Agreement is made by Gamma Fund LP, a Delaware limited partnership, [NAME OF GENERAL PARTNER], a Delaware limited liability company, and Alpha Holdings LLC, a Delaware limited liability company located at 1 Main Street.</w:t></w:r></w:p>'));
+    });
+
+    const runs = await when('the built bin runs without --grouping, and with each explicit grouping', () => ({
+      defaulted: runBuilt('default.docx', []),
+      readable: runBuilt('readable.docx', ['--grouping', 'readable-semantic']),
+      minimal: runBuilt('minimal.docx', ['--grouping', 'token-minimal']),
+    }));
+
+    await then('every run succeeds', () => {
+      for (const result of Object.values(runs)) {
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+      }
+    });
+    await and('the default redline is the readable-semantic one: anchor, one deletion, one insertion, anchor', async () => {
+      const defaulted = await bodyParagraphChildren('default.docx');
+      const readable = await bodyParagraphChildren('readable.docx');
+      const minimal = await bodyParagraphChildren('minimal.docx');
+      expect(defaulted.names).toEqual(['r', 'del', 'ins', 'r']);
+      expect(defaulted.xml).toBe(readable.xml);
+      expect(minimal.names.length).toBeGreaterThan(defaulted.names.length);
     });
   });
 });
