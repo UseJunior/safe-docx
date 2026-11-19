@@ -1,3 +1,4 @@
+import { XMLSerializer } from '@xmldom/xmldom';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
@@ -89,9 +90,9 @@ test('selective property rejection keeps only the live foreign cell-mark alterna
     expect(result.status, result.stderr).toBe(0);
   };
   validate(serializeXml(d));
-  const marker = serializeXml(nodes(d, 'cellMerge')[0]!);
+  const marker = new XMLSerializer().serializeToString(nodes(d, 'cellMerge')[0]!);
   rejectChanges(d, { filter: el => el.getAttributeNS(W, 'author') === 'AI' });
   expect(nodes(d, 'cellIns')).toHaveLength(0);
-  expect(serializeXml(nodes(d, 'cellMerge')[0]!)).toBe(marker);
+  expect(new XMLSerializer().serializeToString(nodes(d, 'cellMerge')[0]!)).toBe(marker);
   validate(serializeXml(d));
 });
