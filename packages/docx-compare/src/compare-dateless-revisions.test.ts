@@ -183,7 +183,7 @@ describe('compareDocuments date: null', () => {
         });
       }
     },
-    120_000,
+    400_000, // ~60 s locally; over 120 s under CI coverage instrumentation
   );
 
   test.openspec('Dateless comparison keeps the dates of pre-existing revisions')(
