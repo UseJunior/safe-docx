@@ -157,6 +157,61 @@ describe('Tool integration through SessionManager: canonical revision emission',
     });
   });
 
+  test('replace_text bolds tracked-inserted text with w:rPrChange instead of a delete and re-insert', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session where replace_text has inserted Xyz', async () => {
+      opened = await openSession(['Alpha Beta'], { mgr: createManager() });
+      const inserted = await replaceText(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        old_string: 'Beta',
+        new_string: 'Xyz',
+        instruction: 'Replace Beta with Xyz.',
+      });
+      assertSuccess(inserted, 'replace_text');
+    });
+
+    await when('replace_text bolds the inserted text and the session is saved', async () => {
+      const bolded = await replaceText(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        old_string: 'Xyz',
+        new_string: '<b>Xyz</b>',
+        instruction: 'Bold Xyz.',
+      });
+      assertSuccess(bolded, 'replace_text');
+
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'replace-text-format-inserted-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('the inserted run carries a SafeDocX w:rPrChange and Xyz is never deleted', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['ins', 'del', 'rPrChange']);
+      const doc = parseXml(documentXml);
+      const deletedText = (Array.from(doc.getElementsByTagNameNS(W_NS, 'delText')) as Element[])
+        .map((el) => el.textContent ?? '')
+        .join('');
+      expect(deletedText).not.toContain('Xyz');
+      const changes = Array.from(doc.getElementsByTagNameNS(W_NS, 'rPrChange')) as Element[];
+      expect(changes).toHaveLength(1);
+      const run = changes[0]!.parentNode!.parentNode as Element;
+      expect(run.localName).toBe('r');
+      expect((run.parentNode as Element).localName).toBe('ins');
+      expect(run.textContent).toBe('Xyz');
+    });
+  });
+
   paragraphDeletionTest('replace_text tracks deletion of an emptied numbered paragraph mark', async ({
     given,
     when,

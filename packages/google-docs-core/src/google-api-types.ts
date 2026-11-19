@@ -137,7 +137,7 @@ export type GDocsBatchUpdateResponse = {
 
 /** Named Range schema — keyed by name in the namedRanges map */
 export type NamedRangeSchema = {
-  /** The name of the named range (e.g. '_bk_000000000001') */
+  /** The name of the named range (e.g. '_bk_0000000001') */
   name?: string;
   /** Array of named range entries sharing this name */
   namedRanges?: Array<{

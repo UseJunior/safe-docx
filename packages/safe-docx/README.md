@@ -59,8 +59,10 @@ See [installation and verification](https://github.com/UseJunior/safe-docx/blob/
 - **Read and navigate:** `read_file`, `get_document_outline`, `get_sections`, `grep`
 - **Edit:** `replace_text`, `insert_paragraph`, `batch_edit`, `clear_formatting`
 - **Format:** `format_layout`, `format_numbering`, `format_section`, `insert_section_break`
+- **Headers and footers:** `get_headers_footers`, `set_header_footer` (header/footer paragraph ids also work in `replace_text` and `insert_paragraph`)
 - **Tracked changes:** `has_tracked_changes`, `extract_revisions`, `accept_changes`, `accept_ai_edits`, `reject_ai_edits`
 - **Compare:** `compare_documents`
+- **Document properties:** `get_document_properties`, `set_document_properties`
 - **Comments and footnotes:** `add_comment`, `get_comments`, `delete_comment`, `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote`
 - **Save and convert:** `save`, `export`, `convert_to_odt`, `get_file_status`, `close_file`
 

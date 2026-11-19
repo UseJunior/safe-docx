@@ -38,12 +38,12 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
         return result;
       });
 
-      await then('each paragraph carries a sha256:nfkc:<32hex> fingerprint', async () => {
+      await then('each paragraph carries a sha256:nfkc:<16hex> fingerprint', async () => {
         const nodes = JSON.parse(String(read.content)) as Array<Record<string, unknown>>;
         expect(nodes.length).toBeGreaterThan(0);
         for (const node of nodes) {
           expect(typeof node.content_fingerprint).toBe('string');
-          expect(String(node.content_fingerprint)).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+          expect(String(node.content_fingerprint)).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         }
       });
     },
@@ -144,7 +144,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
         const shared = fingerprintsA.filter((fp) => fingerprintsB.includes(fp));
         expect(shared.length).toBeGreaterThanOrEqual(1);
         for (const fp of shared) {
-          expect(fp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+          expect(fp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         }
       });
     },
@@ -263,7 +263,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
     await then(
       'the fingerprints match (list label is not part of the hashed surface)',
       async () => {
-        expect(listFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+        expect(listFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         expect(listFp).toBe(plainFp);
       },
     );
@@ -323,7 +323,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
     await then(
       'the fingerprints match ([^N] display marker is not part of the hashed surface)',
       async () => {
-        expect(footnoteFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+        expect(footnoteFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         expect(footnoteFp).toBe(plainFp);
       },
     );
@@ -411,6 +411,7 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
         },
       ];
       const mockDoc = {
+        ensureCurrentStructure: vi.fn(async () => undefined),
         getParagraphs: vi.fn(() => mockParagraphs),
         getParagraphTextById: vi.fn(),
         getParagraphByAnchorId: vi.fn(),
@@ -521,10 +522,56 @@ describe('document-paragraph-id-stability-and-fingerprint — Optional Content F
     await then(
       'the post-edit fingerprint differs from the pre-edit fingerprint',
       async () => {
-        expect(beforeFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
-        expect(afterFp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+        expect(beforeFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
+        expect(afterFp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
         expect(afterFp).not.toBe(beforeFp);
       },
     );
+  });
+});
+
+/**
+ * A `w:sym` glyph is one character of the paragraph text since issue #1046,
+ * so the fingerprint of a symbol-bearing paragraph hashes the glyph's
+ * character. A private-use codepoint survives NFKC, so the fingerprint differs
+ * from the one computed while the glyph was invisible, and a stored
+ * `content_fingerprint` / `portable_paragraph_ref` for such a paragraph must
+ * be refreshed.
+ */
+describe('document-paragraph-id-stability-and-fingerprint — fingerprints of symbol-bearing paragraphs', () => {
+  const test = testAllure.epic('Document Reading').withLabels({ feature: TEST_FEATURE });
+
+  registerCleanup();
+
+  const DOCUMENT_XML =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    '<w:p><w:r><w:t xml:space="preserve">Alpha </w:t></w:r>' +
+    '<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr><w:sym w:font="Wingdings" w:char="F0A8"/></w:r>' +
+    '<w:r><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>' +
+    '</w:body></w:document>';
+
+  test('the fingerprint hashes the glyph character', async ({ given, when, then }: AllureBddContext) => {
+    const mgr = createTestSessionManager();
+    const opened = await given('a paragraph with a checkbox between two words', () =>
+      openSession([], { mgr, xml: DOCUMENT_XML }),
+    );
+    const node = await when('read_file is called with fingerprints', async () => {
+      const result = await readFile(mgr, {
+        file_path: opened.filePath,
+        format: 'json',
+        include_fingerprint: true,
+        include_fingerprint_ordinal: true,
+        limit: 100,
+      });
+      assertSuccess(result, 'read');
+      return (JSON.parse(String(result.content)) as Array<Record<string, unknown>>)[0]!;
+    });
+    await then('it equals the fingerprint of the text with U+F0A8, not of the text without it', async () => {
+      const { computeContentFingerprint } = await import('@usejunior/docx-core');
+      expect(node.content_fingerprint).toBe(computeContentFingerprint('Alpha \uF0A8 Bravo'));
+      expect(node.content_fingerprint).not.toBe(computeContentFingerprint('Alpha  Bravo'));
+      expect(node.portable_paragraph_ref).toBe(`${computeContentFingerprint('Alpha \uF0A8 Bravo')}#1`);
+    });
   });
 });

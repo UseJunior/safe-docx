@@ -193,8 +193,7 @@ describe('Manifest loading', () => {
       doc.insertParagraphBookmarks('test');
 
       compactView = doc.buildDocumentView({ showFormatting: true, formattingMode: 'compact' });
-      // Force cache miss for different mode
-      (doc as any).dirty = true;
+      // A different formatting mode must miss the cache without a mutation.
       fullView = doc.buildDocumentView({ showFormatting: true, formattingMode: 'full' });
     });
 

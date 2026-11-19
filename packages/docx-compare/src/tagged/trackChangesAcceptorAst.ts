@@ -18,6 +18,7 @@ import {
   retainLeadingParagraphFormatting,
   isEmptyParagraphFormattingRun,
   acceptedSectionBreakRemovalContainer,
+  carryHeaderFooterRefsFromRemovedBoundary,
   NODE_TYPE,
 } from '@usejunior/docx-core';
 
@@ -67,6 +68,26 @@ function paragraphHasParaMarker(
   const rPr = childElements(pPr).find((c) => c.tagName === 'w:rPr');
   if (!rPr) return false;
   return childElements(rPr).some((c) => c.tagName === tagName);
+}
+
+/**
+ * True iff the paragraph mark's formatting-history snapshot
+ * (`w:pPr > w:rPr > w:rPrChange > w:rPr`, a CT_ParaRPrOriginal) records the
+ * mark itself as a tracked insertion or move destination. Rejecting the
+ * `w:rPrChange` restores that marker, and rejecting the restored marker
+ * removes the paragraph break, so the fully rejected projection treats the
+ * paragraph as mark-inserted. LibreOffice Reject All resolves it the same
+ * way; dropping only the snapshot would leave an empty paragraph that
+ * neither reader produces.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ */
+export function paragraphMarkSnapshotHasInsertion(p: Element): boolean {
+  const pPr = getParagraphPPr(p);
+  const rPr = pPr && childElements(pPr).find((c) => c.tagName === 'w:rPr');
+  const change = rPr && childElements(rPr).find((c) => c.tagName === 'w:rPrChange');
+  const snapshot = change && childElements(change).find((c) => c.tagName === 'w:rPr');
+  return !!snapshot && childElements(snapshot).some((c) => c.tagName === 'w:ins' || c.tagName === 'w:moveTo');
 }
 
 function rowsWithRevisionMarker(root: Element, tagName: 'w:ins' | 'w:del'): Element[] {
@@ -239,7 +260,7 @@ const RANGE_MARKUP_BLOCK_SIBLING_TAGS = new Set([
  * skipping block-level range/annotation markers. Returns undefined when the
  * next block is not a paragraph (table, sdt, sectPr, end of parent).
  */
-function findFollowingSiblingParagraph(p: Element): Element | undefined {
+export function findFollowingSiblingParagraph(p: Element): Element | undefined {
   const parent = parentElement(p);
   if (!parent) return undefined;
   const siblings = childElements(parent);
@@ -306,13 +327,17 @@ function canSafelyRemoveEmptyParagraph(p: Element): boolean {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/431
  */
-function resolveParagraphMarkRevision(p: Element, projection: 'accept' | 'reject'): void {
+function resolveParagraphMarkRevision(
+  p: Element,
+  projection: 'accept' | 'reject',
+): void {
   const parent = p.parentNode;
   if (!parent) return;
 
   const target = findFollowingSiblingParagraph(p);
   if (!target) {
     if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
+      carryHeaderFooterRefsFromRemovedBoundary(p);
       parent.removeChild(p);
     }
     return;
@@ -329,6 +354,10 @@ function resolveParagraphMarkRevision(p: Element, projection: 'accept' | 'reject
     insertChildAt(target, child, insertIndex);
     insertIndex++;
   }
+  // The paragraph's own section boundary, if any, leaves with its mark; its
+  // header/footer references move to the following section as in docx-core
+  // (#1144).
+  carryHeaderFooterRefsFromRemovedBoundary(p);
   parent.removeChild(p);
 }
 
@@ -799,6 +828,7 @@ export function acceptAllChanges(documentXml: string): string {
   removeAllByTagName(root, 'w:pPrChange');
   removeAllByTagName(root, 'w:trPrChange');
   removeAllByTagName(root, 'w:tcPrChange');
+  acceptTableLevelPropertyChanges(root);
   removeAcceptedSectionBreakRemovals(root);
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
@@ -856,7 +886,8 @@ export function rejectAllChanges(documentXml: string): string {
   // so the mark-based rule covers them without the old content heuristic.
   const markInsertedParagraphs = new Set<Element>();
   for (const p of findAllByTagName(root, 'w:p')) {
-    if (paragraphHasParaMarker(p, 'w:ins') || paragraphHasParaMarker(p, 'w:moveTo')) {
+    if (paragraphHasParaMarker(p, 'w:ins') || paragraphHasParaMarker(p, 'w:moveTo') ||
+        paragraphMarkSnapshotHasInsertion(p)) {
       markInsertedParagraphs.add(p);
     }
   }
@@ -952,6 +983,7 @@ export function rejectAllChanges(documentXml: string): string {
   restoreParagraphPropertiesFromChanges(root);
   restoreContainerPropertiesFromChanges(root, 'w:trPrChange', 'w:trPr');
   restoreContainerPropertiesFromChanges(root, 'w:tcPrChange', 'w:tcPr');
+  restoreTableLevelPropertiesFromChanges(root);
   restoreSectionPropertiesFromChanges(root);
 
   // Remove remaining format change tracking
@@ -959,6 +991,7 @@ export function rejectAllChanges(documentXml: string): string {
   removeAllByTagName(root, 'w:pPrChange');
   removeAllByTagName(root, 'w:trPrChange');
   removeAllByTagName(root, 'w:tcPrChange');
+  acceptTableLevelPropertyChanges(root);
   removeAllByTagName(root, 'w:sectPrChange');
   removeEmptyTablePropertyContainers(root);
 
@@ -994,8 +1027,8 @@ function restoreRunPropertiesFromChanges(root: Element): void {
 
 function restoreContainerPropertiesFromChanges(
   root: Element,
-  changeTag: 'w:trPrChange' | 'w:tcPrChange',
-  propertyTag: 'w:trPr' | 'w:tcPr',
+  changeTag: TablePropertyChangeTag,
+  propertyTag: TablePropertyContainerTag,
 ): void {
   for (const change of findAllByTagName(root, changeTag)) {
     const live = change.parentNode as Element | null;
@@ -1007,8 +1040,73 @@ function restoreContainerPropertiesFromChanges(
   }
 }
 
+type TablePropertyChangeTag =
+  | 'w:trPrChange' | 'w:tcPrChange' | 'w:tblGridChange' | 'w:tblPrChange' | 'w:tblPrExChange';
+type TablePropertyContainerTag = 'w:trPr' | 'w:tcPr' | 'w:tblGrid' | 'w:tblPr' | 'w:tblPrEx';
+
+/**
+ * Table-level revisions whose single child is the complete prior state of
+ * their live parent: `w:tblGridChange` holds the former `w:gridCol` list,
+ * `w:tblPrChange` the former table properties and `w:tblPrExChange` the
+ * former row-level table-property exceptions.
+ */
+const TABLE_LEVEL_PROPERTY_CHANGES: ReadonlyArray<readonly [TablePropertyChangeTag, TablePropertyContainerTag]> = [
+  ['w:tblGridChange', 'w:tblGrid'],
+  ['w:tblPrChange', 'w:tblPr'],
+  ['w:tblPrExChange', 'w:tblPrEx'],
+];
+
+/**
+ * Accept table-grid, table-property and table-property-exception revisions:
+ * the live parent already holds the current state, so only the revision record
+ * goes. A `w:tblPrEx` left empty by that removal recorded no exception other
+ * than the revision itself and is dropped; `w:tblGrid` and `w:tblPr` are
+ * required children of `w:tbl` and stay even when empty.
+ *
+ * Reject runs this after {@link restoreTableLevelPropertiesFromChanges} to
+ * clear any record that had no snapshot to restore.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
+ * @see https://github.com/UseJunior/safe-docx/issues/1395
+ */
+function acceptTableLevelPropertyChanges(root: Element): void {
+  for (const [changeTag] of TABLE_LEVEL_PROPERTY_CHANGES) {
+    for (const change of findAllByTagName(root, changeTag)) {
+      const live = change.parentNode as Element | null;
+      live?.removeChild(change);
+      if (live?.tagName === 'w:tblPrEx' && childElements(live).length === 0) {
+        live.parentNode?.removeChild(live);
+      }
+    }
+  }
+}
+
+/**
+ * Reject table-grid, table-property and table-property-exception revisions by
+ * replacing the live parent's children with the revision's prior-state
+ * snapshot (`CT_TblGridBase`, `CT_TblPrBase`, `CT_TblPrExBase`). The snapshot
+ * types exclude the revision element, so the restored parent carries none.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
+ * @see https://github.com/UseJunior/safe-docx/issues/1395
+ */
+function restoreTableLevelPropertiesFromChanges(root: Element): void {
+  for (const [changeTag, propertyTag] of TABLE_LEVEL_PROPERTY_CHANGES) {
+    restoreContainerPropertiesFromChanges(root, changeTag, propertyTag);
+  }
+}
+
+/**
+ * Drop row, cell and row-exception property containers left without children.
+ * An empty `w:tblPrEx` records no exception: rejecting a `w:tblPrExChange`
+ * whose snapshot is empty (a row that had no exceptions) leaves one (#1399).
+ */
 function removeEmptyTablePropertyContainers(root: Element): void {
-  for (const propertyTag of ['w:trPr', 'w:tcPr']) {
+  for (const propertyTag of ['w:trPr', 'w:tcPr', 'w:tblPrEx']) {
     for (const properties of findAllByTagName(root, propertyTag)) {
       if (childElements(properties).length === 0) properties.parentNode?.removeChild(properties);
     }
@@ -1205,11 +1303,39 @@ export function normalizeText(text: string): string {
 }
 
 /**
+ * Normalize a layout-character round-trip projection for the publication gate.
+ *
+ * The same whitespace tolerance as {@link normalizeText}, except that the
+ * projected layout characters survive: tabs stay tabs instead of becoming
+ * spaces that then collapse, and the document ends are trimmed of whitespace
+ * other than tab, line break and page break. Otherwise dropping one of two
+ * consecutive tabs, a tab beside a space, or a break that ends the story would
+ * normalize away. Repeated paragraph breaks still collapse; empty paragraphs
+ * are the paragraph-topology check's concern, not the text check's.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1026
+ */
+export function normalizeLayoutPreservingText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/ +/g, ' ')
+    .replace(/ \n/g, '\n')
+    .replace(/\n /g, '\n')
+    .replace(/\n+/g, '\n')
+    .replace(/^[^\S\t\v\f]+|[^\S\t\v\f]+$/gu, '');
+}
+
+/**
  * Compare two texts and return detailed differences.
+ *
+ * `normalize` decides `normalizedIdentical`; it defaults to
+ * {@link normalizeText}.
  */
 export function compareTexts(
   expected: string,
-  actual: string
+  actual: string,
+  normalize: (text: string) => string = normalizeText,
 ): {
   identical: boolean;
   normalizedIdentical: boolean;
@@ -1217,8 +1343,8 @@ export function compareTexts(
   actualLength: number;
   differences: string[];
 } {
-  const normalizedExpected = normalizeText(expected);
-  const normalizedActual = normalizeText(actual);
+  const normalizedExpected = normalize(expected);
+  const normalizedActual = normalize(actual);
 
   const differences: string[] = [];
 

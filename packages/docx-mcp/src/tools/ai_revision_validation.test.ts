@@ -545,8 +545,7 @@ describe('AI revision validation guard', () => {
     run.appendChild(text);
     ins.appendChild(run);
     pEl.appendChild(ins);
-    (session.doc as unknown as { dirty?: boolean; documentViewCache?: unknown }).dirty = true;
-    (session.doc as unknown as { dirty?: boolean; documentViewCache?: unknown }).documentViewCache = null;
+    session.doc.markMutated();
   }
 
   test('clear_formatting is blocked when AI revision validation fails (#686)', async () => {

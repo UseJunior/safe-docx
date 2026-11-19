@@ -101,6 +101,26 @@ export const TCPR_ORDER = [
   'vAlign',
 ] as const;
 
+/**
+ * Child order for w:lvl (CT_Lvl). Subset actually emitted, in schema order:
+ * the restart threshold, linked style, and legal-numbering flag sit between
+ * numFmt and suff.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.6
+ */
+export const LVL_ORDER = [
+  'start',
+  'numFmt',
+  'lvlRestart',
+  'pStyle',
+  'isLgl',
+  'suff',
+  'lvlText',
+  'lvlJc',
+  'pPr',
+  'rPr',
+] as const;
+
 export type PropMap = ReadonlyMap<string, Element | Element[]>;
 
 /**

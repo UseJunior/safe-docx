@@ -5,12 +5,15 @@ import {
   OOXML,
   W,
   addTrackedRangeComments,
-  computeContentFingerprint,
+  buildParagraphIndex,
+  classifyFieldInstruction,
+  contentFingerprintMatches,
   findParagraphByBookmarkId,
   getParagraphBookmarkId,
   getParagraphRuns,
   parseXml,
   relationshipPartPath,
+  runContentVisibleText,
   serializeXml,
   collectRunInHeadingIds,
   validateStructuralInsertions,
@@ -24,12 +27,15 @@ import {
 } from '@usejunior/docx-compare';
 import { DocxMarkdocError } from './errors.js';
 import { sha256 } from './hash.js';
+import { documentBookmarkTargets, paragraphCrossReferences, sameReference, unsupportedCrossReferenceError, type BookmarkTarget } from './xref.js';
 import { admittedStoryParagraphs, projectedStoryParagraphs, selectedStories, type SelectedStory } from './story-inventory.js';
 import { requireMarkdoc } from './markdoc.js';
 import { assessDraftCompleteness } from './completeness.js';
 import { projectAnnotations, type AnnotationProjectionResult } from './presentation.js';
 import { verifyRevisionPreservation, type RevisionSnapshot } from './revision-preservation.js';
 import type {
+  CrossReferenceSpan,
+  SourceParagraph,
   CompileResult,
   CompileOptions,
   EditOperation,
@@ -365,16 +371,18 @@ function trackedCharacters(paragraph: Element, projection: 'accept' | 'reject'):
     const excluded = projection === 'accept'
       ? nextWrappers.has('del') || nextWrappers.has('moveFrom')
       : nextWrappers.has('ins') || nextWrappers.has('moveTo');
-    if (element.localName === 't' || element.localName === 'delText') {
+    // Deleted text is w:delText; every other character comes from the shared
+    // run-content definition (w:t, w:tab, w:br, w:sym), so these offsets stay
+    // in the coordinate space of getParagraphRuns that the spans use.
+    const contribution = element.localName === 'delText'
+      ? element.textContent ?? ''
+      : runContentVisibleText(element);
+    if (contribution !== null) {
       if (!excluded) {
-        for (const character of element.textContent ?? '') {
+        for (const character of contribution) {
           characters.push({ text: character, revisionWrapped: nextWrappers.size > 0, run: nextRun });
         }
       }
-      return;
-    }
-    if ((element.localName === 'tab' || element.localName === 'br') && !excluded) {
-      characters.push({ text: element.localName === 'tab' ? '\t' : '\n', revisionWrapped: nextWrappers.size > 0, run: nextRun });
       return;
     }
     for (const child of Array.from(element.childNodes)) visit(child, nextWrappers, nextRun);
@@ -406,6 +414,14 @@ function runMatchesRetainedFormat(run: Element | undefined, format: RetainedForm
     ? highlight.length === 0
     : highlight.length === 1 && highlight[0]!.getAttribute('w:val') === format.highlight);
   return underlineMatches && highlightMatches;
+}
+
+function retainedFormattingDiagnosticPassed(diagnostic: RetainedFormattingReport['diagnostics'][number]): boolean {
+  return diagnostic.textRevisionOverlaps === 0
+    && diagnostic.emittedPropertyRanges > 0
+    && diagnostic.propertyCoverageComplete
+    && diagnostic.textMatches
+    && diagnostic.propertyStateMatches;
 }
 
 /**
@@ -472,11 +488,7 @@ export function certifyRetainedFormatting(document: DocxDocument, spans: Resolve
     diagnostics,
     passed: true,
   };
-  report.passed = report.textRevisionOverlaps === 0
-    && diagnostics.every((diagnostic) => diagnostic.emittedPropertyRanges > 0
-      && diagnostic.propertyCoverageComplete
-      && diagnostic.textMatches
-      && diagnostic.propertyStateMatches);
+  report.passed = diagnostics.every(retainedFormattingDiagnosticPassed);
   return report;
 }
 
@@ -1183,8 +1195,340 @@ async function verifyStoryProjections(params: {
   return reports;
 }
 
+function assertCrossReferenceTarget(bookmarks: ReadonlyMap<string, BookmarkTarget>, bookmark: string, where: string): void {
+  const target = bookmarks.get(bookmark);
+  if (!target || target.count !== 1 || !target.paragraph) {
+    throw new DocxMarkdocError(
+      'XREF_TARGET_MISSING',
+      `${where} holds an xref to bookmark ${bookmark}, which ${!target ? 'is not in the source document' : target.count !== 1 ? `is named ${target.count} times` : 'marks no paragraph'}.`,
+      { bookmark },
+    );
+  }
+}
+
+function sameSpans(left: readonly CrossReferenceSpan[], right: readonly CrossReferenceSpan[], positions: boolean): boolean {
+  return left.length === right.length && left.every((span, index) => {
+    const other = right[index]!;
+    return span.text === other.text && sameReference(span.reference, other.reference)
+      && (!positions || (span.start === other.start && span.end === other.end));
+  });
+}
+
+/**
+ * Hold each paragraph's `{% xref %}` tags to the REF fields of the source
+ * paragraph: the same references, with the same cached results, at the same
+ * offsets (XREF_DRIFT otherwise). An edit keeps every reference of its before
+ * state, in order and with its cached result, and adds none
+ * (XREF_EDIT_UNSUPPORTED otherwise): compile edits the text around a field,
+ * never the field.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+function validateParagraphCrossReferences(
+  source: DocxDocument,
+  id: string,
+  projected: SourceParagraph,
+  operation: EditOperation | undefined,
+  bookmarks: ReadonlyMap<string, BookmarkTarget>,
+): void {
+  const element = source.getParagraphElementById(id);
+  const found = element ? paragraphCrossReferences(element, { bookmarks }) : undefined;
+  const sourceSpans: CrossReferenceSpan[] = (found?.references ?? []).map(({ start, end, text, reference }) => ({ start, end, text, reference }));
+  // A REF field import kept as text: any edit of its paragraph would rewrite it.
+  const unsupported = found?.unsupported[0];
+  if (unsupported && operation && !('anchorId' in operation)) {
+    throw unsupportedCrossReferenceError('XREF_SOURCE_UNSUPPORTED', `Paragraph ${id}`, unsupported, { paragraphId: id, operationId: operation.operationId });
+  }
+  const fromSource = (paragraph: SourceParagraph): void => {
+    if (paragraph.originalCrossReferences === undefined && sourceSpans.length > 0) paragraph.originalCrossReferences = sourceSpans;
+  };
+  // A replace-source has no authored before state; its before state is the source's.
+  if (operation?.kind === 'replace-source' && !('anchorId' in operation)) {
+    fromSource(projected);
+    fromSource(operation);
+  }
+  if (!sameSpans(projected.originalCrossReferences ?? [], sourceSpans, true)) {
+    throw new DocxMarkdocError(
+      'XREF_DRIFT',
+      `Paragraph ${id} cross-references do not match the source's REF fields; import the document again rather than editing an xref's attributes or cached text.`,
+      { paragraphId: id, source: sourceSpans, projected: projected.originalCrossReferences ?? [] },
+    );
+  }
+  if (!operation || 'anchorId' in operation || operation.kind === 'delete-source') return;
+  const before = operation.originalCrossReferences ?? [];
+  const after = operation.revisedCrossReferences ?? [];
+  if (before.length === 0 && after.length === 0) return;
+  if (!sameSpans(before, after, false)) {
+    throw new DocxMarkdocError(
+      'XREF_EDIT_UNSUPPORTED',
+      `Edit ${operation.operationId} changes, adds or removes an xref in paragraph ${id}; an edit may change the text around a cross-reference but must keep each xref and its cached result as they are.`,
+      { paragraphId: id, operationId: operation.operationId },
+    );
+  }
+  if (operation.retainedFormatSpans?.length || operation.runFormat || operation.runFormatSpans?.length) {
+    throw new DocxMarkdocError(
+      'XREF_EDIT_UNSUPPORTED',
+      `Edit ${operation.operationId} declares run formatting in paragraph ${id}, which holds an xref; run-format and retain-format are not supported beside a cross-reference.`,
+      { paragraphId: id, operationId: operation.operationId },
+    );
+  }
+}
+
+/**
+ * Text hunks for an edit around cross-references: each stretch of text
+ * between two fields is aligned on its own, so no hunk ever covers part of a
+ * field's cached result. `boundary` marks a pure insertion that touches a
+ * field, which must land outside the field's markers.
+ */
+type ReferenceHunk = TextHunk & { boundary?: { field: number; side: 'after' | 'before' } };
+
+function hunksAroundCrossReferences(
+  before: string,
+  after: string,
+  beforeReferences: readonly CrossReferenceSpan[],
+  afterReferences: readonly CrossReferenceSpan[],
+): ReferenceHunk[] {
+  const hunks: ReferenceHunk[] = [];
+  for (let segment = 0; segment <= beforeReferences.length; segment += 1) {
+    const sourceStart = segment === 0 ? 0 : beforeReferences[segment - 1]!.end;
+    const sourceEnd = segment === beforeReferences.length ? before.length : beforeReferences[segment]!.start;
+    const revisedStart = segment === 0 ? 0 : afterReferences[segment - 1]!.end;
+    const revisedEnd = segment === afterReferences.length ? after.length : afterReferences[segment]!.start;
+    for (const hunk of textHunks(before.slice(sourceStart, sourceEnd), after.slice(revisedStart, revisedEnd))) {
+      const shifted: ReferenceHunk = {
+        start: hunk.start + sourceStart,
+        end: hunk.end + sourceStart,
+        replacement: hunk.replacement,
+        revisedStart: hunk.revisedStart + revisedStart,
+        revisedEnd: hunk.revisedEnd + revisedStart,
+      };
+      if (shifted.start === shifted.end) {
+        if (segment > 0 && shifted.start === sourceStart) shifted.boundary = { field: segment - 1, side: 'after' };
+        else if (segment < beforeReferences.length && shifted.start === sourceEnd) shifted.boundary = { field: segment, side: 'before' };
+      }
+      hunks.push(shifted);
+    }
+  }
+  return hunks;
+}
+
+function enclosingRun(element: Element): Element {
+  for (let node: Node | null = element; node; node = node.parentNode) {
+    if (node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.r) return node as Element;
+  }
+  throw new DocxMarkdocError('XREF_EDIT_UNSUPPORTED', 'A field marker sits outside a run.');
+}
+
+/**
+ * Whether the run holding a field's `begin` marker (side `before`) or `end`
+ * marker (side `after`) also holds content outside the field: anything but
+ * run properties before `begin`, or after `end`. Word writes each marker in a
+ * run of its own; a merged run would leave text outside the field sharing a
+ * run with it, which the redline cannot mark without splitting the run.
+ */
+function markerRunSharesContent(marker: Element, side: 'after' | 'before'): boolean {
+  const run = enclosingRun(marker);
+  let child: Node = marker;
+  while (child.parentNode !== run) child = child.parentNode!;
+  for (let node = side === 'before' ? child.previousSibling : child.nextSibling; node; node = side === 'before' ? node.previousSibling : node.nextSibling) {
+    if (!(node.nodeType === 1 && (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === W.rPr)) return true;
+  }
+  return false;
+}
+
+/**
+ * Apply an edit to a paragraph that holds cross-references without touching
+ * any field: hunks stay between fields, and an insertion that touches a field
+ * goes in a run placed just outside the field's `begin` or `end` marker
+ * (Word would otherwise put text typed at a field's edge inside its cached
+ * result). The paragraph's fields are re-read afterwards and must be the
+ * references of the after state, with their cached results unchanged.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+function replaceAroundCrossReferences(
+  document: DocxDocument,
+  id: string,
+  hunks: readonly ReferenceHunk[],
+  references: readonly CrossReferenceSpan[],
+  revisedReferences: readonly CrossReferenceSpan[],
+  before: string,
+  revised: string,
+  formatSource: string | undefined,
+): void {
+  const paragraph = document.getParagraphElementById(id);
+  if (!paragraph) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${id} was not found.`);
+  const unsupportedDescendants = new Set(['hyperlink', 'sdt', 'fldSimple']);
+  const encountered = Array.from(paragraph.getElementsByTagName('*')).map((element) => element.localName).filter((name) => unsupportedDescendants.has(name));
+  const fieldCount = buildParagraphIndex(paragraph).fields.length;
+  if (encountered.length > 0 || fieldCount !== references.length) {
+    throw new DocxMarkdocError(
+      'UNSUPPORTED_EDIT_STRUCTURE',
+      `Paragraph ${id} contains unsupported ${encountered.length > 0 ? [...new Set(encountered)].sort().join(', ') : 'field'} structure beside its cross-references.`,
+    );
+  }
+  for (const field of buildParagraphIndex(paragraph).fields) {
+    if (markerRunSharesContent(field.begin.element, 'before') || (field.end && markerRunSharesContent(field.end.element, 'after'))) {
+      throw new DocxMarkdocError(
+        'XREF_EDIT_UNSUPPORTED',
+        `Paragraph ${id} holds a REF field whose marker shares its run with text outside the field; the edit was refused.`,
+        { paragraphId: id, reason: 'shared-marker-run' },
+      );
+    }
+  }
+  const spans = runSpans(paragraph);
+  const ownerDocument = paragraph.ownerDocument!;
+  for (const hunk of [...hunks].reverse()) {
+    const templateRun = hunk.replacement.length === 0 ? undefined : templateForHunk(spans, hunk, before, id, formatSource);
+    const replacement = templateRun ? replacementPartsForHunk(hunk, templateRun, []) : [];
+    if (!hunk.boundary || replacement.length === 0) {
+      document.replaceTextAtRange({ targetParagraphId: id, start: hunk.start, end: hunk.end, replaceText: replacement });
+      continue;
+    }
+    // A one-character placeholder run just outside the field, replaced by the insertion.
+    const field = buildParagraphIndex(paragraph).fields[hunk.boundary.field];
+    if (!field?.end) throw new DocxMarkdocError('XREF_EDIT_UNSUPPORTED', `Paragraph ${id} lost a field while it was edited.`);
+    const placeholder = ownerDocument.createElementNS(OOXML.W_NS, 'w:r');
+    const text = ownerDocument.createElementNS(OOXML.W_NS, 'w:t');
+    text.appendChild(ownerDocument.createTextNode('\u2060'));
+    placeholder.appendChild(text);
+    const marker = enclosingRun(hunk.boundary.side === 'after' ? field.end.element : field.begin.element);
+    marker.parentNode!.insertBefore(placeholder, hunk.boundary.side === 'after' ? marker.nextSibling : marker);
+    document.replaceTextAtRange({ targetParagraphId: id, start: hunk.start, end: hunk.start + 1, replaceText: replacement });
+  }
+  const bookmarks = documentBookmarkTargets(paragraph.ownerDocument!);
+  const reread = paragraphCrossReferences(paragraph, { bookmarks });
+  const after = reread.unsupported.length > 0 ? [] : reread.references;
+  if (reread.index.text !== revised || !sameSpans(after.map(({ start, end, text, reference }) => ({ start, end, text, reference })), revisedReferences, true)) {
+    throw new DocxMarkdocError(
+      'XREF_EDIT_UNSUPPORTED',
+      `Editing paragraph ${id} would change one of its REF fields; the edit was refused.`,
+      { paragraphId: id },
+    );
+  }
+}
+
+/**
+ * Compile writes every source footnote and comment body again. A REF field in
+ * one that import kept as text (it cannot be an `{% xref %}`) would come back
+ * as plain text, so such a note or comment fails with XREF_SOURCE_UNSUPPORTED.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+async function assertRewrittenAnnotationReferences(source: DocxDocument, ir: MarkdocEditIR): Promise<void> {
+  const bookmarks = documentBookmarkTargets(source.getDocumentXmlClone());
+  const parts = { footnote: await source.getFootnotesXmlClone(), comment: await source.getCommentsXmlClone() };
+  for (const annotation of ir.annotations) {
+    const match = /^(footnote|comment):(\d+)$/u.exec(annotation.id);
+    if (!match) continue;
+    const kind = match[1] as 'footnote' | 'comment';
+    const element = parts[kind]
+      ? Array.from(parts[kind]!.getElementsByTagNameNS(OOXML.W_NS, kind)).find((candidate) =>
+        ((candidate as Element).getAttributeNS(OOXML.W_NS, 'id') ?? (candidate as Element).getAttribute('w:id')) === match[2]) as Element | undefined
+      : undefined;
+    for (const paragraph of element ? Array.from(element.getElementsByTagNameNS(OOXML.W_NS, W.p)) as Element[] : []) {
+      const unsupported = paragraphCrossReferences(paragraph, { bookmarks }).unsupported[0];
+      if (unsupported) throw unsupportedCrossReferenceError('XREF_SOURCE_UNSUPPORTED', `Annotation ${annotation.id}`, unsupported, { annotationId: annotation.id });
+    }
+  }
+}
+
+type ReferenceInventory = { body: number; notes: number; unresolved: Set<string> };
+
+async function referenceInventory(document: DocxDocument): Promise<ReferenceInventory> {
+  const body = document.getDocumentXmlClone();
+  const bookmarks = documentBookmarkTargets(body);
+  const inventory: ReferenceInventory = { body: 0, notes: 0, unresolved: new Set() };
+  const parts: Array<[Document | null, 'body' | 'notes']> = [
+    [body, 'body'],
+    [await document.getFootnotesXmlClone(), 'notes'],
+    [await document.getCommentsXmlClone(), 'notes'],
+  ];
+  for (const [part, kind] of parts) {
+    if (!part) continue;
+    for (const paragraph of Array.from(part.getElementsByTagNameNS(OOXML.W_NS, W.p)) as Element[]) {
+      for (const field of buildParagraphIndex(paragraph).fields) {
+        const classification = classifyFieldInstruction(field.instruction);
+        if (classification.kind !== 'REF') continue;
+        inventory[kind] += 1;
+        const target = classification.target ? bookmarks.get(classification.target) : undefined;
+        if (!target || target.count !== 1 || !target.paragraph) inventory.unresolved.add(classification.target ?? field.instruction);
+      }
+    }
+  }
+  return inventory;
+}
+
+/**
+ * The compiled document keeps every cross-reference live: with every change
+ * accepted, and again with every change rejected, the body holds the REF
+ * fields of the same projection of the source, the notes and comments (with
+ * every change accepted) hold one REF field per
+ * projected `{% xref %}`, and every REF names a bookmark that still marks one
+ * paragraph, unless it already did not in the source (a deleted target
+ * paragraph, for one, fails with XREF_TARGET_MISSING).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+async function verifyCrossReferenceOutput(
+  source: { accepted: DocxDocument; rejected: DocxDocument },
+  output: { accepted: DocxDocument; rejected: DocxDocument },
+  ir: MarkdocEditIR,
+  dispositions: ReadonlyArray<{ id: string; as: string }>,
+): Promise<void> {
+  const [before, after, rejectedBefore, rejectedAfter] = await Promise.all([
+    referenceInventory(source.accepted),
+    referenceInventory(output.accepted),
+    referenceInventory(source.rejected),
+    referenceInventory(output.rejected),
+  ]);
+  const omitted = new Set(dispositions.filter((disposition) => disposition.as === 'omit').map((disposition) => disposition.id));
+  const expectedNotes = ir.annotations
+    .filter((annotation) => !omitted.has(annotation.id))
+    .reduce((count, annotation) => count + annotation.body.reduce((paragraphCount, paragraph) =>
+      paragraphCount + new Set(paragraph.runs.flatMap((run) => (run.crossReference ? [run.crossReference.field] : []))).size, 0), 0);
+  if (after.body !== before.body || rejectedAfter.body !== rejectedBefore.body || after.notes !== expectedNotes) {
+    throw new DocxMarkdocError(
+      'XREF_PROJECTION_FAILED',
+      `The compiled document holds ${after.body} body and ${after.notes} note and comment REF fields with every change accepted (${rejectedAfter.body} body with every change rejected); expected ${before.body} and ${expectedNotes} (${rejectedBefore.body}).`,
+      {
+        body: { source: before.body, compiled: after.body },
+        rejectedBody: { source: rejectedBefore.body, compiled: rejectedAfter.body },
+        notes: { expected: expectedNotes, compiled: after.notes },
+      },
+    );
+  }
+  const lost = [
+    ...[...after.unresolved].filter((bookmark) => !before.unresolved.has(bookmark)),
+    ...[...rejectedAfter.unresolved].filter((bookmark) => !rejectedBefore.unresolved.has(bookmark)),
+  ].filter((bookmark, index, all) => all.indexOf(bookmark) === index);
+  if (lost.length > 0) {
+    throw new DocxMarkdocError(
+      'XREF_TARGET_MISSING',
+      `The compiled document has REF fields whose bookmark no longer marks a paragraph: ${lost.join(', ')}. Keep the target paragraph, or remove the references to it first.`,
+      { bookmarks: lost },
+    );
+  }
+}
+
 function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsupported: string[]; structuralDiagnostics: StructuralDiagnostic[] } {
   const bodyOperations = ir.operations.filter((operation) => !('story' in operation && operation.story));
+  // Formatting donors are source-state dependencies; reject conflicts rather
+  // than letting authored operation order choose the formatting snapshot.
+  for (const operation of ir.operations.filter(isInsertOperation)) {
+    const story = operationStory(operation);
+    const donor = operation.styleSourceId ?? operation.anchorId;
+    const conflict = ir.operations.find((candidate) =>
+      !isInsertOperation(candidate) && !isTableRowOperation(candidate)
+      && operationStory(candidate) === story
+      && candidate.kind === 'delete-source'
+      && (candidate.id === operation.anchorId || candidate.id === donor));
+    if (conflict) throw new DocxMarkdocError('CONFLICTING_INSERT_DEPENDENCY', `Insertion ${operation.operationId} depends on paragraph modified by ${conflict.operationId}.`);
+  }
   const { nodes } = source.buildDocumentView({ includeSemanticTags: false, showFormatting: true });
   if (nodes.length !== ir.source.paragraphs || ir.scaffold.length !== nodes.length) {
     throw new DocxMarkdocError('SCAFFOLD_DRIFT', `Expected ${nodes.length} source paragraphs, found ${ir.scaffold.length}.`);
@@ -1195,13 +1539,14 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
   const unsupported = new Set<string>();
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const cellForId = (id: string): Element | undefined => nearestTableCell(source.getParagraphElementById(id));
+  const bookmarks = documentBookmarkTargets(source.getDocumentXmlClone());
   nodes.forEach((node, index) => {
     const projected = ir.scaffold[index];
     if (!projected || projected.id !== node.id) {
       throw new DocxMarkdocError('SCAFFOLD_ORDER_DRIFT', `Scaffold position ${index} does not match source anchor ${node.id}.`);
     }
     const sourceText = node.raw_text ?? node.text;
-    if (projected.fingerprint !== computeContentFingerprint(sourceText)) {
+    if (!contentFingerprintMatches(sourceText, projected.fingerprint)) {
       throw new DocxMarkdocError('FINGERPRINT_DRIFT', `Paragraph ${node.id} fingerprint does not match source.`);
     }
     const replacement = replacements.get(node.id);
@@ -1216,6 +1561,7 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     if (projected.originalText !== sourceText || (replacement && replacement.originalText !== sourceText)) {
       throw new DocxMarkdocError('SOURCE_TEXT_DRIFT', `Paragraph ${node.id} original projection does not match source.`);
     }
+    validateParagraphCrossReferences(source, node.id, projected, replacement ?? bodyOperations.find((operation) => sourceOperationId(operation) === node.id), bookmarks);
     if (node.table_context) unsupported.add('table-grid-operations');
     if (node.footnote_refs?.length) unsupported.add('footnotes');
     if (node.comments?.length) unsupported.add('comments');
@@ -1328,6 +1674,11 @@ function validateAgainstSource(ir: MarkdocEditIR, source: DocxDocument): { unsup
     }
   }
   for (const annotation of ir.annotations) {
+    for (const run of annotation.body.flatMap((paragraph) => paragraph.runs)) {
+      if (run.crossReference) assertCrossReferenceTarget(bookmarks, run.crossReference.bookmark, `Annotation ${annotation.id}`);
+    }
+  }
+  for (const annotation of ir.annotations) {
     if (annotation.id.startsWith('rationale:')) continue;
     const positions = annotation.anchor.kind === 'point'
       ? [annotation.anchor.point]
@@ -1427,7 +1778,7 @@ async function validateStoriesAgainstSource(
   for (const [index, { story, paragraph }] of expected.entries()) {
     const claimed = ir.storyScaffold?.[index];
     if (!claimed || claimed.story !== story.id || claimed.id !== paragraph.id
-      || claimed.fingerprint !== computeContentFingerprint(paragraph.text)
+      || !contentFingerprintMatches(paragraph.text, claimed.fingerprint)
       || claimed.style !== paragraph.style || claimed.originalText !== paragraph.text) {
       throw new DocxMarkdocError('STORY_SCAFFOLD_DRIFT', `Story paragraph at position ${index} does not match the pinned source.`);
     }
@@ -1594,7 +1945,13 @@ async function applyOperations(
   const sourceZip = await DocxZip.load(sourceBuffer);
   const sourceStoryDocs = new Map<string, Document>();
   const ranges: AttributedRange[] = [];
-  for (const operation of ir.operations) {
+  // Insertions consume source formatting before any authored source edits.
+  // Keep relative insertion order stable within this explicit first phase.
+  const executionPlan = [
+    ...ir.operations.filter(isInsertOperation),
+    ...ir.operations.filter((operation) => !isInsertOperation(operation)),
+  ];
+  for (const operation of executionPlan) {
     const storyId = operationStory(operation);
     if (storyId) {
       const story = stories.get(storyId);
@@ -1774,7 +2131,8 @@ async function applyOperations(
       }
       continue;
     }
-    assertAdmittedStructure(document, operation.id);
+    const references = operation.kind === 'delete-source' ? [] : operation.originalCrossReferences ?? [];
+    if (references.length === 0) assertAdmittedStructure(document, operation.id);
     const original = document.getParagraphTextById(operation.id);
     if (original === null) throw new DocxMarkdocError('MISSING_ANCHOR', `Paragraph ${operation.id} was not found.`);
     if (operation.kind === 'delete-source') {
@@ -1790,11 +2148,13 @@ async function applyOperations(
       paragraph?.parentNode?.removeChild(paragraph);
       continue;
     }
-    // Same placement replacePreservingMixedFormatting uses, so rationale
-    // ranges cover exactly the text that edit inserts.
+    // References keep their protected field ranges; ordinary body edits use
+    // the same equivalent placement in preflight, application and rationale.
     const operationParagraph = document.getParagraphElementById(operation.id);
-    const operationHunks = operationParagraph
-      ? bodyTextHunks(original, operation.revisedText, operationParagraph, declaresFormatting(bodyFormatDeclaration(operation)))
+    const operationHunks = references.length > 0
+      ? hunksAroundCrossReferences(original, operation.revisedText, references, operation.revisedCrossReferences ?? [])
+      : operationParagraph
+        ? bodyTextHunks(original, operation.revisedText, operationParagraph, declaresFormatting(bodyFormatDeclaration(operation)))
       : textHunks(original, operation.revisedText);
     const generated = operationHunks.filter((hunk) => hunk.replacement.length > 0);
     if (generated.length > 0) {
@@ -1816,16 +2176,29 @@ async function applyOperations(
         end: operationHunks.at(-1)!.end,
       });
     }
-    replacePreservingMixedFormatting(
-      document,
-      operation.id,
-      original,
-      operation.revisedText,
-      operation.kind === 'replace-source' ? operation.formatSource : undefined,
-      operation.runFormat,
-      operation.runFormatSpans,
-      declaresFormatting(bodyFormatDeclaration(operation)),
-    );
+    if (references.length > 0) {
+      replaceAroundCrossReferences(
+        document,
+        operation.id,
+        operationHunks,
+        references,
+        operation.revisedCrossReferences ?? [],
+        original,
+        operation.revisedText,
+        operation.kind === 'replace-source' ? operation.formatSource : undefined,
+      );
+    } else {
+      replacePreservingMixedFormatting(
+        document,
+        operation.id,
+        original,
+        operation.revisedText,
+        operation.kind === 'replace-source' ? operation.formatSource : undefined,
+        operation.runFormat,
+        operation.runFormatSpans,
+        declaresFormatting(bodyFormatDeclaration(operation)),
+      );
+    }
     const operationRetained = retainedSpans.filter((span) => span.operationId === operation.operationId);
     for (const span of [...operationRetained].reverse()) {
       try {
@@ -2034,6 +2407,7 @@ export async function compileMarkdoc(
       { changeSets: incompleteAtomicSets },
     );
   }
+  await assertRewrittenAnnotationReferences(sourceDocument, ir);
   await preflightTableRowOperations(sourceBuffer, ir);
   const applied = await applyOperations(sourceBuffer, ir, retainedSpans, storyById);
   const clean = applied.buffer;
@@ -2142,6 +2516,15 @@ export async function compileMarkdoc(
   const acceptedDoc = await DocxDocument.load(tracked);
   const rejectedDoc = await DocxDocument.load(tracked);
   const [acceptResult, rejectResult] = await Promise.all([acceptedDoc.acceptChanges(), rejectedDoc.rejectChanges()]);
+  // A source's own tracked changes take REF fields in and out with them, so each output projection is compared
+  // with the same projection of the source.
+  const sourceProjections = sourceContainsRevisions
+    ? await Promise.all([DocxDocument.load(sourceBuffer), DocxDocument.load(sourceBuffer)]).then(async ([accepted, rejected]) => {
+      await Promise.all([accepted.acceptChanges(), rejected.rejectChanges()]);
+      return { accepted, rejected };
+    })
+    : { accepted: sourceDocument, rejected: sourceDocument };
+  await verifyCrossReferenceOutput(sourceProjections, { accepted: acceptedDoc, rejected: rejectedDoc }, ir, annotationProjection.dispositions);
   const cleanDoc = await DocxDocument.load(clean);
   let sourceProjectionDocument = sourceDocument;
   let cleanProjectionDocument = cleanDoc;
@@ -2270,10 +2653,13 @@ export async function compileMarkdoc(
   certificate.projectionPassed = projectionChecksPassed(certificate);
   certificate.deliveryReady = certificate.projectionPassed && certificate.draftCompletenessPassed;
   certificate.passed = certificate.deliveryReady;
+  const failedRetainedOperationIds = [...new Set(retainedFormatting.diagnostics
+    .filter((diagnostic) => !retainedFormattingDiagnosticPassed(diagnostic))
+    .map((diagnostic) => diagnostic.operationId))];
   if (!certificate.projectionPassed) throw new DocxMarkdocError(
     retainedSpans.length > 0 && !retainedFormatting.passed ? 'NON_COMMON_RETAINED_SCOPE' : 'VERIFICATION_FAILED',
     retainedSpans.length > 0 && !retainedFormatting.passed
-      ? 'Retained formatting could not be certified over comparator-common text.'
+      ? `Retained formatting could not be certified over comparator-common text for edits: ${failedRetainedOperationIds.join(', ')}.`
       : 'Strict replay verification failed.', {
     certificate,
     sourceText,

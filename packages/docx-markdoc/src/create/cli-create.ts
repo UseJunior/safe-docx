@@ -1,0 +1,715 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { link, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { renderPlainPdf, type PlainPdfVerdict } from '../pdf/plain-render.js';
+import type { PdfRenderTools } from '../pdf/tools.js';
+import { CliUsageError, DocxMarkdocError } from '../errors.js';
+import { isOption } from '../cli-options.js';
+import { createDocumentFromMarkdoc, type CreatedDocument, type CrossReferenceCheck } from './create.js';
+import { lowerCreationMarkdoc, NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN, type CreationLowering } from './lower.js';
+import { comparePdfWords, projectSourceText, type PdfWordComparison } from './oracle.js';
+
+/** The pull record path for a certificate: `<stem>.pull.json` beside `<stem>.verification.json`. */
+export function pullRecordPath(certificatePath: string): string {
+  return path.join(path.dirname(certificatePath), `${path.basename(certificatePath).replace(/\.verification\.json$/u, '')}.pull.json`);
+}
+
+export type CreateCliArgs = {
+  markdocPath: string;
+  outputDir: string;
+  profilePath?: string;
+  pdf: boolean;
+  requirePdf: boolean;
+  /** Rebuild over existing outputs, but only when the DOCX is the one the last build certified. */
+  replace: boolean;
+  /** Also rebuild over an edited or uncertified DOCX, keeping its bytes in a named directory. Implies `replace`. */
+  overwriteEditedDocx: boolean;
+};
+
+/** The PDF verdict as recorded: page texts are dropped, and `words` holds the word-level comparison when the PDF rendered. */
+export type RecordedPdfVerdict = Omit<PlainPdfVerdict, 'pageTexts' | 'layoutPageTexts'> & { words?: PdfWordComparison };
+
+export type CreateCliResult = {
+  outputs: { docx: string; text: string; certificate: string; pdf?: string };
+  /**
+   * Set when the build displaced a DOCX that was not the last certified build:
+   * under `--dangerously-overwrite-edited-docx`, or (`pulled`) the edited DOCX
+   * a complete `pull --apply` reconciled into the source being built.
+   */
+  overwritten?: { docx: string; sha256: string; reason: string; pulled?: true };
+  created: CreatedDocument;
+  pdf: RecordedPdfVerdict | { status: 'skipped' };
+  summary: string;
+};
+
+/** Verification failures that leave a mismatch report next to the outputs. */
+const REPORTED_FAILURES = new Set(['CREATION_VERIFICATION_FAILED', 'CREATION_PDF_FAILED', 'CREATION_PDF_WORDS_MISMATCH']);
+
+/**
+ * A create run that failed verification. Nothing was published; the mismatch
+ * report (when it could be written) is at `reportPath`.
+ */
+export class CreationFailureReportedError extends DocxMarkdocError {
+  constructor(cause: DocxMarkdocError, readonly reportPath: string | null, reportProblem?: string) {
+    super(
+      cause.code,
+      `${cause.message} Nothing was published. ${reportPath ? `Mismatch report: ${reportPath}` : `The mismatch report could not be written (${reportProblem ?? 'unknown error'})`}.`,
+      cause.details,
+    );
+  }
+}
+
+export function parseCreateCliArgs(args: string[]): CreateCliArgs {
+  const positional: string[] = [];
+  let profilePath: string | undefined;
+  let pdf = true;
+  let requirePdf = false;
+  let replace = false;
+  let overwriteEditedDocx = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === '--style-profile') {
+      if (profilePath !== undefined) throw new CliUsageError('--style-profile may be supplied only once.', 'create');
+      profilePath = args[index + 1];
+      if (!profilePath) throw new CliUsageError('--style-profile requires a JSON path.', 'create');
+      index += 1;
+    } else if (arg === '--no-pdf') pdf = false;
+    else if (arg === '--require-pdf') requirePdf = true;
+    else if (arg === '--replace') replace = true;
+    else if (arg === '--dangerously-overwrite-edited-docx') overwriteEditedDocx = replace = true;
+    else if (isOption(arg)) throw new CliUsageError(`Unknown option ${arg}.`, 'create');
+    else positional.push(arg);
+  }
+  const [markdocPath, outputDir] = positional;
+  if (!markdocPath || !outputDir || positional.length !== 2) throw new CliUsageError('create requires a Markdoc file and an output directory.', 'create');
+  if (!pdf && requirePdf) throw new CliUsageError('--no-pdf and --require-pdf are mutually exclusive.', 'create');
+  return { markdocPath, outputDir, ...(profilePath ? { profilePath } : {}), pdf, requirePdf, replace, overwriteEditedDocx };
+}
+
+async function existingKind(target: string): Promise<'file' | 'symlink' | 'other' | null> {
+  try {
+    const stat = await lstat(target);
+    if (stat.isSymbolicLink()) return 'symlink';
+    return stat.isFile() ? 'file' : 'other';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/**
+ * Body paragraphs as a LibreOffice PDF shows them: each footnote reference's
+ * number sits where the reference is, joined to the text around it, and each
+ * cross-reference shows LibreOffice's form of its number. LibreOffice
+ * recalculates REF fields on load and keeps the period of `1.` before `(`, so
+ * Word's cached `2(b)` renders as `2.(b)` (see
+ * scripts/oracle/word/evidence/issue-1236-word-16.114.json).
+ */
+function paragraphsAsLibreOfficeRenders(readback: CreatedDocument['readback']): string[] {
+  const inserts = new Map<number, Array<{ offset: number; text: string }>>();
+  const add = (paragraph: number, offset: number, text: string) => inserts.set(paragraph, [...(inserts.get(paragraph) ?? []), { offset, text }]);
+  readback.footnoteReferences.forEach(({ paragraph, offset }, index) => add(paragraph, offset, String(index + 1)));
+  for (const { paragraph, offset, text, instruction } of readback.crossReferences ?? []) {
+    // Only a full-context number, or a relative one that keeps its first
+    // level ("2(b)"), has the period; a text reference shows its target's
+    // text, which may itself start with "401(k)".
+    if (!/\\[wr]\b/u.test(instruction)) continue;
+    const leadingNumber = /^\d+(?=\()/u.exec(text);
+    if (leadingNumber) add(paragraph, offset + leadingNumber[0].length, '.');
+  }
+  return readback.paragraphs.map((text, index) => {
+    let out = '';
+    let at = 0;
+    for (const { offset, text: inserted } of (inserts.get(index) ?? []).sort((a, b) => a.offset - b.offset)) {
+      out += `${text.slice(at, offset)}${inserted}`;
+      at = offset;
+    }
+    return out + text.slice(at);
+  });
+}
+
+/**
+ * The literal text of a header or footer line: the line itself, or, when it
+ * holds PAGE or NUMPAGES fields, each piece between them and its tabs that has
+ * a letter or digit ("Page <PAGE> of <NUMPAGES>" needs "Page" and "of"; the
+ * numbers depend on the page and are checked word by word).
+ */
+function literalPieces(line: string): string[] {
+  if (!line.includes(PAGE_FIELD_TOKEN) && !line.includes(NUMPAGES_FIELD_TOKEN)) return [line];
+  return line.split(new RegExp(`${PAGE_FIELD_TOKEN}|${NUMPAGES_FIELD_TOKEN}|\t`, 'u')).map((piece) => piece.trim()).filter((piece) => /[\p{L}\p{N}]/u.test(piece));
+}
+
+/**
+ * Text a rendered PDF must contain: the first and last paragraphs and the
+ * header and footer text each section is sure to show. A section without
+ * `w:titlePg` shows its own header and footer on every page; a section with
+ * it shows its first-page slots on its first page, and its other header and
+ * footer only from its second page, which a one-page section never has. The
+ * page-aware word check holds those to each continuation page.
+ */
+export function requiredPdfText(created: CreatedDocument): string[] {
+  const paragraphs = paragraphsAsLibreOfficeRenders(created.readback).filter((paragraph) => paragraph.trim());
+  const title = paragraphs[0];
+  const last = paragraphs.at(-1) ?? '';
+  const lastNeedle = last.length > 120 ? last.slice(0, 80) : last;
+  const { footers, headers, firstPage } = created.readback;
+  const stories = footers.flatMap((footer, section) => {
+    const first = firstPage[section];
+    return first ? [first.header, first.footer] : [headers[section] ?? null, footer];
+  });
+  const running = stories.flatMap((story) => story ?? []).flatMap(literalPieces);
+  return [...new Set([title, lastNeedle, ...running].filter((value): value is string => Boolean(value?.trim())))];
+}
+
+const sha256File = async (target: string): Promise<string> => createHash('sha256').update(await readFile(target)).digest('hex');
+
+/**
+ * What the last successful build certified about the existing DOCX: its
+ * SHA-256 from `<stem>.verification.json`, or why there is no usable record.
+ */
+export type DocxFingerprint = { sha256: string } | { sha256: null; reason: string };
+
+async function certifiedDocxFingerprint(certificatePath: string): Promise<DocxFingerprint> {
+  if ((await existingKind(certificatePath)) !== 'file') return { sha256: null, reason: `${path.basename(certificatePath)} is missing` };
+  let record: unknown;
+  try {
+    record = JSON.parse(await readFile(certificatePath, 'utf8'));
+  } catch (error) {
+    return { sha256: null, reason: `${path.basename(certificatePath)} is unreadable (${error instanceof Error ? error.message : String(error)})` };
+  }
+  const { kind, passed, docxSha256 } = (record ?? {}) as { kind?: unknown; passed?: unknown; docxSha256?: unknown };
+  if (kind !== 'markdoc-create' || passed !== true || typeof docxSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(docxSha256)) {
+    return { sha256: null, reason: `${path.basename(certificatePath)} is not a passing create certificate with a DOCX fingerprint` };
+  }
+  return { sha256: docxSha256 };
+}
+
+/**
+ * Guard for the existing DOCX. `certified` is the fingerprint the last build
+ * recorded (null: none usable). Publication hashes the bytes it actually moves
+ * aside: unless `force`, anything but the certified bytes is refused; with
+ * `force`, anything but the certified bytes is kept.
+ */
+type DocxGuard = { target: string; certified: string | null; force: boolean; displacedSha256?: string; pulled?: string };
+
+/**
+ * The edited DOCX a complete `pull --apply` reconciled, when its record
+ * (`<stem>.pull.json`) binds the DOCX on disk, the build the certificate
+ * records and the source being built: `--replace` may then replace it. The
+ * record proves the source reproduces that DOCX's body and running text, so
+ * nothing in it is lost; its bytes are still kept.
+ */
+async function pulledDocxSha256(recordPath: string, docxSha256: string, certifiedSha256: string, sourceSha256: string): Promise<string | undefined> {
+  if ((await existingKind(recordPath)) !== 'file') return undefined;
+  let record: unknown;
+  try {
+    record = JSON.parse(await readFile(recordPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
+  const { kind, complete, editedDocxSha256, baseDocxSha256, pulledSourceSha256 } = (record ?? {}) as Record<string, unknown>;
+  return kind === 'markdoc-pull' && complete === true && editedDocxSha256 === docxSha256 && baseDocxSha256 === certifiedSha256 && pulledSourceSha256 === sourceSha256
+    ? docxSha256
+    : undefined;
+}
+
+function editedDocxError(target: string, reason: string): DocxMarkdocError {
+  return new DocxMarkdocError(
+    'CREATION_OUTPUT_EDITED',
+    `Refusing to replace ${target}: ${reason}. It may hold edits made after the last build. Move it aside, or pass --dangerously-overwrite-edited-docx to replace it (its bytes are kept in a .<stem>.create-overwritten-… directory).`,
+    { target, reason },
+  );
+}
+
+/** Filesystem operations used to publish outputs; injectable so tests can force a mid-publication failure. */
+export type PublishFileOps = {
+  /** Opens the stem lock file (exclusive create). */
+  open: typeof open;
+  link: (from: string, to: string) => Promise<void>;
+  rename: (from: string, to: string) => Promise<void>;
+  unlink: (target: string) => Promise<void>;
+};
+const DEFAULT_FILE_OPS: PublishFileOps = { open, link, rename, unlink };
+
+async function exists(target: string): Promise<boolean> {
+  return (await existingKind(target)) !== null;
+}
+
+/**
+ * Publish staged files as one unit. Each existing target (including a stale
+ * artifact this build does not produce) moves to a backup first; then every
+ * new file is placed with an exclusive hard link, which fails instead of
+ * overwriting if anything appeared at the target meanwhile. Any failure
+ * restores the backups and removes what was placed, so the directory is left
+ * as it was.
+ */
+/**
+ * Thrown when publishing failed and some original outputs could not be put
+ * back. Nothing is deleted: the originals that were not restored stay in
+ * `recoveryDir`, and the message names it and every recovery problem.
+ */
+class PublishRecoveryError extends DocxMarkdocError {
+  constructor(message: string, readonly recoveryDir: string, readonly keepStaging: boolean) {
+    super('CREATION_PUBLISH_FAILED', message, { recoveryDir });
+  }
+}
+
+async function publish(
+  produced: Map<string, string>,
+  retired: string[],
+  backupDir: string,
+  recoveryDir: string,
+  replace: boolean,
+  ops: PublishFileOps,
+  guard: DocxGuard,
+): Promise<void> {
+  const backups: Array<{ target: string; backup: string }> = [];
+  const placed: Array<{ target: string; dev: number; ino: number }> = [];
+  try {
+    for (const target of [...produced.keys(), ...retired]) {
+      if (!(await exists(target))) continue;
+      if (!replace) throw new DocxMarkdocError('CREATION_OUTPUT_EXISTS', `Output appeared during the build: ${target}. Pass --replace to rebuild in place.`);
+      const backup = path.join(backupDir, path.basename(target));
+      await ops.rename(target, backup);
+      backups.push({ target, backup });
+      if (target === guard.target) {
+        // Check the bytes actually moved aside, so an edit made after the
+        // preflight check is caught too; a failure here restores everything.
+        guard.displacedSha256 = await sha256File(backup);
+        if (!guard.force && guard.displacedSha256 !== guard.certified && guard.displacedSha256 !== guard.pulled) {
+          throw editedDocxError(target, 'it changed or appeared during the build and is not the DOCX the last build certified');
+        }
+      }
+    }
+    for (const [target, staged] of produced) {
+      // Ownership is the private staged file's inode, read before linking: the
+      // hard link shares it, and nothing outside this run can change it.
+      const owned = await lstat(staged);
+      placed.push({ target, dev: owned.dev, ino: owned.ino });
+      await ops.link(staged, target);
+    }
+  } catch (error) {
+    const problems: string[] = [];
+    // Remove only what this run placed: an entry whose inode is not the staged
+    // file's belongs to someone else. (Check and unlink are two steps, so a
+    // non-cooperating writer replacing the path in that instant is not covered;
+    // cooperating create runs are serialized by the stem lock.)
+    for (const { target, dev, ino } of placed) {
+      const current = await lstat(target).catch(() => null);
+      if (!current || current.dev !== dev || current.ino !== ino) continue;
+      await ops.unlink(target).catch((unlinkError: Error) => problems.push(`could not remove ${target}: ${unlinkError.message}`));
+    }
+    const unrestored: string[] = [];
+    for (const { target, backup } of [...backups].reverse()) {
+      if (await exists(target)) {
+        unrestored.push(target);
+        problems.push(`${target} is occupied, so its original was not put back`);
+        continue;
+      }
+      await ops.rename(backup, target).catch((restoreError: Error) => {
+        unrestored.push(target);
+        problems.push(`could not restore ${target}: ${restoreError.message}`);
+      });
+    }
+    if (unrestored.length === 0 && problems.length === 0) throw error;
+    // Keep every original that was not restored: move the backups out of the staging directory.
+    let keepStaging = false;
+    let kept = recoveryDir;
+    try {
+      await rename(backupDir, recoveryDir);
+    } catch {
+      keepStaging = true;
+      kept = backupDir;
+    }
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new PublishRecoveryError(
+      `Publishing failed (${cause}) and recovery was incomplete: ${problems.join('; ')}. Originals that were not restored are kept in ${kept}.`,
+      kept,
+      keepStaging,
+    );
+  }
+}
+
+/** One create run per output directory and stem at a time; the lock file is created exclusively. */
+async function acquireLock(lockPath: string, openFile: typeof open): Promise<() => Promise<void>> {
+  let handle;
+  try {
+    handle = await openFile(lockPath, 'wx');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new DocxMarkdocError('CREATION_LOCKED', `Another create run is publishing to this output (lock ${lockPath}). If no run is active, delete the lock file and retry.`);
+    }
+    throw error;
+  }
+  // The lock file is ours from here: if initialising it fails, close the handle and remove it.
+  try {
+    await handle.writeFile(`${process.pid}\n`);
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(lockPath, { force: true });
+    throw error;
+  }
+  try {
+    await handle.close();
+  } catch (error) {
+    await rm(lockPath, { force: true });
+    throw error;
+  }
+  return () => rm(lockPath, { force: true });
+}
+
+async function sameFile(a: string, b: string): Promise<boolean> {
+  const [left, right] = await Promise.all([stat(a).catch(() => null), stat(b).catch(() => null)]);
+  return Boolean(left && right && left.dev === right.dev && left.ino === right.ino);
+}
+
+/**
+ * `docx-markdoc create <document.mdoc> <output-dir>`: build the DOCX, the
+ * read-back text mirror, an optional PDF and the certificate. Outputs are
+ * staged in a private directory inside the output directory and published as
+ * one unit only after every check passes; a failed build leaves the output
+ * directory as it was. Without --replace, any existing output (including a
+ * PDF from an earlier build) refuses the build. With --replace, an artifact
+ * this build does not produce (for example a PDF under --no-pdf) is retired so
+ * the directory reflects this build only.
+ */
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * The document-properties entry of the CLI summary. Without a frontmatter
+ * `date`, it says the created date (and the modified date, unless `modified`
+ * chose one) is the fixed 2006 default, so a document is not delivered with
+ * it unawares.
+ */
+export function propertiesSummary(created: CreatedDocument): string {
+  const { values } = created.certificate.checks.properties;
+  const application = values['app.application'];
+  const createdIso = values['core.created'];
+  const modifiedIso = values['core.modified'];
+  const sameDates = modifiedIso === createdIso;
+  const dates = created.certificate.frontmatter.date === undefined
+    ? sameDates
+      ? `created and modified ${createdIso} (no frontmatter date; set date: to choose them)`
+      : `created ${createdIso} (no frontmatter date; set date: to choose it), modified ${modifiedIso}`
+    : `created ${createdIso}${sameDates ? '' : `, modified ${modifiedIso}`}`;
+  return `properties ok (${dates}; application ${application === null ? 'omitted' : JSON.stringify(application)}; negative control ok)`;
+}
+
+/**
+ * The negative controls of a check, for the summary line. A control that is not applicable, or (should a caller
+ * summarize a failed check) one that went undetected, is named with its status rather than counted as ok.
+ */
+/**
+ * The cross-references entry of the CLI summary. With text or relative
+ * references it counts them apart from the other number references and
+ * names the text-extent or relative-context control; without, it reads as
+ * before.
+ */
+export function crossReferenceSummary(check: CrossReferenceCheck): string {
+  const { references, negativeControls } = check;
+  const { text, relative } = references;
+  const counts = text > 0 || relative > 0
+    ? `${plural(references.actual, 'reference')}: ${[
+      `${references.actual - text - relative} number`,
+      ...(relative > 0 ? [`${relative} relative`] : []),
+      ...(text > 0 ? [`${text} text`] : []),
+    ].join(', ')}`
+    : plural(references.actual, 'reference');
+  const controls = {
+    'changed switch': negativeControls.switchChanged,
+    retargeted: negativeControls.retargeted,
+    moved: negativeControls.moved,
+    ...(text > 0 ? { 'text extent': negativeControls.textExtent } : {}),
+    ...(relative > 0 ? { 'relative context': negativeControls.relativeContext } : {}),
+  };
+  return `cross-references ok (${counts}; ${controlsSummary(controls)})`;
+}
+
+export function controlsSummary(controls: Record<string, boolean | 'not applicable'>): string {
+  const names = Object.keys(controls);
+  const noun = names.length === 1 ? 'negative control' : 'negative controls';
+  const ok = names.filter((name) => controls[name] === true);
+  if (ok.length === names.length) return `${noun} ok`;
+  const groups = ([[false, 'failed'], ['not applicable', 'not applicable']] as const)
+    .map(([value, status]) => ({ status, named: names.filter((name) => controls[name] === value) }))
+    .filter(({ named }) => named.length > 0);
+  if (ok.length === 0 && groups.length === 1) return `${noun} ${groups[0]!.status}`;
+  const exceptions = groups.map(({ status, named }) => `${named.join(', ')}: ${status}`).join(', ');
+  return ok.length === 0 ? `${noun}: ${exceptions}` : `${noun} ok, except ${exceptions}`;
+}
+
+/** Read and parse a `--style-profile` JSON file; absent, both values are undefined. */
+async function readCreationProfile(profilePath: string | undefined): Promise<{ profile: unknown; profileSource: Buffer | undefined }> {
+  const profileSource = profilePath ? await readFile(profilePath) : undefined;
+  let profile: unknown;
+  if (profileSource) {
+    try {
+      profile = JSON.parse(profileSource.toString('utf8'));
+    } catch (error) {
+      throw new DocxMarkdocError('INVALID_CREATION_PROFILE_JSON', `Style profile is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { profile, profileSource };
+}
+
+/** What `validate --create` reports for a creation source that passes. */
+export type CreationLintResult = {
+  grammar: 'creation';
+  valid: true;
+  sections: number;
+  blocks: number;
+  frontmatter: CreationLowering['frontmatter'];
+};
+
+/**
+ * Lint a creation `.mdoc` the way `create` does before it renders anything:
+ * the source characters, the frontmatter, the closed tag grammar
+ * (`validateCreationAst`), each `{% section %}`'s running-text keys and the
+ * structure checks of the lowering, under the style profile when one is
+ * given. It throws the same `DocxMarkdocError`, with the same message and
+ * line, that `create` would, and it writes nothing: no DOCX is generated, no
+ * output directory is created and no lock is taken.
+ */
+export async function lintCreationSource(markdocPath: string, options: { profilePath?: string } = {}): Promise<CreationLintResult> {
+  const { profile } = await readCreationProfile(options.profilePath);
+  const lowering = lowerCreationMarkdoc(await readFile(markdocPath, 'utf8'), profile);
+  return {
+    grammar: 'creation',
+    valid: true,
+    sections: lowering.spec.sections.length,
+    blocks: lowering.blocks.length,
+    frontmatter: lowering.frontmatter,
+  };
+}
+
+export async function runCreateCommand(
+  args: string[],
+  deps: { renderTools?: PdfRenderTools; fileOps?: Partial<PublishFileOps> } = {},
+): Promise<CreateCliResult> {
+  const options = parseCreateCliArgs(args);
+  const ops = { ...DEFAULT_FILE_OPS, ...deps.fileOps };
+  const stem = path.basename(options.markdocPath, path.extname(options.markdocPath));
+  await mkdir(options.outputDir, { recursive: true });
+  const outputDir = await realpath(options.outputDir);
+  const outputs = {
+    docx: path.join(outputDir, `${stem}.docx`),
+    text: path.join(outputDir, `${stem}.txt`),
+    certificate: path.join(outputDir, `${stem}.verification.json`),
+    pdf: path.join(outputDir, `${stem}.pdf`),
+  };
+  const failureReport = path.join(outputDir, `${stem}.failed-verification.json`);
+  const releaseLock = await acquireLock(path.join(outputDir, `.${stem}.create.lock`), ops.open);
+  try {
+    const result = await createLocked(options, deps, ops, stem, outputDir, outputs, failureReport);
+    // A report from an earlier failed run no longer describes these outputs.
+    if ((await existingKind(failureReport)) === 'file') {
+      await rm(failureReport, { force: true }).catch((error: Error) => {
+        result.summary += `; WARNING: stale ${path.basename(failureReport)} could not be removed (${error.message})`;
+      });
+    }
+    return result;
+  } catch (error) {
+    // Missing PDF tools under --require-pdf is not a mismatch, so it leaves no report.
+    const toolsMissing = error instanceof DocxMarkdocError && (error.details as { status?: string } | undefined)?.status === 'not_run';
+    if (!(error instanceof DocxMarkdocError) || !REPORTED_FAILURES.has(error.code) || toolsMissing) throw error;
+    const written = await writeFailureReport(failureReport, outputDir, stem, options.markdocPath, error);
+    throw new CreationFailureReportedError(error, written.path, written.problem);
+  } finally {
+    await releaseLock();
+  }
+}
+
+/** Drop the bulky per-page text from a PDF verdict before recording it. */
+function recordedPdf(verdict: PlainPdfVerdict, words?: PdfWordComparison): RecordedPdfVerdict {
+  const { pageTexts: _pageTexts, layoutPageTexts: _layoutPageTexts, ...rest } = verdict;
+  return { ...rest, ...(words ? { words } : {}) };
+}
+
+/**
+ * Write `<stem>.failed-verification.json` for a run that failed verification:
+ * the failure, every check result and the mismatches found. It is staged and
+ * renamed into place, so it replaces only an earlier failure report and never
+ * writes through a symlink. It is never one of the published outputs and never
+ * replaces `<stem>.verification.json`.
+ */
+async function writeFailureReport(
+  target: string,
+  outputDir: string,
+  stem: string,
+  markdocPath: string,
+  error: DocxMarkdocError,
+): Promise<{ path: string | null; problem?: string }> {
+  const report = {
+    version: 1,
+    kind: 'markdoc-create-failure',
+    source: path.basename(markdocPath),
+    code: error.code,
+    message: error.message,
+    published: false,
+    note: 'This build failed verification, so nothing was published and existing outputs were left as they were. This file is replaced by the next failed build and removed by the next successful one.',
+    details: error.details && typeof error.details === 'object' && 'pageTexts' in error.details ? recordedPdf(error.details as PlainPdfVerdict) : error.details,
+  };
+  const temporary = path.join(outputDir, `.${stem}.failed-verification-${randomUUID()}.json`);
+  try {
+    if ((await existingKind(target)) === 'other') throw new Error(`${target} exists and is not a file`);
+    await writeFile(temporary, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
+    await rename(temporary, target);
+    return { path: target };
+  } catch (reportError) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    return { path: null, problem: reportError instanceof Error ? reportError.message : String(reportError) };
+  }
+}
+
+async function createLocked(
+  options: CreateCliArgs,
+  deps: { renderTools?: PdfRenderTools },
+  ops: PublishFileOps,
+  stem: string,
+  outputDir: string,
+  outputs: { docx: string; text: string; certificate: string; pdf: string },
+  failureReport: string,
+): Promise<CreateCliResult> {
+  // Compare canonical paths (and inodes) so a symlinked directory or file cannot alias an input.
+  const inputs = await Promise.all([options.markdocPath, ...(options.profilePath ? [options.profilePath] : [])].map((value) => realpath(value)));
+  for (const output of [...Object.values(outputs), failureReport]) {
+    if (inputs.includes(output) || (await Promise.all(inputs.map((input) => sameFile(input, output)))).some(Boolean)) {
+      throw new DocxMarkdocError('CREATION_PATH_COLLISION', `Output ${output} would overwrite an input.`);
+    }
+  }
+  for (const target of Object.values(outputs)) {
+    const kind = await existingKind(target);
+    if (kind === 'symlink' || kind === 'other') throw new DocxMarkdocError('CREATION_OUTPUT_NOT_FILE', `Refusing to replace non-file output ${target}.`);
+    if (kind === 'file' && !options.replace) {
+      throw new DocxMarkdocError('CREATION_OUTPUT_EXISTS', `Output already exists: ${target}. Pass --replace to rebuild in place.`);
+    }
+  }
+  // --replace rebuilds only over the DOCX the last build certified. A DOCX with
+  // no usable certificate, or whose bytes differ from it, may hold edits.
+  const fingerprint = await certifiedDocxFingerprint(outputs.certificate);
+  const source = await readFile(options.markdocPath, 'utf8');
+  let docxReason: string | undefined;
+  let pulled: string | undefined;
+  if ((await existingKind(outputs.docx)) === 'file') {
+    const current = await sha256File(outputs.docx);
+    if (fingerprint.sha256 === null) docxReason = `${fingerprint.reason}, so it cannot be shown to be unedited`;
+    else if (fingerprint.sha256 !== current) {
+      docxReason = 'its SHA-256 differs from the one recorded by the last build';
+      pulled = await pulledDocxSha256(pullRecordPath(outputs.certificate), current, fingerprint.sha256, createHash('sha256').update(source).digest('hex'));
+      if (pulled) docxReason = 'it is the edited DOCX a complete pull reconciled into this source';
+    }
+    if (docxReason && !pulled && !options.overwriteEditedDocx) throw editedDocxError(outputs.docx, docxReason);
+  }
+  const guard: DocxGuard = { target: outputs.docx, certified: fingerprint.sha256, force: options.overwriteEditedDocx, ...(pulled ? { pulled } : {}) };
+
+  const { profile, profileSource } = await readCreationProfile(options.profilePath);
+  const created = await createDocumentFromMarkdoc(source, {
+    ...(profile === undefined ? {} : { profile }),
+    ...(profileSource === undefined ? {} : { profileSource }),
+    mirrorLabel: path.basename(outputs.docx),
+  });
+
+  // The staging directory is created exclusively, so everything inside it is ours to remove.
+  const staging = await mkdtemp(path.join(outputDir, `.${stem}.create-`));
+  let keepStaging = false;
+  try {
+    const staged = (target: string): string => path.join(staging, path.basename(target));
+    const produced = new Map<string, string>();
+    await writeFile(staged(outputs.docx), created.docx, { flag: 'wx' });
+    produced.set(outputs.docx, staged(outputs.docx));
+    let pdf: CreateCliResult['pdf'] = { status: 'skipped' };
+    if (options.pdf) {
+      const verdict = await renderPlainPdf({
+        docxPath: staged(outputs.docx),
+        outputPdfPath: staged(outputs.pdf),
+        requiredText: requiredPdfText(created),
+        ...(deps.renderTools ? { tools: deps.renderTools } : {}),
+      });
+      if (verdict.status === 'failed' || (verdict.status === 'not_run' && options.requirePdf)) {
+        throw new DocxMarkdocError('CREATION_PDF_FAILED', `PDF check ${verdict.status}: ${verdict.reason ?? 'unknown'}${verdict.missingText ? ` (missing: ${verdict.missingText.join(' | ')})` : ''}.`, recordedPdf(verdict));
+      }
+      // Every source word must reach the PDF text layer, and the PDF may add only known generated text.
+      const words = verdict.status === 'passed' ? comparePdfWords(projectSourceText(source, { reader: 'libreoffice' }), verdict.pageTexts ?? [], verdict.layoutPageTexts) : undefined;
+      pdf = recordedPdf(verdict, words);
+      if (words && !words.passed) {
+        const first = words.missing[0] ?? words.unexplainedExtra[0];
+        throw new DocxMarkdocError(
+          'CREATION_PDF_WORDS_MISMATCH',
+          `PDF text layer does not match the source word for word: ${words.missing.length} missing span(s), ${words.unexplainedExtra.length} unexplained extra span(s), ${words.footerMismatches.length} page(s) with the wrong footer, ${words.unverifiedTableHeaders.length} unverified table header(s)${words.alignment === 'over-budget' ? ' (too different to align)' : ''}${first ? `; first: "${first.words}" after "${first.before}"` : ''}.`,
+          pdf,
+        );
+      }
+      if (verdict.status === 'passed') produced.set(outputs.pdf, staged(outputs.pdf));
+    }
+    const certificate = { ...created.certificate, pdf };
+    await writeFile(staged(outputs.text), created.text, { flag: 'wx' });
+    produced.set(outputs.text, staged(outputs.text));
+    await writeFile(staged(outputs.certificate), `${JSON.stringify(certificate, null, 2)}\n`, { flag: 'wx' });
+    produced.set(outputs.certificate, staged(outputs.certificate));
+    // The mirror on disk must still equal the read-back it was written from.
+    if ((await readFile(staged(outputs.text), 'utf8')) !== created.text) {
+      throw new DocxMarkdocError('CREATION_MIRROR_MISMATCH', 'The written text mirror does not match the read-back.');
+    }
+    const backupDir = path.join(staging, 'replaced');
+    await mkdir(backupDir);
+    const retired = Object.values(outputs).filter((target) => !produced.has(target));
+    await publish(produced, retired, backupDir, path.join(outputDir, `.${stem}.create-recovery-${randomUUID()}`), options.replace, ops, guard);
+    // A forced overwrite keeps the displaced DOCX: the exact bytes that were moved aside.
+    let overwritten: CreateCliResult['overwritten'];
+    if (guard.displacedSha256 !== undefined && guard.displacedSha256 !== guard.certified) {
+      const keptDir = path.join(outputDir, `.${stem}.create-overwritten-${randomUUID()}`);
+      const kept = path.join(keptDir, path.basename(outputs.docx));
+      try {
+        await mkdir(keptDir);
+        await ops.rename(path.join(backupDir, path.basename(outputs.docx)), kept);
+      } catch (error) {
+        keepStaging = true;
+        throw new DocxMarkdocError(
+          'CREATION_OVERWRITE_BACKUP_FAILED',
+          `The new outputs were published, but the replaced DOCX could not be moved to ${kept} (${error instanceof Error ? error.message : String(error)}). Its bytes are kept in ${path.join(backupDir, path.basename(outputs.docx))}.`,
+          { kept: path.join(backupDir, path.basename(outputs.docx)) },
+        );
+      }
+      overwritten = {
+        docx: kept,
+        sha256: guard.displacedSha256,
+        reason: guard.displacedSha256 === guard.pulled ? 'it is the edited DOCX a complete pull reconciled into this source' : docxReason ?? 'it changed during the build',
+        ...(guard.displacedSha256 === guard.pulled ? { pulled: true as const } : {}),
+      };
+      // The record has done its job: the new certificate now describes the DOCX.
+      if (overwritten.pulled) await rm(pullRecordPath(outputs.certificate), { force: true }).catch(() => undefined);
+    }
+    const { checks } = created.certificate;
+    const summary = [
+      `created ${path.basename(outputs.docx)}: ${checks.readback.paragraphs} paragraphs, ${checks.footers.sections} section(s)`,
+      `readback ok (negative control ok)`,
+      `footers ok (negative control ok)`,
+      ...(checks.headers ? [`headers ok (${plural(checks.headers.sections, 'section')}${checks.headers.firstPageSections > 0 ? `, ${checks.headers.firstPageSections} with a first page of its own` : ''}; ${controlsSummary({ 'header text': checks.headers.negativeControlDetected, ...(checks.headers.firstPageNegativeControlDetected === undefined ? {} : { 'first page': checks.headers.firstPageNegativeControlDetected }) })})`] : []),
+      ...(checks.footnotes.notes > 0 || checks.footnotes.references.expected > 0
+        ? [`footnotes ok (${plural(checks.footnotes.notes, 'note')}, ${plural(checks.footnotes.references.actual, 'reference')}; ${controlsSummary({ 'note text': checks.footnotes.negativeControlDetected, 'dropped reference': checks.footnotes.references.negativeControlDetected })})`]
+        : []),
+      ...(checks.crossReferences ? [crossReferenceSummary(checks.crossReferences)] : []),
+      'deterministic',
+      propertiesSummary(created),
+      `brownfield ok (${checks.brownfield.anchoredParagraphs} anchored)`,
+      `round trip ok (${checks.roundTrip.body.expected} paragraphs; negative controls ok)`,
+      ...(checks.roundTrip.paragraphLayout ? [`paragraph layout ok (${plural(checks.roundTrip.paragraphLayout.paragraphs.actual, 'paragraph')}; ${controlsSummary({ 'read-back': checks.readback.layouts?.negativeControlDetected ?? 'not applicable', 'changed layout': checks.roundTrip.paragraphLayout.negativeControls.changedLayout, 'dropped paragraph': checks.roundTrip.paragraphLayout.negativeControls.droppedParagraph, 'moved layout': checks.roundTrip.paragraphLayout.negativeControls.movedLayout })})`] : []),
+      pdf.status === 'skipped' ? 'pdf skipped' : `pdf ${pdf.status}${'pageCount' in pdf && pdf.pageCount ? ` (${pdf.pageCount} pages)` : ''}${pdf.status === 'not_run' ? ` (${pdf.reason})` : ''}${'words' in pdf && pdf.words ? `; pdf words ok (${pdf.words.expectedWords} source words)` : ''}`,
+      ...(overwritten?.pulled ? [`replaced the edited ${path.basename(outputs.docx)} that pull reconciled into this source; its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
+      ...(overwritten && !overwritten.pulled ? [`WARNING: overwrote an edited ${path.basename(outputs.docx)} (${overwritten.reason}); its previous bytes (sha256 ${overwritten.sha256}) are kept in ${overwritten.docx}`] : []),
+    ].join('; ');
+    return {
+      outputs: { docx: outputs.docx, text: outputs.text, certificate: outputs.certificate, ...(produced.has(outputs.pdf) ? { pdf: outputs.pdf } : {}) },
+      ...(overwritten ? { overwritten } : {}),
+      created,
+      pdf,
+      summary,
+    };
+  } catch (error) {
+    // Keep staging when it holds originals that could not be restored or moved out.
+    keepStaging ||= error instanceof PublishRecoveryError && error.keepStaging;
+    throw error;
+  } finally {
+    if (!keepStaging) await rm(staging, { recursive: true, force: true });
+  }
+}

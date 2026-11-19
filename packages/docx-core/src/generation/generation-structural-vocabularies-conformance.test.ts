@@ -143,7 +143,7 @@ const ENUM_CLASSIFICATION_CASES: readonly EnumClassificationCase[] = [
   },
   {
     schemaType: 'ST_NumberFormat',
-    supported: ['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none'],
+    supported: ['decimal', 'decimalZero', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none'],
     path: '/numbering/0/levels/0/numFmt',
     mutate: (spec, value) => { (spec.numbering![0]!.levels[0] as any).numFmt = value; },
   },

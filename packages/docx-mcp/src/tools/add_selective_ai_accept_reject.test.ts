@@ -424,7 +424,7 @@ describe('No-op accept/reject by unknown revision id has nothing to persist (#10
         expect(result.persistence_required).toBe(false);
         expect(result).not.toHaveProperty('next_step');
         expect(result.selected_revision_ids).toEqual([]);
-        expect(session.selectiveRevisionAction).toBeNull();
+        expect(session.selectiveRevisionPolicy).toEqual({ mode: 'ordinary' });
       });
     });
 
@@ -476,7 +476,7 @@ describe('No-op accept/reject by unknown revision id has nothing to persist (#10
         assertSuccess(result, tool.name);
         expect(result.selected_revision_ids).toEqual([tool.realId]);
         expect(result.persistence_required).toBe(true);
-        expect(session.selectiveRevisionAction).toMatchObject({ tool: tool.name, selectedRevisionIds: [tool.realId] });
+        expect(session.selectiveRevisionPolicy).toMatchObject({ mode: 'preserve', lastAction: { tool: tool.name, selectedRevisionIds: [tool.realId] } });
       });
     });
   }
@@ -500,7 +500,7 @@ describe('No-op accept/reject by unknown revision id has nothing to persist (#10
       expect(accepted.selected_revision_ids).toEqual(['101']);
       expect(accepted.persistence_required).toBe(true);
       expect(accepted.next_step).toMatch(/save_format='tracked'/u);
-      expect(session.selectiveRevisionAction).toMatchObject({ tool: 'accept_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['101'] });
+      expect(session.selectiveRevisionPolicy).toMatchObject({ mode: 'preserve', lastAction: { tool: 'accept_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['101'] } });
       assertFailure(blocked, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
     });
   });
@@ -524,7 +524,7 @@ describe('No-op accept/reject by unknown revision id has nothing to persist (#10
       expect(rejected.selected_revision_ids).toEqual(['103']);
       expect(rejected.persistence_required).toBe(true);
       expect(rejected.next_step).toMatch(/save_format='tracked'/u);
-      expect(session.selectiveRevisionAction).toMatchObject({ tool: 'reject_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['103'] });
+      expect(session.selectiveRevisionPolicy).toMatchObject({ mode: 'preserve', lastAction: { tool: 'reject_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['103'] } });
       assertFailure(blocked, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
     });
   });

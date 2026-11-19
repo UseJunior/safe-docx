@@ -7,17 +7,23 @@
  * settings are folded in when the document needs them: `w:evenAndOddHeaders`
  * for any section declaring an even-page header or footer, and
  * `w:clrSchemeMapping` when theme-relative authoring or a custom theme is used.
+ * Opt-in compatibility settings (`DocumentSpec.compatibility`) precede the
+ * custom setting inside `w:compat`, in the `CT_Compat` sequence:
+ * `w:doNotExpandShiftReturn` keeps a fully justified line that ends in a
+ * manual line break from being stretched.
  *
  * The `w:compat` block is static (no clock/random), preserving the compiler's
  * byte-for-byte determinism guarantee.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 11.3.3
  * @conformance ECMA-376 edition 5, Part 1 § 17.15.3.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.15.3.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
  * @see MS-DOCX §2.3.5 compatibilityMode
  */
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
+import { CONTINUATION_SEPARATOR_FOOTNOTE_ID, SEPARATOR_FOOTNOTE_ID } from '../../primitives/footnote-shapes.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
@@ -30,17 +36,41 @@ const SETTINGS_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006
 const COMPATIBILITY_MODE_15 = '15';
 const COMPAT_SETTING_URI = 'http://schemas.microsoft.com/office/word';
 
-export function emitSettingsPart(spec: DocumentSpec, ctx: CompileContext): void {
+/**
+ * Document-wide footnote properties listing the separator and continuation
+ * separator notes: a special (non-normal) note that is not listed here is
+ * not loaded. Word writes the same list.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.9
+ */
+function buildFootnoteProperties(doc: Document): Element {
+  const footnotePr = createWmlElement(doc, W.footnotePr);
+  for (const id of [SEPARATOR_FOOTNOTE_ID, CONTINUATION_SEPARATOR_FOOTNOTE_ID]) {
+    footnotePr.appendChild(createWmlElement(doc, W.footnote, { 'w:id': String(id) }));
+  }
+  return footnotePr;
+}
+
+export function emitSettingsPart(spec: DocumentSpec, ctx: CompileContext, opts: { footnotes?: boolean } = {}): void {
   const needsEvenOdd = spec.sections.some((s) => s.headers?.even || s.footers?.even);
   const needsColorSchemeMapping = spec.theme !== undefined || usesThemeRelativeAuthoring(spec);
 
   ctx.registerPart('word/settings.xml', SETTINGS_CONTENT_TYPE, SETTINGS_REL_TYPE);
   const doc = parseXml(`<w:settings xmlns:w="${OOXML.W_NS}"/>`);
-  // CT_Settings sequence: evenAndOddHeaders precedes compat, which precedes clrSchemeMapping.
+  // CT_Settings sequence: evenAndOddHeaders precedes footnotePr, which
+  // precedes compat, which precedes clrSchemeMapping.
   if (needsEvenOdd) {
     doc.documentElement!.appendChild(createWmlElement(doc, W.evenAndOddHeaders));
   }
+  if (opts.footnotes) {
+    doc.documentElement!.appendChild(buildFootnoteProperties(doc));
+  }
   const compat = createWmlElement(doc, W.compat);
+  // CT_Compat sequence: the on/off settings precede compatSetting.
+  if (spec.compatibility?.doNotExpandShiftReturn === true) {
+    compat.appendChild(createWmlElement(doc, W.doNotExpandShiftReturn));
+  }
   compat.appendChild(
     createWmlElement(doc, W.compatSetting, {
       'w:name': 'compatibilityMode',
@@ -89,6 +119,7 @@ function blockUsesThemeRelativeAuthoring(block: BlockSpec): boolean {
 }
 
 function inlineUsesThemeRelativeAuthoring(inline: InlineSpec): boolean {
+  if (inline.kind === 'footnote') return inline.blocks.some(blockUsesThemeRelativeAuthoring);
   return (inline.kind === 'text' || inline.kind === 'field') && inline.themeColor !== undefined;
 }
 

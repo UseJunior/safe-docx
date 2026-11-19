@@ -1,0 +1,706 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-02",
+  "issue": 1243,
+  "purpose": "How Word continues one list across w:num instances of the same w:abstractNum, and when an instance's w:startOverride restarts it (#1243).",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "libreOffice": {
+    "version": "26.2.5.2"
+  },
+  "procedure": "Minimal packages (content types, package and document rels, document.xml, numbering.xml, styles.xml) were opened in Word and each paragraph's `list string of list format` was read through AppleScript; the same packages were converted to PDF with headless LibreOffice and read with `pdftotext -layout`. Paragraph text names the w:num and w:ilvl it uses (e.g. \"p3 n4L1\"). ",
+  "finding": "Word keeps ONE running counter set per w:abstractNum; every w:num over it continues that sequence, at every level. An instance's w:lvlOverride/w:startOverride restarts the shared level at the override value the first time a paragraph of that instance is numbered ON THAT LEVEL, and never again (b, c, c2, e, g, t7; d4 and t3: first use on another level does not trigger it). When a paragraph's level use restarts deeper levels (default or w:lvlRestart threshold), each restarted level resumes at the start value of THAT paragraph's instance, so an override instance re-applies its override on every restart it causes (r3, r4, t1; d2 p8: a plain instance's restart uses the abstract start). w:lvlRestart 0 levels keep counting across instances (d3, t9). LibreOffice 26.2 agrees on sharing and on first-use restarts, but restarts deeper levels at the abstract start (r4, t1 differ) and ignores w:lvlRestart (d3, t9 differ); safe-docx follows Word. Not yet followed (separate defect): Word renders a skipped or never-used ancestor level at its start value and counts it as used (r2, r5), where safe-docx renders 0.",
+  "numberingXml": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:abstractNum w:abstractNumId=\"0\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:lvlText w:val=\"%1(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerRoman\"/><w:lvlText w:val=\"%1(%2)(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"1\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlRestart w:val=\"0\"/><w:lvlText w:val=\"%1.%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"2\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"upperRoman\"/><w:pStyle w:val=\"Heading1\"/><w:lvlText w:val=\"ARTICLE %1\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimalZero\"/><w:pStyle w:val=\"Heading2\"/><w:isLgl/><w:lvlText w:val=\"Section %1.%2\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:pStyle w:val=\"H3NoIlvl\"/><w:lvlText w:val=\"(%3)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"2160\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"3\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"upperLetter\"/><w:pStyle w:val=\"LinkedOnly\"/><w:lvlText w:val=\"%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:abstractNum w:abstractNumId=\"4\"><w:multiLevelType w:val=\"multilevel\"/><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:pStyle w:val=\"Q0\"/><w:lvlText w:val=\"Q%1.\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr></w:lvl><w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"lowerLetter\"/><w:pStyle w:val=\"Q1\"/><w:lvlText w:val=\"Q%1(%2)\"/><w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr></w:lvl></w:abstractNum>\n<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num>\n<w:num w:numId=\"21\"><w:abstractNumId w:val=\"1\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"20\"><w:abstractNumId w:val=\"4\"/></w:num>\n<w:num w:numId=\"2\"><w:abstractNumId w:val=\"0\"/></w:num>\n<w:num w:numId=\"3\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"4\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"6\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"1\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"7\"><w:abstractNumId w:val=\"1\"/></w:num>\n<w:num w:numId=\"8\"><w:abstractNumId w:val=\"1\"/></w:num>\n<w:num w:numId=\"10\"><w:abstractNumId w:val=\"2\"/></w:num>\n<w:num w:numId=\"11\"><w:abstractNumId w:val=\"2\"/></w:num>\n<w:num w:numId=\"12\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"5\"/></w:lvlOverride></w:num>\n<w:num w:numId=\"13\"><w:abstractNumId w:val=\"3\"/></w:num>\n<w:num w:numId=\"14\"><w:abstractNumId w:val=\"2\"/><w:lvlOverride w:ilvl=\"1\"><w:startOverride w:val=\"1\"/></w:lvlOverride></w:num>\n</w:numbering>",
+  "stylesXml": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n<w:style w:type=\"paragraph\" w:styleId=\"Normal\" w:default=\"1\"><w:name w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"Heading1\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr><w:outlineLvl w:val=\"0\"/></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Heading2\"><w:name w:val=\"Heading2\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"10\"/></w:numPr><w:outlineLvl w:val=\"1\"/></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"H3NoIlvl\"><w:name w:val=\"H3NoIlvl\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"MyClause\"><w:name w:val=\"MyClause\"/><w:basedOn w:val=\"Heading2\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"NoNum\"><w:name w:val=\"NoNum\"/><w:basedOn w:val=\"Heading2\"/><w:pPr><w:numPr><w:numId w:val=\"0\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"H2IlvlOnly\"><w:name w:val=\"H2IlvlOnly\"/><w:basedOn w:val=\"Heading1\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"LinkedOnly\"><w:name w:val=\"LinkedOnly\"/><w:basedOn w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Plain\"><w:name w:val=\"Plain\"/><w:basedOn w:val=\"Normal\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"X0\"><w:name w:val=\"X0\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"X2explicit\"><w:name w:val=\"X2explicit\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"2\"/><w:numId w:val=\"10\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XU\"><w:name w:val=\"XU\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XIlvlOnlyU\"><w:name w:val=\"XIlvlOnlyU\"/><w:basedOn w:val=\"XU\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q0\"><w:name w:val=\"Q0\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1\"><w:name w:val=\"Q1\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1b\"><w:name w:val=\"Q1b\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"Q1c\"><w:name w:val=\"Q1c\"/><w:basedOn w:val=\"Q1b\"/></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"QU\"><w:name w:val=\"QU\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"20\"/></w:numPr></w:pPr></w:style>\n<w:style w:type=\"paragraph\" w:styleId=\"XNumIdOnlyU\"><w:name w:val=\"XNumIdOnlyU\"/><w:basedOn w:val=\"Heading2\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>\n</w:styles>",
+  "fixtures": {
+    "a_shared_no_override": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L0",
+          "word": "2."
+        },
+        {
+          "text": "p3 n2L0",
+          "word": "3."
+        },
+        {
+          "text": "p4 n1L0",
+          "word": "4."
+        },
+        {
+          "text": "p5 n2L0",
+          "word": "5."
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "2. p2 n1L0",
+        "3. p3 n2L0",
+        "4. p4 n1L0",
+        "5. p5 n2L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n2L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n2L0</w:t></w:r></w:p>"
+    },
+    "b_second_with_override": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L0",
+          "word": "2."
+        },
+        {
+          "text": "p3 n1L0",
+          "word": "3."
+        },
+        {
+          "text": "p4 n3L0",
+          "word": "5."
+        },
+        {
+          "text": "p5 n3L0",
+          "word": "6."
+        },
+        {
+          "text": "p6 n1L0",
+          "word": "7."
+        },
+        {
+          "text": "p7 n3L0",
+          "word": "8."
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "2. p2 n1L0",
+        "3. p3 n1L0",
+        "5. p4 n3L0",
+        "6. p5 n3L0",
+        "7. p6 n1L0",
+        "8. p7 n3L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p7 n3L0</w:t></w:r></w:p>"
+    },
+    "c_override_first": {
+      "paragraphs": [
+        {
+          "text": "p1 n3L0",
+          "word": "5."
+        },
+        {
+          "text": "p2 n3L0",
+          "word": "6."
+        },
+        {
+          "text": "p3 n1L0",
+          "word": "7."
+        },
+        {
+          "text": "p4 n1L0",
+          "word": "8."
+        },
+        {
+          "text": "p5 n3L0",
+          "word": "9."
+        },
+        {
+          "text": "p6 n2L0",
+          "word": "10."
+        }
+      ],
+      "libreOfficeRendered": [
+        "5. p1 n3L0",
+        "6. p2 n3L0",
+        "7. p3 n1L0",
+        "8. p4 n1L0",
+        "9. p5 n3L0",
+        "10. p6 n2L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n2L0</w:t></w:r></w:p>"
+    },
+    "c2_override_interleaved": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n3L0",
+          "word": "5."
+        },
+        {
+          "text": "p3 n1L0",
+          "word": "6."
+        },
+        {
+          "text": "p4 n3L0",
+          "word": "7."
+        },
+        {
+          "text": "p5 n1L0",
+          "word": "8."
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "5. p2 n3L0",
+        "6. p3 n1L0",
+        "7. p4 n3L0",
+        "8. p5 n1L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n1L0</w:t></w:r></w:p>"
+    },
+    "e_restart_override_1": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L0",
+          "word": "2."
+        },
+        {
+          "text": "p3 n1L0",
+          "word": "3."
+        },
+        {
+          "text": "p4 n6L0",
+          "word": "1."
+        },
+        {
+          "text": "p5 n6L0",
+          "word": "2."
+        },
+        {
+          "text": "p6 n1L0",
+          "word": "3."
+        },
+        {
+          "text": "p7 n6L0",
+          "word": "4."
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "2. p2 n1L0",
+        "3. p3 n1L0",
+        "1. p4 n6L0",
+        "2. p5 n6L0",
+        "3. p6 n1L0",
+        "4. p7 n6L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"6\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n6L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"6\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n6L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"6\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p7 n6L0</w:t></w:r></w:p>"
+    },
+    "g_two_override_instances": {
+      "paragraphs": [
+        {
+          "text": "p1 n3L0",
+          "word": "5."
+        },
+        {
+          "text": "p2 n3L0",
+          "word": "6."
+        },
+        {
+          "text": "p3 n12L0",
+          "word": "5."
+        },
+        {
+          "text": "p4 n12L0",
+          "word": "6."
+        },
+        {
+          "text": "p5 n3L0",
+          "word": "7."
+        },
+        {
+          "text": "p6 n1L0",
+          "word": "8."
+        }
+      ],
+      "libreOfficeRendered": [
+        "5. p1 n3L0",
+        "6. p2 n3L0",
+        "5. p3 n12L0",
+        "6. p4 n12L0",
+        "7. p5 n3L0",
+        "8. p6 n1L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"12\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n12L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"12\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n12L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L0</w:t></w:r></w:p>"
+    },
+    "t7_override_goes_backwards": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L0",
+          "word": "2."
+        },
+        {
+          "text": "p3 n1L0",
+          "word": "3."
+        },
+        {
+          "text": "p4 n1L0",
+          "word": "4."
+        },
+        {
+          "text": "p5 n1L0",
+          "word": "5."
+        },
+        {
+          "text": "p6 n1L0",
+          "word": "6."
+        },
+        {
+          "text": "p7 n3L0",
+          "word": "5."
+        },
+        {
+          "text": "p8 n1L0",
+          "word": "6."
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "2. p2 n1L0",
+        "3. p3 n1L0",
+        "4. p4 n1L0",
+        "5. p5 n1L0",
+        "6. p6 n1L0",
+        "5. p7 n3L0",
+        "6. p8 n1L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p7 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p8 n1L0</w:t></w:r></w:p>"
+    },
+    "d1_deeper_levels_shared": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L1",
+          "word": "1(a)"
+        },
+        {
+          "text": "p3 n1L1",
+          "word": "1(b)"
+        },
+        {
+          "text": "p4 n2L1",
+          "word": "1(c)"
+        },
+        {
+          "text": "p5 n2L0",
+          "word": "2."
+        },
+        {
+          "text": "p6 n2L1",
+          "word": "2(a)"
+        },
+        {
+          "text": "p7 n1L1",
+          "word": "2(b)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "1(a)p2 n1L1",
+        "1(b) p3 n1L1",
+        "1(c) p4 n2L1",
+        "2. p5 n2L0",
+        "2(a)p6 n2L1",
+        "2(b) p7 n1L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"2\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n2L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"2\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n2L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"2\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n2L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p7 n1L1</w:t></w:r></w:p>"
+    },
+    "d2_level1_override": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L1",
+          "word": "1(a)"
+        },
+        {
+          "text": "p3 n1L1",
+          "word": "1(b)"
+        },
+        {
+          "text": "p4 n4L1",
+          "word": "1(e)"
+        },
+        {
+          "text": "p5 n4L1",
+          "word": "1(f)"
+        },
+        {
+          "text": "p6 n1L1",
+          "word": "1(g)"
+        },
+        {
+          "text": "p7 n1L0",
+          "word": "2."
+        },
+        {
+          "text": "p8 n4L1",
+          "word": "2(a)"
+        },
+        {
+          "text": "p9 n4L0",
+          "word": "3."
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "1(a)p2 n1L1",
+        "1(b) p3 n1L1",
+        "1(e)p4 n4L1",
+        "1(f) p5 n4L1",
+        "1(g)p6 n1L1",
+        "2. p7 n1L0",
+        "2(a)p8 n4L1",
+        "3. p9 n4L0"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p7 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p8 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p9 n4L0</w:t></w:r></w:p>"
+    },
+    "d4_override_l0_then_l1": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L1",
+          "word": "1(a)"
+        },
+        {
+          "text": "p3 n1L1",
+          "word": "1(b)"
+        },
+        {
+          "text": "p4 n3L1",
+          "word": "1(c)"
+        },
+        {
+          "text": "p5 n3L0",
+          "word": "5."
+        },
+        {
+          "text": "p6 n3L1",
+          "word": "5(a)"
+        },
+        {
+          "text": "p7 n1L1",
+          "word": "5(b)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "1(a)p2 n1L1",
+        "1(b) p3 n1L1",
+        "1(c) p4 n3L1",
+        "5. p5 n3L0",
+        "5(a)p6 n3L1",
+        "5(b) p7 n1L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n3L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n3L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"3\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n3L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p7 n1L1</w:t></w:r></w:p>"
+    },
+    "r3_override_l1_instance_first_at_l0": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L1",
+          "word": "1(a)"
+        },
+        {
+          "text": "p3 n4L0",
+          "word": "2."
+        },
+        {
+          "text": "p4 n4L1",
+          "word": "2(e)"
+        },
+        {
+          "text": "p5 n4L1",
+          "word": "2(f)"
+        },
+        {
+          "text": "p6 n1L1",
+          "word": "2(g)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "1(a)p2 n1L1",
+        "2. p3 n4L0",
+        "2(e)p4 n4L1",
+        "2(f) p5 n4L1",
+        "2(g)p6 n1L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n4L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L1</w:t></w:r></w:p>"
+    },
+    "r4_override_l1_used_at_l0_only": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n4L0",
+          "word": "2."
+        },
+        {
+          "text": "p3 n1L1",
+          "word": "2(e)"
+        },
+        {
+          "text": "p4 n4L1",
+          "word": "2(e)"
+        },
+        {
+          "text": "p5 n1L1",
+          "word": "2(f)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "2. p2 n4L0",
+        "2(a)p3 n1L1",
+        "2(e)p4 n4L1",
+        "2(f) p5 n1L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n4L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n1L1</w:t></w:r></w:p>"
+    },
+    "t1_reset_by_override_instance": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L1",
+          "word": "1(a)"
+        },
+        {
+          "text": "p3 n4L1",
+          "word": "1(e)"
+        },
+        {
+          "text": "p4 n4L0",
+          "word": "2."
+        },
+        {
+          "text": "p5 n4L1",
+          "word": "2(e)"
+        },
+        {
+          "text": "p6 n1L0",
+          "word": "3."
+        },
+        {
+          "text": "p7 n1L1",
+          "word": "3(a)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "1(a)p2 n1L1",
+        "1(e)p3 n4L1",
+        "2. p4 n4L0",
+        "2(a)p5 n4L1",
+        "3. p6 n1L0",
+        "3(a)p7 n1L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n4L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n4L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p7 n1L1</w:t></w:r></w:p>"
+    },
+    "t3_first_use_deeper_than_override": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L1",
+          "word": "1(a)"
+        },
+        {
+          "text": "p3 n4L2",
+          "word": "1(a)(i)"
+        },
+        {
+          "text": "p4 n1L1",
+          "word": "1(b)"
+        },
+        {
+          "text": "p5 n4L1",
+          "word": "1(e)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "1(a)p2 n1L1",
+        "1(a)(i) p3 n4L2",
+        "1(b) p4 n1L1",
+        "1(e)p5 n4L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"2\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n4L2</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"4\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n4L1</w:t></w:r></w:p>"
+    },
+    "d3_lvlrestart0_shared": {
+      "paragraphs": [
+        {
+          "text": "p1 n7L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n7L1",
+          "word": "1.1"
+        },
+        {
+          "text": "p3 n8L0",
+          "word": "2."
+        },
+        {
+          "text": "p4 n8L1",
+          "word": "2.2"
+        },
+        {
+          "text": "p5 n7L0",
+          "word": "3."
+        },
+        {
+          "text": "p6 n7L1",
+          "word": "3.3"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n7L0",
+        "1.1 p2 n7L1",
+        "2. p3 n8L0",
+        "2.1 p4 n8L1",
+        "3. p5 n7L0",
+        "3.1 p6 n7L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n7L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n7L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"8\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n8L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"8\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n8L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n7L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n7L1</w:t></w:r></w:p>"
+    },
+    "t9_lvlrestart0_with_override": {
+      "paragraphs": [
+        {
+          "text": "p1 n7L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n7L1",
+          "word": "1.1"
+        },
+        {
+          "text": "p3 n21L0",
+          "word": "2."
+        },
+        {
+          "text": "p4 n7L1",
+          "word": "2.2"
+        },
+        {
+          "text": "p5 n21L1",
+          "word": "2.5"
+        },
+        {
+          "text": "p6 n7L1",
+          "word": "2.6"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n7L0",
+        "1.1 p2 n7L1",
+        "2. p3 n21L0",
+        "2.1 p4 n7L1",
+        "2.5 p5 n21L1",
+        "2.6 p6 n7L1",
+        "suite-lock[issue-1243]: done rc=0 13:21:04"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n7L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n7L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"21\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n21L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n7L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"21\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n21L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"7\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n7L1</w:t></w:r></w:p>"
+    },
+    "r2_skipped_level": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L0",
+          "word": "1."
+        },
+        {
+          "text": "p2 n1L2",
+          "word": "1(a)(i)"
+        },
+        {
+          "text": "p3 n1L1",
+          "word": "1(b)"
+        },
+        {
+          "text": "p4 n1L1",
+          "word": "1(c)"
+        },
+        {
+          "text": "p5 n1L0",
+          "word": "2."
+        },
+        {
+          "text": "p6 n1L2",
+          "word": "2(a)(i)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1. p1 n1L0",
+        "1(a)(i) p2 n1L2",
+        "1(b) p3 n1L1",
+        "1(c) p4 n1L1",
+        "2. p5 n1L0",
+        "2(a)(i) p6 n1L2"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"2\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L2</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p5 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"2\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p6 n1L2</w:t></w:r></w:p>"
+    },
+    "r5_skip_first_level": {
+      "paragraphs": [
+        {
+          "text": "p1 n1L1",
+          "word": "1(a)"
+        },
+        {
+          "text": "p2 n1L1",
+          "word": "1(b)"
+        },
+        {
+          "text": "p3 n1L0",
+          "word": "2."
+        },
+        {
+          "text": "p4 n1L1",
+          "word": "2(a)"
+        }
+      ],
+      "libreOfficeRendered": [
+        "1(a)p1 n1L1",
+        "1(b) p2 n1L1",
+        "2. p3 n1L0",
+        "2(a)p4 n1L1"
+      ],
+      "bodyXml": "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p1 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p2 n1L1</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p3 n1L0</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr><w:r><w:t xml:space=\"preserve\">p4 n1L1</w:t></w:r></w:p>"
+    }
+  }
+}

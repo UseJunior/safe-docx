@@ -89,7 +89,7 @@ describe('NVCA SPA regression: redline edits', () => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
     let filePath: string;
-    const pid = '_bk_8c71639f1440';
+    const pid = '_bk_8c71639f14';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open in a new session', async () => {
@@ -118,7 +118,7 @@ describe('NVCA SPA regression: redline edits', () => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
     let filePath: string;
-    const pid = '_bk_00b3dd3a32dd';
+    const pid = '_bk_00b3dd3a32';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open in a new session', async () => {
@@ -147,7 +147,7 @@ describe('NVCA SPA regression: redline edits', () => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
     let filePath: string;
-    const anchorPid = '_bk_00b3dd3a32dd';
+    const anchorPid = '_bk_00b3dd3a32';
     let result: Awaited<ReturnType<typeof insertParagraph>>;
 
     await given('the NVCA SPA source document is open in a new session', async () => {
@@ -179,7 +179,7 @@ describe('NVCA SPA regression: redline edits', () => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
     let filePath: string;
-    const pid = '_bk_edef90d4bf7c';
+    const pid = '_bk_edef90d4bf';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open with the Code definition paragraph', async () => {
@@ -226,7 +226,7 @@ describe('NVCA SPA regression: redline edits', () => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
     let filePath: string;
-    const pid = '_bk_2b87998276ec';
+    const pid = '_bk_2b87998276';
     let result: Awaited<ReturnType<typeof replaceText>>;
     const oldText = '\u201cMaterial Adverse Effect\u201d means a material adverse effect on the business, assets (including intangible assets), liabilities, financial condition, property, or results of operations of the Company.';
     const newText = '\u201cMaterial Adverse Effect\u201d means a material adverse effect on the business, assets (including intangible assets), liabilities, financial condition, property, or results of operations of the Company; provided, however, that none of the following shall be deemed to constitute, and none of the following shall be taken into account in determining whether there has been, a Material Adverse Effect: (i) any adverse change, event, or effect arising from or relating to general business or economic conditions.';
@@ -275,7 +275,7 @@ describe('NVCA SPA regression: redline edits', () => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
     let filePath: string;
-    const pid = '_bk_36e982f3906a';
+    const pid = '_bk_36e982f390';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open with the qualification paragraph', async () => {
@@ -319,31 +319,31 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
       // Apply all 5 replacement edits sequentially (insert tested separately)
       const edits = [
         {
-          pid: '_bk_8c71639f1440',
+          pid: '_bk_8c71639f14',
           old: 'SERIES [___] PREFERRED STOCK PURCHASE AGREEMENT',
           new_: 'SERIES A-1 PREFERRED STOCK PURCHASE AGREEMENT',
           instruction: 'Change series to A-1',
         },
         {
-          pid: '_bk_00b3dd3a32dd',
+          pid: '_bk_00b3dd3a32',
           old: 'The parties hereby agree as follows:',
           new_: 'The parties hereby agree as follows::',
           instruction: 'Extra colon',
         },
         {
-          pid: '_bk_edef90d4bf7c',
+          pid: '_bk_edef90d4bf',
           old: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended.',
           new_: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended, and the Treasury regulations promulgated thereunder.',
           instruction: 'Expand Code definition',
         },
         {
-          pid: '_bk_2b87998276ec',
+          pid: '_bk_2b87998276',
           old: '\u201cMaterial Adverse Effect\u201d means a material adverse effect on the business, assets (including intangible assets), liabilities, financial condition, property, or results of operations of the Company.',
           new_: '\u201cMaterial Adverse Effect\u201d means a material adverse effect on the business, assets (including intangible assets), liabilities, financial condition, property, or results of operations of the Company; provided, however, that none of the following shall be deemed to constitute a Material Adverse Effect: (i) general business or economic conditions.',
           instruction: 'Expand MAE with carve-out',
         },
         {
-          pid: '_bk_36e982f3906a',
+          pid: '_bk_36e982f390',
           old: 'Organization, Good Standing, Corporate Power and Qualification',
           new_: 'Organization, Good Standing, Corporate Power, and Qualification',
           instruction: 'Oxford comma',
@@ -437,7 +437,7 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
       const tmpDir = await makeTempDir();
       const result = await replaceText(mgr, {
         file_path: filePath,
-        target_paragraph_id: '_bk_edef90d4bf7c',
+        target_paragraph_id: '_bk_edef90d4bf',
         old_string: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended.',
         new_string: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended, and the Treasury regulations promulgated thereunder.',
         instruction: 'Expand Code definition',
@@ -486,7 +486,7 @@ describe('NVCA SPA regression: heading detection (#179)', () => {
       clean_text: string;
       heading?: { text: string; source: string; level: number | null };
     }>;
-    const titlePid = '_bk_8c71639f1440';
+    const titlePid = '_bk_8c71639f14';
 
     await given('the NVCA SPA source document is open in a new session', async () => {
       ({ mgr, filePath } = await openSPA());
@@ -632,7 +632,7 @@ describe('NVCA SPA regression: footnote anchor surfacing (#185)', () => {
     await and('the footnote-only paragraph anchoring note 47 renders its [^46] marker', async () => {
       // Footnote id=47 (display 46) anchors to a paragraph whose only content
       // is the footnote-reference run; before the #185 fix the view dropped it.
-      const probe = await readFile(mgr, { file_path: filePath, format: 'json', node_ids: ['_bk_6d177a97f7e6'] });
+      const probe = await readFile(mgr, { file_path: filePath, format: 'json', node_ids: ['_bk_6d177a97f7'] });
       assertSuccess(probe, 'read_file node_ids probe');
       const probed = JSON.parse(probe.content as string) as Array<{ id: string; text: string }>;
       expect(probed).toHaveLength(1);

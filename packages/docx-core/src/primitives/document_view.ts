@@ -1,6 +1,7 @@
 import { OOXML, W } from './namespaces.js';
 import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 import { getParagraphText, getParagraphRuns } from './text.js';
+import { runContentVisibleLength } from './run_content_visible_text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { buildTableMetaMap, deriveTableContext } from './table_context.js';
 import { extractListLabel, stripListLabel, LabelType } from './list_labels.js';
@@ -10,6 +11,7 @@ import {
   computeListLabelForParagraph,
   getNumberingLevel,
 } from './numbering.js';
+import { collectNumberingLinkedStyleIds, resolveParagraphNumbering } from './paragraph_list_numbering.js';
 import {
   parseStylesXml,
   parseThemeXml,
@@ -291,9 +293,14 @@ type ParagraphFootnoteRef = { offset: number; id: number; display: number };
  * (read_file's clean_text suffix) never re-walk the DOM. @see #393
  *
  * Self-contained: only inspects the paragraph DOM for w:footnoteReference
- * elements. Does NOT modify getParagraphRuns or getParagraphText.
+ * elements. Does NOT modify getParagraphRuns or getParagraphText. Run lengths
+ * come from the shared run-content definition (`runContentVisibleLength`), so
+ * the offsets are in the same raw-offset space as `getParagraphText`.
+ *
+ * @internal Exported for the walker-agreement tests (issue #1045); not part of
+ * the supported API.
  */
-function getFootnoteMarkersForParagraph(
+export function getFootnoteMarkersForParagraph(
   p: Element,
   displayMap: Map<number, number>,
 ): ParagraphFootnoteRef[] {
@@ -313,6 +320,7 @@ function getFootnoteMarkersForParagraph(
   let fieldState = 0; // 0=outside, 1=in_code, 2=in_result
 
   for (const r of rElems) {
+    if (isInsideRemovedRevisionWrapper(r, p)) continue;
     let runVisibleLen = 0;
     let hasFootnoteRef = false;
     let footnoteId = -1;
@@ -332,11 +340,8 @@ function getFootnoteMarkersForParagraph(
 
       if (fieldState === 1) continue; // skip field code
 
-      if (el.localName === W.t) {
-        runVisibleLen += (el.textContent ?? '').length;
-      } else if (el.localName === W.tab || el.localName === W.br) {
-        runVisibleLen += 1;
-      } else if (el.localName === W.footnoteReference) {
+      runVisibleLen += runContentVisibleLength(el);
+      if (el.localName === W.footnoteReference) {
         hasFootnoteRef = true;
         const idStr = getWAttr(el, 'id');
         if (idStr) footnoteId = parseInt(idStr, 10);
@@ -465,6 +470,7 @@ export function buildNodesForDocumentView(params: {
   const themeModel = parseThemeXml(params.themeXml ?? null);
   const numberingModel = parseNumberingXml(numberingXml);
   const counters: NumberingCounters = new Map();
+  const numberingLinkedStyles = collectNumberingLinkedStyleIds(numberingModel);
 
   // ── Pass 1 (formatting mode): pre-compute annotated runs per paragraph ──
   // We also collect all non-header, non-heading-style body runs for a
@@ -553,27 +559,26 @@ export function buildNodesForDocumentView(params: {
     // that survive only inside a tracked deletion don't count, and paragraphs
     // that are empty for spacing only are still skipped.
     // @see #185, #383
+    // Numbering (auto-numbered) info: the paragraph's own w:numPr, else the
+    // one its paragraph style chain gives it, so style-numbered headings
+    // ("ARTICLE I", "Section 1.01") are labelled and advance the shared
+    // counters in document order (#1244).
+    const resolvedNumbering = resolveParagraphNumbering(p, stylesModel, numberingModel, numberingLinkedStyles);
+    const numId: string | null = resolvedNumbering?.numId ?? null;
+    const ilvl: number | null = resolvedNumbering?.ilvl ?? null;
+
     if (
       !fullText &&
       !tableContext &&
       fnMarkers.length === 0 &&
       !paragraphHasAnchoringContent(p)
-    ) continue;
-
-    // Numbering (auto-numbered) info from numPr.
-    let numId: string | null = null;
-    let ilvl: number | null = null;
-    const numPr = paraPPr ? getFirstChild(paraPPr, OOXML.W_NS, W.numPr) : null;
-    if (numPr) {
-      const numIdEl = getFirstChild(numPr, OOXML.W_NS, W.numId);
-      const ilvlEl = getFirstChild(numPr, OOXML.W_NS, W.ilvl);
-      const numIdVal = numIdEl ? getWAttr(numIdEl, 'val') : null;
-      const ilvlVal = ilvlEl ? getWAttr(ilvlEl, 'val') : null;
-      if (numIdVal) numId = numIdVal;
-      if (ilvlVal != null) {
-        const v = Number.parseInt(ilvlVal, 10);
-        if (!Number.isNaN(v)) ilvl = v;
-      }
+    ) {
+      // Word shows a number on an empty list paragraph, so the counters
+      // still step even though the view omits the node; otherwise the next
+      // paragraph would repeat its number, and labels here would disagree
+      // with computeParagraphListLabels.
+      if (numId && ilvl != null) computeListLabelForParagraph(numberingModel, counters, { numId, ilvl });
+      continue;
     }
 
     let labelString = '';

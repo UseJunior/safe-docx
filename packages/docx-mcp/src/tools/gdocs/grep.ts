@@ -58,6 +58,7 @@ export async function gdocsGrep(
       );
     }
 
+    await session.doc.ensureCurrentStructure();
     const paragraphs = session.doc.getParagraphs() as Array<{ anchorId: string; anchorName: string | null; text: string }>;
     const matches: ParagraphMatch[] = [];
     const paragraphsWithMatchesSet = new Set<string>();

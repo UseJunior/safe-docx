@@ -1,0 +1,55 @@
+## ADDED Requirements
+
+### Requirement: Cross-references in created documents
+
+The creation grammar SHALL admit a `{% #id %}` annotation on a heading or list
+item and an inline self-closing `{% xref to="id" /%}` tag with optional
+`number="full" | "paragraph"` and `format="section"`. An id SHALL become a
+bookmark on its paragraph. An xref SHALL become a REF field to a numbered list
+item, showing the number Word shows. `docx-markdoc create` SHALL verify each
+reference's number in its read-back, round-trip and PDF checks.
+
+#### Scenario: [SDX-MDOC-XREF-01] ids and xref tags create bookmarks and REF fields with the numbers Word shows
+- **GIVEN** a source with ids on a heading and on nested list items, and xrefs in both number forms, with `format="section"`, in a body paragraph, a table cell and a footnote
+- **WHEN** the source is created
+- **THEN** each id SHALL be a bookmark on its paragraph, named with hyphens mapped to underscores
+- **AND** each xref SHALL be a ` REF <name> \w \h ` or ` REF <name> \n \h ` field whose cached result is the number Word shows (`2(a)(i)`, `(i)`, `2`)
+- **AND** `format="section"` SHALL write `Section ` as literal text before the field
+- **AND** the read-back SHALL read each field as its cached result and record where it sits, its instruction and each bookmark's paragraph, and the certificate SHALL pass, with a cross-reference check whose negative controls are detected
+- **AND** a list's 28th nested item SHALL be referenced as `(bb)`
+- **AND** a source without ids or xrefs SHALL produce no bookmark
+
+#### Scenario: [SDX-MDOC-XREF-02] malformed ids and cross-references fail closed with a code and a line
+- **GIVEN** sources with an xref to an unknown id, to a heading, to a bullet item, a duplicated id, an id that is not kebab-case, an id on a plain paragraph, an unknown `number` or `format`, an xref with content or without `to`, and an xref inside `{% fill %}` or `{% literal %}`
+- **WHEN** each is created
+- **THEN** creation SHALL fail before writing any output, with `XREF_UNKNOWN_ID`, `XREF_TARGET_NOT_NUMBERED`, `DUPLICATE_ID`, `INVALID_ID`, `ID_PLACEMENT` or `INVALID_CROSS_REFERENCE`, and with the source line where the error is
+- **AND** the message for an unknown id SHALL name the id
+- **AND** a source holding a C0 control character other than tab, line feed or carriage return SHALL fail with `INVALID_CHARACTER` and its line
+
+#### Scenario: [SDX-MDOC-XREF-03] verification checks each cross-reference's number and destination against the source
+- **GIVEN** a created document, and the same source built through lowerings that point a reference at the wrong item, at another item showing the same number, change its number switch where both forms show the same number, move a bookmark to another paragraph, or move the field onto an equal literal number elsewhere
+- **WHEN** each is verified
+- **THEN** the first SHALL pass
+- **AND** a wrong number SHALL pass the read-back check but fail the round trip, which numbers the targets from the source
+- **AND** each of the others SHALL fail the cross-reference check, which compares every REF instruction and where it sits (story, paragraph and the text either side) with the `{% xref /%}` it came from, and every named bookmark's paragraph with the item marked with that id, although the document's text is unchanged
+- **AND** a target item that holds a footnote reference SHALL compare by its text without the note
+- **AND** every xref tag in the source's syntax tree SHALL be counted, so a tag the source text walker never reached would fail the build; a tag after a signer's name, which the signature block never rendered, SHALL be refused with `INVALID_SIGNER` before anything is built
+
+#### Scenario: [SDX-MDOC-XREF-04] the PDF checks expect the number as LibreOffice renders it
+- **GIVEN** a source with full-context references to nested list items
+- **WHEN** its PDF expectations are projected
+- **THEN** the word check and the required-text needles SHALL expect LibreOffice's form, which keeps the period of `1.` before `(` (`2.(a)(i)`), while the DOCX checks expect Word's form (`2(a)(i)`)
+- **AND** a real LibreOffice PDF of the source SHALL pass the PDF checks
+
+#### Scenario: [SDX-MDOC-XREF-05] cross-references survive import and compile as their numbers
+- **GIVEN** a created document with cross-references in the body and a footnote
+- **WHEN** it is imported to Markdoc and compiled back, preserving annotations
+- **THEN** each reference SHALL import as its number text, and the footnote SHALL keep its text
+- **AND** a footnote holding a field other than REF, an unbalanced field, a second separator or instruction text in a field's result SHALL fail closed with `ANNOTATION_IMPORT_UNSUPPORTED`
+
+#### Scenario: [SDX-MDOC-XREF-06] the CLI summary reports the cross-reference check
+- **GIVEN** sources with several cross-references, with a single cross-reference target, and with none
+- **WHEN** each is created through the CLI
+- **THEN** the summary SHALL report `cross-references ok (N references; negative controls ok)` after the footnotes entry
+- **AND** a negative control that is not applicable (no other target to point a reference at) SHALL be named as not applicable, never counted as ok
+- **AND** a source without cross-references SHALL have no cross-references entry

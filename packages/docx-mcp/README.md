@@ -25,4 +25,6 @@ See [installation and verification](../../docs/installation.md) for pinned versi
 
 See the [generated tool reference](docs/tool-reference.generated.md) for the complete schemas.
 
+Concurrent file-first opens for the same canonical path (or Google Doc ID) share one provider operation. `close_file` invalidates pending opens even when no session has been published yet; interrupted calls return `SESSION_CLOSED`. A subsequent call starts fresh work. Late completion or failure of a cancelled open cannot replace that session or remove its pending work. Explicit local `open_document` calls also respect closure, while retaining their replacement and normalization behavior.
+
 See the [architecture](../../docs/architecture.md), [installation guide](../../docs/installation.md), and [generated tool reference](docs/tool-reference.generated.md).

@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import { parseXml, serializeXml } from '@usejunior/docx-core';
 import { testAllure } from '../testing/allure-test.js';
-import { alignedInlineFootnoteAnchorPair } from './inlineFootnoteAnchorPair.js';
+import { alignedInlineNoteAnchorPair } from './inlineFootnoteAnchorPair.js';
 
 const TEST_FEATURE = 'Inline footnote anchor eligibility';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE })
@@ -9,17 +9,17 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_F
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const AUTHOR = 'Comparator';
 
-function pairFixture(properties = '', whitespace = '') {
+function pairFixture(properties = '', whitespace = '', kind: 'footnote' | 'endnote' = 'footnote') {
   // These dedicated wrapper shapes are the subject of the eligibility tests,
   // including deliberately ambiguous/malformed controls; not package fixtures.
-  const document = parseXml(`<w:document xmlns:w="${W}"><w:body><w:p><w:del w:id="10" w:author="${AUTHOR}" w:date="2026-09-17T00:00:00Z">${whitespace}<w:r>${whitespace}${properties}<w:footnoteReference w:id="1"/>${whitespace}</w:r>${whitespace}</w:del>${whitespace}<w:ins w:id="11" w:author="${AUTHOR}" w:date="2026-09-17T00:00:00Z">${whitespace}<w:r>${whitespace}${properties}<w:footnoteReference w:id="2"/>${whitespace}</w:r>${whitespace}</w:ins></w:p></w:body></w:document>`);
+  const document = parseXml(`<w:document xmlns:w="${W}"><w:body><w:p><w:del w:id="10" w:author="${AUTHOR}" w:date="2026-09-17T00:00:00Z">${whitespace}<w:r>${whitespace}${properties}<w:${kind}Reference w:id="1"/>${whitespace}</w:r>${whitespace}</w:del>${whitespace}<w:ins w:id="11" w:author="${AUTHOR}" w:date="2026-09-17T00:00:00Z">${whitespace}<w:r>${whitespace}${properties}<w:${kind}Reference w:id="2"/>${whitespace}</w:r>${whitespace}</w:ins></w:p></w:body></w:document>`);
   const paragraph = document.getElementsByTagNameNS(W, 'p')[0]!;
   const oldWrapper = document.getElementsByTagNameNS(W, 'del')[0]!;
   const newWrapper = document.getElementsByTagNameNS(W, 'ins')[0]!;
   const oldRun = oldWrapper.getElementsByTagNameNS(W, 'r')[0]!;
   const newRun = newWrapper.getElementsByTagNameNS(W, 'r')[0]!;
-  const oldReference = oldRun.getElementsByTagNameNS(W, 'footnoteReference')[0]!;
-  const newReference = newRun.getElementsByTagNameNS(W, 'footnoteReference')[0]!;
+  const oldReference = oldRun.getElementsByTagNameNS(W, `${kind}Reference`)[0]!;
+  const newReference = newRun.getElementsByTagNameNS(W, `${kind}Reference`)[0]!;
   return { document, paragraph, oldWrapper, newWrapper, oldRun, newRun, oldReference, newReference };
 }
 type PairFixture = ReturnType<typeof pairFixture>;
@@ -40,7 +40,7 @@ describe('pure inline footnote anchor eligibility', () => {
       test(`returns the exact eligible nodes without mutation: properties=${Boolean(properties)}, whitespace=${Boolean(whitespace)}`, () => {
         const fixture = pairFixture(properties, whitespace);
         const before = serializeXml(fixture.document);
-        const result = alignedInlineFootnoteAnchorPair(fixture.document, '1', '2', AUTHOR);
+        const result = alignedInlineNoteAnchorPair(fixture.document, 'footnote', '1', '2', AUTHOR);
         expect(result).toHaveLength(4);
         expect(result![0]).toBe(fixture.oldWrapper);
         expect(result![1]).toBe(fixture.newWrapper);
@@ -68,7 +68,7 @@ describe('pure inline footnote anchor eligibility', () => {
     unrelated.appendChild(run);
     fixture.paragraph.parentNode!.appendChild(unrelated);
     const before = serializeXml(fixture.document);
-    const result = alignedInlineFootnoteAnchorPair(fixture.document, '1', '2', AUTHOR);
+    const result = alignedInlineNoteAnchorPair(fixture.document, 'footnote', '1', '2', AUTHOR);
     expect(result?.[3]).toBe(fixture.newReference);
     expect(serializeXml(fixture.document)).toBe(before);
   });
@@ -122,8 +122,35 @@ describe('pure inline footnote anchor eligibility', () => {
     test(`declines ${reason} without consuming source history`, () => {
       const fixture = pairFixture(); mutate(fixture);
       const before = serializeXml(fixture.document);
-      expect(alignedInlineFootnoteAnchorPair(fixture.document, '1', '2', AUTHOR)).toBeUndefined();
+      expect(alignedInlineNoteAnchorPair(fixture.document, 'footnote', '1', '2', AUTHOR)).toBeUndefined();
       expect(serializeXml(fixture.document)).toBe(before);
     });
   }
+});
+
+describe('inline endnote anchor eligibility', () => {
+  test('returns the eligible endnote pair without mutation', () => {
+    const fixture = pairFixture('', '', 'endnote');
+    const before = serializeXml(fixture.document);
+    const result = alignedInlineNoteAnchorPair(fixture.document, 'endnote', '1', '2', AUTHOR);
+    expect(result).toEqual([fixture.oldWrapper, fixture.newWrapper, fixture.newRun, fixture.newReference]);
+    expect(serializeXml(fixture.document)).toBe(before);
+  });
+
+  test('keeps footnote and endnote identifier spaces separate', () => {
+    const endnotes = pairFixture('', '', 'endnote');
+    // Same-numbered footnote anchors elsewhere neither duplicate nor supply the endnote pair.
+    const paragraph = endnotes.document.createElementNS(W, 'w:p');
+    for (const id of ['1', '2']) {
+      const run = endnotes.document.createElementNS(W, 'w:r');
+      const reference = endnotes.document.createElementNS(W, 'w:footnoteReference');
+      reference.setAttributeNS(W, 'w:id', id);
+      run.appendChild(reference);
+      paragraph.appendChild(run);
+    }
+    endnotes.paragraph.parentNode!.appendChild(paragraph);
+    expect(alignedInlineNoteAnchorPair(endnotes.document, 'endnote', '1', '2', AUTHOR)?.[3]).toBe(endnotes.newReference);
+    expect(alignedInlineNoteAnchorPair(endnotes.document, 'footnote', '1', '2', AUTHOR)).toBeUndefined();
+    expect(alignedInlineNoteAnchorPair(pairFixture().document, 'endnote', '1', '2', AUTHOR)).toBeUndefined();
+  });
 });

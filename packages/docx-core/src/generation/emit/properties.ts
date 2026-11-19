@@ -29,8 +29,8 @@ const ALIGNMENT_TO_JC: Record<NonNullable<ParagraphProps['alignment']>, string> 
  * property is set so callers can omit the rPr container entirely.
  *
  * Complex-script twins (bCs/iCs/szCs) and the full rFonts script coverage
- * (ascii + hAnsi + cs) are always emitted alongside their base properties so
- * all script ranges agree.
+ * (ascii + hAnsi + eastAsia + cs) are always emitted alongside their base
+ * properties so all script ranges agree.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
  */
@@ -42,9 +42,12 @@ export function buildRunPropsElement(
   const children = new Map<string, Element | Element[]>();
 
   if (props.font !== undefined) {
+    // Generation never writes theme-font attributes, so these four explicit
+    // channels fully pin the typeface (CT_Fonts attribute order).
     children.set(W.rFonts, createWmlElement(doc, W.rFonts, {
       'w:ascii': props.font,
       'w:hAnsi': props.font,
+      'w:eastAsia': props.font,
       'w:cs': props.font,
     }));
   }
@@ -110,14 +113,11 @@ export function buildParagraphPropsElement(
   if (props.styleId !== undefined) {
     children.set(W.pStyle, createWmlElement(doc, W.pStyle, { 'w:val': props.styleId }));
   }
-  if (props.keepNext) {
-    children.set(W.keepNext, createWmlElement(doc, W.keepNext));
-  }
-  if (props.keepLines) {
-    children.set(W.keepLines, createWmlElement(doc, W.keepLines));
-  }
-  if (props.pageBreakBefore) {
-    children.set(W.pageBreakBefore, createWmlElement(doc, W.pageBreakBefore));
+  // Toggle properties: an explicit false emits w:val="0" so it can override a
+  // true inherited from document defaults or a style (as the run builder does).
+  for (const key of ['keepNext', 'keepLines', 'pageBreakBefore'] as const) {
+    const value = props[key];
+    if (value !== undefined) children.set(W[key], createWmlElement(doc, W[key], value ? undefined : { 'w:val': '0' }));
   }
   if (props.borders) {
     children.set(W.pBdr, buildParagraphBordersElement(doc, props.borders));

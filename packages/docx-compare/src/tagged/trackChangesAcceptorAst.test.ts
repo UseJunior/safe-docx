@@ -1440,3 +1440,30 @@ describe('Paragraph-mark revisions merge into the following paragraph (#431)', (
     });
   });
 });
+
+describe('Reject All resolves a paragraph-mark insertion recorded in a formatting snapshot', () => {
+  const body = (inner: string): string =>
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    `<w:body>${inner}<w:sectPr/></w:body></w:document>`;
+  const paragraphTexts = (xml: string): string[] =>
+    findAllByTagName(parseDocumentXml(xml), 'w:p').map((p) => p.textContent ?? '');
+
+  test('a mark whose w:rPrChange snapshot holds w:ins merges away on Reject, as LibreOffice resolves it', async ({ when, then }: AllureBddContext) => {
+    // The snapshot (CT_ParaRPrOriginal, ECMA-376 Part 1 § 17.13.5.30) records
+    // the mark as an insertion. Rejecting the format change restores it, and
+    // rejecting the restored insertion removes the break: no empty paragraph.
+    let rejected = '';
+    await when('Reject All runs on a paragraph whose mark used to be an insertion', () => {
+      rejected = rejectAllChanges(body(
+        '<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>' +
+        '<w:p><w:pPr><w:rPr><w:rPrChange w:id="9" w:author="C"><w:rPr><w:ins w:id="1" w:author="S"/></w:rPr></w:rPrChange></w:rPr></w:pPr>' +
+        '<w:del w:id="10" w:author="C"><w:ins w:id="2" w:author="S"><w:r><w:delText>Added</w:delText></w:r></w:ins></w:del>' +
+        '<w:ins w:id="11" w:author="C"><w:r><w:t>Added</w:t></w:r></w:ins></w:p>' +
+        '<w:p><w:r><w:t>Omega</w:t></w:r></w:p>',
+      ));
+    });
+    await then('only the two original paragraphs remain', () => {
+      expect(paragraphTexts(rejected)).toEqual(['Alpha', 'Omega']);
+    });
+  });
+});

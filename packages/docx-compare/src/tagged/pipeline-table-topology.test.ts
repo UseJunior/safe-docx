@@ -7,7 +7,7 @@ import { describe, expect } from 'vitest';
 import { DocxArchive, DocxDocument, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
-import { compareDocuments, UnsupportedTableTopologyComparisonError } from '../index.js';
+import { compareDocuments } from '../index.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { bodyTableFootprint } from './tableTopologyGuard.js';
 
@@ -28,6 +28,19 @@ const twoRows = [row(['A', 'B']), row(['C', 'D'])];
 const docx = (body: string) => buildDocxFromBodyXml(body);
 const xml = async (buffer: Buffer) => (await DocxArchive.load(buffer)).getDocumentXml();
 
+/** `w:trPr` revision markers of each direct row of the first table. */
+function rowMarkers(output: string): string[][] {
+  const tbl = parseXml(output).getElementsByTagNameNS(W_NS, 'tbl')[0]!;
+  return Array.from(tbl.childNodes)
+    .filter((node): node is Element => node.nodeType === 1 && (node as Element).localName === 'tr')
+    .map((tr) => {
+      const trPr = Array.from(tr.childNodes).find((node) => (node as Element).localName === 'trPr') as Element | undefined;
+      return trPr ? Array.from(trPr.childNodes)
+        .filter((node): node is Element => node.nodeType === 1 && ['ins', 'del'].includes((node as Element).localName))
+        .map((node) => node.localName) : [];
+    });
+}
+
 async function assertSchema(buffer: Buffer): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'sdx-comptable-'));
   try {
@@ -46,14 +59,14 @@ async function assertProjections(original: Buffer, revised: Buffer, compared: Bu
   const output = await xml(compared);
   const expectedAccept = bodyTableFootprint(acceptAllChanges(target));
   const expectedReject = bodyTableFootprint(rejectAllChanges(source));
-  expect(bodyTableFootprint(acceptAllChanges(output))).toBe(expectedAccept);
-  expect(bodyTableFootprint(rejectAllChanges(output))).toBe(expectedReject);
+  expect(bodyTableFootprint(acceptAllChanges(output))).toEqual(expectedAccept);
+  expect(bodyTableFootprint(rejectAllChanges(output))).toEqual(expectedReject);
   const accepted = await DocxDocument.load(compared);
   const rejected = await DocxDocument.load(compared);
   await accepted.acceptChanges();
   await rejected.rejectChanges();
-  expect(bodyTableFootprint(await xml((await accepted.toBuffer()).buffer))).toBe(expectedAccept);
-  expect(bodyTableFootprint(await xml((await rejected.toBuffer()).buffer))).toBe(expectedReject);
+  expect(bodyTableFootprint(await xml((await accepted.toBuffer()).buffer))).toEqual(expectedAccept);
+  expect(bodyTableFootprint(await xml((await rejected.toBuffer()).buffer))).toEqual(expectedReject);
 }
 
 describe('main-body table comparison topology', () => {
@@ -92,14 +105,18 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
-    'refuses a horizontal cell merge in one matched row', async () => {
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'replaces a horizontally merged row with a deleted row and an inserted row', async () => {
       const original = await docx(table(2, twoRows));
       const merged = await docx(table(2, [twoRows[0]!,
         `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>${paragraph('C')}</w:tc></w:tr>`,
       ]));
-      await expect(compareDocuments(original, merged)).rejects.toBeInstanceOf(UnsupportedTableTopologyComparisonError);
-      await expect(compareDocuments(original, merged)).rejects.toMatchObject({ feature: 'cellCount', tableIndex: 0, rowIndex: 1 });
+      const result = await compareDocuments(original, merged);
+      expect(rowMarkers(await xml(result.document))).toEqual([[], ['del'], ['ins']]);
+      expect(result.stats.deletedTableRows).toBe(1);
+      expect(result.stats.insertedTableRows).toBe(1);
+      await assertProjections(original, merged, result.document);
+      await assertSchema(result.document);
     },
   );
 
@@ -135,8 +152,12 @@ describe('main-body table comparison topology', () => {
       expect(result.stats.deletedTableRows).toBe(0);
       await assertProjections(original, revised, result.document);
       await assertSchema(result.document);
+      // A real merge change is no longer refused: it replaces the merge's band of rows (SDX-COMPTABLE-10).
       const changed = await docx(table(1, [start, explicit.replace('continue', 'restart')]));
-      await expect(compareDocuments(original, changed)).rejects.toMatchObject({ feature: 'vMerge' });
+      const split = await compareDocuments(original, changed);
+      expect(rowMarkers(await xml(split.document))).toEqual([['del'], ['del'], ['ins'], ['ins']]);
+      await assertProjections(original, changed, split.document);
+      await assertSchema(split.document);
     },
   );
 
@@ -222,10 +243,8 @@ describe('main-body table comparison topology', () => {
   );
 
   test.openspec('[SDX-COMPTABLE-08] unsupported unmatched table shape fails closed')(
-    'refuses a newly added empty or row-wrapped table', async () => {
+    'refuses a newly added row-wrapped table', async () => {
       const before = await docx(paragraph('Before'));
-      const empty = await docx(paragraph('Before') + table(1, []));
-      await expect(compareDocuments(before, empty)).rejects.toMatchObject({ feature: 'emptyTable' });
       const wrapped = await docx(paragraph('Before') + table(1, [
         `<w:sdt><w:sdtPr/><w:sdtContent>${row(['A'])}</w:sdtContent></w:sdt>`,
       ]));
@@ -233,57 +252,70 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-08] unsupported unmatched table shape fails closed')(
-    'rejects a side-only block container around a whole table in either direction', async () => {
-      const wrapped = `<w:sdt><w:sdtPr/><w:sdtContent>${table(1, [row(['Inside'])])}</w:sdtContent></w:sdt>`;
-      const plain = await docx(paragraph('Outside'));
-      const contained = await docx(paragraph('Outside') + wrapped);
-      for (const [before, after] of [[plain, contained], [contained, plain]] as const) {
-        await expect(compareDocuments(before, after)).rejects.toMatchObject({
-          name: 'UnsupportedTableTopologyComparisonError', feature: 'tableContainer', tableIndex: 0,
-        });
-      }
-    },
-  );
-
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
-    'rejects a changed pending cell-topology revision even when geometry is unchanged', async () => {
-      const original = await docx(table(1, [row(['A'])]));
-      const pending = await docx(table(1, [row(['A']).replace('<w:tc>',
-        '<w:tc><w:tcPr><w:cellDel w:id="4"/></w:tcPr>')]));
-      await expect(compareDocuments(original, pending)).rejects.toMatchObject({
-        feature: 'topologyRevision', tableIndex: 0,
-      });
-    },
-  );
-
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
-    'locates the changed legacy horizontal-merge cell rather than the first merge cell', async () => {
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'replaces a row whose legacy horizontal merge changes', async () => {
       const originalRow = row(['A', 'B', 'C'])
         .replace('<w:tc>', '<w:tc><w:tcPr><w:hMerge w:val="restart"/></w:tcPr>')
         .replace('</w:tc><w:tc>', '</w:tc><w:tc><w:tcPr><w:hMerge/></w:tcPr>');
       const revisedRow = originalRow.replace('<w:tc><w:p><w:r><w:t>C',
         '<w:tc><w:tcPr><w:hMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>C');
-      await expect(compareDocuments(await docx(table(3, [originalRow])),
-        await docx(table(3, [revisedRow])))).rejects.toMatchObject({
-        feature: 'hMerge', tableIndex: 0, rowIndex: 0, cellIndex: 2,
-      });
+      const original = await docx(table(3, [originalRow]));
+      const revised = await docx(table(3, [revisedRow]));
+      const result = await compareDocuments(original, revised);
+      expect(rowMarkers(await xml(result.document))).toEqual([['del'], ['ins']]);
+      await assertProjections(original, revised, result.document);
+      await assertSchema(result.document);
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-03] individual-cell topology fails closed')(
-    'preserves offset and wrapped-cell diagnostics when direct cell counts change', async () => {
+  test.openspec('[SDX-COMPTABLE-03] individual-cell topology emits a native row replacement')(
+    'replaces a row whose gridBefore offset changes', async () => {
       const original = await docx(table(2, [row(['A', 'B'])]));
       const offset = await docx(table(2, [row(['B']).replace('<w:tr>',
         '<w:tr><w:trPr><w:gridBefore w:val="1"/></w:trPr>')]));
-      await expect(compareDocuments(original, offset)).rejects.toMatchObject({
-        feature: 'gridBefore', tableIndex: 0, rowIndex: 0,
-      });
-      const wrappedCell = row(['A', 'B']).replace('</w:tc><w:tc>',
-        '</w:tc><w:sdt><w:sdtPr/><w:sdtContent><w:tc>')
+      const result = await compareDocuments(original, offset);
+      expect(rowMarkers(await xml(result.document))).toEqual([['del'], ['ins']]);
+      await assertProjections(original, offset, result.document);
+      await assertSchema(result.document);
+    },
+  );
+
+  test.openspec('[SDX-COMPTABLE-10] a vertical-merge change emits a native band replacement')(
+    'replaces a row whose vertical merge starts beside a horizontal span or legacy hMerge change', async () => {
+      const original = await docx(table(2, [row(['A', 'B'])]));
+      const verticallyMerged = await docx(table(2, [
+        `<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/></w:tcPr>${paragraph('A B')}</w:tc></w:tr>`,
+      ]));
+      const sameCount = await docx(table(2, [row(['A', 'B']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>')
+        .replace('</w:tc><w:tc>', '</w:tc><w:tc><w:tcPr><w:gridSpan w:val="1"/><w:hMerge w:val="restart"/></w:tcPr>')]));
+      for (const revised of [verticallyMerged, sameCount]) {
+        const result = await compareDocuments(original, revised);
+        expect(rowMarkers(await xml(result.document))).toEqual([['del'], ['ins']]);
+        await assertProjections(original, revised, result.document);
+        await assertSchema(result.document);
+      }
+    },
+  );
+
+  test.openspec('[SDX-COMPTABLE-12] a row holding a cell-level content control emits a native row replacement')(
+    'replaces a row whose cell moves into a cell-level content control, and a vertical-merge band holding one', async () => {
+      const original = await docx(table(2, [row(['A', 'B'])]));
+      const wrap = (source: string) => source.replace('</w:tc><w:tc>', '</w:tc><w:sdt><w:sdtPr/><w:sdtContent><w:tc>')
         .replace('</w:tc></w:tr>', '</w:tc></w:sdtContent></w:sdt></w:tr>');
-      await expect(compareDocuments(original, await docx(table(2, [wrappedCell]))))
-        .rejects.toMatchObject({ feature: 'occupancy', tableIndex: 0, rowIndex: 0, cellIndex: 1 });
+      const wrapped = await docx(table(2, [wrap(row(['A', 'B']))]));
+      const result = await compareDocuments(original, wrapped);
+      expect(rowMarkers(await xml(result.document))).toEqual([['del'], ['ins']]);
+      await assertProjections(original, wrapped, result.document);
+      await assertSchema(result.document);
+      // A vertical merge whose band takes a row with a wrapped cell is replaced as a band.
+      const restart = row(['A', 'B']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>');
+      const continuation = row(['', 'D']).replace('<w:tc>', '<w:tc><w:tcPr><w:vMerge/></w:tcPr>');
+      const bandOriginal = await docx(table(2, [row(['A', 'B']), wrap(row(['C', 'D']))]));
+      const bandRevised = await docx(table(2, [restart, wrap(continuation)]));
+      const band = await compareDocuments(bandOriginal, bandRevised);
+      expect(rowMarkers(await xml(band.document))).toEqual([['del'], ['del'], ['ins'], ['ins']]);
+      await assertProjections(bandOriginal, bandRevised, band.document);
+      await assertSchema(band.document);
     },
   );
 });

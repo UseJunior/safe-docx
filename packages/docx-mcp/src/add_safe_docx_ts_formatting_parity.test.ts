@@ -195,7 +195,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     assertSuccess(read, 'read');
     const nodes = JSON.parse(String(read.content)) as Array<{ id: string; clean_text: string; header: string; text: string }>;
     const anchorId = nodes.find((n) => n.clean_text.includes('Anchor paragraph.'))?.id;
-    expect(anchorId).toMatch(/^_bk_[0-9a-f]{12}$/);
+    expect(anchorId).toMatch(/^_bk_[0-9a-f]{10}$/);
 
     const inserted = await insertParagraph(mgr, {
       file_path: inputPath,
@@ -250,8 +250,8 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     const nodes = JSON.parse(String(read.content)) as Array<{ id: string; clean_text: string }>;
     const aId = nodes.find((n) => n.clean_text.includes('Placeholder A'))?.id;
     const bId = nodes.find((n) => n.clean_text.includes('Placeholder B'))?.id;
-    expect(aId).toMatch(/^_bk_[0-9a-f]{12}$/);
-    expect(bId).toMatch(/^_bk_[0-9a-f]{12}$/);
+    expect(aId).toMatch(/^_bk_[0-9a-f]{10}$/);
+    expect(bId).toMatch(/^_bk_[0-9a-f]{10}$/);
 
     const editA = await replaceText(mgr, {
       file_path: inputPath,

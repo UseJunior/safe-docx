@@ -24,6 +24,10 @@ as unrepresented instead of emitting native tracked revisions.
 - Fail closed for new/deleted/rebound stories, ambiguous or stale story identity,
   unsupported structural changes, and external comment materialization on a
   side-story edit.
+- Extended by `pair-header-footer-stories-through-section-alignment` (#1390):
+  when the section topology differs, plain header/footer stories are paired by
+  effective slot through the compared package's section alignment instead of
+  being left unrepresented.
 
 ## Impact
 

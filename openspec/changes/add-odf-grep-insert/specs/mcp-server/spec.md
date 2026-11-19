@@ -16,11 +16,11 @@ header context, so those fields SHALL be empty strings.
 ODF `insert_paragraph` SHALL insert one or more `text:p` blocks before or after the anchor
 paragraph (blank lines splitting `new_string` into separate paragraphs; single newlines
 mapping to `text:line-break`), inheriting the anchor's paragraph style only when the anchor
-is a body paragraph (never propagating a heading style). Because ODF paragraph IDs are
-positional ordinals, the response SHALL return the inserted blocks' freshly recomputed IDs
-and SHALL carry machine-actionable invalidation signals
-(`invalidates_paragraph_ids_after`, `requires_reread_before_next_edit`) so the agent
-re-reads before its next edit.
+is a body paragraph (never propagating a heading style). ODF paragraph IDs SHALL remain
+stable within the session; inserted blocks SHALL receive monotonically allocated IDs.
+The response SHALL retain `invalidates_paragraph_ids_after` and
+`requires_reread_before_next_edit` with values `null` and `false`, respectively, as
+specified in `preserve-odf-session-paragraph-ids`. Actual reopen renumbers stored order.
 
 #### Scenario: [OPLR-06] `grep` searches an ODF session
 - **WHEN** `grep` is invoked with a `.odt` `file_path` and a pattern
@@ -28,7 +28,7 @@ re-reads before its next edit.
 
 #### Scenario: [OPLR-07] `insert_paragraph` inserts into an ODF session
 - **WHEN** `insert_paragraph` is invoked with a `.odt` `file_path`, an anchor paragraph ID, and `new_string`
-- **THEN** a new paragraph is inserted before/after the anchor, the response returns the new positional paragraph ID(s) and ID-invalidation fields, and re-reading reflects the inserted text
+- **THEN** a new paragraph is inserted before/after the anchor, the response returns new session paragraph ID(s) with no existing IDs invalidated, and re-reading reflects the inserted text under the same retained IDs
 
 #### Scenario: [OPLR-08] Still-unsupported tools remain guarded
 - **WHEN** a tool outside the ODF supported set (e.g. `extract_revisions`) is invoked against a `.odt` path or ODF session

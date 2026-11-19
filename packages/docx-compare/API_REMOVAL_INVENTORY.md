@@ -5,7 +5,7 @@
 This inventory adjudicates every package-root export before the tagged-spine breaking release.
 “Deprecated” means retained for one release; “breaking removal” means intentionally absent now.
 
-- Stable compatibility surface: 67
+- Stable compatibility surface: 76
 - Deprecated for one release: 22
 - Documented breaking removals: 58
 
@@ -44,12 +44,14 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `COLLAPSED_FIELD_TAG` | value | `src/atomizer.ts` | no | breaking removal |
 | `collapseFieldSequences` | function | `src/atomizer.ts` | no | breaking removal |
 | `collectPreservedMoveNames` | function | `src/move-detection.ts` | no | breaking removal |
+| `COMPARE_REVISION_GROUPINGS` | value | `src/compare-types.ts` | yes | stable compatibility |
 | `compareDocuments` | function | `src/index.ts` | yes | stable compatibility |
 | `compareDocumentsAtomizer` | function | `src/tagged/pipeline.ts` | yes | deprecate one release |
 | `compareFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareOptions` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `compareProjectedFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareResult` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `CompareRevisionGrouping` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `compareSourceProjectedFormattingFidelity` | function | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `CompareStats` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `compareTexts` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
@@ -62,6 +64,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `CreateAtomOptions` | interface | `src/atomizer.ts` | no | breaking removal |
 | `createComparisonUnitAtom` | function | `src/atomizer.ts` | no | breaking removal |
 | `createRevisionIdState` | function | `src/move-detection.ts` | no | breaking removal |
+| `DEFAULT_COMPARE_REVISION_GROUPING` | value | `src/compare-types.ts` | yes | stable compatibility |
 | `DEFAULT_RECONSTRUCTION_MODE` | value | `src/comparison-defaults.ts` | no | breaking removal |
 | `detectFormatChangesInAtomList` | function | `src/format-detection.ts` | no | breaking removal |
 | `detectMovesInAtomList` | function | `src/move-detection.ts` | no | breaking removal |
@@ -117,6 +120,9 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `normalizeText` | function | `src/tagged/trackChangesAcceptorAst.ts` | yes | stable compatibility |
 | `PARAGRAPH_LEVEL_TAGS` | value | `src/atomizer.ts` | no | breaking removal |
 | `PARAGRAPH_PROPERTY_FRIENDLY_NAMES` | value | `src/format-detection.ts` | no | breaking removal |
+| `ParagraphPropertyMismatchDetails` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `ParagraphTopologyMismatchDetails` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `parseCompareRevisionGrouping` | function | `src/compare-types.ts` | yes | stable compatibility |
 | `parseDocumentXml` | function | `src/tagged/xmlToWmlElement.ts` | yes | stable compatibility |
 | `ProjectedFormattingFidelity` | interface | `src/tagged/formattingFidelity.ts` | yes | stable compatibility |
 | `ReconstructionAttemptDiagnostics` | interface | `src/compare-types.ts` | yes | deprecate one release |
@@ -153,6 +159,9 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `UnrepresentedChangeKind` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedChangeScope` | type | `src/compare-types.ts` | yes | stable compatibility |
 | `UnrepresentedContentControlChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `UnrepresentedDrawingChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `UnrepresentedPictureChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
+| `UnrepresentedTableChange` | interface | `src/compare-types.ts` | yes | stable compatibility |
 | `UnsupportedBlockContainerRevisionError` | class | `src/tagged/taggedTreeSerializer.ts` | yes | stable compatibility |
 | `UnsupportedTableTopologyComparisonError` | class | `src/tagged/tableTopologyGuard.ts` | yes | stable compatibility |
 | `UnsupportedTextBoxRevisionError` | class | `src/tagged/textBoxRevisionSafety.ts` | yes | stable compatibility |
@@ -172,6 +181,7 @@ This inventory adjudicates every package-root export before the tagged-spine bre
 | `maxWordRefinementChangeRanges` | breaking removal |
 | `premergeRuns` | breaking removal |
 | `reconstructionMode` | breaking removal |
+| `revisionGrouping` | stable compatibility |
 
 ## Public result fields
 

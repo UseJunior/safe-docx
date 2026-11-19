@@ -34,6 +34,39 @@ async function contentDom(odt: Buffer): Promise<Document> {
 }
 
 describe('convertDocxToOdt — lists', () => {
+  it('preserves body spacing and manual headings between auto-list runs and tables', async () => {
+    const paragraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const table = `<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc>` +
+      paragraph('cell first') + paragraph('cell second') + '</w:tc></w:tr></w:tbl>';
+    const docx = await buildDocxFromParts({
+      bodyXml: '<w:p/>' + listP(1, 0, 'one') + listP(1, 2, 'deep') + listP(1, 2, 'sibling') +
+        '<w:p/>' + listP(1, 0, 'two') +
+        '<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>(a) manual label</w:t></w:r></w:p>' +
+        listP(1, 0, 'three') + '<w:p/>' + table +
+        '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Title</w:t></w:r></w:p>' +
+        listP(1, 0, 'four') + '<w:p/>',
+      numberingXml: numberingXml([
+        { ilvl: 0, numFmt: 'decimal', lvlText: '%1.' },
+        { ilvl: 2, numFmt: 'lowerLetter', lvlText: '%3)' },
+      ]),
+    });
+    const { odt } = await convertDocxToOdt(docx);
+    const doc = await contentDom(odt);
+    const body = doc.getElementsByTagNameNS(ODF_NS.OFFICE, 'text').item(0)!;
+    const blocks = Array.from(body.childNodes).filter((node) => node.nodeType === 1) as Element[];
+    expect(blocks.map((node) => node.localName)).toEqual([
+      'p', 'list', 'p', 'list', 'p', 'list', 'p', 'table', 'h', 'list', 'p',
+    ]);
+    expect(blocks.filter((node) => node.localName === 'p').map((node) => node.textContent))
+      .toEqual(['', '', '(a) manual label', '', '']);
+    expect(blocks[1]!.getElementsByTagNameNS(ODF_NS.TEXT, 'list')).toHaveLength(1);
+    expect(blocks[1]!.getElementsByTagNameNS(ODF_NS.TEXT, 'p').length).toBe(3);
+    expect(blocks[7]!.getElementsByTagNameNS(ODF_NS.TEXT, 'p').length).toBe(2);
+    expect(Array.from(blocks[7]!.getElementsByTagNameNS(ODF_NS.TEXT, 'p')).map((node) => node.textContent))
+      .toEqual(['cell first', 'cell second']);
+    expect(blocks[8]!.getAttributeNS(ODF_NS.TEXT, 'outline-level')).toBe('2');
+  });
+
   it('[CONV-06] auto-numbered lists nest text:list with mapped number formats; level jumps stay well-formed', async () => {
     const docx = await buildDocxFromParts({
       bodyXml:

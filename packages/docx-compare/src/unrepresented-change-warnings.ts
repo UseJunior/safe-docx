@@ -8,12 +8,52 @@ function describeScope(change: UnrepresentedChange): string {
       control?.tag !== undefined ? `tag "${control.tag}"` : undefined,
       control?.alias !== undefined ? `alias "${control.alias}"` : undefined,
       control?.id !== undefined ? `id ${control.id}` : undefined,
+      control?.customXmlElement !== undefined ? `element "${control.customXmlElement}"` : undefined,
+      control?.customXmlUri !== undefined ? `namespace "${control.customXmlUri}"` : undefined,
     ].filter((part) => part !== undefined);
-    const ordinal = control ? `content control #${control.index + 1}` : 'content control';
+    if (control?.element === 'sdt' || control?.element === 'customXml') {
+      const noun = control.element === 'sdt' ? 'block content control' : 'block custom XML element';
+      return `${noun} (w:${control.element} #${control.index + 1}${identity.length > 0 ? `, ${identity.join(', ')}` : ''})`;
+    }
+    const noun = control?.element === 'customXmlPr' ? 'custom XML element' : 'content control';
+    const ordinal = control ? `${noun} #${control.index + 1}` : noun;
     const element = control?.element ?? 'sdtPr';
-    return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}`;
+    const story = control?.story !== undefined
+      ? ` in ${control.story} ${control.noteId ?? ''} (${control.partPath ?? `word/${control.story}s.xml`})`.replace('  ', ' ')
+      : '';
+    return `properties (w:${element}) of ${ordinal}${identity.length > 0 ? ` (${identity.join(', ')})` : ''}${story}`;
+  }
+  if (change.scope === 'picture') {
+    const picture = change.picture;
+    if (!picture) return 'picture';
+    const story = picture.story === 'body'
+      ? 'the main story'
+      : `the ${change.role ? `${change.role} ` : ''}${picture.story} (${picture.partPath})`;
+    const name = picture.name !== undefined ? ` "${picture.name}"` : '';
+    const target = picture.target !== undefined ? ` -> ${picture.target}` : '';
+    return `picture${name} (w:${picture.element} #${picture.index + 1}, relationship ${picture.relationshipId}${target}) ` +
+      `in ${story}`;
+  }
+  if (change.scope === 'drawing') {
+    const drawing = change.drawing;
+    const shape = 'drawing (text box or picture size, position or wrap)';
+    if (!drawing) return shape;
+    const story = drawing.story === 'body'
+      ? 'the main story'
+      : `the ${change.role ? `${change.role} ` : ''}${drawing.story} (${drawing.partPath})`;
+    const name = drawing.name !== undefined ? ` "${drawing.name}"` : '';
+    return `${shape}${name} (w:${drawing.element}, text box #${drawing.index + 1}) in ${story}`;
+  }
+  if (change.scope === 'table') {
+    const source = change.kind === 'added' ? 'revised' : 'original';
+    return `table with no rows${change.table ? ` (w:tbl #${change.table.index + 1} of the ${source} document)` : ''}`;
   }
   return change.role ? `${change.role} ${change.scope}` : change.scope;
+}
+
+function isWholeContainer(change: UnrepresentedChange): boolean {
+  return change.scope === 'contentControl'
+    && (change.contentControl?.element === 'sdt' || change.contentControl?.element === 'customXml');
 }
 
 /**
@@ -30,10 +70,19 @@ export function formatUnrepresentedChangeWarnings(
   changes: readonly UnrepresentedChange[] | undefined,
 ): string[] {
   if (!changes || changes.length === 0) return [];
-  return changes.map((change) =>
+  return changes.map((change) => isWholeContainer(change)
+    ? `Unrepresented change: ${change.kind} ${describeScope(change)} in section ${change.sectionIndex + 1} ` +
+      `(sectionIndex ${change.sectionIndex}): the redline tracks its content, but the container itself takes no ` +
+      `revision, so ${change.kind === 'added' ? 'Reject All' : 'Accept All'} leaves it empty. Review that part manually.`
+    :
     `Unrepresented change: ${change.kind} ${describeScope(change)} in section ${change.sectionIndex + 1} ` +
     `(sectionIndex ${change.sectionIndex}) has no tracked-change markup in the redline; ` +
-    'the output carries the revised state for it without a revision. Review that part manually.',
+    (change.scope === 'drawing'
+      ? 'the redline shows the revised shape, which Reject All keeps. Review that part manually.'
+      : change.scope === 'table'
+        ? `no revision can mark a table without rows, so the redline leaves it out and ` +
+          `${change.kind === 'added' ? 'Accept All' : 'Reject All'} lacks it. It holds no text. Review that part manually.`
+        : 'the output carries the revised state for it without a revision. Review that part manually.'),
   );
 }
 

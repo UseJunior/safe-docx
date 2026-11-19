@@ -64,7 +64,7 @@ describe('Parity regression', () => {
       const firstDataLine = toonLines.find((l) => l.startsWith('_bk_'));
       expect(firstDataLine).toBeTruthy();
       paraId = firstDataLine!.split('|')[0].trim();
-      expect(paraId).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(paraId).toMatch(/^_bk_[0-9a-f]{10}$/);
     });
 
     await when('grep, replaceText, and insertParagraph are applied sequentially', async () => {
@@ -99,7 +99,7 @@ describe('Parity regression', () => {
         position: 'AFTER',
       });
       assertSuccess(inserted, 'insert');
-      expect(String(inserted.new_paragraph_id)).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(String(inserted.new_paragraph_id)).toMatch(/^_bk_[0-9a-f]{10}$/);
 
       const read3 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read3, 'read3');
@@ -513,8 +513,8 @@ describe('Parity regression', () => {
     await then('two distinct _bk_ IDs are assigned to the two identical "By:________" lines', () => {
       const byLines = nodes.filter((n) => n.clean_text === 'By:________');
       expect(byLines.length).toBe(2);
-      expect(byLines[0]!.id).toMatch(/^_bk_[0-9a-f]{12}$/);
-      expect(byLines[1]!.id).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(byLines[0]!.id).toMatch(/^_bk_[0-9a-f]{10}$/);
+      expect(byLines[1]!.id).toMatch(/^_bk_[0-9a-f]{10}$/);
       expect(byLines[0]!.id).not.toBe(byLines[1]!.id);
     });
   });
@@ -635,7 +635,7 @@ describe('Parity regression', () => {
       assertSuccess(view, 'read json');
       const nodes = JSON.parse(view.content as string) as Array<{ id: string; clean_text: string }>;
       const pid = nodes.find((n) => String(n.clean_text).includes('[PLACEHOLDER]'))?.id;
-      expect(pid).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(pid).toMatch(/^_bk_[0-9a-f]{10}$/);
       const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: pid!, old_string: '[PLACEHOLDER]', new_string: 'the R&D Business', instruction: 'test' });
       assertSuccess(edited, 'edit');
       const saved = await save(mgr, { file_path: filePath, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
@@ -677,7 +677,7 @@ describe('Parity regression', () => {
       assertSuccess(view, 'read json');
       const nodes = JSON.parse(view.content as string) as Array<{ id: string; clean_text: string }>;
       const pid = nodes.find((n) => String(n.clean_text).includes('[X]'))?.id;
-      expect(pid).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(pid).toMatch(/^_bk_[0-9a-f]{10}$/);
       const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: pid!, old_string: '[X]', new_string: '<b>bold</b> <i>ital</i> <u>under</u> plain', instruction: 'test' });
       assertSuccess(edited, 'edit');
       const saved = await save(mgr, { file_path: filePath, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
@@ -733,7 +733,7 @@ describe('Parity regression', () => {
       assertSuccess(view, 'read json');
       const nodes = JSON.parse(view.content as string) as Array<{ id: string; clean_text: string }>;
       const pid = nodes.find((n) => String(n.clean_text).includes('[VALUE]'))?.id;
-      expect(pid).toMatch(/^_bk_[0-9a-f]{12}$/);
+      expect(pid).toMatch(/^_bk_[0-9a-f]{10}$/);
       const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: pid!, old_string: '[VALUE]', new_string: '<highlight>Final Number</highlight>', instruction: 'test' });
       assertSuccess(edited, 'edit');
       const saved = await save(mgr, { file_path: filePath, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });

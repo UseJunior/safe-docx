@@ -1,13 +1,13 @@
 import { describe, expect } from 'vitest';
 import { testAllure } from '../testing/allure-test.js';
-import { computeContentFingerprint } from './content_fingerprint.js';
+import { computeContentFingerprint, contentFingerprintMatches } from './content_fingerprint.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Content Fingerprint' });
 
 describe('computeContentFingerprint', () => {
-  test('emits sha256:nfkc: prefix and exactly 32 hex chars', ({}) => {
+  test('emits sha256:nfkc: prefix and exactly 16 hex chars', ({}) => {
     const fp = computeContentFingerprint('Hello world');
-    expect(fp).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+    expect(fp).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
   });
 
   test('NFKC normalization: ligature ﬁ matches ASCII fi', ({}) => {
@@ -45,6 +45,14 @@ describe('computeContentFingerprint', () => {
     expect(computeContentFingerprint('\nSection 5\n')).toBe(baseline);
   });
 
+  test('a symbol-font private-use character survives NFKC and changes the fingerprint (#1046)', ({}) => {
+    // A w:sym glyph (Wingdings checkbox U+F0A8) is part of the paragraph text,
+    // so a symbol-bearing paragraph hashes differently from its text without it.
+    expect('Alpha \uF0A8 Bravo'.normalize('NFKC')).toBe('Alpha \uF0A8 Bravo');
+    expect(computeContentFingerprint('Alpha \uF0A8 Bravo')).not.toBe(computeContentFingerprint('Alpha  Bravo'));
+    expect(computeContentFingerprint('Alpha \uF0A8 Bravo')).not.toBe(computeContentFingerprint('Alpha \uF0FE Bravo'));
+  });
+
   test('case is preserved: Section 5 differs from section 5', ({}) => {
     const upper = computeContentFingerprint('Section 5');
     const lower = computeContentFingerprint('section 5');
@@ -55,7 +63,7 @@ describe('computeContentFingerprint', () => {
     const a = computeContentFingerprint('');
     const b = computeContentFingerprint('   ');
     const c = computeContentFingerprint('\n\t\r');
-    expect(a).toMatch(/^sha256:nfkc:[0-9a-f]{32}$/);
+    expect(a).toMatch(/^sha256:nfkc:[0-9a-f]{16}$/);
     expect(a).toBe(b);
     expect(a).toBe(c);
   });
@@ -65,13 +73,19 @@ describe('computeContentFingerprint', () => {
     // cross-machine, cross-version stability. If a test fails here because the
     // algorithm legitimately changed, bump the prefix (e.g. sha256:nfkc:v2).
     expect(computeContentFingerprint('Hello world')).toBe(
-      'sha256:nfkc:64ec88ca00b268e5ba1a35678a1b5316',
+      'sha256:nfkc:64ec88ca00b268e5',
     );
     expect(computeContentFingerprint('The Company shall indemnify the Customer.')).toBe(
       computeContentFingerprint(
         '   The   Company\tshall  indemnify   the\nCustomer.   ',
       ),
     );
+  });
+
+  test('accepts both current 16-hex and legacy 32-hex fingerprints', ({}) => {
+    expect(contentFingerprintMatches('Hello world', 'sha256:nfkc:64ec88ca00b268e5')).toBe(true);
+    expect(contentFingerprintMatches('Hello world', 'sha256:nfkc:64ec88ca00b268e5ba1a35678a1b5316')).toBe(true);
+    expect(contentFingerprintMatches('Changed', 'sha256:nfkc:64ec88ca00b268e5ba1a35678a1b5316')).toBe(false);
   });
 
   test('different text produces different fingerprints', ({}) => {

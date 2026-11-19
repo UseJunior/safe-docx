@@ -371,3 +371,119 @@ describe('Formatting-fidelity comparison check', () => {
     },
   );
 });
+
+/**
+ * Section breaks compare the header/footer each section shows once
+ * inheritance is resolved, not the literal reference elements: a section with
+ * no reference of a type shows the one the previous section shows.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1203
+ */
+describe('Section header/footer references compare by what each section shows', () => {
+  const referenceTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.2' },
+  );
+  const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const withR = (bodyXml: string): string =>
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="${R_NS}">` +
+    `<w:body>${bodyXml}</w:body></w:document>`;
+  const header = (id: string, role = 'default'): string => `<w:headerReference w:type="${role}" r:id="${id}"/>`;
+  const footer = (id: string, role = 'default'): string => `<w:footerReference w:type="${role}" r:id="${id}"/>`;
+  const PAGE = '<w:pgSz w:w="12240" w:h="15840"/>';
+  const breakAfter = (text: string, references: string): string =>
+    `<w:p><w:pPr><w:sectPr>${references}${PAGE}</w:sectPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  const finalSection = (text: string, references: string): string =>
+    `<w:p><w:r><w:t>${text}</w:t></w:r></w:p><w:sectPr>${references}${PAGE}</w:sectPr>`;
+  const sectionDivergences = (expected: string, actual: string) =>
+    compareFormattingFidelity(withR(expected), withR(actual)).divergences.filter((d) => d.scope === 'section');
+
+  referenceTest('an explicit reference naming the part the section inherits is not a divergence', () => {
+    // The original's final section inherits the previous section's header and
+    // footer; the other view names the same relationships explicitly, as Word
+    // writes when it deletes a section break before a section with none (#1203).
+    const expected = breakAfter('One', header('rIdA') + footer('rIdB')) + finalSection('Two', '');
+    const actual = breakAfter('One', header('rIdA') + footer('rIdB')) + finalSection('Two', header('rIdA') + footer('rIdB'));
+
+    const report = compareFormattingFidelity(withR(expected), withR(actual));
+
+    expect(report.sectionFormatting).toEqual({ compared: 2, divergent: 0, score: 1 });
+    expect(report.divergences).toEqual([]);
+    expect(report.score).toBe(1);
+  });
+
+  referenceTest('inheritance runs through sections with no references back to the last explicit one', () => {
+    const expected =
+      breakAfter('One', header('rIdA', 'first') + header('rIdB')) + breakAfter('Two', '') + finalSection('Three', '');
+    const actual =
+      breakAfter('One', header('rIdA', 'first') + header('rIdB')) + breakAfter('Two', '') +
+      finalSection('Three', header('rIdB') + header('rIdA', 'first'));
+
+    expect(sectionDivergences(expected, actual)).toEqual([]);
+  });
+
+  referenceTest('an explicit reference to a different part than the inherited one is still a divergence', () => {
+    const expected = breakAfter('One', header('rIdA') + footer('rIdB')) + finalSection('Two', '');
+    const actual = breakAfter('One', header('rIdA') + footer('rIdB')) + finalSection('Two', header('rIdC') + footer('rIdB'));
+
+    const divergences = sectionDivergences(expected, actual);
+
+    expect(divergences).toEqual([
+      expect.objectContaining({ sectionIndex: 1, property: 'w:headerReference', kind: 'added' }),
+    ]);
+  });
+
+  referenceTest('a reference where the expected view inherits nothing is a divergence', () => {
+    // The first section with no header shows a blank one, so an explicit
+    // header there changes what its pages show.
+    const expected = breakAfter('One', '') + finalSection('Two', '');
+    const actual = breakAfter('One', '') + finalSection('Two', header('rIdA'));
+
+    expect(sectionDivergences(expected, actual)).toEqual([
+      expect.objectContaining({ sectionIndex: 1, property: 'w:headerReference', kind: 'added' }),
+    ]);
+  });
+
+  referenceTest('a reference of a type the section does not display still has to match', () => {
+    // No w:titlePg here, but a later section that turns it on would inherit
+    // this first-page header, so the slot is compared all the same.
+    const expected = breakAfter('One', header('rIdA')) + finalSection('Two', '');
+    const actual = breakAfter('One', header('rIdA')) + finalSection('Two', header('rIdA') + header('rIdF', 'first'));
+
+    expect(sectionDivergences(expected, actual)).toEqual([
+      expect.objectContaining({ sectionIndex: 1, property: 'w:headerReference', kind: 'added' }),
+    ]);
+  });
+
+  referenceTest('dropping a reference a later section inherits is reported where it was dropped', () => {
+    const expected = breakAfter('One', header('rIdA')) + breakAfter('Two', header('rIdB')) + finalSection('Three', '');
+    const actual = breakAfter('One', header('rIdA')) + breakAfter('Two', '') + finalSection('Three', '');
+
+    expect(sectionDivergences(expected, actual)).toEqual([
+      expect.objectContaining({ sectionIndex: 1, property: 'w:headerReference', kind: 'removed' }),
+    ]);
+  });
+
+  referenceTest('references Word cannot place fall back to the literal comparison', () => {
+    // A reference without w:type has no slot to inherit into or from.
+    const expected = breakAfter('One', '<w:headerReference r:id="rIdA"/>') + finalSection('Two', '');
+    const actual =
+      breakAfter('One', '<w:headerReference r:id="rIdA"/>') + finalSection('Two', '<w:headerReference r:id="rIdA"/>');
+
+    expect(sectionDivergences(expected, actual)).toEqual([
+      expect.objectContaining({ sectionIndex: 1, property: 'w:headerReference', kind: 'added' }),
+    ]);
+  });
+
+  referenceTest('a section only one view has still diverges on its references', () => {
+    const expected = breakAfter('One', header('rIdA')) + finalSection('Two', '');
+    const actual = finalSection('One Two', header('rIdA'));
+
+    const divergences = sectionDivergences(expected, actual);
+
+    expect(divergences.length).toBeGreaterThan(0);
+  });
+});

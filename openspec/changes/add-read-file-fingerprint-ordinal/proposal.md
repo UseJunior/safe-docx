@@ -3,7 +3,7 @@
 ## Why
 
 `read_file(format="json", include_fingerprint=true)` already gives consumers a portable
-`content_fingerprint` (`sha256:nfkc:<32hex>`) that is stable across reads, machines, and
+`content_fingerprint` (`sha256:nfkc:<16hex>`) that is stable across reads, machines, and
 re-uploads. The remaining gap is **duplicate disambiguation**: when the same normalized
 paragraph text appears multiple times in one document, every occurrence shares one
 fingerprint, so a downstream consumer cannot reference "the second occurrence of WHEREAS …"

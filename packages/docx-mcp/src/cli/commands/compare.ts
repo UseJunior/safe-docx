@@ -3,6 +3,8 @@ import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
   compareDocuments,
+  DEFAULT_COMPARE_REVISION_GROUPING,
+  type CompareRevisionGrouping,
   formatUnrepresentedChangeWarnings,
   type UnrepresentedChange,
 } from '@usejunior/docx-compare';
@@ -12,6 +14,12 @@ export interface CompareCommandArgs {
   revisedPath: string;
   outputPath?: string;
   author?: string;
+  /** Default: {@link DEFAULT_COMPARE_REVISION_GROUPING} (`readable-semantic`). */
+  revisionGrouping?: CompareRevisionGrouping;
+  /** Default: true. `--no-moves` sets false. */
+  detectMoves?: boolean;
+  /** Default: false (revisions dated now). `--no-date` sets true: new revisions carry no `w:date`. */
+  omitDate?: boolean;
 }
 
 export interface CompareCommandResult {
@@ -68,6 +76,9 @@ export async function runCompareCommand(
 
   const result = await dependencies.compare(originalBuffer, revisedBuffer, {
     author: args.author ?? 'Comparison',
+    revisionGrouping: args.revisionGrouping ?? DEFAULT_COMPARE_REVISION_GROUPING,
+    detectMoves: args.detectMoves ?? true,
+    ...(args.omitDate ? { date: null } : {}),
   });
   await writeFileAtomically(outputAbs, result.document);
 

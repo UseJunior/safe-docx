@@ -132,8 +132,15 @@ function trackMaxNumericId(value: string | null, current: number): number {
   return Math.max(current, parsed);
 }
 
-/** Lazily-parsed XML file inside an archive, serialized back only if touched. */
-class LazyArchiveXml {
+/**
+ * Lazily parsed archive part. Only attribute rewrites can dirty the private DOM;
+ * reads return detached values. A successful flush marks it clean, while a
+ * serialization or archive-write failure leaves the pending changes retryable.
+ *
+ * @internal
+ * @see https://github.com/UseJunior/safe-docx/issues/1314
+ */
+export class LazyArchiveXml {
   private parsed: Document | null = null;
   private dirty = false;
 
@@ -143,9 +150,22 @@ class LazyArchiveXml {
     private readonly xml: string,
   ) {}
 
-  doc(): Document {
+  private doc(): Document {
     if (!this.parsed) this.parsed = parseXml(this.xml);
     return this.parsed;
+  }
+
+  /** Return attribute values without exposing mutable DOM nodes. */
+  attributeValues(tags: string[], attrName: string): string[] {
+    const values: string[] = [];
+    for (const tag of tags) {
+      const elements = this.doc().getElementsByTagName(tag);
+      for (let i = 0; i < elements.length; i++) {
+        const value = (elements[i] as Element).getAttribute(attrName);
+        if (value !== null) values.push(value);
+      }
+    }
+    return values;
   }
 
   /** Rewrite matching attributes on every `tag` element per `valueMap`. */
@@ -163,7 +183,7 @@ class LazyArchiveXml {
         const value = el.getAttribute(attrName);
         if (value === null) continue;
         const replacement = valueMap.get(normalizeKey(value));
-        if (replacement) {
+        if (replacement && replacement !== value) {
           el.setAttribute(attrName, replacement);
           this.dirty = true;
         }
@@ -181,6 +201,7 @@ class LazyArchiveXml {
     // xmldom 0.9 keeps the source's XML declaration as a document child, so
     // plain serialization round-trips it.
     this.archive.setFile(this.path, serializer.serializeToString(this.parsed));
+    this.dirty = false;
   }
 }
 
@@ -271,20 +292,21 @@ export async function renumberCollidingAuxiliaryIds(
     // the merged output part will contain the union of both sides.
     let maxUsedId = 0;
     const revisedPart = rewriteFiles.get(descriptor.partPath)!;
-    const entryElements = revisedPart.doc().getElementsByTagName(descriptor.entryTag);
-    for (let i = 0; i < entryElements.length; i++) {
-      maxUsedId = trackMaxNumericId((entryElements[i] as Element).getAttribute('w:id'), maxUsedId);
+    for (const id of revisedPart.attributeValues([descriptor.entryTag], 'w:id')) {
+      maxUsedId = trackMaxNumericId(id, maxUsedId);
     }
     for (const id of originalEntryIds.get(descriptor.label) ?? []) {
       maxUsedId = trackMaxNumericId(id, maxUsedId);
     }
-    const anchorDocs = [originalDocumentDoc, ...Array.from(rewriteFiles.values(), (f) => f.doc())];
-    for (const doc of anchorDocs) {
-      for (const tag of descriptor.idBearingTags) {
-        const refs = doc.getElementsByTagName(tag);
-        for (let i = 0; i < refs.length; i++) {
-          maxUsedId = trackMaxNumericId((refs[i] as Element).getAttribute('w:id'), maxUsedId);
-        }
+    for (const tag of descriptor.idBearingTags) {
+      const refs = originalDocumentDoc.getElementsByTagName(tag);
+      for (let i = 0; i < refs.length; i++) {
+        maxUsedId = trackMaxNumericId((refs[i] as Element).getAttribute('w:id'), maxUsedId);
+      }
+    }
+    for (const file of rewriteFiles.values()) {
+      for (const id of file.attributeValues(descriptor.idBearingTags, 'w:id')) {
+        maxUsedId = trackMaxNumericId(id, maxUsedId);
       }
     }
 

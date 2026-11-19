@@ -13,7 +13,7 @@ ODF `add_comment` SHALL insert an `office:annotation` carrying `dc:creator` (the
 the whole anchor paragraph; when `anchor_text` is provided the annotation SHALL bracket the matched
 substring, returning `TEXT_NOT_FOUND` / `MULTIPLE_MATCHES` when the substring is absent or ambiguous
 and `MATCH_SPANS_MULTIPLE_NODES` when the match crosses inline node boundaries. Inserting an
-annotation SHALL NOT alter the document's positional paragraph IDs.
+annotation SHALL NOT alter the document's session paragraph IDs.
 
 ODF `get_comments` SHALL return every annotation in document order in the same shape as the DOCX
 tool (`id`, `author`, `date`, `initials`, `text`, `anchored_paragraph_id`, `replies`), with

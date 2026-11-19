@@ -1,0 +1,1292 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-04",
+  "issue": 1259,
+  "purpose": "What Microsoft Word shows for a text cross-reference (a REF field with no number switch, `REF <bookmark> \\h`) to a bookmarked heading, numbered clause, plain paragraph, decimal list item and table cell, including targets that hold emphasis, a highlighted fill and footnote references; what Word itself writes for a heading-text and a bookmark-text cross-reference; and what happens to the bookmark and its references when a Word user edits the target paragraph.",
+  "word": {
+    "platform": "Mac",
+    "version": "16.114.3"
+  },
+  "libreOffice": {
+    "version": "26.2.5.2"
+  },
+  "procedure": "The probe document was compiled with generateDocx from `spec` (docx-core at the #1259 branch); the create document was built from `createSource` with `docx-markdoc create --require-pdf`, every check passing, the LibreOffice PDF word check included. Each DOCX was staged in Word's sandbox container, opened in the background and bound by name. Through AppleScript, `update field` ran on every field of the body and of each footnote; then each paragraph's `list string` and text, each field's code and result range (with the bold, italic and highlight of every body result character, each read through a fresh one-character range of the document, since `character N of` a result range misreports its last character; the formatting of footnote results was not read, because AppleScript could not address one character of a footnote story), and each bookmark's start, end and text were read. For the edit runs, the edit was made first: `type text` on the selection of the document's own window placed at the start or end of the target paragraph (a Word user typing), `insert text` at a collapsed range at its start, `set content` of a range covering one word inside it, or `type text` over a selection of its whole text without the paragraph mark. `insert cross reference` with reference kind \"content text\" made Word's own heading-text and bookmark-text cross-references. The document was closed without saving and reopened for each run. `cachedFormatted` and `wordFormatted` write each result as {flags}text segments: b bold, i italic, h highlighted.",
+  "findings": [
+    "Every cached result equals Word's after-update result: 18 probe fields and 12 create fields (`probe.references`, `create.references`), in text and, for the body fields, in bold, italic and highlight.",
+    "Word leaves the list label out of a text reference (\"Purchase Price Adjustment.\", not \"Section 2.01 Purchase Price Adjustment.\") and leaves footnote reference marks out of it, whether the mark sits inside or at the end of the target (no footnote in any result range).",
+    "Word writes the result as the target's runs with their direct formatting: an italic word stays italic, a highlighted fill stays highlighted, a bold run stays bold. The heading style's own formatting is not carried. Formatting on the field itself is dropped: a reference whose five runs were italic showed its plain target in plain text after updating (first probe run, recorded in `formattingOfTheField`).",
+    "Word's Insert > Cross-reference writes ` REF <bookmark> \\h ` for \"Bookmark text\". For \"Heading text\" to a heading that already carries a bookmark over all of its runs, Word reuses that bookmark rather than adding a hidden _Ref one, so the generated bookmark has the extent Word gives a heading text.",
+    "Text typed at the start of a bookmarked paragraph, through the selection or a collapsed range, lands inside the bookmark, and references follow it after updating. A word changed inside the paragraph stays inside too (the reword runs).",
+    "Text typed at the very end of a bookmarked paragraph lands after the bookmark: its end stays before the new text, and a text reference keeps showing the old text. The same holds when the last word of the paragraph is replaced, by typing over it or setting the range's content: the new word lands after the bookmark, which keeps only the text before it (\"Purchase \" for \"Purchase Price Adjustment\" edited to \"Purchase Price True-Up\").",
+    "Typing over the whole text of the paragraph deletes the bookmark: every reference to it, number and text, shows \"Error! Reference source not found.\" after updating."
+  ],
+  "decision": "Bookmark placement stays as it is (after the paragraph properties, before the paragraph mark). It is the extent Word itself uses for a heading text: Word reuses it for its own heading-text cross-reference, so a reference Word makes behaves the same way. Typing at the start of the paragraph is not a hazard. No placement inside the paragraph can catch text typed after its last run, or a replaced last word; ending the bookmark after the paragraph mark would make a text reference carry the mark and restyle its own paragraph (§ 17.16.5.51). The end-of-paragraph and typed-over behaviours are documented in the README and the ParagraphSpec.bookmark doc comment. A text reference's cached result copies the target's text runs with their formatting, and a text reference carries no formatting of its own (generation and create refuse it).",
+  "formattingOfTheField": {
+    "instruction": " REF sec_ppa \\h ",
+    "fieldRunsFormatting": "italic",
+    "targetFormatting": "none",
+    "wordFormatted": "{}Purchase Price Adjustment."
+  },
+  "spec": {
+    "meta": {
+      "createdIso": "2026-11-04T00:00:00Z"
+    },
+    "styles": [
+      {
+        "styleId": "Heading1",
+        "name": "heading 1",
+        "type": "paragraph",
+        "basedOn": "Normal",
+        "run": {
+          "bold": true
+        }
+      },
+      {
+        "styleId": "Heading2",
+        "name": "heading 2",
+        "type": "paragraph",
+        "basedOn": "Normal",
+        "run": {
+          "bold": true
+        }
+      }
+    ],
+    "numbering": [
+      {
+        "numId": "legal",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "upperRoman",
+            "lvlText": "ARTICLE %1",
+            "pStyle": "Heading1",
+            "suff": "tab"
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "decimalZero",
+            "lvlText": "Section %1.%2",
+            "isLgl": true,
+            "pStyle": "Heading2",
+            "suff": "tab"
+          },
+          {
+            "ilvl": 2,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%3)",
+            "suff": "tab"
+          },
+          {
+            "ilvl": 3,
+            "numFmt": "lowerRoman",
+            "lvlText": "(%4)",
+            "suff": "tab"
+          }
+        ]
+      },
+      {
+        "numId": "decimal",
+        "levels": [
+          {
+            "ilvl": 0,
+            "numFmt": "decimal",
+            "lvlText": "%1.",
+            "suff": "tab"
+          },
+          {
+            "ilvl": 1,
+            "numFmt": "lowerLetter",
+            "lvlText": "(%2)",
+            "suff": "tab"
+          }
+        ]
+      }
+    ],
+    "sections": [
+      {
+        "blocks": [
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Text cross-reference probe (#1259)"
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R01 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "art_ps",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R02 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "sec_ppa",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R03 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "sec_emph",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R04 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "sec_fill",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R05 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "sec_fn_mid",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R06 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "sec_fn_end",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R07 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "clause_a",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R08 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "clause_bold",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R09 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R10 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "plain_fn",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R11 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "dec_item",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R12 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "cell_para",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R14 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "sec_ppa"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R15 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "clause_a"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R16 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "clause_a",
+                "number": "paragraph"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R17 see "
+              },
+              {
+                "kind": "crossReference",
+                "bookmark": "sec_spaces",
+                "show": "text"
+              },
+              {
+                "kind": "text",
+                "text": " here."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "DEFINITIONS"
+              }
+            ],
+            "styleId": "Heading1"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Defined Terms."
+              }
+            ],
+            "styleId": "Heading2"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "PURCHASE AND SALE"
+              }
+            ],
+            "styleId": "Heading1",
+            "bookmark": "art_ps"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Purchase Price Adjustment."
+              }
+            ],
+            "styleId": "Heading2",
+            "bookmark": "sec_ppa"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "the Buyer shall pay the Adjustment Amount."
+              }
+            ],
+            "list": {
+              "numId": "legal",
+              "ilvl": 2
+            },
+            "bookmark": "clause_a"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "the Seller shall deliver "
+              },
+              {
+                "kind": "text",
+                "text": "the Closing Statement",
+                "bold": true
+              },
+              {
+                "kind": "text",
+                "text": "."
+              }
+            ],
+            "list": {
+              "numId": "legal",
+              "ilvl": 2
+            },
+            "bookmark": "clause_bold"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Payment of the "
+              },
+              {
+                "kind": "text",
+                "text": "Closing",
+                "italic": true
+              },
+              {
+                "kind": "text",
+                "text": " Amount."
+              }
+            ],
+            "styleId": "Heading2",
+            "bookmark": "sec_emph"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Delivery by "
+              },
+              {
+                "kind": "text",
+                "text": "[Effective Date]",
+                "highlight": "yellow"
+              },
+              {
+                "kind": "text",
+                "text": "."
+              }
+            ],
+            "styleId": "Heading2",
+            "bookmark": "sec_fill"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Escrow"
+              },
+              {
+                "kind": "footnote",
+                "blocks": [
+                  {
+                    "kind": "paragraph",
+                    "runs": [
+                      {
+                        "kind": "text",
+                        "text": "The escrow agent is named in Schedule 1."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": " Release."
+              }
+            ],
+            "styleId": "Heading2",
+            "bookmark": "sec_fn_mid"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Indemnification."
+              },
+              {
+                "kind": "footnote",
+                "blocks": [
+                  {
+                    "kind": "paragraph",
+                    "runs": [
+                      {
+                        "kind": "text",
+                        "text": "Subject to the cap in Section 9."
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "styleId": "Heading2",
+            "bookmark": "sec_fn_end"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Holdback  Amount."
+              }
+            ],
+            "styleId": "Heading2",
+            "bookmark": "sec_spaces"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "This plain paragraph is a target."
+              }
+            ],
+            "bookmark": "plain"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "A plain paragraph with a note"
+              },
+              {
+                "kind": "footnote",
+                "blocks": [
+                  {
+                    "kind": "paragraph",
+                    "runs": [
+                      {
+                        "kind": "text",
+                        "text": "A note in a plain paragraph."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": " in it."
+              }
+            ],
+            "bookmark": "plain_fn"
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "The decimal list item."
+              }
+            ],
+            "list": {
+              "numId": "decimal",
+              "ilvl": 0
+            },
+            "bookmark": "dec_item"
+          },
+          {
+            "kind": "table",
+            "columnWidthsTwips": [
+              4680,
+              4680
+            ],
+            "rows": [
+              {
+                "cells": [
+                  {
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "Cell target text."
+                          }
+                        ],
+                        "bookmark": "cell_para"
+                      }
+                    ]
+                  },
+                  {
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "runs": [
+                          {
+                            "kind": "text",
+                            "text": "R18 cell see "
+                          },
+                          {
+                            "kind": "crossReference",
+                            "bookmark": "plain",
+                            "show": "text"
+                          },
+                          {
+                            "kind": "text",
+                            "text": " here."
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "R19 note host"
+              },
+              {
+                "kind": "footnote",
+                "blocks": [
+                  {
+                    "kind": "paragraph",
+                    "runs": [
+                      {
+                        "kind": "text",
+                        "text": "R19 see "
+                      },
+                      {
+                        "kind": "crossReference",
+                        "bookmark": "sec_ppa",
+                        "show": "text"
+                      },
+                      {
+                        "kind": "text",
+                        "text": " in a note."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "text": "."
+              }
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "runs": [
+              {
+                "kind": "text",
+                "text": "Closing paragraph."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "probe": {
+    "references": [
+      {
+        "story": "body",
+        "instruction": " REF art_ps \\h ",
+        "cached": "PURCHASE AND SALE",
+        "cachedFormatted": "{}PURCHASE AND SALE",
+        "word": "PURCHASE AND SALE",
+        "wordFormatted": "{}PURCHASE AND SALE"
+      },
+      {
+        "story": "body",
+        "instruction": " REF sec_ppa \\h ",
+        "cached": "Purchase Price Adjustment.",
+        "cachedFormatted": "{}Purchase Price Adjustment.",
+        "word": "Purchase Price Adjustment.",
+        "wordFormatted": "{}Purchase Price Adjustment."
+      },
+      {
+        "story": "body",
+        "instruction": " REF sec_emph \\h ",
+        "cached": "Payment of the Closing Amount.",
+        "cachedFormatted": "{}Payment of the {i}Closing{} Amount.",
+        "word": "Payment of the Closing Amount.",
+        "wordFormatted": "{}Payment of the {i}Closing{} Amount."
+      },
+      {
+        "story": "body",
+        "instruction": " REF sec_fill \\h ",
+        "cached": "Delivery by [Effective Date].",
+        "cachedFormatted": "{}Delivery by {h}[Effective Date]{}.",
+        "word": "Delivery by [Effective Date].",
+        "wordFormatted": "{}Delivery by {h}[Effective Date]{}."
+      },
+      {
+        "story": "body",
+        "instruction": " REF sec_fn_mid \\h ",
+        "cached": "Escrow Release.",
+        "cachedFormatted": "{}Escrow Release.",
+        "word": "Escrow Release.",
+        "wordFormatted": "{}Escrow Release."
+      },
+      {
+        "story": "body",
+        "instruction": " REF sec_fn_end \\h ",
+        "cached": "Indemnification.",
+        "cachedFormatted": "{}Indemnification.",
+        "word": "Indemnification.",
+        "wordFormatted": "{}Indemnification."
+      },
+      {
+        "story": "body",
+        "instruction": " REF clause_a \\h ",
+        "cached": "the Buyer shall pay the Adjustment Amount.",
+        "cachedFormatted": "{}the Buyer shall pay the Adjustment Amount.",
+        "word": "the Buyer shall pay the Adjustment Amount.",
+        "wordFormatted": "{}the Buyer shall pay the Adjustment Amount."
+      },
+      {
+        "story": "body",
+        "instruction": " REF clause_bold \\h ",
+        "cached": "the Seller shall deliver the Closing Statement.",
+        "cachedFormatted": "{}the Seller shall deliver {b}the Closing Statement{}.",
+        "word": "the Seller shall deliver the Closing Statement.",
+        "wordFormatted": "{}the Seller shall deliver {b}the Closing Statement{}."
+      },
+      {
+        "story": "body",
+        "instruction": " REF plain \\h ",
+        "cached": "This plain paragraph is a target.",
+        "cachedFormatted": "{}This plain paragraph is a target.",
+        "word": "This plain paragraph is a target.",
+        "wordFormatted": "{}This plain paragraph is a target."
+      },
+      {
+        "story": "body",
+        "instruction": " REF plain_fn \\h ",
+        "cached": "A plain paragraph with a note in it.",
+        "cachedFormatted": "{}A plain paragraph with a note in it.",
+        "word": "A plain paragraph with a note in it.",
+        "wordFormatted": "{}A plain paragraph with a note in it."
+      },
+      {
+        "story": "body",
+        "instruction": " REF dec_item \\h ",
+        "cached": "The decimal list item.",
+        "cachedFormatted": "{}The decimal list item.",
+        "word": "The decimal list item.",
+        "wordFormatted": "{}The decimal list item."
+      },
+      {
+        "story": "body",
+        "instruction": " REF cell_para \\h ",
+        "cached": "Cell target text.",
+        "cachedFormatted": "{}Cell target text.",
+        "word": "Cell target text.",
+        "wordFormatted": "{}Cell target text."
+      },
+      {
+        "story": "body",
+        "instruction": " REF sec_ppa \\w \\h ",
+        "cached": "Section 2.01",
+        "cachedFormatted": "{}Section 2.01",
+        "word": "Section 2.01",
+        "wordFormatted": "{}Section 2.01"
+      },
+      {
+        "story": "body",
+        "instruction": " REF clause_a \\w \\h ",
+        "cached": "Section 2.01(a)",
+        "cachedFormatted": "{}Section 2.01(a)",
+        "word": "Section 2.01(a)",
+        "wordFormatted": "{}Section 2.01(a)"
+      },
+      {
+        "story": "body",
+        "instruction": " REF clause_a \\n \\h ",
+        "cached": "(a)",
+        "cachedFormatted": "{}(a)",
+        "word": "(a)",
+        "wordFormatted": "{}(a)"
+      },
+      {
+        "story": "body",
+        "instruction": " REF sec_spaces \\h ",
+        "cached": "Holdback  Amount.",
+        "cachedFormatted": "{}Holdback  Amount.",
+        "word": "Holdback  Amount.",
+        "wordFormatted": "{}Holdback  Amount."
+      },
+      {
+        "story": "body",
+        "instruction": " REF plain \\h ",
+        "cached": "This plain paragraph is a target.",
+        "cachedFormatted": "{}This plain paragraph is a target.",
+        "word": "This plain paragraph is a target.",
+        "wordFormatted": "{}This plain paragraph is a target."
+      },
+      {
+        "story": "footnote",
+        "instruction": " REF sec_ppa \\h ",
+        "cached": "Purchase Price Adjustment.",
+        "cachedFormatted": "{}Purchase Price Adjustment.",
+        "word": "Purchase Price Adjustment."
+      }
+    ],
+    "edits": {
+      "typedAtStart": {
+        "action": "type \"Typed \" at the start of Section 2.01 \"Purchase Price Adjustment.\"",
+        "bookmark": {
+          "start": 1051,
+          "end": 1083,
+          "paragraphStart": 1051,
+          "paragraphEnd": 1084,
+          "text": "Typed Purchase Price Adjustment."
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Typed Purchase Price Adjustment."
+          },
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\w \\h ",
+            "word": "Section 2.01"
+          },
+          {
+            "story": "footnote 4",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Typed Purchase Price Adjustment."
+          }
+        ]
+      },
+      "insertedAtStart": {
+        "action": "insert \"Inserted \" at a collapsed range at the start of Section 2.01",
+        "bookmark": {
+          "start": 1054,
+          "end": 1089,
+          "paragraphStart": 1054,
+          "paragraphEnd": 1090,
+          "text": "Inserted Purchase Price Adjustment."
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Inserted Purchase Price Adjustment."
+          },
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\w \\h ",
+            "word": "Section 2.01"
+          },
+          {
+            "story": "footnote 4",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Inserted Purchase Price Adjustment."
+          }
+        ]
+      },
+      "typedAtEnd": {
+        "action": "type \" More\" at the end of Section 2.01, before its paragraph mark",
+        "bookmark": {
+          "start": 1045,
+          "end": 1071,
+          "paragraphStart": 1045,
+          "paragraphEnd": 1077,
+          "text": "Purchase Price Adjustment."
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Purchase Price Adjustment."
+          },
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\w \\h ",
+            "word": "Section 2.01"
+          },
+          {
+            "story": "footnote 4",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Purchase Price Adjustment."
+          }
+        ]
+      },
+      "rewordedInside": {
+        "action": "replace \"Price\" inside Section 2.01 with \"Consideration\"",
+        "bookmark": {
+          "start": 1053,
+          "end": 1087,
+          "paragraphStart": 1053,
+          "paragraphEnd": 1088,
+          "text": "Purchase Consideration Adjustment."
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Purchase Consideration Adjustment."
+          },
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\w \\h ",
+            "word": "Section 2.01"
+          },
+          {
+            "story": "footnote 4",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Purchase Consideration Adjustment."
+          }
+        ]
+      },
+      "typedOverWholeText": {
+        "action": "select the whole text of Section 2.01 (not its paragraph mark) and type \"Adjustment of the Purchase Price.\"",
+        "bookmark": null,
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Error! Reference source not found."
+          },
+          {
+            "story": "body",
+            "instruction": " REF sec_ppa \\w \\h ",
+            "word": "Error! Reference source not found."
+          },
+          {
+            "story": "footnote 4",
+            "instruction": " REF sec_ppa \\h ",
+            "word": "Error! Reference source not found."
+          }
+        ],
+        "headingAfterEdit": "Adjustment of the Purchase Price."
+      }
+    },
+    "wordNativeCrossReferences": {
+      "headingText": {
+        "to": "heading 7, Section 2.04 \"Escrow<footnote mark> Release.\"",
+        "instruction": " REF sec_fn_mid \\h ",
+        "word": "Escrow Release."
+      },
+      "bookmarkText": {
+        "to": "bookmark sec_ppa",
+        "instruction": " REF sec_ppa \\h ",
+        "word": "Purchase Price Adjustment."
+      }
+    }
+  },
+  "createSource": "---\nheading-numbers: legal\n---\n\n# ASSET PURCHASE AGREEMENT\n\n## Purchase and Sale {% #purchase-and-sale %}\n\n### Purchase Price Adjustment {% #price-adjustment %}\n\n1. the Buyer pays the *Adjustment* Amount {% #adjustment-payment %}\n2. the Seller delivers the statement\n\n### Escrow{% fnref id=\"escrow\" /%} Release by {% fill %}Outside Date{% /fill %} {% #escrow-release %}\n\n- the escrow agent releases the funds {% #release-funds %}\n\n## Closing {% #closing %}\n\n### Closing Deliveries {% #deliveries %}\n\nThe adjustment under {% xref to=\"price-adjustment\" /%} ({% xref to=\"price-adjustment\" /%}, {% xref to=\"price-adjustment\" show=\"text\" /%}) follows {% xref to=\"purchase-and-sale\" show=\"text\" /%}.\n\nSee {% xref to=\"escrow-release\" show=\"text\" /%}, where {% xref to=\"release-funds\" show=\"text\" /%}, and {% xref to=\"adjustment-payment\" /%}: {% xref to=\"adjustment-payment\" show=\"text\" /%}.\n\n{% table %}\n* Term\n* Where\n---\n* Deliveries\n* {% xref to=\"deliveries\" show=\"text\" /%} in {% xref to=\"closing\" show=\"text\" /%}\n{% /table %}\n\nLast: {% xref to=\"deliveries\" /%}.{% fnref id=\"note\" /%}\n\n{% footnote id=\"escrow\" %}The escrow agent is named in Schedule 1.{% /footnote %}\n\n{% footnote id=\"note\" %}Compare {% xref to=\"escrow-release\" show=\"text\" /%}.{% /footnote %}",
+  "create": {
+    "references": [
+      {
+        "story": "body",
+        "instruction": " REF price_adjustment \\w \\h ",
+        "cached": "Section 1.01",
+        "cachedFormatted": "{}Section 1.01",
+        "word": "Section 1.01",
+        "wordFormatted": "{}Section 1.01"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price_adjustment \\w \\h ",
+        "cached": "Section 1.01",
+        "cachedFormatted": "{}Section 1.01",
+        "word": "Section 1.01",
+        "wordFormatted": "{}Section 1.01"
+      },
+      {
+        "story": "body",
+        "instruction": " REF price_adjustment \\h ",
+        "cached": "Purchase Price Adjustment",
+        "cachedFormatted": "{}Purchase Price Adjustment",
+        "word": "Purchase Price Adjustment",
+        "wordFormatted": "{}Purchase Price Adjustment"
+      },
+      {
+        "story": "body",
+        "instruction": " REF purchase_and_sale \\h ",
+        "cached": "Purchase and Sale",
+        "cachedFormatted": "{}Purchase and Sale",
+        "word": "Purchase and Sale",
+        "wordFormatted": "{}Purchase and Sale"
+      },
+      {
+        "story": "body",
+        "instruction": " REF escrow_release \\h ",
+        "cached": "Escrow Release by [Outside Date]",
+        "cachedFormatted": "{}Escrow Release by {h}[Outside Date]",
+        "word": "Escrow Release by [Outside Date]",
+        "wordFormatted": "{}Escrow Release by {h}[Outside Date]"
+      },
+      {
+        "story": "body",
+        "instruction": " REF release_funds \\h ",
+        "cached": "the escrow agent releases the funds",
+        "cachedFormatted": "{}the escrow agent releases the funds",
+        "word": "the escrow agent releases the funds",
+        "wordFormatted": "{}the escrow agent releases the funds"
+      },
+      {
+        "story": "body",
+        "instruction": " REF adjustment_payment \\w \\h ",
+        "cached": "Section 1.01(a)",
+        "cachedFormatted": "{}Section 1.01(a)",
+        "word": "Section 1.01(a)",
+        "wordFormatted": "{}Section 1.01(a)"
+      },
+      {
+        "story": "body",
+        "instruction": " REF adjustment_payment \\h ",
+        "cached": "the Buyer pays the Adjustment Amount",
+        "cachedFormatted": "{}the Buyer pays the {i}Adjustment{} Amount",
+        "word": "the Buyer pays the Adjustment Amount",
+        "wordFormatted": "{}the Buyer pays the {i}Adjustment{} Amount"
+      },
+      {
+        "story": "body",
+        "instruction": " REF deliveries \\h ",
+        "cached": "Closing Deliveries",
+        "cachedFormatted": "{}Closing Deliveries",
+        "word": "Closing Deliveries",
+        "wordFormatted": "{}Closing Deliveries"
+      },
+      {
+        "story": "body",
+        "instruction": " REF closing \\h ",
+        "cached": "Closing",
+        "cachedFormatted": "{}Closing",
+        "word": "Closing",
+        "wordFormatted": "{}Closing"
+      },
+      {
+        "story": "body",
+        "instruction": " REF deliveries \\w \\h ",
+        "cached": "Section 2.01",
+        "cachedFormatted": "{}Section 2.01",
+        "word": "Section 2.01",
+        "wordFormatted": "{}Section 2.01"
+      },
+      {
+        "story": "footnote",
+        "instruction": " REF escrow_release \\h ",
+        "cached": "Escrow Release by [Outside Date]",
+        "cachedFormatted": "{}Escrow Release by {h}[Outside Date]",
+        "word": "Escrow Release by [Outside Date]"
+      }
+    ],
+    "edits": {
+      "rewordedInside": {
+        "action": "replace \"Price\" inside Section 1.01 \"Purchase Price Adjustment\" with \"Consideration\"",
+        "bookmark": {
+          "start": 43,
+          "end": 76,
+          "paragraphStart": 43,
+          "paragraphEnd": 77,
+          "text": "Purchase Consideration Adjustment"
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\h ",
+            "word": "Purchase Consideration Adjustment"
+          }
+        ]
+      },
+      "typedOverInnerWord": {
+        "action": "select \"Price\" inside Section 1.01 and type \"Consideration\"",
+        "bookmark": {
+          "start": 43,
+          "end": 76,
+          "paragraphStart": 43,
+          "paragraphEnd": 77,
+          "text": "Purchase Consideration Adjustment"
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\h ",
+            "word": "Purchase Consideration Adjustment"
+          }
+        ]
+      },
+      "typedAtStart": {
+        "action": "type \"Final \" at the start of Section 1.01",
+        "bookmark": {
+          "start": 43,
+          "end": 74,
+          "paragraphStart": 43,
+          "paragraphEnd": 75,
+          "text": "Final Purchase Price Adjustment"
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\h ",
+            "word": "Final Purchase Price Adjustment"
+          }
+        ]
+      },
+      "typedAtEnd": {
+        "action": "type \" Mechanism\" at the end of Section 1.01",
+        "bookmark": {
+          "start": 43,
+          "end": 68,
+          "paragraphStart": 43,
+          "paragraphEnd": 79,
+          "text": "Purchase Price Adjustment"
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\h ",
+            "word": "Purchase Price Adjustment"
+          }
+        ]
+      },
+      "rewordedLastWords": {
+        "action": "replace \"Price Adjustment\", the last words of Section 1.01, with \"Price True-Up\"",
+        "bookmark": {
+          "start": 43,
+          "end": 52,
+          "paragraphStart": 43,
+          "paragraphEnd": 66,
+          "text": "Purchase "
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\h ",
+            "word": "Purchase "
+          }
+        ]
+      },
+      "typedOverLastWord": {
+        "action": "select \"Adjustment\", the last word of Section 1.01, and type \"True-Up\"",
+        "bookmark": {
+          "start": 43,
+          "end": 58,
+          "paragraphStart": 43,
+          "paragraphEnd": 66,
+          "text": "Purchase Price "
+        },
+        "referencesAfterUpdate": [
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\w \\h ",
+            "word": "Section 1.01"
+          },
+          {
+            "story": "body",
+            "instruction": " REF price_adjustment \\h ",
+            "word": "Purchase Price "
+          }
+        ]
+      }
+    }
+  }
+}

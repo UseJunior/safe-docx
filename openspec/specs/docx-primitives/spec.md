@@ -161,11 +161,16 @@ The XML engine SHALL parse and serialize OOXML without data loss, preserving ele
 - **THEN** loading SHALL succeed and the body text SHALL be present
 
 ### Requirement: Paragraph Bookmark Identity
-The bookmark engine SHALL mint and persist stable `_bk_*` identifiers for paragraphs, ensuring unique addressability and idempotent allocation.
+The bookmark engine SHALL mint and persist stable `_bk_*` identifiers for paragraphs, ensuring unique addressability and idempotent allocation. Newly minted identifiers SHALL use 10 lowercase hexadecimal characters. Existing `_bk_*` identifiers, including the prior 12-hex form, SHALL remain canonical and resolvable.
 
 #### Scenario: insertParagraphBookmarks mints IDs matching expected pattern
 - **WHEN** `insertParagraphBookmarks` is called on a document with paragraphs lacking bookmarks
-- **THEN** each paragraph SHALL receive a `_bk_*` identifier matching the pattern `_bk_[0-9a-f]{12}`
+- **THEN** each paragraph SHALL receive a `_bk_*` identifier matching the pattern `_bk_[0-9a-f]{10}`
+
+#### Scenario: Legacy identifiers remain canonical
+- **GIVEN** a paragraph carrying a previously minted 12-hex `_bk_*` bookmark
+- **WHEN** the document is reopened and paragraph bookmarks are allocated
+- **THEN** the existing bookmark SHALL remain unchanged and resolvable
 
 #### Scenario: getParagraphBookmarkId retrieves minted ID
 - **GIVEN** a paragraph with a previously minted `_bk_*` bookmark

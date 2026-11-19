@@ -13,6 +13,7 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | Primitive / tool | Source path | OOXML revision element | Notes |
 | --- | --- | --- | --- |
 | `text.ts` — `replaceParagraphTextRange` | `packages/docx-core/src/primitives/text.ts` | `w:ins`, `w:del`, paragraph-mark `w:pPr/w:rPr/w:del`, `w:rPrChange` | Run-level text replacement emits insertion/deletion wrappers, full-paragraph tracked deletion marks the paragraph break so acceptance removes the emptied paragraph, and formatting-aware replacements record the prior run properties with `w:rPrChange`. **Verified by [120.8] (#143), #173, and #741 canonical-emission regressions.** |
+| `text.ts` — `formatTrackedInsertionTextRange` | `packages/docx-core/src/primitives/text.ts` | `w:rPrChange` | Formatting-only edit of text that is already a tracked insertion (for example a row inserted under `w:trPr/w:ins`). Splits runs at the range edges and records the prior run properties with `w:rPrChange` inside the existing `w:ins`, with no delete and re-insert, so selective accept/reject stays resolvable. A same-author `w:rPrChange` is reused (and dropped when the edit reverts it); edits touch only live `w:rPr` children, never the snapshot. Declines (no mutation) when any run is outside `w:ins`, in a field result, holds non-text content, or carries another author's `w:rPrChange`. **Verified by #1225 regressions.** |
 | `layout.ts` — `setParagraphSpacing` | `packages/docx-core/src/primitives/layout.ts` | `w:pPrChange` | Paragraph spacing mutations change paragraph properties, not spacer-paragraph structure. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableRowHeight` | `packages/docx-core/src/primitives/layout.ts` | `w:trPrChange` | Row geometry changes belong under row-property revisions. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableCellPadding` | `packages/docx-core/src/primitives/layout.ts` | `w:tcPrChange` | Cell padding changes belong under cell-property revisions. **Verified by [120.8] (#143) regression test.** |
@@ -24,12 +25,14 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `footnotes.ts` — `addFootnote` | `packages/docx-core/src/primitives/footnotes.ts` | `w:ins` | The inserted `w:footnoteReference` in the body story and the new footnote text both belong to the revisionable surface. Companion package bootstrap is listed in Table B. **Verified by [120.8] (#143) regression test.** |
 | `footnotes.ts` — `updateFootnoteText` | `packages/docx-core/src/primitives/footnotes.ts` | `w:ins`, `w:del` | Updating note text is a content revision inside the footnote body. **Verified by [120.8] (#143) regression test.** |
 | `footnotes.ts` — `deleteFootnote` | `packages/docx-core/src/primitives/footnotes.ts` | `w:del` | Deleting a note removes both the body reference and the note text. **Verified by [120.8] (#143) regression test.** |
-| `replace_text` | `packages/docx-mcp/src/tools/replace_text.ts` | `w:ins`, `w:del`, `w:rPrChange` | MCP wrapper over `text.ts`; the supported contract is native tracked insertion/deletion plus any explicit inline formatting deltas. **Verified by [120.8] (#143) regression test.** |
+| `replace_text` | `packages/docx-mcp/src/tools/replace_text.ts` | `w:ins`, `w:del`, `w:rPrChange` | MCP wrapper over `text.ts`; the supported contract is native tracked insertion/deletion plus any explicit inline formatting deltas. A formatting-only markup replacement (same visible text) over tracked-inserted runs routes through `formatTrackedInsertionTextRange` and emits only `w:rPrChange` (#1225). **Verified by [120.8] (#143) regression test.** |
 | `insert_paragraph` | `packages/docx-mcp/src/tools/insert_paragraph.ts` | `w:ins`, `w:pPrChange`, `w:rPrChange` | Paragraph insertion is body-content creation. Paragraph/run formatting inherited from `style_source_id` stays inside the revisionable surface. **Verified by [120.8] (#143) regression test.** |
 | `batch_edit` | `packages/docx-mcp/src/tools/batch_edit.ts` | `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange` | Batch execution is only an orchestrator, but every applied step delegates to revisionable body-edit primitives. **Verified by [120.8] (#143) regression test.** |
 | `clear_formatting` | `packages/docx-mcp/src/tools/clear_formatting.ts` | `w:rPrChange` | Run-property clearing is a run formatting revision, not a package mutation. **Verified by [120.8] (#143) regression test.** |
 | `format_layout` | `packages/docx-mcp/src/tools/format_layout.ts` | `w:pPrChange`, `w:trPrChange`, `w:tcPrChange` | Deterministic OOXML geometry edits belong under native property-change revisions. **Verified by [120.8] (#143) regression test.** |
 | `format_numbering` | `packages/docx-mcp/src/tools/format_numbering.ts` | `w:pPrChange` | DOCX-only direct paragraph numbering changes delegate to the canonical numbering primitive and retain the previous `w:numPr` in tracked output. **Verified by the #653 canonical-emission MCP regression test.** |
+| `replace_text` / `insert_paragraph` on a header/footer paragraph | `packages/docx-mcp/src/tools/header_footer_edit.ts` | `w:ins`, `w:del` | A paragraph id from `get_headers_footers` routes the edit to the selected header/footer part; in a tracked session the change is written in that part (#1051). Plain text only. |
+| `set_header_footer` (section reference) | `packages/docx-mcp/src/tools/set_header_footer.ts` | `w:sectPrChange` | Each changed `w:sectPr` (the target section and any pinned following section) retains its prior properties in tracked output (#1052). |
 | `format_section` | `packages/docx-mcp/src/tools/format_section.ts` | `w:sectPrChange` | DOCX-only page-number, page-size/orientation, and margin updates delegate to one atomic section primitive and retain the prior `w:sectPr` in tracked output. **Verified by the #654 canonical-emission MCP regression tests.** |
 | `insert_section_break` | `packages/docx-mcp/src/tools/insert_section_break.ts` | `w:ins` paragraph mark, optional `w:sectPrChange` | DOCX-only anchored section splitting preserves page setup and relationship references, projects shifted section indexes, and restores original topology on reject. **Verified by the #654 MCP and core accept/reject tests.** |
 | `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | `w:ins` (root-comment mode only) | Root-comment mode wraps only the body-story `w:commentReference` run in `w:ins`; range markers and root-comment text in `comments.xml` are not revision-wrapped. **Reply-mode** dispatches through `comments.ts` `addCommentReply` which is Table B (side-part metadata only; no body revision marker). Missing comment infrastructure is also a Table B companion. **Verified by [120.8] (#143) regression test.** |
@@ -53,8 +56,12 @@ Use the alternate contract below whenever a primitive/tool mutates relationships
 | `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | Adds root comment body text to `comments.xml` and always writes author metadata to `people.xml`. May also trigger comment-part bootstrap (`comments.xml`, `commentsExtended.xml`, relationships, content types) when the package lacks comment infrastructure, and writes to `commentsExtended.xml` for threaded replies. Companion body-story `w:commentReference` row is in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 | `delete_comment` | `packages/docx-mcp/src/tools/delete_comment.ts` | Removes comment/reply body text from `comments.xml` and threaded-comment companion metadata from `commentsExtended.xml` alongside the Table A body-story reference deletion. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 | `add_footnote` | `packages/docx-mcp/src/tools/add_footnote.ts` | May trigger footnote-part bootstrap and companion package registration when the document has no footnote infrastructure yet. Companion reference/text row is in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+| `document_properties.ts` — `setDocumentProperties` | `packages/docx-core/src/primitives/document_properties.ts` | Sets or removes named elements of the Core Properties part (`docProps/core.xml`) and the Extended File Properties part (`docProps/app.xml`), keeping every other element; when a part is missing and a value is set in it, creates the part, adds its package relationship to `_rels/.rels`, and adds its `[Content_Types].xml` override. OOXML has no tracked-change form for document properties. | The primitive itself records nothing; `set_document_properties` records each effective write in the session's non-revision change manifest. |
+| `set_document_properties` | `packages/docx-mcp/src/tools/set_document_properties.ts` | Core and extended document properties from a closed set, through `setDocumentProperties` (see the row above). A write whose values already hold changes nothing and records nothing. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 
-No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement, header/footer part creation, image-part insertion, or `core.xml` / `app.xml` metadata editing. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation.
+| `header_footer.ts` — `setHeaderFooter` / `set_header_footer` | `packages/docx-core/src/primitives/header_footer.ts`, `packages/docx-mcp/src/tools/set_header_footer.ts` | Creates `word/headerN.xml` / `word/footerN.xml`, adds its `word/_rels/document.xml.rels` relationship and its `[Content_Types].xml` override. The section reference change is the Table A `w:sectPrChange` row. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+
+No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement or image-part insertion. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation. `core.xml` / `app.xml` metadata editing is the `set_document_properties` row above.
 
 ### Non-revision change manifest (implemented in [#122](https://github.com/UseJunior/safe-docx/issues/122))
 
@@ -65,7 +72,8 @@ package parts mutated without a tracked-change wrapper. The `save` report surfac
 the manifest as `non_revision_changes` (omitted when empty), so package-level
 mutations are accounted for alongside the tracked revisions list rather than
 landing silently. The dual-surface tools that record entries are `add_comment`,
-`delete_comment`, and `add_footnote`; the write surface of every tool is
+`delete_comment`, and `add_footnote`; the pure package-mutation tool
+`set_document_properties` records one entry per effective write, and `set_header_footer` one entry per call that creates a part. The write surface of every tool is
 classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
 (`surface`: `revisionable` | `package-mutation` | `internal`, plus
 `emitsNonRevisionChanges`).
@@ -207,6 +215,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `bookmarks.ts` — Internal / non-contract utilities
 - `comments.ts` — Table A and Table B
 - `document.ts` — Internal / non-contract utilities
+- `document_properties.ts` — Table B
 - `document_view.ts` — Internal / non-contract utilities
 - `dom-helpers.ts` — Internal / non-contract utilities
 - `errors.ts` — Internal / non-contract utilities
@@ -253,7 +262,10 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `format_numbering.ts` — Table A
 - `format_section.ts` — Table A
 - `insert_section_break.ts` — Table A
+- `get_headers_footers.ts` — Internal / non-contract utilities
 - `get_sections.ts` — Internal / non-contract utilities
+- `header_footer_edit.ts` — Table A
+- `get_document_properties.ts` — Internal / non-contract utilities
 - `get_comments.ts` — Internal / non-contract utilities
 - `get_file_status.ts` — Internal / non-contract utilities
 - `get_footnotes.ts` — Internal / non-contract utilities
@@ -271,6 +283,8 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `replace_text.ts` — Table A
 - `save.ts` — Table A
 - `session_resolution.ts` — Internal / non-contract utilities
+- `set_document_properties.ts` — Table B
+- `set_header_footer.ts` — Table A + Table B
 - `tag_parser.ts` — Internal / non-contract utilities
 - `types.ts` — Internal / non-contract utilities
 - `update_footnote.ts` — Table A

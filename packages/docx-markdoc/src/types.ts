@@ -50,7 +50,38 @@ export type AnnotationRunStyle = {
  */
 export type AnnotationHyperlink = { destination: string };
 
-export type AnnotationRun = { text: string; style?: AnnotationRunStyle; hyperlink?: AnnotationHyperlink };
+/** `{% xref number="…" %}` values in the anchored dialect: the REF number switch (`\w`, `\n`, `\r`). */
+export type CrossReferenceNumber = 'full' | 'paragraph' | 'relative';
+
+/**
+ * A Word REF field to a bookmarked paragraph, as the anchored dialect's
+ * `{% xref %}` tag carries it. `bookmark` is the bookmark name the field
+ * names (the tag spells it `to="<id>"` when it maps back to a creation id).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1260
+ */
+export type AnchoredCrossReference = {
+  bookmark: string;
+  show: 'number' | 'text';
+  /** Present for `show: 'number'` only. */
+  number?: CrossReferenceNumber;
+  /** The field carries `\h`. */
+  hyperlink: boolean;
+};
+
+/** An `{% xref %}` in a paragraph's text: the half-open range its cached result occupies. */
+export type CrossReferenceSpan = { start: number; end: number; text: string; reference: AnchoredCrossReference };
+
+export type AnnotationRun = {
+  text: string;
+  style?: AnnotationRunStyle;
+  hyperlink?: AnnotationHyperlink;
+  /**
+   * The run is (part of) the cached result of a REF field. Consecutive runs
+   * with the same `field` ordinal form one field.
+   */
+  crossReference?: AnchoredCrossReference & { field: number };
+};
 export type AnnotationParagraph = { runs: AnnotationRun[] };
 export type CanonicalAnnotation = {
   id: string;
@@ -127,6 +158,10 @@ export type SourceParagraph = {
   /** Legacy source-only syntax has no authored before state; resolve it against the pinned source. */
   originalTextFromSource?: true;
   revisedText: string;
+  /** `{% xref %}` tags in the before state, in order (absent when there are none). */
+  originalCrossReferences?: CrossReferenceSpan[];
+  /** `{% xref %}` tags in the after state, in order (absent when there are none). */
+  revisedCrossReferences?: CrossReferenceSpan[];
 };
 
 /**
@@ -194,6 +229,8 @@ export type InsertOperation = {
   operationId: string;
   anchorId: string;
   revisedText: string;
+  /** `{% xref %}` tags in the inserted text; compile refuses them (XREF_EDIT_UNSUPPORTED). */
+  revisedCrossReferences?: CrossReferenceSpan[];
   styleSourceId?: string;
   /** Optional unique style-source text whose run formatting inserted text inherits. */
   formatSource?: string;
@@ -473,11 +510,22 @@ export type CompileOptions = {
   annotationPresentation?: AnnotationPresentationProfile;
 };
 
+/**
+ * What import made of the document's REF fields: how many came back as
+ * `{% xref %}` tags, and each one kept as its cached text because the
+ * anchored dialect cannot carry it (compile then refuses to rewrite it).
+ */
+export type ImportedCrossReferences = {
+  restored: number;
+  keptAsText: Array<{ location: string; instruction: string; reason: string }>;
+};
+
 export type ImportResult = {
   anchoredSource: Buffer;
   markdoc: string;
   source: SourceDescriptor;
   annotations: CanonicalAnnotation[];
+  crossReferences: ImportedCrossReferences;
 };
 
 export type EditPair = {

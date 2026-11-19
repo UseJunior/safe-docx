@@ -1,6 +1,7 @@
 import { parseXml, serializeXml } from './xml.js';
 import { childElements, createWmlElement, renameElement } from './dom-helpers.js';
 import { OOXML, W } from './namespaces.js';
+import { REVISION_ID_ELEMENT_NAME_SET } from './revision-vocabulary.js';
 
 const SYNTHETIC_DOC = parseXml(
   '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
@@ -57,6 +58,26 @@ export function createRevisionIdState(startId: number = 1): RevisionIdState {
  */
 export function allocateRevisionId(state: RevisionIdState): number {
   return state.nextId++;
+}
+
+/**
+ * Seed above revision-bearing IDs across the supplied stories. Other w:id
+ * spaces (comments, notes, bookmarks) do not reserve revision identifiers.
+ * This does not rewrite or split logical revisions; see the #926 policy.
+ */
+export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdState {
+  let maxId = 0;
+  for (const doc of docs) {
+    for (const node of Array.from(doc.getElementsByTagName('*'))) {
+      if (!REVISION_ID_ELEMENT_NAME_SET.has(node.localName ?? '')) continue;
+      if (node.namespaceURI && node.namespaceURI !== OOXML.W_NS) continue;
+      const raw = node.getAttributeNS(OOXML.W_NS, 'id')
+        ?? node.getAttribute('w:id') ?? node.getAttribute('id');
+      const value = raw === null ? NaN : Number.parseInt(raw, 10);
+      if (Number.isFinite(value) && value > maxId) maxId = value;
+    }
+  }
+  return createRevisionIdState(maxId + 1);
 }
 
 /**
@@ -189,6 +210,44 @@ export function buildPPrChangeElement(oldPPr: Element | null, ctx: RevisionConte
 
   pPrChange.appendChild(previousPPr);
   return pPrChange;
+}
+
+function revisionAuthor(el: Element): string | null {
+  return el.getAttributeNS(OOXML.W_NS, 'author') || el.getAttribute('w:author') || null;
+}
+
+/**
+ * The author of a paragraph's existing direct `w:pPrChange` when it differs
+ * from `ctx.author`, otherwise `null`.
+ */
+export function foreignPPrChangeAuthor(pPr: Element | null, ctx: RevisionContext): string | null {
+  if (!pPr) return null;
+  for (const child of childElements(pPr)) {
+    if (child.namespaceURI === OOXML.W_NS && child.localName === 'pPrChange') {
+      const author = revisionAuthor(child);
+      if (author !== ctx.author) return author ?? '';
+    }
+  }
+  return null;
+}
+
+/**
+ * Record a paragraph-property edit on `pPr` as a `w:pPrChange`.
+ *
+ * CT_PPr permits at most one `w:pPrChange`. When the paragraph already has one
+ * by the same author, it is kept: its snapshot is the older baseline, so a
+ * reject restores the state before every edit in the series (Word likewise
+ * keeps the original snapshot when a tracked paragraph is reformatted). Any
+ * other wrapper is replaced by a new snapshot of `oldPPr`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ */
+export function recordPPrChange(pPr: Element, oldPPr: Element | null, ctx: RevisionContext): void {
+  const existing = childElements(pPr)
+    .filter((child) => child.namespaceURI === OOXML.W_NS && child.localName === 'pPrChange');
+  if (existing.length === 1 && revisionAuthor(existing[0]!) === ctx.author) return;
+  for (const stale of existing) pPr.removeChild(stale);
+  pPr.appendChild(buildPPrChangeElement(oldPPr, ctx));
 }
 
 /**

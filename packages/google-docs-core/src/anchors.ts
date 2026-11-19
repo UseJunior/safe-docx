@@ -6,7 +6,20 @@ const ANCHOR_PREFIX = '_bk_';
 
 /** Generate a named range name with the _bk_ prefix */
 export function generateAnchorName(index: number): string {
-  return `${ANCHOR_PREFIX}${index.toString(16).padStart(12, '0')}`;
+  return `${ANCHOR_PREFIX}${index.toString(16).padStart(10, '0')}`;
+}
+
+function allocateAnchorNames(count: number, startCounter: number, occupiedNames: ReadonlySet<string>): string[] {
+  const used = new Set(occupiedNames);
+  const names: string[] = [];
+  let counter = startCounter;
+  while (names.length < count) {
+    const candidate = generateAnchorName(counter++);
+    if (used.has(candidate)) continue;
+    used.add(candidate);
+    names.push(candidate);
+  }
+  return names;
 }
 
 /** Check if a named range name is an internal safe-docx anchor */
@@ -21,13 +34,19 @@ export function isInternalAnchor(name: string): boolean {
 export function buildNamedRangeInjectionRequests(
   paragraphs: CachedParagraph[],
   existingCount: number,
+  occupiedNames: ReadonlySet<string> = new Set(),
 ): GDocsRequest[] {
   const requests: GDocsRequest[] = [];
-  let counter = existingCount;
+  const names = allocateAnchorNames(
+    paragraphs.filter((paragraph) => !paragraph.anchorName).length,
+    existingCount,
+    occupiedNames,
+  );
+  let nameIndex = 0;
 
   for (const para of paragraphs) {
     if (para.anchorName) continue; // Already has an anchor
-    const name = generateAnchorName(counter++);
+    const name = names[nameIndex++]!;
     requests.push({
       createNamedRange: {
         name,
@@ -49,13 +68,19 @@ export function buildNamedRangeInjectionRequests(
 export function mapNamedRangeResponses(
   responses: Array<{ createNamedRange?: { namedRangeId?: string } }>,
   startCounter: number,
+  occupiedNames: ReadonlySet<string> = new Set(),
 ): Map<string, string> {
   const mapping = new Map<string, string>(); // namedRangeId -> _bk_ name
-  let counter = startCounter;
+  const names = allocateAnchorNames(
+    responses.filter((response) => response.createNamedRange?.namedRangeId).length,
+    startCounter,
+    occupiedNames,
+  );
+  let nameIndex = 0;
 
   for (const resp of responses) {
     if (resp.createNamedRange?.namedRangeId) {
-      const name = generateAnchorName(counter++);
+      const name = names[nameIndex++]!;
       mapping.set(resp.createNamedRange.namedRangeId, name);
     }
   }

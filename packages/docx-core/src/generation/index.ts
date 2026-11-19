@@ -8,18 +8,38 @@
 
 export { generateDocx, type GenerateDocxOptions } from './compile.js';
 export { GenerationSpecError, GenerationInternalError, type GenerationSpecErrorCode } from './errors.js';
-export { checkGeneratedPackage, type StructuralCheckResult, type StructuralIssue } from './structural-checks.js';
+export { checkGeneratedPackage, type StructuralCheckOptions, type StructuralCheckResult, type StructuralIssue } from './structural-checks.js';
+export {
+  BOOKMARK_NAME_MAX_LENGTH,
+  BookmarkNameError,
+  bookmarkNameForSlug,
+  bookmarkNamesForSlugs,
+  isWordBookmarkName,
+  type BookmarkNameErrorCode,
+} from './bookmark-names.js';
+export { CROSS_REFERENCE_NUMBERS, CROSS_REFERENCE_SHOWS } from './types.js';
+export { tableOfContentsEntryInstruction, tableOfContentsInstruction } from './emit/run.js';
 export type {
   BlockSpec,
   BorderSpec,
   BreakSpec,
+  CrossReferenceNumber,
+  CrossReferenceShow,
+  CrossReferenceSpec,
+  DocumentCompatibilitySpec,
+  DocumentDefaultsSpec,
   DocumentMetaSpec,
   DocumentSpec,
   DraftingNoteSpec,
   FieldSpec,
+  FootnoteSpec,
   HeaderFooterSet,
   HeaderFooterSpec,
   InlineSpec,
+  NumberingInstanceSpec,
+  NumberingLevelFormat,
+  NumberingLevelOverrideSpec,
+  NumberingLevelSpec,
   NumberingSpec,
   ParagraphBorders,
   ParagraphSpec,
@@ -29,7 +49,10 @@ export type {
   StyleSpec,
   TableBorders,
   TableCellSpec,
+  TableOfContentsEntrySpec,
+  TableOfContentsFieldSpec,
   TableRowSpec,
   TableSpec,
   TabSpec,
+  TabStopSpec,
 } from './types.js';

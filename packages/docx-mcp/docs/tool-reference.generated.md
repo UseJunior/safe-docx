@@ -20,15 +20,15 @@ Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k 
 | `limit` | `number` | no | Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination. |
 | `node_ids` | `array<string>` | no | Paragraph selectors. Each accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. Returned rows always report the paragraph's canonical `_bk_*` id, even when selected by another bookmark name; results are de-duplicated and returned in document order. |
 | `format` | `enum("toon", "json", "simple")` | no |  |
-| `comment_rendering` | `enum("none", "paragraph_notes", "endnotes", "inline_markers")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. |
+| `comment_rendering` | `enum("none", "paragraph_notes", "endnotes", "inline_markers")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. A reply whose thread parent link cannot be followed and that has no paragraph anchor of its own is reported in a document-wide unanchored_orphan_comments field instead of being omitted. |
 | `show_formatting` | `boolean` | no | When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags. |
-| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
+| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<16hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
 | `include_fingerprint_ordinal` | `boolean` | no | When true together with include_fingerprint and format="json", add duplicate-disambiguation metadata to each paragraph: `content_fingerprint_ordinal` (1-based document-order position among paragraphs sharing the same content_fingerprint), `content_fingerprint_count_in_document` (total paragraphs sharing it, document-wide even under pagination), and `portable_paragraph_ref` ("<content_fingerprint>#<ordinal>"). Read-only disambiguator, NOT an edit anchor; reordering duplicates may change ordinals. No effect without include_fingerprint, and no effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false. |
 | `include_footnotes` | `boolean` | no | Single-call body + footnotes retrieval. When true and format="json", the response gains a document-wide TOP-LEVEL `footnotes` array — each entry is {id, display_number, ref_paragraph_ids (an ARRAY of the paragraph ids that reference it), paragraphs[] ({text, tagged_text with run-level formatting tags, style})} — preserving multi-paragraph bodies and footnote-internal bold/italic/citation formatting. This top-level array is NOT inlined into content[], so the 1:1 content[] index invariant is preserved. For backward compatibility a lightweight per-node `footnotes` array ({id, display_number, text}) is ALSO attached to each paragraph node it anchors, windowed to the returned slice. When true and format="toon", a trailing `#FOOTNOTES` sidecar block is appended (symmetric with `#COMMENTS`). Footnotes with an empty body or display_number 0 are excluded. No effect on simple output. Ignored for Google Docs and ODT. Default: false. |
 
 ## `get_document_outline`
 
-Get a compact structural map of a document's headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.
+Get a compact structural map of a document's headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`, plus `list_label` (e.g. "Section 1.01") when the heading is numbered; Markdown puts the label before the text. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.
 
 - readOnly: `true`
 - destructive: `false`
@@ -42,6 +42,29 @@ Get a compact structural map of a document's headings (DOCX only). Each entry is
 ## `get_sections`
 
 Read DOCX main-document sections in document order. Returns zero-based session-relative section_index values, paragraph/body boundary metadata, page numbering, page size, margins, and header/footer relationship references. Call again after any operation that changes section topology. Read-only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+
+## `get_headers_footers`
+
+Read DOCX headers and footers per section, in document order. For each section_index (as in get_sections) it returns the default, first and even header and footer: relationship_id, part_name (e.g. word/footer1.xml), inherited (true when the section has no reference of that type and takes the previous section's, ECMA-376 Part 1 § 17.10.5), source_section_index, displayed (first needs title_page on the section, even needs even_and_odd_headers in settings) and paragraphs as {id, text}. Paragraph ids are the same session-relative `_bk_*` anchors as read_file, so replace_text and insert_paragraph edit header/footer text with them. A part shared by several sections is one story. Read-only apart from assigning paragraph ids. DOCX only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX file. |
+
+## `get_document_properties`
+
+Read DOCX document properties: core properties from the Core Properties part (docProps/core.xml: title, subject, creator, keywords, description, category, content_status, language, identifier, version, last_modified_by, revision, created, modified, last_printed) and extended properties from the Extended File Properties part (docProps/app.xml: application, app_version, company, manager, template). Each value is the element text, or null when the element or the part is absent; core_part and app_part name the parts (null when the package has none). Read-only.
 
 - readOnly: `true`
 - destructive: `false`
@@ -85,6 +108,7 @@ Single-agent front door for applying multiple edit steps (replace_text, insert_p
 | `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `steps` | `array<object>` | no | JSON array of edit steps. Each step needs step_id, operation, and operation-specific fields. |
 | `plan_file_path` | `string` | no | Path to a .json file containing an array of edit steps. Mutually exclusive with steps. |
+| `on_empty_numbered_paragraph` | `enum("warn", "error", "remove_paragraph", "ignore")` | no | What to do with paragraphs that replace_text steps leave numbered but empty, judged after the last step: "warn" (default) adds a warning carrying the step_id of the step that emptied the paragraph; "error" refuses the whole batch before any step is applied; "remove_paragraph" removes them once after the last step, so later steps can still anchor on them; "ignore" reports nothing. |
 
 ## `replace_text`
 
@@ -97,15 +121,16 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `target_paragraph_id` | `string` | yes | Paragraph anchor. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
+| `target_paragraph_id` | `string` | yes | Paragraph anchor. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers edits that header or footer; plain text only, tracked in a tracked session), or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
 | `old_string` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
 | `normalize_first` | `boolean` | no | Merge format-identical adjacent runs before searching. Useful when text is fragmented across runs. |
+| `on_empty_numbered_paragraph` | `enum("warn", "error", "remove_paragraph", "ignore")` | no | DOCX only. What to do when the edit leaves the target paragraph numbered but empty, so Word shows a bare list label: "warn" (default) adds a warning naming the paragraph; "error" refuses the edit and leaves the document unchanged; "remove_paragraph" also deletes the remaining whitespace and the paragraph (tracked when edits are tracked), unless a bookmark, comment, field, section break or table cell keeps it; "ignore" reports nothing. Only fires when the paragraph had visible content before the edit. |
 
 ## `insert_paragraph`
 
-Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX responses include structural_warnings when the placement may slice a hierarchy, mismatch list levels, or renumber a list. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.
+Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX responses include structural_warnings when the placement may slice a hierarchy, mismatch list levels, or renumber a list. Supports DOCX, ODT, and Google Docs. ODT paragraph ids remain stable within the session; new paragraphs receive monotonically allocated ids, and reopening renumbers stored document order. Surface: revisionable — DOCX insertions emit native OOXML tracked changes.
 
 - readOnly: `false`
 - destructive: `true`
@@ -114,7 +139,7 @@ Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX respon
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `positional_anchor_node_id` | `string` | yes | Anchor paragraph. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
+| `positional_anchor_node_id` | `string` | yes | Anchor paragraph. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers inserts into that header or footer; plain text only), or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
 | `position` | `enum("BEFORE", "AFTER")` | no |  |
@@ -171,7 +196,7 @@ Convert a DOCX document to OpenDocument Text (.odt) using the native model-to-mo
 
 ## `format_layout`
 
-Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).
+Apply layout controls (paragraph spacing, paragraph alignment and pagination flags, table row height, cell padding). paragraph_properties sets alignment (w:jc) and sets (true) or removes (false) direct pageBreakBefore/keepNext/keepLines; requests that change nothing are no-ops. Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).
 
 - readOnly: `false`
 - destructive: `true`
@@ -182,6 +207,7 @@ Apply layout controls (paragraph spacing, table row height, cell padding). Googl
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `strict` | `boolean` | no |  |
 | `paragraph_spacing` | `object` | no |  |
+| `paragraph_properties` | `object` | no |  |
 | `row_height` | `object` | no |  |
 | `cell_padding` | `object` | no |  |
 
@@ -204,7 +230,7 @@ Change one DOCX body paragraph’s direct numbering reference. Use remove=true t
 
 ## `format_section`
 
-Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content.
+Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content; use set_header_footer for that.
 
 - readOnly: `false`
 - destructive: `true`
@@ -232,6 +258,37 @@ Insert a tracked DOCX section break after a stable direct-body paragraph. The ne
 | `break_type` | `enum("nextPage", "nextColumn", "continuous", "evenPage", "oddPage")` | yes | OOXML start behavior for the following section. |
 | `inherit_properties` | `boolean` | no | Whether the following section retains current non-relationship properties. Default: true. Header/footer references are always preserved. |
 | `new_section` | `object` | no | Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements. |
+
+## `set_header_footer`
+
+Give one DOCX section its own header or footer. With paragraphs, create a new part (word/headerN.xml or word/footerN.xml) with its document relationship and content-type override and point the section's headerReference/footerReference of the given type at it; with existing_relationship_id, point the section at a part get_headers_footers already reported; with link_to_previous=true, remove the section's own reference so it inherits from the previous section. Other sections keep the header/footer they show: when the change would alter what the next section inherits, that section gets an explicit reference to its previous part (or a new empty part when it had none), reported in pinned_sections. type="first" also sets w:titlePg on the section; type="even" is shown only when even_and_odd_headers is on (the tool reports it and warns, and does not change settings). Paragraph content is text and PAGE/NUMPAGES fields with left/center/right/both alignment, using the document's Header/Footer paragraph style when it has one. Surface: package-mutation + tracked section change — new parts, relationships, content types and the header/footer references themselves are untracked and listed in the save report non-revision change manifest (w:sectPrChange cannot hold references, so rejecting revisions does not restore them); in a tracked session each changed sectPr records w:sectPrChange for its other properties, and a section with another author's pending sectPrChange is refused. Call get_sections first to find section_index (insert_section_break creates sections). DOCX only.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX file. |
+| `kind` | `enum("header", "footer")` | yes | Header or footer. |
+| `section_index` | `integer` | yes | Zero-based session-relative index returned by get_sections or get_headers_footers. |
+| `type` | `enum("default", "first", "even")` | no | Which header/footer of the section: default (all pages unless first/even apply), first (first page; sets w:titlePg) or even (even pages). Default: default. |
+| `paragraphs` | `array<object>` | no | Content of a new part. Exactly one of paragraphs, existing_relationship_id or link_to_previous=true. |
+| `existing_relationship_id` | `string` | no | Reuse the header/footer part of this word/document.xml relationship id. |
+| `link_to_previous` | `boolean` | no | true: remove the section's own reference of this type so it inherits from the previous section (not allowed for section 0). |
+
+## `set_document_properties`
+
+Set or remove DOCX document properties from a closed set: core (title, subject, creator, keywords, description, category, content_status, language, last_modified_by, revision, created, modified) and extended (application, app_version, company, manager, template). A string sets a property, null removes its element, and an omitted key is left unchanged. created and modified must be W3CDTF dates (e.g. 2026-01-02 or 2026-01-02T03:04:05Z) and are written with xsi:type="dcterms:W3CDTF"; revision is a non-negative integer; app_version has the form XX.YYYY. Only the named elements change: other elements, namespaces and extensions in the parts are kept. A document without docProps/core.xml or docProps/app.xml gets the part, its package relationship and its content-type override when a value is set in it. Surface: package-mutation — document properties have no tracked-change form, so an effective change is untracked and listed in the save report non-revision change manifest. A call whose values already hold reports changed=false and records no edit. DOCX only.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+| `core` | `object` | no | Core properties (docProps/core.xml). identifier, version and last_printed are read-only. |
+| `app` | `object` | no | Extended properties (docProps/app.xml). |
 
 ## `accept_changes`
 
@@ -328,7 +385,7 @@ Add a comment or threaded reply to a document. Provide target_paragraph_id + anc
 
 ## `get_comments`
 
-Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.
+Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX); a reply whose commentsExtended.xml parent link cannot be followed (missing, self-referencing, or cyclic) is listed at the top level with an unresolved_thread_parent diagnostic instead of being dropped. Supports DOCX and ODT. Read-only.
 
 - readOnly: `true`
 - destructive: `false`
@@ -351,7 +408,7 @@ Delete a comment and all its threaded replies from the document. Cascade-deletes
 
 ## `compare_documents`
 
-Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose tagged-token-v1 totals as insertedAtoms/deletedAtoms with atomMetricVersion, and report formatChanges separately from modifiedParagraphs. When a DOCX input difference is preserved in the output without tracked-change markup (for example a removed section's header or footer, or an unsupported header/footer topology), the response includes `unrepresented_changes` (objects with scope, kind, sectionIndex, for header/footer scopes role, and for the contentControl scope a contentControl identity: a changed `w:sdtPr`/`w:sdtEndPr` is published as the revised properties without markup, because CT_SdtPr admits no revision elements) plus one `warnings` string per entry, and the message carries a WARNING. Both fields are absent when no reportable unrepresented change was detected; the detector covers section properties, selected header/footer stories and content-control properties, so absence is not a guarantee about differences outside that scope. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
+Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose tagged-token-v1 totals as insertedAtoms/deletedAtoms with atomMetricVersion, report formatChanges separately from modifiedParagraphs, and report detected moves as moves/movedParagraphs with moveFromRanges/moveToRanges (moved content is not also counted as insertions or deletions, so a pure move reports moves > 0 with zero insertions/deletions). When a DOCX input difference is preserved in the output without tracked-change markup (for example a removed section's header or footer, or an unsupported header/footer topology), the response includes `unrepresented_changes` (objects with scope, kind, sectionIndex, for header/footer scopes role, and for the contentControl scope a contentControl identity: a changed `w:sdtPr`/`w:sdtEndPr` is published as the revised properties without markup, because CT_SdtPr admits no revision elements) plus one `warnings` string per entry, and the message carries a WARNING. Both fields are absent when no reportable unrepresented change was detected; the detector covers section properties, selected header/footer stories and content-control properties, so absence is not a guarantee about differences outside that scope. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
 
 - readOnly: `true`
 - destructive: `false`
@@ -365,6 +422,8 @@ Compare two documents and produce a tracked-changes output document. Provide ori
 | `author` | `string` | no | Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF). |
 | `ignore_formatting` | `boolean` | no | Ignore formatting differences (DOCX only). Default: false. |
 | `compare_moves` | `boolean` | no | Detect moved content (DOCX only). Default: true. |
+| `revision_grouping` | `enum("readable-semantic", "token-minimal")` | no | How DOCX revisions are grouped. 'readable-semantic' (default) shows each rewritten passage as one deletion followed by one insertion, absorbing short unchanged words, spaces and punctuation between changes; runs keep their own formatting, and moves, fields, bookmarks, comment ranges and note references are never absorbed. 'token-minimal' emits the smallest word-level deletion/insertion set, which alternates word by word in heavily rewritten paragraphs. Accept All and Reject All results are the same either way. DOCX only. |
+| `revision_date` | `string` | no | Timestamp (w:date) on the revisions this comparison creates. 'now' (default) uses the current time; 'none' omits w:date, which ECMA-376 makes optional; an ISO 8601 date-time such as '2026-01-15T09:30:00Z' uses that time. Revisions already present in the inputs keep their own dates. DOCX only. |
 
 ## `get_footnotes`
 

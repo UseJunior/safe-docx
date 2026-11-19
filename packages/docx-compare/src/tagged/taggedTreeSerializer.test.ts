@@ -16,6 +16,7 @@ import {
 import { constructTaggedTree } from './taggedTreeConstruction.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
+import { stampSurvivingMarkProperties } from './paragraphPropertyParity.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { buildDocxFromBodyXml, completeField, fldChar, instrText, resultText } from '../testing/ooxml-fixtures.js';
 import { compareDocuments } from '../index.js';
@@ -352,15 +353,74 @@ describe('tagged-tree shadow serializer', () => {
     expect(compareSourceProjectedFormattingFidelity(originalXml, revisedXml, candidateXml).score).toBe(1);
   });
 
+  const redline = (originalBody: string, revisedBody: string) => {
+    const original = documentBody(originalBody);
+    const revised = documentBody(revisedBody);
+    const constructed = constructTaggedTree(original, revised);
+    const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
+      author: 'Comparator', date: '2026-08-17T00:00:00Z',
+    }));
+    const paragraphs = Array.from(parseXml(output).getElementsByTagNameNS(W_NS, 'p'));
+    const markDeleted = (paragraph: Element) => Array.from(paragraph.getElementsByTagNameNS(W_NS, 'rPr'))
+      .filter((rPr) => (rPr.parentNode as Element).localName === 'pPr')
+      .some((rPr) => rPr.getElementsByTagNameNS(W_NS, 'del').length > 0);
+    return { paragraphs, markDeleted, candidateXml: `<w:document xmlns:w="${W_NS}">${output}</w:document>` };
+  };
+  const jcOf = (xml: string, value: string) => Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'p'))
+    .find((paragraph) => paragraph.textContent === value)!
+    .getElementsByTagNameNS(W_NS, 'jc')[0]!.getAttributeNS(W_NS, 'val');
+  const jc = (value: string) => `<w:pPr><w:jc w:val="${value}"/></w:pPr>`;
+  const para = (value: string, alignment: string) => `<w:p>${jc(alignment)}<w:r><w:t>${value}</w:t></w:r></w:p>`;
+
+  test('keeps a deleted paragraph mark on the deleted paragraph when another paragraph follows and properties differ (#1493)', () => {
+    const { paragraphs, markDeleted, candidateXml } = redline(
+      para('Alpha', 'left') + para('Bravo', 'center') + para('Charlie', 'right') + para('Delta', 'left'),
+      para('Alpha', 'left') + para('Bravo', 'center') + para('Delta', 'left'),
+    );
+    expect(paragraphs.map(markDeleted)).toEqual([false, false, true, false]);
+    expect(jcOf(acceptAllChanges(candidateXml), 'Bravo')).toBe('center');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Charlie')).toBe('right');
+  });
+
+  test('moves a terminal deletion mark with the predecessor properties and a w:pPrChange when properties differ (#1493)', () => {
+    const { paragraphs, markDeleted, candidateXml } = redline(
+      para('Alpha', 'left') + para('Bravo', 'center') + para('Charlie', 'right'),
+      para('Alpha', 'left') + para('Bravo', 'center'),
+    );
+    // LibreOffice cannot resolve a terminal deleted mark (#891), so the mark
+    // moves to Bravo; Charlie's container carries Bravo's properties live and
+    // its own in a w:pPrChange, so every reader agrees on both projections.
+    expect(paragraphs.map(markDeleted)).toEqual([false, true, false]);
+    expect(paragraphs[2]!.getElementsByTagNameNS(W_NS, 'pPrChange')).toHaveLength(1);
+    expect(text(acceptAllChanges(candidateXml))).toBe('AlphaBravo');
+    expect(jcOf(acceptAllChanges(candidateXml), 'Bravo')).toBe('center');
+    expect(text(rejectAllChanges(candidateXml))).toBe('AlphaBravoCharlie');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Bravo')).toBe('center');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Charlie')).toBe('right');
+  });
+
+  test('records the predecessor original properties when a terminal note-bearing insertion moves its mark (#1493)', () => {
+    const { candidateXml } = redline(
+      para('Alpha', 'left') + para('Bravo', 'center'),
+      para('Alpha', 'left') + para('Bravo', 'right') +
+        para('Charlie', 'left').replace('</w:p>', '<w:r><w:footnoteReference w:id="1"/></w:r></w:p>'),
+    );
+    expect(jcOf(acceptAllChanges(candidateXml), 'Bravo')).toBe('right');
+    expect(jcOf(rejectAllChanges(candidateXml), 'Bravo')).toBe('center');
+    const stamped = parseXml(candidateXml).documentElement as unknown as Element;
+    stampSurvivingMarkProperties(stamped, 'reject');
+    expect(jcOf(rejectAllChanges(new XMLSerializer().serializeToString(stamped)), 'Bravo')).toBe('center');
+  });
+
   test('places a terminal paragraph deletion on the preceding break with exact projections', () => {
     const original = documentBody(
       '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
-      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>' +
       '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Charlie</w:t></w:r></w:p>',
     );
     const revised = documentBody(
       '<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>' +
-      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>',
+      '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Bravo</w:t></w:r></w:p>',
     );
     const constructed = constructTaggedTree(original, revised);
     const output = serializeTaggedTree(constructed.tree, createPreservePlan(original, revised, constructed.tree, {
@@ -566,6 +626,28 @@ describe('tagged-tree shadow serializer', () => {
     expect(fidelity.accept.score).toBe(1);
     expect(fidelity.reject.score).toBe(1);
   });
+
+  for (const scenario of [
+    { name: 'kept row properties beside an edited cell', originalRow: '<w:trPr><w:tblHeader/></w:trPr>', revisedRow: '<w:trPr><w:tblHeader/></w:trPr>', revisedText: 'changed' },
+    { name: 'added row properties', originalRow: '', revisedRow: '<w:trPr><w:tblHeader/></w:trPr>', revisedText: 'same' },
+  ]) {
+    test(`keeps w:tblPrEx ahead of w:trPr in a row with ${scenario.name}`, () => {
+      // Word writes property exceptions on rows of a table whose cell margins differ from the style's.
+      const exceptions = '<w:tblPrEx><w:tblCellMar><w:top w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPrEx>';
+      const table = (row: string, cellText: string) =>
+        `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>` +
+        `<w:tr>${exceptions}${row}<w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+      const original = documentBody(table(scenario.originalRow, 'same'));
+      const revised = documentBody(table(scenario.revisedRow, scenario.revisedText));
+      const constructed = constructTaggedTree(original, revised);
+      const output = serializeTaggedTree(
+        constructed.tree,
+        createPreservePlan(original, revised, constructed.tree, { author: 'Comparator', date: '2026-11-04T12:00:00Z' }),
+      );
+      const row = parseXml(output).getElementsByTagNameNS(W_NS, 'tr')[0]!;
+      expect(elementChildren(row).map((child) => child.localName)).toEqual(['tblPrEx', 'trPr', 'tc']);
+    });
+  }
 
   for (const scenario of [
     {

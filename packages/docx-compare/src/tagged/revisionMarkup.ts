@@ -1,8 +1,11 @@
 import {
   childElements,
+  DocxArchive,
   findChildByTagName,
   insertAfterElement,
+  normalizeOpcRelationshipTarget,
   parseXml,
+  serializeXml,
   wrapElement,
 } from '@usejunior/docx-core';
 
@@ -91,6 +94,230 @@ export function allocateRevisionId(state: RevisionIdState): number {
   const id = state.nextId++;
   state.usedRevisionIds.add(String(id));
   return id;
+}
+
+/**
+ * Elements that each carry one revision identifier. A cross-structure range
+ * is one revision written as two markers, so only its `*RangeStart` is listed;
+ * the matching `*RangeEnd` repeats that identifier.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
+ */
+export const REVISION_ANNOTATION_LOCAL_NAMES: ReadonlySet<string> = new Set([
+  'ins', 'del', 'moveFrom', 'moveTo',
+  'moveFromRangeStart', 'moveToRangeStart',
+  'customXmlInsRangeStart', 'customXmlDelRangeStart',
+  'customXmlMoveFromRangeStart', 'customXmlMoveToRangeStart',
+  'cellIns', 'cellDel', 'cellMerge',
+  'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'tblPrExChange',
+  'tblGridChange', 'trPrChange', 'tcPrChange', 'numberingChange',
+]);
+
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+
+/**
+ * The revision annotations under `root` in document order, each with the
+ * `*RangeEnd` markers that close it. Content inside `mc:Fallback` is skipped:
+ * a consumer processes either the `mc:Choice` or the fallback copy of the same
+ * content, never both (Part 3 §9.3), so the two copies do not form
+ * duplicates.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.27
+ */
+export function collectRevisionAnnotations(root: Element): Array<{ element: Element; ends: Element[] }> {
+  const out: Array<{ element: Element; ends: Element[] }> = [];
+  const open = new Map<string, Array<{ element: Element; ends: Element[] }>>();
+  const visit = (element: Element): void => {
+    if (element.namespaceURI === MC_NS && element.localName === 'Fallback') return;
+    if (element.namespaceURI === W_NS) {
+      const name = element.localName;
+      const raw = element.getAttributeNS(W_NS, 'id') ?? '';
+      const id = canonicalDecimalId(raw) ?? raw;
+      if (REVISION_ANNOTATION_LOCAL_NAMES.has(name)) {
+        const entry = { element, ends: [] as Element[] };
+        out.push(entry);
+        if (name.endsWith('RangeStart')) {
+          const key = `${name.slice(0, -'Start'.length)}:${id}`;
+          const stack = open.get(key) ?? [];
+          stack.push(entry);
+          open.set(key, stack);
+        }
+      } else if (name.endsWith('RangeEnd')) {
+        open.get(`${name.slice(0, -'End'.length)}:${id}`)?.pop()?.ends.push(element);
+      }
+    }
+    for (const child of childElements(element)) visit(child);
+  };
+  visit(root);
+  return out;
+}
+
+export interface RenumberRevisionIdOptions {
+  /** Identifiers another part of the same document already holds. */
+  reserved?: ReadonlySet<string>;
+  /**
+   * Revisions that keep their identifier ahead of an earlier copy, such as
+   * the comparison's own revisions, whose identifiers callers may already
+   * hold (revision attributions, selective accept/reject by identifier).
+   */
+  keep?: (element: Element) => boolean;
+}
+
+/**
+ * Give every revision under `root` its own identifier. A revision `keep`
+ * selects holds its identifier first; otherwise the first annotation that
+ * holds an identifier keeps it. Each other copy, and the range end that
+ * closes it, gets a fresh identifier from `allocate`.
+ *
+ * Splitting a run repeats its pending `w:rPrChange` on every fragment, and a
+ * run kept from both documents can carry the same pending record twice; each
+ * copy must still be its own revision. The identifier carries no meaning
+ * beyond identity (author and date stay), and range pairs are renumbered
+ * together, so no pairing changes. Returns the number of renumbered
+ * annotations.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @see https://github.com/UseJunior/safe-docx/issues/1466
+ */
+export function renumberDuplicateRevisionIds(
+  root: Element,
+  allocate: () => number,
+  options: RenumberRevisionIdOptions = {},
+): number {
+  return renumberAnnotations(revisionAnnotationsWithIds(root), allocate, options).size;
+}
+
+interface IdentifiedAnnotation {
+  element: Element;
+  ends: Element[];
+  id: string;
+}
+
+function revisionAnnotationsWithIds(root: Element): IdentifiedAnnotation[] {
+  return collectRevisionAnnotations(root).flatMap(({ element, ends }) => {
+    const raw = element.getAttributeNS(W_NS, 'id');
+    return raw === null ? [] : [{ element, ends, id: canonicalDecimalId(raw) ?? raw }];
+  });
+}
+
+/** Renumber repeated identifiers in `annotations` (in order); returns the renumbered elements. */
+function renumberAnnotations(
+  annotations: readonly IdentifiedAnnotation[],
+  allocate: () => number,
+  options: RenumberRevisionIdOptions,
+): Set<Element> {
+  const reserved = options.reserved ?? new Set<string>();
+  const owners = new Map<string, Element>();
+  if (options.keep) {
+    for (const { element, id } of annotations) {
+      if (!reserved.has(id) && !owners.has(id) && options.keep(element)) owners.set(id, element);
+    }
+  }
+  const renumbered = new Set<Element>();
+  for (const { element, ends, id } of annotations) {
+    const owner = owners.get(id);
+    if (owner === element) continue;
+    if (owner === undefined && !reserved.has(id)) {
+      owners.set(id, element);
+      continue;
+    }
+    let fresh = String(allocate());
+    while (owners.has(fresh) || reserved.has(fresh)) fresh = String(allocate());
+    owners.set(fresh, element);
+    element.setAttributeNS(W_NS, 'w:id', fresh);
+    for (const end of ends) end.setAttributeNS(W_NS, 'w:id', fresh);
+    renumbered.add(element);
+  }
+  return renumbered;
+}
+
+const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+
+const MAIN_STORY_PART = 'word/document.xml';
+const PACKAGE_RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+/** Conventional names of the story parts other than the main story. */
+const REVISION_STORY_PART = /^word\/(header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/u;
+/** Relationship types of the main story's parts that hold their own stories. */
+const STORY_RELATIONSHIP_TYPE = /\/officeDocument\/2006\/relationships\/(header|footer|footnotes|endnotes|comments)$/u;
+
+/**
+ * The main story first, then every other part that holds a story: each
+ * header, footer, footnotes, endnotes or comments part the main story's
+ * relationships target (whatever its file name), plus any part with the
+ * conventional name.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ */
+export async function revisionStoryPartPaths(archive: DocxArchive): Promise<string[]> {
+  const paths = new Set(archive.listFiles().filter((path) => REVISION_STORY_PART.test(path)));
+  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
+  if (relationshipsXml !== null) {
+    const relationships = parseXml(relationshipsXml).getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship');
+    for (const relationship of Array.from(relationships)) {
+      if (relationship.getAttribute('TargetMode') === 'External') continue;
+      if (!STORY_RELATIONSHIP_TYPE.test(relationship.getAttribute('Type') ?? '')) continue;
+      const target = relationship.getAttribute('Target');
+      if (!target) continue;
+      const path = normalizeOpcRelationshipTarget({ ownerPart: MAIN_STORY_PART, target }).target;
+      if (path && archive.hasFile(path)) paths.add(path);
+    }
+  }
+  paths.delete(MAIN_STORY_PART);
+  return [MAIN_STORY_PART, ...[...paths].sort()];
+}
+
+/**
+ * Make revision identifiers unique across the whole document. Parts are
+ * visited main story first; within and across parts a revision whose
+ * identifier is already held gets a fresh one above every numeric `w:id` in
+ * the package, except that a revision `keep` selects (the comparison's own)
+ * holds its identifier first. Returns the input buffer when nothing changes.
+ *
+ * A header, footer or note compared on its own keeps the identifier of a
+ * pending revision it carries from either document, and the main story can
+ * hold the same identifier from the other document.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @see https://github.com/UseJunior/safe-docx/issues/1466
+ */
+export async function renumberDuplicateRevisionIdsAcrossParts(
+  document: Buffer,
+  keep?: (element: Element) => boolean,
+): Promise<Buffer> {
+  const archive = await DocxArchive.load(document);
+  const parts: Array<{ path: string; root: Element }> = [];
+  const state = createRevisionIdState();
+  for (const path of await revisionStoryPartPaths(archive)) {
+    const xml = await archive.getFile(path);
+    if (xml === null) continue;
+    const root = parseXml(xml).documentElement;
+    seedRevisionIdsFromMarkup(state, root);
+    parts.push({ path, root });
+  }
+  let maximum = 0n;
+  for (const id of state.usedRevisionIds) {
+    const value = BigInt(id);
+    if (value > maximum) maximum = value;
+  }
+  if (maximum >= BigInt(Number.MAX_SAFE_INTEGER)) return document;
+  state.nextId = Number(maximum) + 1;
+  // One pass over every part in order, so the comparison's own revisions keep
+  // their identifiers against a copy in any part.
+  const annotations = parts.flatMap(({ root }) => revisionAnnotationsWithIds(root));
+  const renumbered = renumberAnnotations(annotations, () => allocateRevisionId(state), { keep });
+  if (renumbered.size === 0) return document;
+  for (const { path, root } of parts) {
+    if (!annotations.some(({ element }) => renumbered.has(element) && element.ownerDocument === root.ownerDocument)) continue;
+    const serialized = serializeXml(root.ownerDocument!);
+    archive.setFile(path, serialized.startsWith('<?xml') ? serialized : XML_DECLARATION + serialized);
+  }
+  return archive.save();
 }
 
 /** Format a date for OOXML (ISO 8601 without milliseconds). */

@@ -38,8 +38,12 @@ export const RANGE_MARKUP_BLOCK_SIBLING_LOCALS: ReadonlySet<string> = new Set([
  * True iff removing an emptied paragraph keeps its parent structurally valid
  * for Word: the parent must retain at least one block element, must not end
  * on a w:tbl (a trailing table needs a following paragraph), and two tables
- * must not become adjacent (Word merges back-to-back tables). w:sectPr is
- * ignored — a trailing body sectPr is not a block element.
+ * must not become adjacent (Word merges back-to-back tables). w:sectPr and
+ * w:tcPr are ignored: a trailing body sectPr and a cell's leading properties
+ * are not block elements, so a table cell whose only block is the paragraph
+ * keeps it (a w:tc must end with a paragraph).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.65
  */
 export function canSafelyRemoveEmptyParagraph(p: Element): boolean {
   const blockSibling = (start: Node | null, dir: 'previousSibling' | 'nextSibling'): Element | null => {
@@ -49,7 +53,8 @@ export function canSafelyRemoveEmptyParagraph(p: Element): boolean {
         const el = sibling as Element;
         if (
           (el.namespaceURI === W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) ||
-          isW(el, 'sectPr')
+          isW(el, 'sectPr') ||
+          isW(el, 'tcPr')
         ) {
           sibling = sibling[dir];
           continue;

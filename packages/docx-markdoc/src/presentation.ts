@@ -1,5 +1,6 @@
 import { DocxDocument, buildParagraphIndex, createRevisionContext, findParagraphByBookmarkId } from '@usejunior/docx-core';
 import { DocxMarkdocError } from './errors.js';
+import { referenceInstruction } from './xref.js';
 import { sha256 } from './hash.js';
 import type {
   AnnotationAnchor,
@@ -99,6 +100,8 @@ function mergedBody(annotation: CanonicalAnnotation, overlay?: AnnotationRunStyl
       text: run.text,
       style: { ...(run.style ?? {}), ...(overlay ?? {}) },
       ...(run.hyperlink ? { hyperlink: { destination: run.hyperlink.destination } } : {}),
+      // A cross-reference goes back as the REF field it was imported from (#1260).
+      ...(run.crossReference ? { field: { instruction: referenceInstruction(run.crossReference), key: String(run.crossReference.field) } } : {}),
     })),
   }));
 }
@@ -147,7 +150,28 @@ export type AnnotationProjectionResult = {
 export async function projectAnnotations(buffer: Buffer, ir: MarkdocEditIR, requestedProfile?: AnnotationPresentationProfile): Promise<AnnotationProjectionResult> {
   const profile = normalizeAnnotationPresentationProfile(requestedProfile);
   const annotations = ir.annotations.filter((annotation) => !annotation.id.startsWith('rationale:'));
-  const planned = annotations.map((annotation) => ({ annotation, as: projectedAs(annotation, profile), anchor: remapAnchor(ir, annotation) }));
+  const unsorted = annotations.map((annotation) => ({ annotation, as: projectedAs(annotation, profile), anchor: remapAnchor(ir, annotation) }));
+  // Resolve reply dependencies before any document mutation.
+  const byId = new Map(unsorted.map((item) => [item.annotation.id, item]));
+  const pending = new Set(unsorted);
+  const planned: typeof unsorted = [];
+  while (pending.size > 0) {
+    const ready = [...pending].filter((item) => {
+      const parentId = item.annotation.replyParentId;
+      if (!parentId) return true;
+      const parent = byId.get(parentId);
+      if (!parent) throw new DocxMarkdocError('ORPHAN_ANNOTATION_REPLY', `Missing reply parent ${parentId}.`);
+      if (item.as === 'comment' && parent.as !== 'comment') {
+        throw new DocxMarkdocError('ANNOTATION_REPLY_PROJECTION_UNRESOLVABLE', `Comment reply ${item.annotation.id} requires a comment parent.`);
+      }
+      return !pending.has(parent);
+    });
+    if (ready.length === 0) throw new DocxMarkdocError('ANNOTATION_REPLY_CYCLE', 'Annotation replies must form an acyclic graph.');
+    for (const item of ready) {
+      planned.push(item);
+      pending.delete(item);
+    }
+  }
   const preflight = await DocxDocument.load(buffer);
   const documentXml = preflight.getDocumentXmlClone();
   for (const item of planned) {

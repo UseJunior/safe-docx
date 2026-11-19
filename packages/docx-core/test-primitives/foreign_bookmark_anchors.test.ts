@@ -99,7 +99,7 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Fore
         const p = doc.getElementsByTagNameNS(OOXML.W_NS, 'p').item(0) as Element;
         const names = getParagraphBookmarkNames(p);
         expect(names).toContain('jr_para_stacked');
-        expect(getParagraphBookmarkId(p)).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(getParagraphBookmarkId(p)).toMatch(/^_bk_[0-9a-f]{10}$/);
       });
 
       await when('either name is used as an anchor', () => undefined);

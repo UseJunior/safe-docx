@@ -59,6 +59,9 @@ const GOOGLE_DOC_ID_FIELD = {
   ),
 };
 
+/** A settable document-property text value: a string sets it, null removes it. */
+const CORE_TEXT_PROPERTY = z.string().min(1).nullable().optional();
+
 export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'read_file',
@@ -80,7 +83,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .enum(['none', 'paragraph_notes', 'endnotes', 'inline_markers'])
         .optional()
         .describe(
-          'How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering.',
+          'How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. A reply whose thread parent link cannot be followed and that has no paragraph anchor of its own is reported in a document-wide unanchored_orphan_comments field instead of being omitted.',
         ),
       show_formatting: z
         .boolean()
@@ -92,7 +95,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .boolean()
         .optional()
         .describe(
-          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
+          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<16hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
         ),
       include_fingerprint_ordinal: z
         .boolean()
@@ -113,7 +116,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'get_document_outline',
     surface: 'internal',
     description:
-      'Get a compact structural map of a document\'s headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.',
+      'Get a compact structural map of a document\'s headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`, plus `list_label` (e.g. "Section 1.01") when the heading is numbered; Markdown puts the label before the text. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
       format: z
@@ -132,6 +135,27 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     surface: 'internal',
     description:
       'Read DOCX main-document sections in document order. Returns zero-based session-relative section_index values, paragraph/body boundary metadata, page numbering, page size, margins, and header/footer relationship references. Call again after any operation that changes section topology. Read-only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
+    name: 'get_headers_footers',
+    surface: 'internal',
+    description:
+      'Read DOCX headers and footers per section, in document order. For each section_index (as in get_sections) it returns the default, first and even header and footer: relationship_id, part_name (e.g. word/footer1.xml), inherited (true when the section has no reference of that type and takes the previous section\'s, ECMA-376 Part 1 § 17.10.5), source_section_index, displayed (first needs title_page on the section, even needs even_and_odd_headers in settings) and paragraphs as {id, text}. Paragraph ids are the same session-relative `_bk_*` anchors as read_file, so replace_text and insert_paragraph edit header/footer text with them. A part shared by several sections is one story. Read-only apart from assigning paragraph ids. DOCX only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
+    name: 'get_document_properties',
+    surface: 'internal',
+    description:
+      'Read DOCX document properties: core properties from the Core Properties part (docProps/core.xml: title, subject, creator, keywords, description, category, content_status, language, identifier, version, last_modified_by, revision, created, modified, last_printed) and extended properties from the Extended File Properties part (docProps/app.xml: application, app_version, company, manager, template). Each value is the element text, or null when the element or the part is absent; core_part and app_part name the parts (null when the package has none). Read-only.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -173,6 +197,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .string()
         .optional()
         .describe('Path to a .json file containing an array of edit steps. Mutually exclusive with steps.'),
+      on_empty_numbered_paragraph: z
+        .enum(['warn', 'error', 'remove_paragraph', 'ignore'])
+        .optional()
+        .describe('What to do with paragraphs that replace_text steps leave numbered but empty, judged after the last step: "warn" (default) adds a warning carrying the step_id of the step that emptied the paragraph; "error" refuses the whole batch before any step is applied; "remove_paragraph" removes them once after the last step, so later steps can still anchor on them; "ignore" reports nothing.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
@@ -187,7 +215,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       target_paragraph_id: z
         .string()
         .describe(
-          'Paragraph anchor. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
+          'Paragraph anchor. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers edits that header or footer; plain text only, tracked in a tracked session), or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
         ),
       old_string: z.string(),
       new_string: z.string(),
@@ -196,20 +224,24 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .boolean()
         .optional()
         .describe('Merge format-identical adjacent runs before searching. Useful when text is fragmented across runs.'),
+      on_empty_numbered_paragraph: z
+        .enum(['warn', 'error', 'remove_paragraph', 'ignore'])
+        .optional()
+        .describe('DOCX only. What to do when the edit leaves the target paragraph numbered but empty, so Word shows a bare list label: "warn" (default) adds a warning naming the paragraph; "error" refuses the edit and leaves the document unchanged; "remove_paragraph" also deletes the remaining whitespace and the paragraph (tracked when edits are tracked), unless a bookmark, comment, field, section break or table cell keeps it; "ignore" reports nothing. Only fires when the paragraph had visible content before the edit.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
     name: 'insert_paragraph',
     surface: 'revisionable',
-    description: 'Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX responses include structural_warnings when the placement may slice a hierarchy, mismatch list levels, or renumber a list. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.',
+    description: 'Insert a paragraph before/after an anchor paragraph by paragraph id. DOCX responses include structural_warnings when the placement may slice a hierarchy, mismatch list levels, or renumber a list. Supports DOCX, ODT, and Google Docs. ODT paragraph ids remain stable within the session; new paragraphs receive monotonically allocated ids, and reopening renumbers stored document order. Surface: revisionable — DOCX insertions emit native OOXML tracked changes.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
       positional_anchor_node_id: z
         .string()
         .describe(
-          'Anchor paragraph. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
+          'Anchor paragraph. Accepts a safe-docx `_bk_*` id (a header/footer paragraph id from get_headers_footers inserts into that header or footer; plain text only), or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
         ),
       new_string: z.string(),
       instruction: z.string(),
@@ -310,7 +342,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'format_layout',
     surface: 'revisionable',
-    description: 'Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).',
+    description: 'Apply layout controls (paragraph spacing, paragraph alignment and pagination flags, table row height, cell padding). paragraph_properties sets alignment (w:jc) and sets (true) or removes (false) direct pageBreakBefore/keepNext/keepLines; requests that change nothing are no-ops. Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -322,6 +354,15 @@ export const SAFE_DOCX_TOOL_CATALOG = [
           after_twips: z.number().optional(),
           line_twips: z.number().optional(),
           line_rule: z.enum(['auto', 'exact', 'atLeast']).optional(),
+        })
+        .optional(),
+      paragraph_properties: z
+        .object({
+          paragraph_ids: z.array(z.string()).optional(),
+          alignment: z.enum(['left', 'center', 'right', 'both']).optional(),
+          page_break_before: z.boolean().optional(),
+          keep_next: z.boolean().optional(),
+          keep_lines: z.boolean().optional(),
         })
         .optional(),
       row_height: z
@@ -382,7 +423,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'format_section',
     surface: 'revisionable',
     description:
-      'Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content.',
+      'Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content; use set_header_footer for that.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -480,6 +521,73 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .strict()
         .optional()
         .describe('Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
+    name: 'set_header_footer',
+    surface: 'package-mutation',
+    description:
+      'Give one DOCX section its own header or footer. With paragraphs, create a new part (word/headerN.xml or word/footerN.xml) with its document relationship and content-type override and point the section\'s headerReference/footerReference of the given type at it; with existing_relationship_id, point the section at a part get_headers_footers already reported; with link_to_previous=true, remove the section\'s own reference so it inherits from the previous section. Other sections keep the header/footer they show: when the change would alter what the next section inherits, that section gets an explicit reference to its previous part (or a new empty part when it had none), reported in pinned_sections. type="first" also sets w:titlePg on the section; type="even" is shown only when even_and_odd_headers is on (the tool reports it and warns, and does not change settings). Paragraph content is text and PAGE/NUMPAGES fields with left/center/right/both alignment, using the document\'s Header/Footer paragraph style when it has one. Surface: package-mutation + tracked section change — new parts, relationships, content types and the header/footer references themselves are untracked and listed in the save report non-revision change manifest (w:sectPrChange cannot hold references, so rejecting revisions does not restore them); in a tracked session each changed sectPr records w:sectPrChange for its other properties, and a section with another author\'s pending sectPrChange is refused. Call get_sections first to find section_index (insert_section_break creates sections). DOCX only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
+      kind: z.enum(['header', 'footer']).describe('Header or footer.'),
+      section_index: z.number().int().nonnegative().describe('Zero-based session-relative index returned by get_sections or get_headers_footers.'),
+      type: z.enum(['default', 'first', 'even']).optional().describe('Which header/footer of the section: default (all pages unless first/even apply), first (first page; sets w:titlePg) or even (even pages). Default: default.'),
+      paragraphs: z
+        .array(z.object({
+          text: z.string().optional().describe('Plain paragraph text (shorthand for runs: [{text}]).'),
+          runs: z.array(z.union([
+            z.object({ text: z.string() }).strict(),
+            z.object({ field: z.enum(['PAGE', 'NUMPAGES']) }).strict(),
+          ])).optional().describe('Text and field runs in order, e.g. [{"text": "Page "}, {"field": "PAGE"}, {"text": " of "}, {"field": "NUMPAGES"}].'),
+          alignment: z.enum(['left', 'center', 'right', 'both']).optional().describe('Paragraph alignment (w:jc).'),
+        }).strict())
+        .min(1)
+        .optional()
+        .describe('Content of a new part. Exactly one of paragraphs, existing_relationship_id or link_to_previous=true.'),
+      existing_relationship_id: z.string().optional().describe('Reuse the header/footer part of this word/document.xml relationship id.'),
+      link_to_previous: z.boolean().optional().describe('true: remove the section\'s own reference of this type so it inherits from the previous section (not allowed for section 0).'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
+    name: 'set_document_properties',
+    surface: 'package-mutation',
+    description:
+      'Set or remove DOCX document properties from a closed set: core (title, subject, creator, keywords, description, category, content_status, language, last_modified_by, revision, created, modified) and extended (application, app_version, company, manager, template). A string sets a property, null removes its element, and an omitted key is left unchanged. created and modified must be W3CDTF dates (e.g. 2026-01-02 or 2026-01-02T03:04:05Z) and are written with xsi:type="dcterms:W3CDTF"; revision is a non-negative integer; app_version has the form XX.YYYY. Only the named elements change: other elements, namespaces and extensions in the parts are kept. A document without docProps/core.xml or docProps/app.xml gets the part, its package relationship and its content-type override when a value is set in it. Surface: package-mutation — document properties have no tracked-change form, so an effective change is untracked and listed in the save report non-revision change manifest. A call whose values already hold reports changed=false and records no edit. DOCX only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
+      core: z
+        .object({
+          title: CORE_TEXT_PROPERTY.describe('dc:title.'),
+          subject: CORE_TEXT_PROPERTY.describe('dc:subject.'),
+          creator: CORE_TEXT_PROPERTY.describe('dc:creator (author).'),
+          keywords: CORE_TEXT_PROPERTY.describe('cp:keywords; replaces any existing keyword values.'),
+          description: CORE_TEXT_PROPERTY.describe('dc:description (comments).'),
+          category: CORE_TEXT_PROPERTY.describe('cp:category.'),
+          content_status: CORE_TEXT_PROPERTY.describe('cp:contentStatus, such as Draft or Final.'),
+          language: CORE_TEXT_PROPERTY.describe('dc:language, a language tag such as en-US.'),
+          last_modified_by: CORE_TEXT_PROPERTY.describe('cp:lastModifiedBy.'),
+          revision: z.number().int().nonnegative().nullable().optional().describe('cp:revision, a non-negative integer; null removes it.'),
+          created: CORE_TEXT_PROPERTY.describe('dcterms:created, a W3CDTF date.'),
+          modified: CORE_TEXT_PROPERTY.describe('dcterms:modified, a W3CDTF date.'),
+        })
+        .strict()
+        .optional()
+        .describe('Core properties (docProps/core.xml). identifier, version and last_printed are read-only.'),
+      app: z
+        .object({
+          application: CORE_TEXT_PROPERTY.describe('Application: the name of the producing application; null leaves it out.'),
+          app_version: CORE_TEXT_PROPERTY.describe('AppVersion, of the form XX.YYYY such as 16.0000.'),
+          company: CORE_TEXT_PROPERTY.describe('Company.'),
+          manager: CORE_TEXT_PROPERTY.describe('Manager.'),
+          template: CORE_TEXT_PROPERTY.describe('Template, the attached template name.'),
+        })
+        .strict()
+        .optional()
+        .describe('Extended properties (docProps/app.xml).'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
@@ -588,7 +696,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'get_comments',
     surface: 'internal',
     description:
-      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.',
+      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX); a reply whose commentsExtended.xml parent link cannot be followed (missing, self-referencing, or cyclic) is listed at the top level with an unresolved_thread_parent diagnostic instead of being dropped. Supports DOCX and ODT. Read-only.',
     input: z.object({
       ...FILE_FIELD,
     }),
@@ -610,7 +718,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'compare_documents',
     surface: 'revisionable',
     description:
-      'Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose tagged-token-v1 totals as insertedAtoms/deletedAtoms with atomMetricVersion, and report formatChanges separately from modifiedParagraphs. When a DOCX input difference is preserved in the output without tracked-change markup (for example a removed section\'s header or footer, or an unsupported header/footer topology), the response includes `unrepresented_changes` (objects with scope, kind, sectionIndex, for header/footer scopes role, and for the contentControl scope a contentControl identity: a changed `w:sdtPr`/`w:sdtEndPr` is published as the revised properties without markup, because CT_SdtPr admits no revision elements) plus one `warnings` string per entry, and the message carries a WARNING. Both fields are absent when no reportable unrepresented change was detected; the detector covers section properties, selected header/footer stories and content-control properties, so absence is not a guarantee about differences outside that scope. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).',
+      'Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX output always uses the revised archive as its package base and publishes tagged revisions; engine, strategy, reconstruction, premerge, and refinement selectors are not exposed. DOCX stats count insertions/deletions as contiguous ranges, expose tagged-token-v1 totals as insertedAtoms/deletedAtoms with atomMetricVersion, report formatChanges separately from modifiedParagraphs, and report detected moves as moves/movedParagraphs with moveFromRanges/moveToRanges (moved content is not also counted as insertions or deletions, so a pure move reports moves > 0 with zero insertions/deletions). When a DOCX input difference is preserved in the output without tracked-change markup (for example a removed section\'s header or footer, or an unsupported header/footer topology), the response includes `unrepresented_changes` (objects with scope, kind, sectionIndex, for header/footer scopes role, and for the contentControl scope a contentControl identity: a changed `w:sdtPr`/`w:sdtEndPr` is published as the revised properties without markup, because CT_SdtPr admits no revision elements) plus one `warnings` string per entry, and the message carries a WARNING. Both fields are absent when no reportable unrepresented change was detected; the detector covers section properties, selected header/footer stories and content-control properties, so absence is not a guarantee about differences outside that scope. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).',
     input: z.object({
       original_file_path: z.string().optional().describe('Path to the original DOCX or .odt file.'),
       revised_file_path: z.string().optional().describe('Path to the revised DOCX or .odt file.'),
@@ -619,6 +727,18 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       author: z.string().optional().describe("Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF)."),
       ignore_formatting: z.boolean().optional().describe('Ignore formatting differences (DOCX only). Default: false.'),
       compare_moves: z.boolean().optional().describe('Detect moved content (DOCX only). Default: true.'),
+      revision_grouping: z
+        .enum(['readable-semantic', 'token-minimal'])
+        .optional()
+        .describe(
+          "How DOCX revisions are grouped. 'readable-semantic' (default) shows each rewritten passage as one deletion followed by one insertion, absorbing short unchanged words, spaces and punctuation between changes; runs keep their own formatting, and moves, fields, bookmarks, comment ranges and note references are never absorbed. 'token-minimal' emits the smallest word-level deletion/insertion set, which alternates word by word in heavily rewritten paragraphs. Accept All and Reject All results are the same either way. DOCX only.",
+        ),
+      revision_date: z
+        .string()
+        .optional()
+        .describe(
+          "Timestamp (w:date) on the revisions this comparison creates. 'now' (default) uses the current time; 'none' omits w:date, which ECMA-376 makes optional; an ISO 8601 date-time such as '2026-01-15T09:30:00Z' uses that time. Revisions already present in the inputs keep their own dates. DOCX only.",
+        ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },

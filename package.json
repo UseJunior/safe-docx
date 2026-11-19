@@ -1,6 +1,6 @@
 {
   "name": "safe-docx-suite",
-  "version": "0.23.0",
+  "version": "0.25.1",
   "private": true,
   "description": "Monorepo for Safe DOCX packages",
   "repository": {
@@ -45,11 +45,14 @@
     "check:docx-formatting-loss": "node scripts/check_docx_formatting_loss.mjs",
     "test:docx-formatting-loss": "node --test scripts/check_docx_formatting_loss.test.mjs && node scripts/check_docx_formatting_loss.mjs --self-test",
     "update:strategy-differential-manifest": "tsx scripts/update_strategy_differential_manifest.ts",
+    "check:real-corpus": "node scripts/check_real_corpus.mjs",
+    "test:check-real-corpus": "node --test scripts/check_real_corpus.test.mjs",
     "oracle:aspose-fields": "python3 scripts/aspose_field_oracle.py --output packages/docx-compare/src/testing/oracles/aspose-field-oracle.v1.json",
     "oracle:word:serve": "node scripts/oracle/word/serve-addin.mjs",
     "oracle:word:compare": "node scripts/oracle/word/cli.mjs",
     "oracle:word:fixtures": "node scripts/oracle/word/fixtures.mjs",
-    "oracle:word:test": "node --test scripts/oracle/word/*.test.mjs",
+    "oracle:word:test": "node --test scripts/oracle/word/*.test.mjs scripts/oracle/word/accept-reject/*.test.mjs",
+    "oracle:word:accept-reject": "node scripts/oracle/word/accept-reject/cli.mjs",
     "preflight:ci": "npm run lint:workspaces && npm run check:spec-coverage && npm run check:tool-docs && npm run check:mcpb-manifest && npm run check:gemini-extension-manifest && npm run check:allure-labels && npm run check:allure-filenames && npm run check:allure-quality && npm run check:conformance-citations && npm run check:conformance-doc && npm run check:ecma-376-coverage && npm run check:capability-projection && npm run check:conformance-explorer && npm run check:invariants-doc && npm run check:site && npm run check:cycles",
     "test:coverage:reporter": "node --test scripts/report_package_coverage.test.mjs",
     "test:coverage:packages": "npm run test:coverage:reporter && npm run test:coverage -w @usejunior/docx-core && npm run test:coverage -w @usejunior/docx-compare && npm run test:coverage -w @usejunior/docx-markdoc && npm run test:coverage -w @usejunior/docx-mcp",
@@ -97,7 +100,7 @@
     "ajv": "^8.18.0",
     "allure": "3.15.0",
     "eslint": "^10.0.1",
-    "fast-xml-parser": "^5.7.0",
+    "fast-xml-parser": "^5.12.0",
     "jszip": "^3.10.1",
     "madge": "8.0.0",
     "prismjs": "^1.30.0"

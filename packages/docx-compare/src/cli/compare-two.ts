@@ -1,16 +1,30 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { compareDocuments } from '../index.js';
-import type { UnrepresentedChange } from '../compare-types.js';
+import {
+  COMPARE_REVISION_GROUPINGS,
+  DEFAULT_COMPARE_REVISION_GROUPING,
+  parseCompareRevisionGrouping,
+  type CompareRevisionGrouping,
+  type UnrepresentedChange,
+} from '../compare-types.js';
 import { formatUnrepresentedChangeWarnings } from '../unrepresented-change-warnings.js';
 
 const USAGE =
   'Usage: docx-comparison <original.docx> <revised.docx> [output.docx] ' +
-  '[--author "Name"]\n' +
+  '[--author "Name"] [--grouping <' + COMPARE_REVISION_GROUPINGS.join('|') + '>] [--no-moves] [--no-date]\n' +
+  '  --author <name>    Track-changes author (default: Comparison)\n' +
+  '  --grouping <mode>  Revision grouping (default: ' + DEFAULT_COMPARE_REVISION_GROUPING + '). ' +
+  'readable-semantic shows each rewritten passage as one deletion and one insertion; ' +
+  'token-minimal emits the smallest word-level deletion/insertion set.\n' +
+  '  --no-moves         Do not detect moved content (moves are detected by default)\n' +
+  '  --no-date          Omit w:date from the revisions this comparison creates (default: current time); ' +
+  'revisions already in the inputs keep their dates\n' +
   'Comparison always publishes the revised-based tagged package; engine, mode, strategy, premerge, ' +
   'and word-refinement selectors have been removed.\n' +
   'Stats: insertions/deletions count contiguous revision ranges; insertedAtoms/deletedAtoms use the tagged-token-v1 unit; ' +
-  'modifications counts modified paragraphs and formatChanges is separate.';
+  'modifications counts modified paragraphs and formatChanges is separate; moves counts detected moves ' +
+  '(moveFromRanges/moveToRanges count their ranges), never also counted as insertions/deletions.';
 
 export interface ParsedCompareCliArgs {
   originalPath: string;
@@ -18,6 +32,9 @@ export interface ParsedCompareCliArgs {
   outputPath?: string;
   options: {
     author: string;
+    revisionGrouping: CompareRevisionGrouping;
+    detectMoves: boolean;
+    omitDate: boolean;
   };
 }
 
@@ -55,6 +72,9 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
   const positional: string[] = [];
   const options: ParsedCompareCliArgs['options'] = {
     author: 'Comparison',
+    revisionGrouping: DEFAULT_COMPARE_REVISION_GROUPING,
+    detectMoves: true,
+    omitDate: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -78,6 +98,21 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
     switch (token) {
       case '--author':
         options.author = consumeValue(token);
+        break;
+      case '--grouping': {
+        const value = consumeValue(token);
+        try {
+          options.revisionGrouping = parseCompareRevisionGrouping(value, token);
+        } catch (error) {
+          throw new Error(`${(error as Error).message}\n${USAGE}`);
+        }
+        break;
+      }
+      case '--no-moves':
+        options.detectMoves = false;
+        break;
+      case '--no-date':
+        options.omitDate = true;
         break;
       default:
         throw new Error(`Unknown option: ${token}.\n${USAGE}`);
@@ -126,6 +161,9 @@ export async function runCompareCli(
 
   const result = await dependencies.compare(originalBuffer, revisedBuffer, {
     author: parsed.options.author,
+    revisionGrouping: parsed.options.revisionGrouping,
+    detectMoves: parsed.options.detectMoves,
+    ...(parsed.options.omitDate ? { date: null } : {}),
   });
 
   await mkdir(dirname(outputAbs), { recursive: true });

@@ -22,8 +22,9 @@ import type {
   RevisionGroupingPolicy,
   UnrepresentedChange,
 } from '../compare-types.js';
-import { representative, type TaggedNode } from './taggedTree.js';
+import { paragraphJoinParts, representative, type TaggedMoveRelation, type TaggedNode } from './taggedTree.js';
 import { guardBodyTableTopology } from './tableTopologyGuard.js';
+import { leaveOutRowlessTables, replaceSkeletonChangedRows } from './tableTopologyNormalization.js';
 import { collectContentControlPropertyChanges } from './unrepresentedChanges.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
@@ -52,6 +53,8 @@ export interface TaggedTreeShadowInput {
   numberingEnabled?: boolean;
   originalNumberingXml?: string;
   revisedNumberingXml?: string;
+  originalStylesXml?: string;
+  revisedStylesXml?: string;
   /** @internal Operation ranges whose emitted revisions require exact attribution. */
   revisionAttributionRanges?: readonly RevisionAttributionRange[];
   /** @internal Markdoc readability policy for simple replacement gaps. */
@@ -60,7 +63,7 @@ export interface TaggedTreeShadowInput {
   retainStatisticsMarkers?: boolean;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
-  /** @internal Main-body only; selected side stories keep their unrepresented contract. */
+  /** @internal Main-body table-topology guard; nested stories try it first (#1393). */
   guardTableTopology?: boolean;
 }
 
@@ -284,6 +287,17 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
 
   const atomCounts = (node: TaggedNode, insideMove = false): void => {
     const moved = insideMove || movedNodes.has(node);
+    if (node.tag !== 'both' && node.paragraphJoin) {
+      // A split or merge counts its parts as aligned paragraphs plus one atom
+      // per inserted (split) or deleted (merge) paragraph mark (#873).
+      const parts = paragraphJoinParts(node);
+      parts.forEach((part) => atomCounts(part, moved));
+      if (parts.length > 1) {
+        if (node.paragraphJoin.kind === 'split') insertedAtoms += parts.length - 1;
+        else deletedAtoms += parts.length - 1;
+      }
+      return;
+    }
     const localName = representative(node, node.tag === 'revised' ? 'revised' : 'original')?.localName;
     if (localName === 'p') {
       if (moved) return;
@@ -348,6 +362,10 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
         ? Math.max(1, taggedAtomWeight(node, 'revised'))
         : 1;
     }
+    if (node.tag === 'both' && node.rowExceptionsDelta) {
+      formatChanges++;
+      formatChangeAtoms++;
+    }
     if (node.tag === 'both' && node.revised.localName === 'p') {
       let hasOriginal = false;
       let hasRevised = false;
@@ -362,6 +380,7 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
       if (hasOriginal && hasRevised) modifiedParagraphs++;
     }
     node.children.forEach(visit);
+    paragraphJoinParts(node).forEach(visit);
   };
   visit(tree);
   return { insertedAtoms, deletedAtoms, modifiedParagraphs, formatChanges, formatChangeAtoms };
@@ -383,11 +402,47 @@ function consumeSerializedRangeStats(document: Document): TaggedTreePublication[
   return stats;
 }
 
+/**
+ * Count detected moves from the serialized story. Each relation pairs one
+ * source with one destination, so a move counts once here and never as an
+ * insertion or deletion (#940). A relation counts only when both of its named
+ * range starts (matched by allocated id and name) were emitted: a relation
+ * whose content serializes to nothing
+ * (for example a layout-only `w:lastRenderedPageBreak`) is not a visible move.
+ */
+function deriveMoveStats(
+  document: Document,
+  moves: readonly TaggedMoveRelation[],
+): Pick<CompareStats, 'moves' | 'movedParagraphs'> {
+  // Key each range start by id and name: a preserved input move may reuse a
+  // generated name such as `taggedMove1`, but not also its allocated id.
+  const emittedStarts = (localName: string): Set<string> => new Set(
+    Array.from(document.getElementsByTagNameNS(WORDPROCESSINGML_NAMESPACE, localName))
+      .map((marker) => `${marker.getAttributeNS(WORDPROCESSINGML_NAMESPACE, 'id') ?? ''}\u0000${
+        marker.getAttributeNS(WORDPROCESSINGML_NAMESPACE, 'name') ?? ''}`),
+  );
+  const sources = emittedStarts('moveFromRangeStart');
+  const destinations = emittedStarts('moveToRangeStart');
+  const emitted = moves.filter((move) =>
+    sources.has(`${move.sourceRangeId}\u0000${move.name}`) &&
+    destinations.has(`${move.destinationRangeId}\u0000${move.name}`));
+  return {
+    moves: emitted.length,
+    movedParagraphs: emitted.filter((move) => move.source.node.localName === 'p').length,
+  };
+}
+
 export function consumeTaggedPublicationStatistics(
   xml: string,
   treeStats: Pick<
     CompareStats,
-    'insertedAtoms' | 'deletedAtoms' | 'modifiedParagraphs' | 'formatChanges' | 'formatChangeAtoms'
+    | 'insertedAtoms'
+    | 'deletedAtoms'
+    | 'modifiedParagraphs'
+    | 'formatChanges'
+    | 'formatChangeAtoms'
+    | 'moves'
+    | 'movedParagraphs'
   >,
 ): { xml: string; stats: CompareStats; serializedRangeStats: TaggedTreePublication['serializedRangeStats'] } {
   const document = parseXml(xml);
@@ -419,6 +474,10 @@ export function consumeTaggedPublicationStatistics(
     formatChangeAtoms: treeStats.formatChangeAtoms,
     insertedTableRows,
     deletedTableRows,
+    moves: treeStats.moves,
+    movedParagraphs: treeStats.movedParagraphs,
+    moveFromRanges: serializedRangeStats.moveFromRanges,
+    moveToRanges: serializedRangeStats.moveToRanges,
   };
   return { xml: new XMLSerializer().serializeToString(document), stats, serializedRangeStats };
 }
@@ -438,10 +497,19 @@ export function buildTaggedTreePublication(
     numberingEnabled: input.numberingEnabled,
     originalNumberingXml: input.originalNumberingXml,
     revisedNumberingXml: input.revisedNumberingXml,
+    originalStylesXml: input.originalStylesXml,
+    revisedStylesXml: input.revisedStylesXml,
     revisionAttributionRanges: input.revisionAttributionRanges,
     minimumRevisionId: input.minimumRevisionId,
   });
-  if (input.guardTableTopology) guardBodyTableTopology(constructed.tree);
+  const leftOutTables: UnrepresentedChange[] = [];
+  if (input.guardTableTopology) {
+    // The main body always sets it; a header, footer or text-box story sets
+    // it first and drops it only when it refuses that story's tables (#1393).
+    leftOutTables.push(...leaveOutRowlessTables(constructed.tree));
+    replaceSkeletonChangedRows(constructed.tree);
+    guardBodyTableTopology(constructed.tree);
+  }
   const serialized = serializeTaggedTree(
     constructed.tree,
     createPreservePlan(original, revised, constructed.tree, {
@@ -460,6 +528,7 @@ export function buildTaggedTreePublication(
   const movedNodes = new Set<TaggedNode>(constructed.moves.flatMap((move) => [move.source, move.destination]));
   const treeStats = {
     ...deriveTaggedTreeStats(constructed.tree, movedNodes),
+    ...deriveMoveStats(document, constructed.moves),
   };
   const markedXml = new XMLSerializer().serializeToString(document);
   const consumed = consumeTaggedPublicationStatistics(markedXml, treeStats);
@@ -468,7 +537,7 @@ export function buildTaggedTreePublication(
     stats: consumed.stats,
     serializedRangeStats: consumed.serializedRangeStats,
     moves: constructed.moves,
-    unrepresentedChanges: collectContentControlPropertyChanges(constructed.tree),
+    unrepresentedChanges: [...collectContentControlPropertyChanges(constructed.tree), ...leftOutTables],
   };
 }
 
@@ -509,6 +578,8 @@ export function runTaggedTreeShadow(input: TaggedTreeShadowInput): TaggedTreeSha
     numberingEnabled: input.numberingEnabled,
     originalNumberingXml: input.originalNumberingXml,
     revisedNumberingXml: input.revisedNumberingXml,
+    originalStylesXml: input.originalStylesXml,
+    revisedStylesXml: input.revisedStylesXml,
   });
   const diagnostics = verifyGlobalEqualContentInvariant(constructed.tree, constructed.moves);
   const shadowXml = buildTaggedTreeShadowXml(input);

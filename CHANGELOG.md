@@ -2,6 +2,653 @@
 
 ## Unreleased
 
+- `compareDocuments` accepts `date: null` to write no `w:date` on the
+  revisions it creates, in the body, headers, footers, notes, comments and
+  text boxes (`w:date` is optional in ECMA-376). Revisions already in the
+  inputs keep their dates; an omitted `date` still means now. Both
+  `docx-comparison` and `safe-docx compare` gain `--no-date`, and the MCP
+  `compare_documents` tool gains `revision_date` (`'now'` default, `'none'`,
+  or an ISO 8601 date-time). (#1495)
+
+- **Behaviour change:** `compareDocuments` in `@usejunior/docx-compare` and
+  the `docx-comparison` CLI now default to `revisionGrouping:
+  'readable-semantic'`, the default the MCP `compare_documents` tool already
+  used, so the library, both compare CLIs and the MCP give the same redline
+  for the same pair. A rewritten passage reads as one deletion and one
+  insertion instead of alternating word by word; Accept All and Reject All
+  are unchanged. To keep the old output pass `revisionGrouping:
+  'token-minimal'` (or `--grouping token-minimal`). The default is defined
+  once as `DEFAULT_COMPARE_REVISION_GROUPING`. Both `docx-comparison` and
+  `safe-docx compare` gain `--grouping <readable-semantic|token-minimal>` and
+  `--no-moves`. (#1494)
+
+- The MCP server reads, edits and attaches headers and footers.
+  `get_headers_footers` returns each section's default, first and even
+  header and footer, including inherited ones, with paragraph ids that
+  `replace_text` and `insert_paragraph` accept, tracked in the header or
+  footer part in a tracked session. `set_header_footer` gives one section its
+  own header or footer from text and PAGE/NUMPAGES fields (or an existing
+  part, or links it to the previous section), writes the part, relationship
+  and content-type override, keeps the following sections' headers and
+  footers, and records `w:sectPrChange` when tracking. (#1050, #1051, #1052,
+  #1200)
+
+- `docx-markdoc create` writes agreements in the run-in house style
+  ("2.01 Engagement. Text …"): `{% run-in-paragraph level="article|section|clause|subclause" heading="…" %}`
+  gives a paragraph a live legal number carried by a Word multilevel list, and
+  `{% xref %}` to it reads "Section 2.01(a)" with a REF field whose cached
+  result matches. `{% toc /%}` adds a table of contents with its entries already
+  written, from headings, run-in articles and sections and `{% tc %}` entries,
+  and `page-number-format: lower-roman` / `upper-roman` with
+  `{% section page-number-start=1 /%}` numbers a front-matter section i, ii, iii
+  and restarts the body at 1. (#1417, #1426)
+
+- A field that crosses the boundary of a block-level content control
+  (`w:sdt`) or custom XML element (`w:customXml`), beginning inside the
+  container and ending outside it or the reverse, no longer corrupts the
+  redline or aborts the comparison when the field's halves change sides. A
+  container both documents hold now pairs, and the paragraphs holding the
+  field's halves are tracked as deleted and inserted, so Accept All and
+  Reject All each keep exactly one copy of the field. Previously some of these
+  comparisons failed with a `fieldStructure` error, and others published a
+  redline whose Accept All held an extra empty field (begin, separate and end
+  with no instruction) and whose Reject All held an empty container, with the
+  container listed in `unrepresentedChanges`. A container only one document
+  holds, or whose identity changes, is tracked whole as before, with the
+  deleted half of the field kept inside its deletion. (#1462)
+
+- A table row inserted into or deleted from a header or footer table, or a
+  table inside a header or footer text box, is now tracked as a whole row
+  (`w:trPr/w:ins`, `w:trPr/w:del`), as in body tables, instead of the header
+  or footer being listed in `unrepresentedChanges`. This covers default,
+  first-page and even-page headers and footers, rows beside a `PAGE` field
+  row, and a row whose cells merge within an unchanged grid, which is
+  replaced by a deleted and an inserted row. Header, footer and text-box
+  stories are now compared under the main-body table-topology guard first,
+  so such a merge inside a text box is no longer emitted as revisions
+  wrapped around cells; a table change the guard refuses in a header or
+  footer part is listed, and a text-box story the guard refuses keeps its
+  previous comparison. Inserting or deleting a row that holds a field, content control
+  (including a cell-level one), drawing, nested table or table-property
+  exceptions (`w:tblPrEx`), a change to a row's table-property exceptions,
+  a row change in a header or footer table that sits beside a text box in
+  the same part, or a whole table, is still listed. (#1393)
+
+- A block-level content control (`w:sdt`) or custom XML element
+  (`w:customXml`) that holds a field such as `REF` or `PAGE` now pairs across
+  a boundary move, as one without a field does: only the paragraph that moved
+  into or out of the container is tracked, instead of the whole container
+  being deleted and reinserted with both emptied containers listed in
+  `unrepresentedChanges`. The same holds when the moving paragraph itself
+  holds a complete field. (#1459)
+
+- A formatting-only change (bold, font size, alignment, paragraph-mark
+  formatting) in a header or footer paragraph that also holds a field such as
+  `PAGE`, a content control or a drawing is now tracked with `w:rPrChange` /
+  `w:pPrChange`, as in body text, instead of being listed in
+  `unrepresentedChanges`. This includes formatting on the field's own runs
+  and inside a content control, in default, first-page and even-page headers
+  and footers. A change to the field instruction, to a content control's own
+  properties, or adding or removing a field or content control is still
+  listed. (#1392)
+
+- Inserting or deleting a whole block-level content control (`w:sdt`) or
+  custom XML element (`w:customXml`), in the body or in a table cell, no
+  longer makes `compareDocuments` fail with
+  `UnsupportedBlockContainerRevisionError`. No revision can wrap the
+  container itself, so, as Word shows an inserted content control, the
+  container is published and every paragraph mark and run inside it is
+  marked inserted or deleted; a table inside it has each row marked.
+  Accept All and Reject All remove the content, but the container stays
+  behind empty (holding one empty paragraph) in Reject All of an inserted one
+  and Accept All of a deleted one, so each such container is listed in
+  `unrepresentedChanges` with the `contentControl` scope and `element`
+  `sdt` or `customXml`. A container that moved is tracked as deleted and
+  inserted, not as a move. Inside a text box or a footnote or endnote, whose
+  stories do not publish `unrepresentedChanges`, the comparison still refuses
+  the container with `UnsupportedBlockContainerRevisionError`, which now
+  names the part in `partPath`. (#1386)
+
+- A header or footer that gains or loses a text box no longer makes
+  `compareDocuments` fail with `UnsupportedTextBoxRevisionError` ("inserted
+  or deleted ancillary text-box topology is not supported"). Boxes in a
+  header/footer part now pair by anchor identity, as in the main document;
+  a box with no counterpart is tracked in that part as an inserted or
+  deleted anchor run, with every paragraph and run of its story marked the
+  same way, in every stored copy, while a paired box's text edit stays
+  tracked inside the box. This covers default, first-page and even-page
+  headers and footers. A header/footer box whose anchor identity changed,
+  or a DrawingML-only box against a VML-only box with no identifier in
+  common, is now tracked as replaced instead of refused. (#1384)
+
+- A text box stored only as DrawingML (`wps:txbx` with no VML fallback) no
+  longer makes `compareDocuments` fail with `UnsupportedTextBoxRevisionError`
+  ("the containing VML shape scaffold could not be paired"), in the main
+  document or a header/footer: its `wps:wsp` host is now fingerprinted and
+  the edit is tracked inside the box. A box stored one way in the original
+  and another in the revised document (VML only, DrawingML only, or twinned
+  in `mc:AlternateContent` by a newer Word) pairs on the identifier of the
+  spelling both store; the original takes the revised storage around its own
+  story, so every stored copy carries identical tracked text and Word and
+  older readers show the same redline. Previously the main story tracked such
+  a box as deleted and reinserted, and a header/footer refused it. A pure
+  re-save (storage changed, text unchanged) shows no text revision; the
+  spelling only one side stores is listed with the `drawing` scope, since it
+  may draw the box differently. (#1383)
+
+- Document properties can be chosen or left out (#1201). `docx-markdoc
+  create` reads three new frontmatter keys: `modified` (the
+  `dcterms:modified` date, which used to always equal `date`),
+  `last-modified-by`, and `application` (the `Application` in
+  `docProps/app.xml`; `application: none` leaves it out, and without the key
+  it stays `safe-docx`). `author` remains the `dc:creator`. The summary line
+  names the dates it wrote and says when they are the fixed 2006-01-01
+  default because the frontmatter has no `date`. A new certificate check,
+  `checks.properties`, reads the properties back from the DOCX against the
+  frontmatter, with a negative control. Sources without the new keys build
+  the same bytes as before. `generateDocx` accepts the same properties as
+  `meta.modifiedIso`, `meta.lastModifiedBy` and `meta.application` (null
+  omits it), and now refuses meta values that are not W3CDTF dates or hold
+  characters XML cannot carry. The Safe-DOCX MCP server gains
+  `get_document_properties` and `set_document_properties` for existing DOCX
+  files: a closed set of core properties (title, subject, creator, keywords,
+  description, category, content_status, language, last_modified_by,
+  revision, created, modified) and extended properties (application,
+  app_version, company, manager, template). A write changes only the named
+  elements, creates a missing `docProps` part with its relationship and
+  content-type override, and is listed in the save report's non-revision
+  change manifest, because document properties have no tracked-change form.
+
+- A `w:sym` symbol character (a Wingdings checkbox or bullet, common in legal
+  forms) is now part of the paragraph text. `read_file` and `grep` show it,
+  and `replace_text`, `add_comment` and `add_footnote` can address it.
+  Previously the symbol was invisible, and every offset after it in the
+  paragraph was short by one. It counts as the character it stands for: the
+  symbol font's codepoint, usually a private-use character such as U+F0A8.
+  A symbol whose `w:char` is missing or unusable counts as U+FFFD. Every
+  walker that measures paragraph text shares one definition, so edits,
+  comment anchors, footnote references, the document view and table cell
+  text address the same characters, including a symbol in the middle of a
+  run. Two published identities change for symbol-bearing paragraphs:
+  - The `_bk_*` paragraph anchor names that safe-docx generates change
+    for the paragraph and its previous and next paragraphs, because they
+    are seeded from that text. This applies only to paragraphs without
+    `w14:paraId`, in a document that does not already carry `_bk_*`
+    bookmarks.
+  - `content_fingerprint` and `portable_paragraph_ref` values change for
+    those paragraphs, so values stored before this release must be
+    refreshed. A stale value can fail to resolve, or can resolve to another
+    paragraph whose text matches the old symbol-less text.
+
+  A range that covers a symbol deletes it as part of the tracked change, as
+  before (#1044). A formatting-only edit over a checkbox keeps it as the same
+  `w:sym` with its font, and literal text beside it stays text. More
+  generally, a symbol in the unchanged leading or trailing part of a
+  replacement is written back as a `w:sym`. A symbol character typed in the
+  changed part is written as text. The `replace_text` warning about removing
+  a symbol "not shown in the paragraph text" is retired, because the symbol
+  is now shown there. (#1046, #1045, #797)
+
+- A header or footer change the redline cannot carry (a resized logo or
+  shape, listed in `unrepresentedChanges`) no longer makes `compareDocuments`
+  fail with `UnsupportedTextBoxRevisionError` ("package projection
+  validation") when another header, footer or header/footer text box is
+  edited. The edited slot is tracked and keeps exact Accept All / Reject All
+  parity; the listed slot is carried as the revised part, stays listed, and
+  the projection check holds it to the revised part's own Reject All. A
+  listed slot is excluded from the original-side check only while it stays
+  listed and no story comparison wrote it. (#1391)
+
+- A part whose start tag repeats a namespace declaration, such as
+  `<w:document xmlns:w="…/main" xmlns:w="…/main">`, no longer makes
+  `DocxDocument.load()`, `compareDocuments()` or the MCP open path throw a raw
+  xmldom `ParseError: Attribute xmlns:w redefined`. A repeated attribute is not
+  well-formed XML (XML 1.0 §3.1, "Unique Att Spec"), but an exact repeat binds
+  the prefix to the same URI either way, so it is dropped and the part loads;
+  re-serialized parts declare it once, while parts passed through untouched
+  keep their source bytes. A repeat with a different URI is ambiguous and fails
+  with `XmlPartParseError` naming the part (and original/revised side), caused
+  by the new `XmlNamespaceRedeclarationError`. The repair runs only after that
+  specific parse error, so ordinary parts are parsed exactly as before. An
+  external benchmark hit this on 7 of 803 public pairs. (#1032)
+
+- `docx-markdoc create` admits a `{% paragraph-layout %}…{% /paragraph-layout %}` block tag that
+  gives body paragraphs their own layout from a closed vocabulary: `align`
+  (`left`, `center`, `right`, `justify`), `indent-left` and `indent-hanging`
+  (0.25 to 2 inches in quarter-inch steps; the hanging indent no larger than
+  the left one). It covers a flush-left address block or notice line in a
+  justified document and a definitions list whose wrapped lines line up under
+  a hanging first line. The read-back checks every paragraph's direct `w:jc`
+  and `w:ind` against the lowering, and the round trip checks each tagged
+  paragraph's layout against the source alone, each with negative controls; a
+  malformed tag fails with `INVALID_PARAGRAPH_LAYOUT`. `pull` carries edits inside the
+  tag, and writes a retyped paragraph that keeps its alignment and indent back
+  in the tag. (#1424)
+
+- Documents built by `docx-markdoc create` no longer stretch a justified line
+  that ends in a manual line break (`\`): `word/settings.xml` now sets
+  `w:doNotExpandShiftReturn`, a Word compatibility setting that LibreOffice also honours, so address
+  blocks and venue lines keep normal word spacing. Every created document's
+  bytes change once. `generateDocx` gains the opt-in
+  `DocumentSpec.compatibility.doNotExpandShiftReturn` that writes it. (#1196)
+
+- `unrepresentedChanges` no longer lists section, header or footer changes
+  the redline already carries. Sections were compared by index, so after a
+  section break was added or removed every later section was reported as
+  changed, added or removed, along with its header and footer slots, even
+  when Accept All and Reject All showed every page correctly. An entry is
+  now dropped only where Reject All of the redline reproduces the original
+  and Accept All the revised document at that section, in that scope:
+  section properties, or the header/footer story each page shows after
+  inheritance. This covers a section break carried on a tracked paragraph
+  mark, a `w:sectPrChange` whose snapshot names every live property, and a
+  header/footer text-box edit redlined in its part. Entries stay listed when
+  the redline does not carry the change, including a `w:sectPrChange`
+  snapshot that omits a live property Word's Reject All would keep (a new
+  `w:titlePg`, or `w:orient` on a page turned landscape), a break change on
+  a paragraph mark that already carries a revision, a header/footer slot
+  dropped from a surviving section, a header/footer part with no text added
+  or removed (its empty paragraphs or text box still take up room),
+  `w:evenAndOddHeaders` turned off, a changed header/footer field, and every
+  header/footer entry while a header or footer holds a field that can show
+  another story's content (`REF`, `STYLEREF`, a formula and the like). The
+  publication gate reads the same list, so a section divergence is no longer
+  admitted on the strength of an index-shifted entry. (#1427, #1181, #1030)
+
+- Resizing, moving or rewrapping a text box whose text was also edited no
+  longer fails `compareDocuments` with `UnsupportedTextBoxRevisionError`
+  ("scaffold changed"). WordprocessingML has no revision markup for drawing
+  geometry (Part 1 §17.13.5 covers run, paragraph, section, table and
+  numbering properties), so the text edit is tracked inside the box, the
+  redline carries the revised shape, and the box is listed once in
+  `unrepresentedChanges` with the new `drawing` scope (public type
+  `UnrepresentedDrawingChange`: story, part, visual box ordinal, container
+  and name), whose warning says the redline shows the revised shape. Accept
+  All reproduces the revised document; Reject All reproduces the original
+  text in the revised shape. This covers VML boxes (`style`, `w10:wrap`) and
+  Word's twinned boxes (DrawingML `wp:extent`, `wp:positionH`/`wp:positionV`,
+  `wp:wrap*` on `wp:anchor` or `wp:inline`, with the VML fallback), in the
+  main document and in headers and footers. A header or footer box whose
+  drawing alone changed is listed with the `drawing` scope instead of a
+  generic header/footer entry. A main-document box whose drawing alone
+  changed keeps its native redline (the box tracked as replaced), as does a
+  box whose revised drawing names a relationship the original resolves
+  differently. A standalone DrawingML box (no VML twin) is still refused
+  (#1383). (#1382)
+
+- A hyperlink added to, removed from or pointed at another target inside a
+  text box, in the main document or in a header or footer, is now tracked by
+  `compareDocuments` instead of failing with `UnsupportedTextBoxRevisionError`
+  ("relationship closure changed"). A link retargeted under its old
+  relationship id, whose box markup is otherwise identical, was carried with
+  the revised target and no revision at all; it is now tracked too. The old
+  link is a tracked deletion bound to the original target and the new one a
+  tracked insertion bound to the revised target; each relationship the redline
+  needs is imported, under an id unique there, into the relationship part of
+  the part that owns the box, so a footer box's link lands in the footer's own
+  `.rels` (ECMA-376 Part 2 §6.5.3.4). An internal target is matched by
+  its payload (bytes and everything it reaches), not its path, so a path the
+  owner's package holds with other bytes is imported aside rather than
+  reused. The same import carries a text-box
+  picture that now names another image part, which is redlined instead of
+  refused. A link that exists on one side only is now emitted as
+  `w:hyperlink` holding the `w:ins`/`w:del` (a link nested in it likewise),
+  in body text as well as text boxes; the reverse nesting failed schema
+  validation (Part 1 §17.16.22).
+  (#1381)
+
+- A picture or embedded object whose markup is unchanged but whose payload
+  changed (image bytes replaced at the same `media/` path, the relationship
+  pointed at a new part, an OLE binary or a chart's embedded workbook
+  replaced) is no longer carried silently by `compareDocuments`. In the main
+  document story the swap is redlined: the original picture becomes a tracked
+  deletion bound to a copy of its original payload under a fresh relationship
+  id, and the revised picture a tracked insertion. In a header, footer,
+  footnote or endnote story, where the redline cannot hold two payloads under
+  one relationship id, the picture is listed in `unrepresentedChanges` with
+  the new `picture` scope, naming the story part, the relationship id and the
+  picture. A final check confirms that Reject All and Accept All of every
+  story resolve each picture to the original's and the revised's payload, and
+  lists any picture where they do not. A text edit in a text box whose
+  picture, object or chart payload also changed under the same relationship
+  is now tracked, with the picture listed, instead of failing the comparison
+  with `UnsupportedTextBoxRevisionError`. When an imported part has the same
+  bytes as the base's but reaches different parts (a chart whose workbook
+  changed), the import now copies it aside instead of reusing the base's copy.
+  Payloads are compared after decoding URI-encoded targets
+  (ECMA-376 Part 2 §6.5.3.4). (#1430)
+
+- Deleting a section break the way Word does it no longer fails the
+  comparison with `TaggedPublicationSafetyError ... formattingFidelity` when
+  the following section had no header/footer references of its own. Word
+  copies the removed section's references onto that section, so Reject All
+  names explicitly the parts the original section inherited. The
+  formatting-fidelity section check now compares header/footer references by
+  the part each section shows once inheritance from earlier sections is
+  resolved (ECMA-376 Part 1 §17.10.5, §17.10.2): a reference that names the
+  part the section would inherit anyway is not a divergence. A reference that
+  changes what a section shows still fails the check. (#1203)
+
+- Format-only Markdoc edits now compile together on adjacent paragraphs with
+  near-identical text. Run splitting for underline or highlight no longer
+  produces false moves between unchanged paragraphs. Retained-format
+  certification failures now name the affected edit IDs. (#1414)
+
+- A text edit inside a text box that also holds a picture (`w:pict` or
+  `w:drawing`), an embedded object (`w:object`) or a nested text box is now
+  tracked instead of failing the comparison with
+  `UnsupportedTextBoxRevisionError`. The picture or object is carried as one
+  atomic leaf; a resized or otherwise changed one is a tracked deletion plus a
+  tracked insertion. A nested box in a main-document text box is compared as
+  its own story, and one inserted or deleted with its enclosing story has its
+  paragraphs marked. VML `o:relid` picture references now count toward the
+  text-box relationship closure, and the closure now includes the content of
+  each internal target part (and, recursively, of the parts it reaches), so a picture or object that names a different
+  part, or whose part bytes were replaced at the same path, is still refused
+  rather than carried silently. A nested box in a
+  header or footer text box is still refused. (#1380)
+
+- A change to a vertical table merge (`w:vMerge`) is now redlined instead of
+  failing the comparison with `UnsupportedTableTopologyComparisonError`. That
+  covers creating, extending, shrinking or splitting a merge, combining it
+  with a horizontal span, and deleting the row where it starts or ends. The
+  smallest band of rows that holds every merge the change touches is shown as
+  its old rows deleted (ECMA-376 Part 1 §17.13.5.12), then its new rows
+  inserted (§17.13.5.17), so Accept All and Reject All each keep whole merges.
+  Rows outside the band keep their ordinary redline. (#1397)
+
+## 0.25.1
+
+- Header and footer text edits are now tracked when the section layout also
+  changes: a section added or removed, a page-size, orientation or margin
+  change, `w:titlePg` switched, or a slot moved to a differently named part
+  or from an explicit to an inherited reference. Before, any such difference
+  left every header/footer edit in `unrepresentedChanges` and out of the
+  redline. A story is now identified by its effective slot (section, kind and
+  role after inheritance) and paired through the section alignment the body
+  comparison emitted, and a pair is kept only when every page it touches shows
+  the original story after Reject All and the revised one after Accept All.
+  Turning different even pages on with a new even-page story redlines that
+  story against the default story the original showed on even pages, since
+  the settings part keeps the revised `w:evenAndOddHeaders`. Still
+  unrepresented: turning even pages off, turning them on with no even story,
+  structural (scaffold) changes, and text-box stories, which keep the #1204
+  checks. (#1390)
+
+- The comparison's header/footer story checks now judge what Word shows
+  after Accept All and Reject All, not the literal `w:headerReference` and
+  `w:footerReference` elements. They project with Word's carry of a removed
+  section break's references (#1144) and resolve each section's header and
+  footer through inheritance from the previous section, with `w:titlePg` and
+  `w:evenAndOddHeaders` deciding which story each first, odd and even page
+  uses; a story that projects to blank (no text, and nothing drawn beyond an
+  emptied text box) counts as no story. A redline whose final section names a footer it
+  used to inherit is no longer refused. A redline that Word would accept or
+  reject into a blank footer, because the carried story replaced the footer
+  the section inherited, is now refused with `UnsupportedTextBoxRevisionError`
+  instead of being published. So is one where a carried story keeps visible
+  content without text (a bordered table, say), and one that turns
+  `w:evenAndOddHeaders` on or off alongside a header/footer change, because
+  Reject All keeps the revised setting. The resolver behind this
+  (`effectiveStoryBindings.ts`) is internal for now. docx-compare's
+  `acceptAllChanges`/`rejectAllChanges` lose their undocumented
+  `{ carryHeaderFooterReferences }` option; they always carry, as Word does.
+  (#1204)
+
+- `docx-markdoc create` no longer fails its PDF word check when a word that
+  holds a hyphen, such as `re-evaluate`, wraps right after the hyphen at a
+  line end. `pdftotext -raw` reads that as `re-` and `evaluate`. The check
+  now rejoins such tokens only when the hyphen token ends its raw line and
+  the alignment left exactly the joined word missing at that place, so a
+  stray hyphen, or a joined form that differs from the source, still fails.
+  Rejoined words are listed under `knownGenerated.wrappedHyphens`. A wrap
+  across a page break, or one whose fragment the alignment matched to a
+  neighbouring word spelled the same (`re-` `evaluate` before the source
+  word `evaluate`), is not rejoined and still fails. (#1289)
+  A justified first line that `pdftotext -raw` reads with only some of its
+  spaces missing (`alphabravo charliedelta…`, #1291) already passes since
+  #1246; a regression test now pins that shape.
+- Generated documents can cross-reference their own numbered provisions. In
+  docx-core, a body `ParagraphSpec` takes a `bookmark` name, and a
+  `{ kind: 'crossReference', bookmark, number?: 'fullContext' | 'paragraph' }`
+  inline emits ` REF <name> \w \h ` or ` REF <name> \n \h `, the
+  instructions Word's own Insert → Cross-reference writes. Its cached result
+  is the number Word shows after updating fields, such as `Section 2.06(b)`
+  or `(b)`. That number is computed from the generated body and checked
+  against 97 results recorded from Word 16.114. Bookmark ids share the
+  comment-id sequence. Names follow Word's Bookmark dialog, and generation
+  refuses a target Word would show as `0` or at an unused level's start
+  value. `bookmarkNameForSlug` maps kebab-case ids to bookmark names. In
+  `docx-markdoc create`, end a numbered list item with `{% #id %}` and write
+  `{% xref to="id" /%}`, with optional `number="paragraph"` and
+  `format="section"`. An unknown id fails with the id and the line. The
+  read-back, round-trip and PDF checks verify each number. "As provided in
+  Section 2.06(b)" used to be literal text that went stale when a section was
+  inserted; after Word updates fields, every reference shows the new number.
+  `docx-markdoc import` now admits REF fields in footnotes and keeps their
+  numbers as text. List labels past `z` now read `aa`, `bb`, …, `zz`, `aaa`,
+  as Word shows them; 28 used to read `ab`. (#1236)
+- `docx-markdoc create` no longer fails its PDF word check when LibreOffice
+  exports a justified line without spaces, which it can do when the line
+  holds an underlined word. The raw text layer reads such a line as one
+  token. The PDF render now also extracts `pdftotext -layout` text, which
+  keeps the spaces, and the check splits the token back into words only when
+  it spells a run of consecutive source words exactly and the page's layout
+  text shows that one reading in a place the raw text does not. It lists the
+  line under `knownGenerated.joinedLines`. A word dropped from, added to or
+  moved within the line still fails, unless the page's layout text shows the
+  source reading in another place where the raw text does not. Required text
+  may match a page's layout text. (#1242)
+- Generated documents can have footnotes. In docx-core, `generateDocx`
+  accepts a `{ kind: 'footnote', blocks: ParagraphSpec[] }` inline in body
+  paragraphs and table cells. It writes `word/footnotes.xml` with Word's
+  separator notes, `FootnoteReference` reference marks, `FootnoteText` note
+  paragraphs and the `footnotePr` list in settings, so the notes number,
+  continue across pages and read back through `get_footnotes`. In
+  `docx-markdoc create`, `{% fnref id="1" /%}` places a reference and a
+  top-level `{% footnote id="1" %}…{% /footnote %}` block holds a one-line
+  or multi-paragraph note. Notes are numbered by reference order, and the
+  build checks them in its read-back, round-trip and PDF word checks.
+  Annotated model forms and memos that cite authority used to need
+  `add_footnote` on the finished file, one plain-text note at a time.
+  `add_footnote` now also gives every paragraph of a multi-paragraph note the
+  `FootnoteText` style; before, only the first paragraph had it. When
+  `docx-markdoc import` reads a footnote, it no longer keeps the space after
+  the note's number as body text, so import then compile no longer adds a
+  second space. (#1237)
+- `docx-markdoc create` can underline. Wrap inline text in
+  `{% u %}…{% /u %}` to give it a single underline (`w:u w:val="single"`);
+  text outside the tag, such as the period after a defined term or a run-in
+  heading, stays plain. It nests with bold, italic and fill-ins. The generic
+  markdocx engine renders the same tag for any theme. Agreements underline
+  defined terms, run-in headings and operator words such as "less"; until now
+  a created document had to use bold for them. (#1238)
+- Comparison stats now report detected moves. A comparison whose only change
+  is a moved paragraph used to report zero for every stats field, so it looked
+  identical to an unchanged document. `CompareStats` (and the MCP
+  `compare_documents` response) now include `moves`, `movedParagraphs`,
+  `moveFromRanges` and `moveToRanges`. Moved content is still not counted as
+  an insertion or deletion, and existing fields keep their meanings.
+  TypeScript code that builds a `CompareStats` object literal (for example a
+  test mock) must add the four fields. (#1210, #940)
+- Comparison no longer gives a detected move the same range ID as a tracked
+  change already in the input. Move range IDs started at the first unused ID
+  and counted up without skipping IDs the input already used, so an input with
+  gaps in its IDs could produce duplicate move range IDs. (#1210, #940)
+- Rejecting a section-property change that has no recorded prior state no
+  longer deletes the section. A `w:sectPrChange` may omit its `w:sectPr`
+  snapshot; docx-core `rejectChanges` used to treat that as "no prior
+  properties" and removed the whole live `w:sectPr`, so a paragraph-level
+  section lost its section break, page setup and header/footer bindings (and
+  0.25.0 then moved those bindings to the next section). Now, as in Word 16's
+  Reject All and Accept All, only the record is removed and the section is
+  kept unchanged. docx-compare `rejectAllChanges` already behaved this way, so
+  the two reject paths now agree. (#1205, #987)
+- Comparing a document in which a paragraph was split in two, or two
+  paragraphs were merged, no longer shows a whole sentence deleted and
+  re-inserted. The text stays in place, and the redline records only the
+  paragraph mark (inserted for a split, deleted for a merge) and the joining
+  space, as Word's own Compare does. Changed paragraph formatting is tracked on
+  each resulting paragraph, so Accept All and Reject All in Word give the
+  revised and original documents. This applies to plain paragraphs (runs of
+  text, tabs and bookmarks); a split or merge involving section breaks, fields,
+  footnotes, endnotes, comments, drawings, hyperlinks or earlier tracked changes
+  keeps the previous delete-and-insert representation. (#1207, #873)
+- The Safe Docx MCP server now depends on `@modelcontextprotocol/sdk` 1.32.1
+  (was 1.29.0). (#1177)
+- The conformance explorer data is regenerated, so the `w:docDefaults` claim
+  rationale matches its source. (#1202)
+
+- `compare_documents` now shows a heavily rewritten passage as one deletion
+  followed by one insertion instead of alternating word by word. Its new
+  `revision_grouping` parameter defaults to `readable-semantic`;
+  `token-minimal` restores the previous word-level redline. The library's
+  `compareDocuments` gains the same `revisionGrouping` option and keeps
+  `token-minimal` as its default. Grouping works across runs with different
+  formatting, absorbs short unchanged words, spaces and punctuation between
+  changes, and never crosses moves, fields, bookmarks, comment ranges, note
+  references or earlier tracked changes. Accept All and Reject All give the
+  same documents in both modes. (#1411)
+
+## 0.25.0
+
+- **Breaking for `docx-markdoc create` sources: bare brackets are now literal
+  text.** `[t]he`, `[sic]`, `Section 2[(b)]` and unbalanced brackets are kept
+  as written, never highlighted and never an error. Mark a fill-in explicitly
+  with `{% fill %}Effective Date{% /fill %}`. It renders as `[Effective Date]`,
+  highlighted, and works inside bold or italic text, nested fills and signer
+  names (`{% signer date="…" %}{% fill %}Name{% /fill %}, Director{% /signer %}`).
+  A source written for 0.24 can opt back into automatic bracket highlighting
+  with frontmatter `fill-ins: brackets`. (#1187, #1184)
+- **`create` verifies its output against the source independently.**
+  - **Round trip:** the created DOCX is re-imported with `docx-markdoc import`,
+    and its body and footer paragraphs are compared with text read straight
+    from the Markdoc, not from the lowered document model. Only NFC and
+    whitespace are normalized. A deleted word, paragraph, table cell and footer
+    text must each be detected as negative controls, and mismatches are
+    recorded with their source line and the missing and extra words.
+  - **PDF words:** a rendered PDF's text layer (`pdftotext -raw`) must match
+    the source word for word. List labels, each page's footer and page number,
+    table headers repeated across pages, and table rows split across pages
+    are worked out from the source, so generated text cannot stand in for a
+    missing word. A page break the
+    text cannot pin down fails rather than being guessed, and the
+    certificate's `pdf.words.limitations` lists those cases. Failures use
+    `CREATION_PDF_WORDS_MISMATCH`.
+  - **Failure report:** a check that finds a mismatch publishes nothing,
+    leaves existing outputs (including the last `<stem>.verification.json`)
+    unchanged, and writes `<stem>.failed-verification.json`, named in the
+    error. The next successful build removes it. (#1189, #1185)
+- **`create --replace` no longer overwrites an edited DOCX.** It rebuilds
+  over `<stem>.docx` only when the file is the one the last build certified
+  (its SHA-256 matches `docxSha256` in a passing `<stem>.verification.json`).
+  An edited DOCX, or one whose certificate is missing, unreadable or failed,
+  is refused with `CREATION_OUTPUT_EDITED` and nothing changes. The check
+  runs again when publication moves the file aside, so an edit saved during
+  the build is caught. `--dangerously-overwrite-edited-docx` rebuilds anyway
+  and keeps the replaced DOCX, byte for byte, in
+  `.<stem>.create-overwritten-<uuid>/`, named in its output. (#1190, #1186)
+- `renderPlainPdf` reads the text layer with `pdftotext -raw` (document order
+  for LibreOffice output: table cells row by row, and justified lines that
+  end in a manual break kept whole), and its verdict now includes each
+  page's text as `pageTexts`. (#1189)
+
+- Accepting or rejecting a tracked section break no longer drops the removed
+  section's headers and footers. Word 16 puts the header/footer references on
+  the inserted break and leaves the following section linked to previous, so
+  rejecting that insertion (or accepting a deleted break) used to leave the
+  surviving section with no header or footer. Now, as in Word's Accept All and
+  Reject All, the following section receives all of the removed section's
+  references when it has none of its own, and keeps exactly its own when it has
+  any; its title-page setting and page setup are unchanged. This applies to
+  docx-core `acceptChanges`/`rejectChanges` and docx-compare
+  `acceptAllChanges`/`rejectAllChanges`, and so also to comparison output,
+  which records section-break edits on the paragraph mark since #1171
+  (0.24.0). (#1144)
+
+## 0.24.0
+
+- **New: `docx-markdoc create`** builds a new Word document from Markdoc with
+  no template. Typical uses are consents, resolutions and certificates.
+  - **Outputs:** `<stem>.docx`, `<stem>.txt` (read back from the `.docx`),
+    `<stem>.verification.json`, and `<stem>.pdf` when LibreOffice and
+    `pdftotext` are installed. Without those tools the PDF check is recorded
+    as `not_run`; `--require-pdf` makes that a failure.
+  - **Grammar:** headings, paragraphs, quotes and `**bold**`/`*italic*`;
+    ordered lists with real `1.` / `(a)` / `(i)` numbering, restarting per
+    list; `{% table %}`, `{% center %}`, `{% legend %}`,
+    `{% signer name="…" date="…" /%}`, `{% page-break /%}`, and
+    `{% section footer="…" page-numbers=true /%}` for next-page sections with
+    linked or unlinked footers.
+  - **Fill-ins:** `[…]` is highlighted, nesting allowed; `{% literal %}` opts
+    out. The default house style is Times New Roman 11pt on all four font
+    channels, 8pt after, 1.15 lines and 1" margins; `--style-profile`
+    overrides it.
+  - **Fails closed:** anything outside the grammar, including leftover
+    pseudo-HTML, fails with a line number and the tag to use instead.
+  - **Self-checks:** before anything is written, every build checks that the
+    package is sound, that the text read back from the DOCX and the footers
+    match the source (each with a negative control), that a rebuild is
+    byte-identical, and that the brownfield `import` anchors every paragraph.
+  - **Publishing:** all outputs are published together; a failure restores
+    the previous files or keeps them in a named recovery directory. Runs on
+    the same output stem are serialized by a lock file, and `--replace`
+    rebuilds in place.
+  - The README covers migrating from a per-matter python-docx renderer. A
+    synthetic benchmark against python-docx is in
+    `packages/docx-markdoc/benchmarks/`. (#1175, #1162)
+- `@usejunior/docx-markdoc` now includes the generic Markdoc →
+  `DocumentSpec` engine (`createMarkdocxRenderer`,
+  `renderMarkdocxToDocumentSpec`, `renderMarkdocxToDocx`). Domain conventions
+  plug in through a theme, tag plugins, a field resolver and a block
+  transform hook. Rendering is lenient by default: links keep their text,
+  code renders as plain text, and breaks become spaces, with an opt-in
+  `hardBreaks: 'line'`. Unhandled nodes throw `MarkdocxUnhandledNodeError`.
+  (#1172)
+- `renderPlainPdf` (in `@usejunior/docx-markdoc`) renders a finished DOCX
+  through LibreOffice in a throwaway profile and checks the `pdftotext` text
+  layer for required strings, page by page.
+  - Missing tools report `not_run`, never a pass.
+  - The PDF is published only on a pass, through a staged file renamed over
+    the destination, so it never writes through a symlink or hard link to the
+    input. (#1173)
+- `generateDocx` accepts `DocumentSpec.defaults`, a house font, size and
+  paragraph spacing declared once in `w:docDefaults`.
+  - An explicit run `font` is now written to all four `w:rFonts` channels,
+    including `w:eastAsia`, so every generated package gains that attribute.
+  - Setting `keepNext`, `keepLines` or `pageBreakBefore` to `false` now emits
+    `w:val="0"`, so it can override a true default. (#1163, #786)
+- `SectionSpec.breakPlacement: 'lastParagraph'` binds a non-final section's
+  `w:sectPr` to the section's last paragraph instead of adding an empty
+  break paragraph. The default is unchanged. (#1166, #1165)
+- Comparison now records a section break that is added to or removed from a
+  kept paragraph as a paragraph-mark revision carrying the full `w:sectPr`,
+  as Word does. Reject All restores a removed section's header and footer
+  references, and an added break no longer survives Reject All. Page-setup-only
+  changes still use `w:sectPrChange`. (#1171)
+
+## 0.23.1
+
+- Comparison no longer marks unchanged text as changed when the two documents
+  split the same text into runs differently (as Word does between editing
+  sessions). A short run such as a single space or a repeated word is no
+  longer paired with an unrelated run elsewhere in the paragraph, so the
+  redline loses spurious insertions, deletions and `w:rPrChange` marks on
+  whitespace (for example a bold space between inserted words), and a run
+  that differs only by a redundant `xml:space="preserve"` is treated as
+  unchanged. Paragraphs whose changed spans contain tabs, breaks, fields,
+  hyperlinks or several `w:t` elements keep the previous alignment. (#743)
+- `insert_paragraph`, `batch_edit` and Markdoc compilation now validate
+  where a new paragraph lands in the document's structure and report
+  diagnostics with stable codes and, where one is deterministic, a corrective
+  anchor: a heading that would split a parent section from its children
+  (`PARENT_CHILD_SLICE`, with `suggested_position`), a list level that does
+  not match its neighbours, renumbering mid-list, and a run-in heading
+  inserted without its body paragraph (detected from Word's style separator,
+  as in NVCA `Heading2` + `HeadingPara2` pairs). The editing tools return
+  these as warnings; strict Markdoc compilation fails before writing output.
+  `batch_edit` accepts a run-in heading and its body inserted at the same
+  anchor as one atomic pair. (#970)
 - `extractEffectiveRunFormatting` (and so `read_file` formatting) now reads
   table styles for a run inside a table, per ECMA-376 Part 1 § 17.7.2: the
   table's `w:tblStyle` (or the default table style when it names none) with

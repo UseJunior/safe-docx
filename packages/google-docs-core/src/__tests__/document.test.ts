@@ -49,6 +49,40 @@ describe('GoogleDocsDocument', () => {
     vi.clearAllMocks();
   });
 
+  it('retains confirmed remote writes and stale structure after refresh failure, then clears stale on refresh', async () => {
+    const { client, getDocumentFn, batchUpdateFn } = buildMockClient(buildMockDocument([]));
+    mockResolveCredentials.mockResolvedValue(client);
+    const doc = await GoogleDocsDocument.load('synthetic-doc');
+    expect(doc.getConfirmedWriteVersion()).toBe(0);
+    expect(doc.isStructureStale()).toBe(false);
+    await doc.executeBatchUpdate([{ insertText: { location: { index: 1 }, text: 'Synthetic' } }]);
+    getDocumentFn.mockRejectedValueOnce(new Error('refresh failed'));
+    await expect(doc.fetchDocument()).rejects.toThrow('refresh failed');
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(doc.isStructureStale()).toBe(true);
+    await doc.fetchDocument();
+    expect(doc.isStructureStale()).toBe(false);
+    batchUpdateFn.mockRejectedValueOnce(new Error('write rejected'));
+    await expect(doc.executeBatchUpdate([{ insertText: { location: { index: 1 }, text: 'Rejected' } }])).rejects.toThrow('write rejected');
+    expect(doc.getConfirmedWriteVersion()).toBe(1);
+    expect(doc.isStructureStale()).toBe(false);
+  });
+
+  it('marks failed post-insertion anchor refresh stale without counting anchor maintenance as a user edit', async () => {
+    const response = buildMockDocument([{
+      paragraph: { elements: [{ textRun: { content: 'Synthetic\n' } }], paragraphStyle: { namedStyleType: 'NORMAL_TEXT' } },
+      startIndex: 1, endIndex: 11,
+    }]);
+    const { client, getDocumentFn } = buildMockClient(response);
+    mockResolveCredentials.mockResolvedValue(client);
+    const doc = await GoogleDocsDocument.load('synthetic-doc');
+    getDocumentFn.mockRejectedValueOnce(new Error('anchor refresh failed'));
+    await expect(doc.injectAnchors()).rejects.toThrow('anchor refresh failed');
+    expect(doc.isStructureStale()).toBe(true);
+    expect(doc.getConfirmedWriteVersion()).toBe(0);
+    expect(doc.getEditCount()).toBe(0);
+  });
+
   // ── Bug fix: paraInCell always 0 ────────────────────────────────────
 
   describe('paraInCell counter', () => {
@@ -232,7 +266,7 @@ describe('GoogleDocsDocument', () => {
 
   describe('insertParagraph AFTER index', () => {
     it('uses endIndex - 1 for AFTER position', async () => {
-      const anchorName = '_bk_000000000000';
+      const anchorName = '_bk_0000000000';
       const namedRanges = {
         [anchorName]: {
           namedRanges: [{
@@ -256,7 +290,7 @@ describe('GoogleDocsDocument', () => {
       ], namedRanges);
 
       // Post-insert doc: both paragraphs with anchors
-      const postInsertAnchor = '_bk_000000000001';
+      const postInsertAnchor = '_bk_0000000001';
       const postInsertNamedRanges = {
         ...namedRanges,
         [postInsertAnchor]: {
@@ -317,7 +351,7 @@ describe('GoogleDocsDocument', () => {
     });
 
     it('uses startIndex for BEFORE position', async () => {
-      const anchorName = '_bk_000000000000';
+      const anchorName = '_bk_0000000000';
       const namedRanges = {
         [anchorName]: {
           namedRanges: [{
@@ -339,7 +373,7 @@ describe('GoogleDocsDocument', () => {
         },
       ], namedRanges);
 
-      const postInsertAnchor = '_bk_000000000001';
+      const postInsertAnchor = '_bk_0000000001';
       const postInsertNamedRanges = {
         [postInsertAnchor]: {
           namedRanges: [{

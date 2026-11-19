@@ -91,15 +91,18 @@ describe('unrepresented section and header/footer reporting', () => {
       });
       const [original, revised] = await issue648Pair();
       const result = await compareDocuments(original, revised);
-      // The section break lands on an aligned paragraph, so its footer
-      // reference is live on both projections: a w:sectPrChange snapshot
-      // (CT_SectPrBase) cannot drop it on reject (#944). The footer is
-      // therefore reported rather than shown as a tracked insertion.
-      expect(result.stats.insertions).toBe(0);
+      // The section break lands on an aligned paragraph and is published as
+      // an inserted paragraph mark carrying the full w:sectPr (#1144), so
+      // Reject All drops the footer binding with it. The footer story is
+      // therefore represented as a tracked insertion, not reported.
+      const archive = await DocxArchive.load(result.document);
+      const documentXml = await archive.getDocumentXml();
+      expect(documentXml).not.toContain('w:sectPrChange');
+      expect(documentXml).toMatch(/<w:ins\b[^>]*\/><\/w:rPr><w:sectPr><w:footerReference/);
       expect(result.stats.deletions).toBe(0);
-      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-        expect.objectContaining({ scope: 'section', kind: 'added' }),
-        expect.objectContaining({ scope: 'footer', kind: 'added', role: 'default' }),
+      expect(await archive.getFile('word/footer1.xml')).toContain('<w:ins');
+      expect(result.unrepresentedChanges ?? []).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'footer' }),
       ]));
     },
   );

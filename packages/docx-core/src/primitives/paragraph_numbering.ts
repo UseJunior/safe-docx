@@ -3,7 +3,7 @@ import { getDirectChildrenByName } from './dom-helpers.js';
 import { OOXML, W } from './namespaces.js';
 import { parseNumberingXml } from './numbering.js';
 import {
-  buildPPrChangeElement,
+  recordPPrChange,
   type RevisionContext,
 } from './track-changes-emitter.js';
 
@@ -272,12 +272,7 @@ export function setDirectParagraphNumbering(
     insertNumPrInSchemaOrder(pPr, numPr);
   }
 
-  if (ctx) {
-    for (const stale of getDirectChildrenByName(pPr, 'pPrChange')) {
-      pPr.removeChild(stale);
-    }
-    pPr.appendChild(buildPPrChangeElement(oldPPr, ctx));
-  }
+  if (ctx) recordPPrChange(pPr, oldPPr, ctx);
 
   return {
     paragraphId: mutation.paragraphId,

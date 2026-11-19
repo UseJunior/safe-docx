@@ -49,12 +49,40 @@ export class XmlPartParseError extends Error {
   }
 }
 
-/** A raw xmldom `ParseError` that does not yet say which part failed. */
+/**
+ * One start tag declares the same namespace prefix (or the default namespace)
+ * twice with different URIs (#1032). Which binding the producer meant cannot
+ * be known, so the part is refused rather than guessed at. Package-level entry
+ * points wrap it in {@link XmlPartParseError} naming the part.
+ */
+export class XmlNamespaceRedeclarationError extends Error {
+  /** Qualified name of the element whose start tag repeats the declaration. */
+  readonly elementName: string;
+  /** The repeated declaration attribute, e.g. `xmlns:w` or `xmlns`. */
+  readonly attributeName: string;
+  readonly firstValue: string;
+  readonly secondValue: string;
+
+  constructor(elementName: string, attributeName: string, firstValue: string, secondValue: string) {
+    super(
+      `<${elementName}> declares ${attributeName} twice with different namespace URIs ` +
+        `("${firstValue}" and "${secondValue}"); a repeated attribute is not well-formed XML ` +
+        `and the intended binding is ambiguous`,
+    );
+    this.name = 'XmlNamespaceRedeclarationError';
+    this.elementName = elementName;
+    this.attributeName = attributeName;
+    this.firstValue = firstValue;
+    this.secondValue = secondValue;
+  }
+}
+
+/** A parse failure that does not yet say which part failed. */
 export function isUnattributedXmlParseError(error: unknown): boolean {
   return (
     error instanceof Error &&
     !(error instanceof XmlPartParseError) &&
-    error.name === 'ParseError'
+    (error.name === 'ParseError' || error instanceof XmlNamespaceRedeclarationError)
   );
 }
 
@@ -82,24 +110,162 @@ export interface ParseXmlOptions {
 
 export function parseXml(xml: string, options?: ParseXmlOptions): XmlDoc {
   const text = stripXmlLeadingNoise(xml);
-  let doc: Document;
   try {
-    // application/xml ensures XML parsing rules (vs HTML-ish parsing).
-    // xmldom 0.9.x returns its own module-scoped Document type; cast to global
-    // Document to avoid type conflicts with the DOM lib.
-    doc = new DOMParser().parseFromString(text, 'application/xml') as unknown as Document;
-
-    // xmldom uses a <parsererror> element for some failures; keep a minimal check.
-    const parseErrors = doc.getElementsByTagName('parsererror');
-    if (parseErrors && parseErrors.length > 0) {
-      const msg = parseErrors[0]?.textContent?.trim() || 'XML parse error';
-      throw new Error(msg);
+    try {
+      return parseXmlText(text);
+    } catch (error) {
+      // Only on this specific failure: drop exact repeats of a namespace
+      // declaration and parse again, so the hot path never scans (#1032).
+      if (!isRedefinedNamespaceDeclarationError(error)) throw error;
+      const repaired = removeRepeatedNamespaceDeclarations(text);
+      if (repaired === null) throw error;
+      return parseXmlText(repaired);
     }
   } catch (error) {
     if (options?.partName !== undefined) throw new XmlPartParseError(options.partName, error);
     throw error;
   }
+}
+
+/**
+ * Report xmldom diagnostics the way its default handler does, except the
+ * repeated namespace declaration that {@link parseXml} handles itself: an
+ * exact repeat is tolerated, a conflicting one becomes a typed error, so
+ * logging it as fatal would be noise. Returning normally keeps xmldom's
+ * behaviour; a `fatalError` still throws `ParseError` after reporting.
+ */
+function reportXmlDiagnostic(level: string, message: string, context: unknown): void {
+  if (level === 'fatalError' && REDEFINED_NAMESPACE_DECLARATION.test(message)) return;
+  const locator = (context as { locator?: { lineNumber?: number; columnNumber?: number } } | undefined)?.locator;
+  const where = locator ? `\n@#[line:${locator.lineNumber},col:${locator.columnNumber}]` : '';
+  console.error(`[xmldom ${level}]\t${message}`, where);
+}
+
+function parseXmlText(text: string): XmlDoc {
+  // application/xml ensures XML parsing rules (vs HTML-ish parsing).
+  // xmldom 0.9.x returns its own module-scoped Document type; cast to global
+  // Document to avoid type conflicts with the DOM lib.
+  const doc = new DOMParser({ onError: reportXmlDiagnostic }).parseFromString(
+    text,
+    'application/xml',
+  ) as unknown as Document;
+
+  // xmldom uses a <parsererror> element for some failures; keep a minimal check.
+  const parseErrors = doc.getElementsByTagName('parsererror');
+  if (parseErrors && parseErrors.length > 0) {
+    const msg = parseErrors[0]?.textContent?.trim() || 'XML parse error';
+    throw new Error(msg);
+  }
   return doc;
+}
+
+/** xmldom's fatal error for a repeated `xmlns` / `xmlns:prefix` attribute. */
+const REDEFINED_NAMESPACE_DECLARATION = /^Attribute xmlns(?::\S+)? redefined\b/;
+
+function isRedefinedNamespaceDeclarationError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === 'ParseError' &&
+    REDEFINED_NAMESPACE_DECLARATION.test(error.message)
+  );
+}
+
+const XML_NAME_AT = /[^\s/>=]+/y;
+
+function isXmlWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
+}
+
+/**
+ * Remove a namespace declaration (`xmlns` or `xmlns:prefix`) that repeats an
+ * earlier declaration of the same name with the identical value on the same
+ * start tag, e.g. `<w:document xmlns:w="…main" xmlns:w="…main">` (#1032).
+ *
+ * A repeated attribute violates XML 1.0 well-formedness constraint "Unique Att
+ * Spec" (§3.1), but an exact repeat of a namespace declaration binds the prefix
+ * to the same URI either way, so dropping it cannot change what any name means.
+ * Repeats with different values throw {@link XmlNamespaceRedeclarationError}.
+ * Repeats of any other attribute are left alone, so the parse still fails.
+ *
+ * Only start tags are read: comments, CDATA sections, processing instructions
+ * and end tags are skipped whole, and character data is never examined.
+ * Returns null when there is nothing to remove or the markup cannot be scanned
+ * with confidence (a DOCTYPE, an unterminated construct, a malformed
+ * attribute); the caller then reports the original parse error.
+ */
+export function removeRepeatedNamespaceDeclarations(xml: string): string | null {
+  const removals: Array<[number, number]> = [];
+  const length = xml.length;
+  let i = 0;
+  while (i < length) {
+    const lt = xml.indexOf('<', i);
+    if (lt < 0) break;
+    let next: number;
+    if (xml.startsWith('<!--', lt)) next = indexAfter(xml, '-->', lt + 4);
+    else if (xml.startsWith('<![CDATA[', lt)) next = indexAfter(xml, ']]>', lt + 9);
+    else if (xml.startsWith('<?', lt)) next = indexAfter(xml, '?>', lt + 2);
+    else if (xml.startsWith('<!', lt)) return null; // DOCTYPE: not an OOXML part shape; do not guess.
+    else if (xml.startsWith('</', lt)) next = indexAfter(xml, '>', lt + 2);
+    else next = scanStartTag(xml, lt, removals);
+    if (next < 0) return null;
+    i = next;
+  }
+  if (removals.length === 0) return null;
+  let out = '';
+  let from = 0;
+  for (const [start, end] of removals) {
+    out += xml.slice(from, start);
+    from = end;
+  }
+  return out + xml.slice(from);
+}
+
+/** Index just past the next `terminator` at or after `from`, or -1. */
+function indexAfter(xml: string, terminator: string, from: number): number {
+  const end = xml.indexOf(terminator, from);
+  return end < 0 ? -1 : end + terminator.length;
+}
+
+/**
+ * Scan the start tag opening at `lt`; record each exact repeat of a namespace
+ * declaration (with the whitespace before it) in `removals`. Returns the index
+ * after the tag, or -1 when the tag cannot be read.
+ */
+function scanStartTag(xml: string, lt: number, removals: Array<[number, number]>): number {
+  XML_NAME_AT.lastIndex = lt + 1;
+  const elementMatch = XML_NAME_AT.exec(xml);
+  if (!elementMatch) return -1;
+  const elementName = elementMatch[0];
+  const declarations = new Map<string, string>();
+  let j = lt + 1 + elementName.length;
+  for (;;) {
+    const whitespaceStart = j;
+    while (j < xml.length && isXmlWhitespace(xml.charCodeAt(j))) j++;
+    if (j >= xml.length) return -1;
+    if (xml[j] === '>') return j + 1;
+    if (xml.startsWith('/>', j)) return j + 2;
+    if (j === whitespaceStart) return -1;
+    XML_NAME_AT.lastIndex = j;
+    const nameMatch = XML_NAME_AT.exec(xml);
+    if (!nameMatch) return -1;
+    const attributeName = nameMatch[0];
+    j += attributeName.length;
+    while (j < xml.length && isXmlWhitespace(xml.charCodeAt(j))) j++;
+    if (xml[j] !== '=') return -1;
+    j++;
+    while (j < xml.length && isXmlWhitespace(xml.charCodeAt(j))) j++;
+    const quote = xml[j];
+    if (quote !== '"' && quote !== "'") return -1;
+    const valueEnd = xml.indexOf(quote, j + 1);
+    if (valueEnd < 0) return -1;
+    const value = xml.slice(j + 1, valueEnd);
+    j = valueEnd + 1;
+    if (attributeName !== 'xmlns' && !attributeName.startsWith('xmlns:')) continue;
+    const prior = declarations.get(attributeName);
+    if (prior === undefined) declarations.set(attributeName, value);
+    else if (prior === value) removals.push([whitespaceStart, j]);
+    else throw new XmlNamespaceRedeclarationError(elementName, attributeName, prior, value);
+  }
 }
 
 /**

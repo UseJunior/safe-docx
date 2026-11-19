@@ -7,7 +7,7 @@ import { compareDocuments_tool } from './compare_documents.js';
 import { replaceText } from './replace_text.js';
 import { MCP_TOOLS } from '../server.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { makeMinimalDocxWithFooter, makeMinimalDocxWithPageWidth } from '../testing/docx_test_utils.js';
+import { makeMinimalDocxWithFooter, makeMinimalDocxWithTitlePage } from '../testing/docx_test_utils.js';
 import {
   assertSuccess,
   assertFailure,
@@ -79,6 +79,53 @@ describe('compare_documents tool', () => {
   registerCleanup();
 
   // ── Two-file mode ────────────────────────────────────────────────
+
+  test(
+    'Two-file mode: a pure paragraph move reports non-zero move stats (#940)',
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+      const moved = 'this complete paragraph moves away to a new place in the document';
+      const originalPath = await writeTestDocx(dir, 'original.docx', [moved, 'stable paragraph one', 'stable paragraph two']);
+      const revisedPath = await writeTestDocx(dir, 'revised.docx', ['stable paragraph one', 'stable paragraph two', moved]);
+      const editedPath = await writeTestDocx(dir, 'edited.docx', ['stable paragraph one', 'stable paragraph two changed', moved]);
+
+      const pure = await when('Compare a pure move', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: revisedPath,
+          save_to_local_path: path.join(dir, 'pure-redline.docx'),
+        }),
+      );
+      const mixed = await when('Compare a move plus an edit', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: editedPath,
+          save_to_local_path: path.join(dir, 'mixed-redline.docx'),
+        }),
+      );
+      assertSuccess(pure, 'compare_documents');
+      assertSuccess(mixed, 'compare_documents');
+      await attachPrettyJson('pure move stats', pure.stats);
+
+      await then('the pure move is visible in stats and not counted as insert/delete', () => {
+        expect(pure.stats).toMatchObject({
+          moves: 1,
+          movedParagraphs: 1,
+          moveFromRanges: 2,
+          moveToRanges: 2,
+          insertions: 0,
+          deletions: 0,
+          insertedAtoms: 0,
+          deletedAtoms: 0,
+        });
+      });
+
+      await then('the edit is counted alongside the move', () => {
+        expect(mixed.stats).toMatchObject({ moves: 1, movedParagraphs: 1, insertions: 1, deletions: 0 });
+      });
+    },
+  );
 
   test(
     'Two-file mode: compares two DOCX files and writes redline',
@@ -226,9 +273,9 @@ describe('compare_documents tool', () => {
       const dir = await createTrackedTempDir();
       const originalPath = path.join(dir, 'page-original.docx');
       const revisedPath = path.join(dir, 'page-revised.docx');
-      await given('an original on US Letter and a revision on A4', async () => {
-        await fs.writeFile(originalPath, new Uint8Array(await makeMinimalDocxWithPageWidth(['Body text'], 12240)));
-        await fs.writeFile(revisedPath, new Uint8Array(await makeMinimalDocxWithPageWidth(['Body text, revised'], 11906)));
+      await given('an original without a distinct first page and a revision with one', async () => {
+        await fs.writeFile(originalPath, new Uint8Array(await makeMinimalDocxWithTitlePage(['Body text'], false)));
+        await fs.writeFile(revisedPath, new Uint8Array(await makeMinimalDocxWithTitlePage(['Body text, revised'], true)));
       });
       const outputPath = path.join(dir, 'page-redline.docx');
 
@@ -261,7 +308,7 @@ describe('compare_documents tool', () => {
   // ── Removed section footer (issue #754) ──────────────────────────
 
   test(
-    'Two-file mode: a footer dropped from a surviving section is reported as unrepresented (#944)',
+    'Two-file mode: a footer dropped from a surviving section is tracked as deleted content (#1394)',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
@@ -283,21 +330,22 @@ describe('compare_documents tool', () => {
       assertSuccess(result, 'compare_documents');
       await attachPrettyJson('result', result);
 
-      await then('the redline carries no snapshot header/footer reference and no footer deletion', async () => {
+      await then('the redline keeps the section on a footer whose text is a tracked deletion', async () => {
         const archive = await DocxArchive.load(await fs.readFile(outputPath));
         // A w:sectPrChange snapshot is CT_SectPrBase and cannot carry the
-        // footer reference, so no revision can reselect the footer (#944).
+        // footer reference (#944), so the section keeps a live reference to a
+        // footer whose content is deleted: Reject All shows the footer, Accept
+        // All a blank one.
         const documentXml = await archive.getDocumentXml();
         expect(documentXml).not.toMatch(/<w:sectPrChange\b[\s\S]*?<w:footerReference[\s\S]*?<\/w:sectPrChange>/);
-        const footerXml = await archive.getFile('word/footer1.xml');
-        expect(footerXml ?? '').not.toContain('<w:del');
+        const footerPaths = archive.listFiles().filter((name) => /^word\/footer\d*\.xml$/.test(name));
+        const footers = await Promise.all(footerPaths.map((name) => archive.getFile(name)));
+        expect(footers.some((xml) => (xml ?? '').includes('<w:delText>Confidential</w:delText>'))).toBe(true);
       });
 
-      await then('the response reports the dropped footer with a warning', () => {
-        expect(result.unrepresented_changes).toEqual([
-          { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-        ]);
-        expect(result.message).toContain('WARNING: 1 input difference is not represented');
+      await then('the response reports nothing unrepresented', () => {
+        expect(result.unrepresented_changes).toBeUndefined();
+        expect(result.message).not.toContain('WARNING');
       });
     },
   );

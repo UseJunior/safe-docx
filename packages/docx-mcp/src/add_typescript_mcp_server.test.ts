@@ -255,7 +255,7 @@ describe('TypeScript MCP server behavior', () => {
     assertSuccess(res, 'grep');
     expect(res.total_matches).toBe(1);
     expect(Array.isArray(res.matches)).toBe(true);
-    expect(String((res.matches as Array<{ para_id: string }>)[0]?.para_id)).toMatch(/^_bk_[0-9a-f]{12}$/);
+    expect(String((res.matches as Array<{ para_id: string }>)[0]?.para_id)).toMatch(/^_bk_[0-9a-f]{10}$/);
     expect(Number((res.matches as Array<{ para_index_1based: number }>)[0]?.para_index_1based)).toBe(1);
     expect(Number((res.matches as Array<{ match_count_in_paragraph: number }>)[0]?.match_count_in_paragraph)).toBe(1);
     expect(typeof (res.matches as Array<{ list_label: string }>)[0]?.list_label).toBe('string');
@@ -287,7 +287,7 @@ describe('TypeScript MCP server behavior', () => {
       position: 'AFTER',
     });
     assertSuccess(inserted, 'insert');
-    expect(String(inserted.new_paragraph_id)).toMatch(/^_bk_[0-9a-f]{12}$/);
+    expect(String(inserted.new_paragraph_id)).toMatch(/^_bk_[0-9a-f]{10}$/);
   });
 
   humanReadableTest.openspec('Unsafe insertion returns corrective guidance')('Scenario: Unsafe insertion returns corrective guidance', async () => {

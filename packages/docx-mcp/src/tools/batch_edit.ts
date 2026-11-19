@@ -3,19 +3,31 @@ import {
   DocxDocument,
   SafeDocxError,
   findUniqueSubstringMatch,
-  replaceParagraphTextRange,
+  hasHyperlinkTags,
+  stripAllInlineTags,
+  stripHyperlinkTags,
   isRecognizedBondedInsertionPair,
   collectRunInHeadingIds,
+  getParagraphText,
+  paragraphHasVisibleContent,
   type RevisionContext,
 } from '@usejunior/docx-core';
-import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
 import { errorMessage } from '../error_utils.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
-import { replaceText, stripSearchTags } from './replace_text.js';
-import { insertParagraph } from './insert_paragraph.js';
+import { applyReplaceTextToDocument, replaceText, stripSearchTags } from './replace_text.js';
+import { applyInsertParagraphToDocument, insertParagraph } from './insert_paragraph.js';
 import { resolveSessionForTool } from './session_resolution.js';
-import { preflightAiRevisionMutation } from './ai_revision_guard.js';
+import { cloneRevisionContext, preflightAiRevisionMutation } from './ai_revision_guard.js';
+import {
+  EMPTY_NUMBERED_PARAGRAPH_ERROR_CODE,
+  applyEmptyNumberedParagraphPolicy,
+  invalidEmptyNumberedParagraphPolicyMessage,
+  isNowEmptyNumberedParagraph,
+  parseEmptyNumberedParagraphPolicy,
+  type EmptyNumberedParagraphPolicy,
+} from './empty_numbered_paragraph.js';
 import { insertedConstructKeys, type ConventionWarning } from './formatting_convention.js';
 
 const REPLACE_TEXT_FIELDS = new Set([
@@ -161,7 +173,7 @@ function validateSteps(
       } else {
         const text = doc.getParagraphTextById(targetId);
         if (text === null) {
-          validation.errors.push(`target_paragraph_id '${targetId}' not found in document.`);
+          validation.errors.push(`target_paragraph_id '${targetId}' not found in the document body. batch_edit does not edit header/footer paragraphs; use replace_text or insert_paragraph for those.`);
         } else {
           const oldStr = step.fields.old_string;
           if (typeof oldStr !== 'string') {
@@ -194,7 +206,7 @@ function validateSteps(
         validation.errors.push('Missing positional_anchor_node_id.');
       } else {
         const text = doc.getParagraphTextById(anchorId);
-        if (text === null) validation.errors.push(`positional_anchor_node_id '${anchorId}' not found in document.`);
+        if (text === null) validation.errors.push(`positional_anchor_node_id '${anchorId}' not found in the document body. batch_edit does not edit header/footer paragraphs; use replace_text or insert_paragraph for those.`);
       }
 
       if (typeof step.fields.new_string !== 'string') validation.errors.push('Missing new_string.');
@@ -423,10 +435,90 @@ function recognizedBondedSlots(steps: ConflictStep[], doc: DocxDocument): Set<st
   return result;
 }
 
+type EmptyNumberedFinding = { paragraphId: string; stepId: string; beforeText: string };
+
+/**
+ * Which step left which paragraph numbered but empty (issue #1047). The batch
+ * judges its end state, not each step: a paragraph one step empties and a
+ * later step fills again is not reported, and a paragraph stays attributed to
+ * the step that emptied it while later steps leave it empty. Only a step that
+ * empties a paragraph which had visible content is a culprit, so an empty
+ * numbered paragraph the input already had is never reported.
+ */
+class EmptyNumberedParagraphTracker {
+  private readonly culprits = new Map<string, { stepId: string; beforeText: string }>();
+
+  before(doc: DocxDocument, paragraphId: string): { hadContent: boolean; beforeText: string } {
+    const p = doc.getParagraphElementById(paragraphId);
+    return { hadContent: !!p && paragraphHasVisibleContent(p), beforeText: p ? getParagraphText(p) : '' };
+  }
+
+  after(doc: DocxDocument, paragraphId: string, stepId: string, before: { hadContent: boolean; beforeText: string }): void {
+    const p = doc.getParagraphElementById(paragraphId);
+    if (!p || !isNowEmptyNumberedParagraph(doc, p)) {
+      this.culprits.delete(paragraphId);
+    } else if (before.hadContent) {
+      this.culprits.set(paragraphId, { stepId, beforeText: before.beforeText });
+    }
+  }
+
+  /** Culprit paragraphs that are still empty numbered paragraphs in `doc`, in the order the steps emptied them. */
+  findings(doc: DocxDocument): EmptyNumberedFinding[] {
+    const out: EmptyNumberedFinding[] = [];
+    for (const [paragraphId, culprit] of this.culprits) {
+      const p = doc.getParagraphElementById(paragraphId);
+      if (p && isNowEmptyNumberedParagraph(doc, p)) out.push({ paragraphId, ...culprit });
+    }
+    return out;
+  }
+}
+
+/** The `warn` message for each finding that is still in the document, with its step and paragraph. */
+function describeEmptyNumberedFindings(
+  doc: DocxDocument,
+  findings: EmptyNumberedFinding[],
+): Array<{ step_id: string; paragraph_id: string; message: string }> {
+  const described: Array<{ step_id: string; paragraph_id: string; message: string }> = [];
+  for (const finding of findings) {
+    const paragraph = doc.getParagraphElementById(finding.paragraphId);
+    if (!paragraph) continue;
+    const outcome = applyEmptyNumberedParagraphPolicy({
+      doc,
+      paragraphId: finding.paragraphId,
+      paragraph,
+      hadContentBefore: true,
+      beforeText: finding.beforeText,
+      policy: 'warn',
+      ctx: undefined,
+    });
+    if (outcome.kind !== 'none') described.push({ step_id: finding.stepId, paragraph_id: finding.paragraphId, message: outcome.message });
+  }
+  return described;
+}
+
+/** The findings as batch_edit `{ step_id, warning }` entries (`warn`, or any policy after a partial failure). */
+function emptyNumberedWarnings(doc: DocxDocument, findings: EmptyNumberedFinding[]): Array<{ step_id: string; warning: string }> {
+  return describeEmptyNumberedFindings(doc, findings).map((d) => ({ step_id: d.step_id, warning: d.message }));
+}
+
+function emptyNumberedBatchError(
+  doc: DocxDocument,
+  findings: EmptyNumberedFinding[],
+): { message: string; findings: Array<{ step_id: string; paragraph_id: string; message: string }> } {
+  const detailed = describeEmptyNumberedFindings(doc, findings);
+  const steps = [...new Set(detailed.map((d) => `'${d.step_id}'`))].join(', ');
+  return {
+    message: `The batch would leave ${detailed.length} empty numbered paragraph(s) (step(s) ${steps}) and on_empty_numbered_paragraph is "error".`,
+    findings: detailed,
+  };
+}
+
 async function executeSteps(
   manager: SessionManager,
+  session: DocxSession,
   filePath: string,
   steps: NormalizedStep[],
+  tracker: EmptyNumberedParagraphTracker,
   ctx?: RevisionContext,
 ): Promise<{
   completed_step_ids: string[];
@@ -443,15 +535,20 @@ async function executeSteps(
     let result: ToolResponse;
 
     if (step.operation === 'replace_text') {
+      const paragraphId = step.fields.target_paragraph_id as string;
+      const before = tracker.before(session.doc, paragraphId);
       result = await replaceText(manager, {
         file_path: filePath,
-        target_paragraph_id: step.fields.target_paragraph_id as string,
+        target_paragraph_id: paragraphId,
         old_string: step.fields.old_string as string,
         new_string: step.fields.new_string as string,
         instruction: step.fields.instruction as string,
         normalize_first: step.fields.normalize_first as boolean | undefined,
+        // The batch applies the policy to its end state (see the tracker).
+        on_empty_numbered_paragraph: 'ignore',
         skip_ai_revision_preflight: true,
       }, ctx);
+      if (result.success) tracker.after(session.doc, paragraphId, step.step_id, before);
     } else {
       result = await insertParagraph(manager, {
         file_path: filePath,
@@ -482,42 +579,101 @@ async function executeSteps(
   return { completed_step_ids: completedStepIds, step_results: stepResults };
 }
 
-function invalidateDocumentCaches(doc: unknown): void {
-  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
-  mutableDoc.dirty = true;
-  mutableDoc.documentViewCache = null;
-}
-
+/**
+ * Apply one step to a copy of the document with the standalone tool's own
+ * planner, so every dry run of a batch (the AI-revision preflight and the
+ * empty-numbered-paragraph preview) judges the edit that then runs (#1478).
+ * batch_edit has no replace or insert logic of its own.
+ */
 function executeStepOnDoc(doc: DocxDocument, step: NormalizedStep, ctx?: RevisionContext): void {
   if (step.operation === 'replace_text') {
-    const targetParagraphId = step.fields.target_paragraph_id as string;
-    const oldString = stripSearchTags(step.fields.old_string as string);
-    const newString = step.fields.new_string as string;
-    if (step.fields.normalize_first) doc.mergeRunsOnly();
-    const pEl = doc.getParagraphElementById(targetParagraphId);
-    if (!pEl) throw new Error(`Paragraph ID ${targetParagraphId} not found in document`);
-    const text = doc.getParagraphTextById(targetParagraphId) ?? '';
-    const match = findUniqueSubstringMatch(text, oldString);
-    if (match.status !== 'unique') throw new Error(`replace_text preview failed for paragraph ${targetParagraphId}`);
-    if (ctx) {
-      replaceParagraphTextRange(pEl, match.start, match.end, newString, ctx);
-      invalidateDocumentCaches(doc);
-    } else {
-      doc.replaceText({ targetParagraphId, findText: match.matchedText, replaceText: newString });
-    }
+    applyReplaceTextToDocument(doc, {
+      target_paragraph_id: step.fields.target_paragraph_id as string,
+      old_string: step.fields.old_string as string,
+      new_string: step.fields.new_string as string,
+      instruction: step.fields.instruction as string,
+      normalize_first: step.fields.normalize_first as boolean | undefined,
+    }, ctx);
     return;
   }
-
-  doc.insertParagraph({
-    positionalAnchorNodeId: step.fields.positional_anchor_node_id as string,
-    relativePosition: (step.fields.position as 'BEFORE' | 'AFTER' | undefined) ?? 'AFTER',
-    newText: step.fields.new_string as string,
-    styleSourceId: step.fields.style_source_id as string | undefined,
+  applyInsertParagraphToDocument(doc, {
+    positional_anchor_node_id: step.fields.positional_anchor_node_id as string,
+    new_string: step.fields.new_string as string,
+    instruction: step.fields.instruction as string,
+    position: step.fields.position as string | undefined,
+    style_source_id: step.fields.style_source_id as string | undefined,
   }, ctx);
 }
 
 function executeStepsOnDoc(doc: DocxDocument, steps: NormalizedStep[], ctx?: RevisionContext): void {
   for (const step of steps) executeStepOnDoc(doc, step, ctx);
+}
+
+/**
+ * Run the batch on a copy of the document to find the empty numbered
+ * paragraphs its end state would have, before any step touches the session.
+ * Every step goes through its tool's own planner (`executeStepOnDoc`), so the
+ * preview and the real run leave the same text; insert_paragraph steps cannot
+ * empty an existing paragraph and only need to run for later anchors.
+ */
+function previewEmptyNumberedParagraphs(
+  doc: DocxDocument,
+  steps: NormalizedStep[],
+  ctx: RevisionContext | undefined,
+): EmptyNumberedFinding[] {
+  const tracker = new EmptyNumberedParagraphTracker();
+  for (const step of steps) {
+    if (step.operation !== 'replace_text') {
+      executeStepOnDoc(doc, step, ctx);
+      continue;
+    }
+    const paragraphId = step.fields.target_paragraph_id as string;
+    const before = tracker.before(doc, paragraphId);
+    executeStepOnDoc(doc, step, ctx);
+    tracker.after(doc, paragraphId, step.step_id, before);
+  }
+  return tracker.findings(doc);
+}
+
+/**
+ * Apply `remove_paragraph` to the batch's findings in one final mutation,
+ * after every step has run. Removal is deferred to the end of the batch so
+ * that every step's paragraph-id anchors resolve against the paragraphs the
+ * caller validated: a later step can still target, or insert next to, a
+ * paragraph an earlier step emptied, and a paragraph a later step fills
+ * again is not removed. Each outcome is reported against the step that
+ * emptied the paragraph.
+ */
+async function removeEmptyNumberedParagraphsAtBatchEnd(
+  manager: SessionManager,
+  session: DocxSession,
+  findings: EmptyNumberedFinding[],
+  ctx: RevisionContext | undefined,
+): Promise<Array<{ step_id: string; warning: string }>> {
+  const messages: Array<{ step_id: string; warning: string }> = [];
+  const response = await manager.mutateSession(session, async (candidate) => {
+    const activeCtx = await getRevisionContextForSession(candidate, ctx);
+    for (const finding of findings) {
+      const paragraph = candidate.doc.getParagraphElementById(finding.paragraphId);
+      if (!paragraph) continue;
+      const outcome = applyEmptyNumberedParagraphPolicy({
+        doc: candidate.doc,
+        paragraphId: finding.paragraphId,
+        paragraph,
+        hadContentBefore: true,
+        beforeText: finding.beforeText,
+        policy: 'remove_paragraph',
+        ctx: activeCtx,
+      });
+      if (outcome.kind !== 'none') messages.push({ step_id: finding.stepId, warning: outcome.message });
+    }
+    if (messages.length > 0) manager.markEdited(candidate);
+    return ok({});
+  });
+  if (!response.success) {
+    throw new Error(`removing empty numbered paragraphs at the end of the batch failed: ${response.error.message}`);
+  }
+  return messages;
 }
 
 /**
@@ -530,8 +686,16 @@ function collectInsertedText(steps: NormalizedStep[]): string {
   return steps
     .map((step) => step.fields.new_string)
     .filter((value): value is string => typeof value === 'string')
-    .map((value) => stripSearchTags(value))
+    .map((value) => gateInsertedText(value))
     .join('\n');
+}
+
+/**
+ * A step's inserted text as the standalone tools hand it to the convention
+ * gate: hyperlink tags stripped, then every inline formatting tag (#687, #1478).
+ */
+function gateInsertedText(newString: string): string {
+  return stripAllInlineTags(hasHyperlinkTags(newString) ? stripHyperlinkTags(newString) : newString);
 }
 
 /**
@@ -551,7 +715,7 @@ function attributeConventionWarnings(
   const byStep = steps.map((step) => ({
     stepId: step.step_id,
     keys: insertedConstructKeys(
-      typeof step.fields.new_string === 'string' ? stripSearchTags(step.fields.new_string) : '',
+      typeof step.fields.new_string === 'string' ? gateInsertedText(step.fields.new_string) : '',
     ),
   }));
   const normalize = (value: string): string => value.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -569,9 +733,14 @@ export async function batchEdit(
     file_path?: string;
     steps?: unknown[];
     plan_file_path?: string;
+    on_empty_numbered_paragraph?: string;
   },
 ): Promise<ToolResponse> {
   try {
+    const emptyNumberedPolicy: EmptyNumberedParagraphPolicy | null = parseEmptyNumberedParagraphPolicy(params.on_empty_numbered_paragraph);
+    if (!emptyNumberedPolicy) {
+      return err('INVALID_PARAMS', invalidEmptyNumberedParagraphPolicyMessage(params.on_empty_numbered_paragraph));
+    }
     if (params.steps !== undefined && params.plan_file_path) {
       return err('INVALID_PARAMS', 'Cannot provide both steps and plan_file_path. Use one or the other.');
     }
@@ -643,7 +812,11 @@ export async function batchEdit(
       };
     }
 
-    const ctx = await getRevisionContextForSession(session);
+    const ctx = await getRevisionContextForSession({
+      ...session,
+      doc: session.doc.fork(),
+      revisionIdState: session.revisionIdState ? structuredClone(session.revisionIdState) : null,
+    });
     const revisionPreflight = await preflightAiRevisionMutation(
       session,
       ctx,
@@ -657,8 +830,42 @@ export async function batchEdit(
     // finding twice.
     allWarnings.push(...attributeConventionWarnings(steps, revisionPreflight.conventionWarnings));
 
-    const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
+    // Under "error", run the whole batch on a copy first and refuse it before
+    // any step touches the session document (issue #1047).
+    if (emptyNumberedPolicy === 'error') {
+      const previewDoc = session.doc.fork();
+      const previewFindings = previewEmptyNumberedParagraphs(previewDoc, steps, cloneRevisionContext(ctx));
+      if (previewFindings.length > 0) {
+        const refusal = emptyNumberedBatchError(previewDoc, previewFindings);
+        return {
+          success: false,
+          error: {
+            code: EMPTY_NUMBERED_PARAGRAPH_ERROR_CODE,
+            message: `${refusal.message} No step was applied.`,
+            hint: 'Delete each whole list item (its complete text with an empty new_string), keep some text in it, or choose another on_empty_numbered_paragraph policy.',
+          },
+          empty_numbered_paragraphs: refusal.findings,
+        };
+      }
+    }
+
+    const tracker = new EmptyNumberedParagraphTracker();
+    const result = await executeSteps(manager, session, manager.normalizePath(session.originalPath), steps, tracker, ctx);
+    for (const stepResult of result.step_results) {
+      const stepWarnings = stepResult.result?.warnings;
+      if (Array.isArray(stepWarnings)) {
+        for (const w of stepWarnings) {
+          if (typeof w === 'string') {
+            allWarnings.push({ step_id: stepResult.step_id, warning: w });
+          }
+        }
+      }
+    }
+    const emptyNumberedFindings = emptyNumberedPolicy === 'ignore' ? [] : tracker.findings(session.doc);
     if (result.failed_step_id !== undefined) {
+      // The batch did not finish, so nothing is removed or refused at its
+      // end; the caller is told which completed step left what behind.
+      allWarnings.push(...emptyNumberedWarnings(session.doc, emptyNumberedFindings));
       const failedStepResult = result.step_results.find(
         (stepResult) => stepResult.step_id === result.failed_step_id && !stepResult.success,
       )?.result as { error?: { code?: string; message?: string; hint?: string } } | undefined;
@@ -685,6 +892,32 @@ export async function batchEdit(
         step_results: result.step_results,
         ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
       };
+    }
+
+    if (emptyNumberedFindings.length > 0 && emptyNumberedPolicy === 'error') {
+      // Reached when another edit to the session lands between the preview
+      // and the steps (each step is its own session mutation), so the
+      // preview judged a different document (#1525).
+      const refusal = emptyNumberedBatchError(session.doc, emptyNumberedFindings);
+      return {
+        success: false,
+        error: {
+          code: EMPTY_NUMBERED_PARAGRAPH_ERROR_CODE,
+          message: `${refusal.message} The steps were applied before this was detected.`,
+          hint: 'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
+        },
+        file_path: manager.normalizePath(session.originalPath),
+        completed_count: result.completed_step_ids.length,
+        completed_step_ids: result.completed_step_ids,
+        step_results: result.step_results,
+        empty_numbered_paragraphs: refusal.findings,
+        ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
+      };
+    }
+    if (emptyNumberedPolicy === 'warn') {
+      allWarnings.push(...emptyNumberedWarnings(session.doc, emptyNumberedFindings));
+    } else if (emptyNumberedPolicy === 'remove_paragraph' && emptyNumberedFindings.length > 0) {
+      allWarnings.push(...await removeEmptyNumberedParagraphsAtBatchEnd(manager, session, emptyNumberedFindings, ctx));
     }
 
     return ok({

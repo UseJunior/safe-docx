@@ -28,7 +28,7 @@ The ordinal is a read-only disambiguator, NOT an edit anchor. Reordering duplica
 MAY change ordinals. Edit tools SHALL continue to accept ONLY `_bk_*` identifiers as anchors,
 and the paragraph `id` SHALL remain unchanged. The `content_fingerprint` algorithm SHALL remain
 unchanged (NFKC normalization, Cf/invisible stripping, whitespace collapse + trim,
-`sha256:nfkc:<32hex>`).
+`sha256:nfkc:<16hex>`).
 
 The flag SHALL have no effect unless `include_fingerprint=true` is also set: when
 `include_fingerprint_ordinal=true` is passed without `include_fingerprint=true`, no ordinal
