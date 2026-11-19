@@ -332,8 +332,8 @@ describe('local mutation boundary', () => {
     expect(reopened.buildDocumentView().nodes.map(node => node.text)).toEqual(['Unchanged block', 'Forked']);
   });
 
-  test.openspec('No-op preserves bookkeeping')('selected unresolved structural revisions do not count as edits', async () => {
-    const buffer = await buildDocxFromBodyXml('<w:tbl><w:tr><w:tc><w:tcPr><w:cellMerge w:id="42" w:author="Synthetic"/></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>');
+  test.openspec('No-op preserves bookkeeping')('selected unresolved numbering revisions do not count as edits', async () => {
+    const buffer = await buildDocxFromBodyXml('<w:p><w:pPr><w:numPr><w:numberingChange w:id="42" w:author="Synthetic"/></w:numPr></w:pPr><w:r><w:t>Numbered</w:t></w:r></w:p>');
     const { manager, session, file } = await setup(buffer);
     const metadata = seedMetadata(session);
     expect((await session.doc.fork().acceptAIEdits({ revisionIds: ['42'] })).selectedIds).toEqual(['42']);

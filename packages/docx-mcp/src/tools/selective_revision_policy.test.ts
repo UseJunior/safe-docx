@@ -162,12 +162,11 @@ describe('session selective revision policy', () => {
   });
 
   for (const call of [acceptAiEdits, rejectAiEdits]) {
-    test.openspec('Failed and no-op selections do not publish policy')(`${call.name} selecting an unsupported grid revision leaves ordinary policy and all bookkeeping untouched`, async () => {
+    test.openspec('Failed and no-op selections do not publish policy')(`${call.name} selecting an unsupported numbering revision leaves ordinary policy and all bookkeeping untouched`, async () => {
       const opened = await openSession([], {
         mgr: createTestSessionManager({ defaultAiAuthor: AI }),
         xml: `<w:document xmlns:w="${W}"><w:body><w:p><w:r><w:t>Anchor</w:t></w:r></w:p>`
-          + `<w:tbl><w:tblGrid><w:gridCol w:w="1000"/><w:tblGridChange w:id="777" w:author="${AI}" w:date="${date}"><w:tblGrid><w:gridCol w:w="900"/></w:tblGrid></w:tblGridChange></w:tblGrid>`
-          + '<w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>',
+          + `<w:p><w:pPr><w:numPr><w:numberingChange w:id="777" w:author="${AI}" w:date="${date}"/></w:numPr></w:pPr><w:r><w:t>Numbered</w:t></w:r></w:p></w:body></w:document>`,
       });
       const session = await opened.mgr.getSessionByFilePath(opened.filePath);
       if (!session || !isDocxSession(session)) throw new Error('Missing DOCX session');
@@ -182,6 +181,36 @@ describe('session selective revision policy', () => {
       expect(session.selectiveRevisionPolicy).toBe(policy);
       expect(session.selectiveRevisionPolicy.mode).toBe('ordinary');
       expect([session.editCount, session.editRevision, session.saveCache.size]).toEqual([0, 0, 0]);
+    });
+
+    test.openspec('Complete resolution and subsequent AI edits')(`${call.name} resolves a selected grid revision and publishes its mutation bookkeeping`, async () => {
+      const opened = await openSession([], {
+        mgr: createTestSessionManager({ defaultAiAuthor: AI }),
+        xml: `<w:document xmlns:w="${W}"><w:body><w:p><w:r><w:t>Anchor</w:t></w:r></w:p>`
+          + '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1000"/><w:tblGridChange w:id="777"><w:tblGrid><w:gridCol w:w="900"/></w:tblGrid></w:tblGridChange></w:tblGrid>'
+          + '<w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>',
+      });
+      const session = await opened.mgr.getSessionByFilePath(opened.filePath);
+      if (!session || !isDocxSession(session)) throw new Error('Missing DOCX session');
+      assertSuccess(await save(opened.mgr, { file_path: opened.filePath, save_to_local_path: path.join(opened.tmpDir, 'before.docx'), save_format: 'tracked' }), 'warm tracked cache');
+      expect(session.saveCache.size).toBeGreaterThan(0);
+      session.extractionCache = { revision: session.editRevision, changes: [] };
+      const doc = session.doc;
+      const before = await doc.getMutationSnapshot();
+      const result = await call(opened.mgr, { file_path: opened.filePath, revision_ids: [777] });
+      assertSuccess(result, 'selected grid revision');
+      expect(result.selected_revision_ids).toEqual(['777']);
+      expect(result.persistence_required).toBe(true);
+      expect(session.doc).not.toBe(doc);
+      expect(await session.doc.getMutationSnapshot()).not.toEqual(before);
+      expect([session.editCount, session.editRevision, session.saveCache.size]).toEqual([1, 1, 0]);
+      expect(session.extractionCache).toBeNull();
+      expect(session.selectiveRevisionPolicy).toEqual({ mode: 'preserve', lastAction: {
+        tool: call === acceptAiEdits ? 'accept_ai_edits' : 'reject_ai_edits', selector: 'revision_ids', selectedRevisionIds: ['777'], editRevision: 1,
+      } });
+      const resolved = session.doc.getDocumentXmlClone();
+      expect(resolved.getElementsByTagNameNS(W, 'tblGridChange').length).toBe(0);
+      expect(resolved.getElementsByTagNameNS(W, 'gridCol')[0]!.getAttributeNS(W, 'w')).toBe(call === acceptAiEdits ? '1000' : '900');
     });
 
     test.openspec('Failed and no-op selections do not publish policy')(`${call.name} rolls back staged policy and keeps no-op bookkeeping`, async () => {
