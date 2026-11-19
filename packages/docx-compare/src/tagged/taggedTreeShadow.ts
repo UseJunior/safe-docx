@@ -362,6 +362,10 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
         ? Math.max(1, taggedAtomWeight(node, 'revised'))
         : 1;
     }
+    if (node.tag === 'both' && node.gridDelta) {
+      formatChanges++;
+      formatChangeAtoms++;
+    }
     if (node.tag === 'both' && node.rowExceptionsDelta) {
       formatChanges++;
       formatChangeAtoms++;

@@ -601,6 +601,58 @@
       }
     },
     {
+      "id": "ADV-GRID-COMPARISON-01",
+      "element": "tblGridChange",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-GRID-COMPARISON-01",
+      "element": "tblGridChange",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-GRID-COMPARISON-01",
+      "element": "tblPrExChange",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-GRID-COMPARISON-01",
+      "element": "tblPrExChange",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
       "id": "ADV-MOVE-RESOLUTION-01",
       "element": "moveFrom",
       "operation": "accept",

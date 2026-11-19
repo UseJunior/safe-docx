@@ -21,7 +21,7 @@
  */
 
 import type { WmlElement } from '@usejunior/docx-core';
-import { childElements } from '@usejunior/docx-core';
+import { childElements, buildTrPrBaseSnapshot } from '@usejunior/docx-core';
 import { subtreeSignature } from './taggedTree.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -98,7 +98,7 @@ export interface TableLevelPropertyResolution {
 }
 
 export interface TableLevelRecordFactory {
-  /** A new comparison revision record (`w:id`, author, date already set). */
+  /** A new comparison record with permitted metadata (id only for grid history). */
   comparison(localName: string, document: Document): WmlElement;
   /** A fresh revision ID for a preserved record cloned out of the original side. */
   freshId(): number;
@@ -234,4 +234,42 @@ export function addRowExceptionRevisionCompanions(
     added++;
   }
   return added;
+}
+
+/**
+ * Give a grid revision Word's native table and row companions. A lone grid
+ * history is dropped by Word on load; row exceptions make the group visible.
+ * Redundant row-property histories may be normalized away by Word on save.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * @see #1398
+ */
+export function addGridRevisionCompanions(table: WmlElement, records: TableLevelRecordFactory): void {
+  const document = table.ownerDocument!;
+  let properties = tableLevelPropertyOf(table, 'tblPr');
+  if (!properties) {
+    properties = document.createElementNS(W_NS, 'w:tblPr') as WmlElement;
+    table.insertBefore(properties, table.firstChild);
+  }
+  if (!changeRecordOf(properties, 'tblPr')) {
+    const record = records.comparison('tblPrChange', document);
+    const snapshot = document.createElementNS(W_NS, 'w:tblPr');
+    for (const child of liveChildren(properties, 'tblPr')) snapshot.appendChild(child.cloneNode(true));
+    record.appendChild(snapshot); properties.appendChild(record);
+  }
+  addRowExceptionRevisionCompanions(table, records);
+  for (const row of tableRowsOf(table)) {
+    let rowProperties = childElements(row).find(child => child.namespaceURI === W_NS && child.localName === 'trPr');
+    if (!rowProperties) {
+      rowProperties = document.createElementNS(W_NS, 'w:trPr');
+      const next = childElements(row).find(child => child.localName !== 'tblPrEx');
+      row.insertBefore(rowProperties, next ?? null);
+    }
+    if (childElements(rowProperties).some(child => child.namespaceURI === W_NS && child.localName === 'trPrChange')) continue;
+    const record = records.comparison('trPrChange', document);
+    record.appendChild(buildTrPrBaseSnapshot(rowProperties, document));
+    rowProperties.appendChild(record);
+  }
 }

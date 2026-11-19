@@ -45,3 +45,12 @@
 - [x] 7.2 Replace rows whose pending cell-level revisions or row markers differ, and rows holding pending cell-level revisions whose skeleton changes; stop refusing unmatched tables with pending row markers; leave out an unmatched table with no rows and report it (`table` scope) (SDX-COMPTABLE-09, SDX-COMPTABLE-13, SDX-COMPTABLE-14).
 - [x] 7.3 Accept/reject parity with both acceptors on text and `bodyTableFootprint`; schema gate; the same replacement in header/footer and body text boxes.
 - [ ] 7.4 Real NVCA smoke after merge; Word and LibreOffice reader evidence deferred (staged fixtures listed in the PR).
+
+## 8. Table grids (#1398)
+
+- [x] 8.1 Record Word's combined table/grid/row revision shape; verify pure grid-only history is dropped and companions preserve it.
+- [x] 8.2 Model live grids atomically and publish native snapshots, id-only metadata, table/row companions, and existing whole-row replacements for changed layouts.
+- [x] 8.3 Flip SDX-COMPTABLE-02 and verify both projection engines, schema validity, nested-table isolation, dateless output, and real Mutual NDA width/column edits.
+- [x] 8.4 Verify emitted real-document redlines in Word and note LibreOffice's table-property limitations.
+- [x] 8.5 Run full checks, dynamic Codex review, and required real-corpus gates.
+- [ ] 8.6 Merge and complete isolated post-merge smoke with real documents.

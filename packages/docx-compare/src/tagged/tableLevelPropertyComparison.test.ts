@@ -307,6 +307,10 @@ describe('pending table-level records carried by one input', () => {
           // A kept table-property revision gets the row companions Word needs.
           expectRowCompanions(xml);
           expect(records(xml, 'tblPrExChange')).toHaveLength(ROWS.length);
+        } else if (name === 'tblGridChange') {
+          expect(records(xml, 'tblPrChange')).toHaveLength(1);
+          expect(records(xml, 'tblPrExChange')).toHaveLength(ROWS.length);
+          expect(records(xml, 'trPrChange')).toHaveLength(ROWS.length);
         } else {
           expect(records(xml, 'tblPrExChange').length + records(xml, 'tblPrChange').length
             + records(xml, 'tblGridChange').length).toBe(1);

@@ -966,12 +966,12 @@
       },
       "classification": "implemented",
       "operations": {
-        "emit": "non-goal",
+        "emit": "implemented",
         "accept": "implemented",
         "reject": "implemented",
         "validate": "implemented",
         "comparison": {
-          "inplace": "non-goal",
+          "inplace": "implemented",
           "rebuild": "non-goal"
         },
         "reconstruction": {
@@ -1033,9 +1033,42 @@
               "story": "main"
             }
           ]
+        },
+        {
+          "id": "ADV-GRID-COMPARISON-01",
+          "sources": [
+            "packages/docx-compare/src/tagged/taggedTreeConstruction.ts",
+            "packages/docx-compare/src/tagged/tableLevelProperties.ts",
+            "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "tblGridChange",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "tblGridChange",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "tblPrExChange",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "tblPrExChange",
+              "operation": "comparison.inplace",
+              "story": "main"
+            }
+          ]
         }
       ],
-      "notes": "Native and comparison resolvers settle table snapshots and live cell revisions. Emission and reconstruction remain bounded by the listed operations."
+      "notes": "Comparison emits native grid history and Word-compatible row exceptions; native and comparison resolvers settle the snapshots. Reconstruction claims remain bounded by the listed operations."
     },
     {
       "id": "advanced-revision.cell-topology",
