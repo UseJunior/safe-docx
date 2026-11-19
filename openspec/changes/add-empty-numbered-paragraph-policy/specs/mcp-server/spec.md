@@ -79,10 +79,10 @@ before the document is changed.
 - **THEN** the remaining whitespace and the paragraph mark SHALL be tracked deletions
 - **AND** accepting all changes SHALL leave two numbered items, and rejecting all changes SHALL restore the original item text
 
-#### Scenario: remove_paragraph keeps a paragraph the blanking rules keep
-- **GIVEN** a numbered list item holding a bookmark whose range ends outside the paragraph
+#### Scenario: remove_paragraph removes a local bookmarked numbered paragraph
+- **GIVEN** a numbered list item holding a bookmark wholly contained in the paragraph
 - **WHEN** `replace_text` with `on_empty_numbered_paragraph` `remove_paragraph` blanks its complete text
-- **THEN** the paragraph SHALL remain and the warning SHALL name the bookmark that keeps it
+- **THEN** the paragraph SHALL be removed and any fields targeting its bookmark SHALL be reported
 
 #### Scenario: An unknown policy value is rejected
 - **WHEN** `replace_text` or `batch_edit` is called with an `on_empty_numbered_paragraph` value outside the four

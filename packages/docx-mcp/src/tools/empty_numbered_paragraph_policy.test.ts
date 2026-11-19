@@ -342,7 +342,7 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
       },
     );
 
-    test.openspec('remove_paragraph keeps a paragraph the blanking rules keep')(
+    test.openspec('remove_paragraph removes a local bookmarked numbered paragraph')(
       'remove_paragraph: a list item holding only a local bookmark is removed explicitly',
       async ({ given, when, then }: AllureBddContext) => {
         const s = await given('a numbered list item holding a cross-reference bookmark', () =>
@@ -477,7 +477,7 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
             ],
           }),
         );
-        await then('drop-second gets a tracked-removal notice, drop-kept a kept warning naming the bookmark, and accept-all leaves one empty item', async () => {
+        await then('both deletions get tracked-removal notices, the local bookmark is named, and accept-all removes both items', async () => {
           assertSuccess(result, 'batch_edit');
           const warnings = result.warnings as Array<{ step_id: string; warning: string }>;
           expect(warnings.find((w) => w.step_id === 'drop-second')?.warning).toContain('deleted as a tracked change');

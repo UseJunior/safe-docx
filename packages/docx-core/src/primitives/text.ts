@@ -1477,7 +1477,8 @@ export function replaceParagraphTextRange(
     if (
       start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent &&
       isParagraphInertAfterBlanking(p, true, paragraphIsNumbered && !hasSpanningBookmarks(p)) &&
-      !isRequiredTableCellParagraph(p)
+      !isRequiredTableCellParagraph(p) &&
+      !(getDirectChild(p, W.pPr) && getDirectChild(getDirectChild(p, W.pPr)!, W.sectPr))
     ) {
       addParagraphMarkDeletion(p, ctx);
     }

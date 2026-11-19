@@ -21,6 +21,7 @@ import {
 import { replaceText, type AffectedRefField } from './replace_text.js';
 import { readFile } from './read_file.js';
 import { batchEdit } from './batch_edit.js';
+import { collectTargetingRefFields } from './bookmark_references.js';
 
 const { completeField } = await import(new URL('../../../docx-core/src/testing/ooxml-fixtures.ts', import.meta.url).href);
 import { getDocumentOutline } from './get_document_outline.js';
@@ -291,5 +292,55 @@ describe('explicit bookmarked paragraph removal boundaries', () => {
       expect((await mgr.getSessionByFilePath(session.inputPath))!.doc.getParagraphElementById(session.paraIds[1]!)).not.toBeNull();
       expect(JSON.stringify(result.warnings)).toContain('was not removed');
     });
+  });
+});
+
+describe('review adversarial probes', () => {
+ registerCleanup();
+ test('tracked explicit removal preserves a bookmarked section boundary', async () => {
+  const mgr=createTestSessionManager({defaultAiAuthor:'SafeDocX'});
+  const xml=makeDocumentXml(true).replace('<w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:bookmarkStart','<w:pPr><w:pStyle w:val="Heading2"/><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr><w:bookmarkStart');
+  const session=await openSession([], {mgr,xml,extraFiles:EXTRA_PARTS});
+  const result=await replaceText(mgr,{file_path:session.inputPath,target_paragraph_id:session.paraIds[1]!,old_string:'Bravo. The second thing.',new_string:'',instruction:'delete text, protect section',on_empty_numbered_paragraph:'remove_paragraph'});
+  assertSuccess(result,'replace_text');
+  const live=(await mgr.getSessionByFilePath(session.inputPath))!.doc;
+  const p=live.getParagraphElementById(session.paraIds[1]!)!;
+  expect(hasDeletedParagraphMark(p)).toBe(false);
+  const trackedPath = path.join(session.tmpDir, 'protected-tracked.docx');
+  const cleanPath = path.join(session.tmpDir, 'protected-clean.docx');
+  assertSuccess(await save(mgr, { file_path:session.inputPath, save_to_local_path:cleanPath, tracked_save_to_local_path:trackedPath, save_format:'both' }), 'save');
+  const tracked = await loadDocumentXml(trackedPath);
+  const rejected = parseXml(tracked.toString());
+  acceptChanges(tracked); rejectChanges(rejected);
+  expect(tracked.getElementsByTagNameNS(W_NS,'sectPr')).toHaveLength(2);
+  expect(rejected.getElementsByTagNameNS(W_NS,'sectPr')).toHaveLength(2);
+  expect((await loadDocumentXml(cleanPath)).getElementsByTagNameNS(W_NS,'sectPr')).toHaveLength(2);
+ });
+});
+describe('review table numbering probe', () => {
+ registerCleanup();
+ test('deleted middle numbered paragraph in a multi-paragraph table cell does not advance live numbering', async () => {
+  const mgr=createTestSessionManager({defaultAiAuthor:'SafeDocX'});
+  const xml=makeDocumentXml(true).replace('<w:body>','<w:body><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr/>').replace('<w:p><w:r><w:t xml:space="preserve">As provided','</w:tc></w:tr></w:tbl><w:p><w:r><w:t xml:space="preserve">As provided');
+  const session=await openSession([], {mgr,xml,extraFiles:EXTRA_PARTS});
+  const result=await replaceText(mgr,{file_path:session.inputPath,target_paragraph_id:session.paraIds[1]!,old_string:'Bravo. The second thing.',new_string:'',instruction:'remove item',on_empty_numbered_paragraph:'remove_paragraph'});
+  assertSuccess(result,'replace_text');
+  const read=await readFile(mgr,{file_path:session.inputPath,format:'json'});
+  assertSuccess(read,'read_file');
+  const nodes=JSON.parse(read.content as string) as Array<{list_label:string;clean_text:string}>;
+  expect(nodes.find(n=>n.clean_text.includes('Charlie'))!.list_label).toBe('Section 1.02');
+ });
+});
+
+
+describe('bookmark reference instruction normalization', () => {
+  test('simple and complex implicit targets retain whitespace and switch compatibility', () => {
+    const instructions = [' Target ', ' Target \\h ', ' PAGEREF Target ', ' REF "Target" '];
+    const body = '<w:p/>' + instructions.map(instruction => `<w:p><w:fldSimple w:instr='${instruction}'><w:r><w:t>cached</w:t></w:r></w:fldSimple></w:p>`).join('')
+      + '<w:p>' + completeField(' Target ', 'cached') + '</w:p>';
+    const dom = parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${body}</w:body></w:document>`);
+    const paragraphs = Array.from(dom.getElementsByTagNameNS(W_NS, 'p'));
+    const doc = { getParagraphs: () => paragraphs } as unknown as Parameters<typeof collectTargetingRefFields>[0];
+    expect(collectTargetingRefFields(doc, paragraphs[0]!, ['Target'])).toHaveLength(5);
   });
 });

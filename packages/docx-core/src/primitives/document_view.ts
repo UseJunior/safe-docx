@@ -595,7 +595,7 @@ export function buildNodesForDocumentView(params: {
     let listLevel = -1;
     let manualLabelMatchEnd = 0;
 
-    if (numId && ilvl != null) {
+    if (numId && ilvl != null && !isBlankedParagraphWithDeletedMark(p)) {
       isAutoNumbered = true;
       listLevel = ilvl;
       labelString = computeListLabelForParagraph(numberingModel, counters, { numId, ilvl }) || '';

@@ -47,6 +47,7 @@ export function hasDeletedParagraphMark(paragraph: Element): boolean {
 }
 
 function extractTargetedBookmark(instruction: string, candidateBookmarks: ReadonlySet<string>): string | null {
+  instruction = instruction.trim();
   const explicit = /^\s*(?:REF|PAGEREF|NOTEREF)\s+(?:"([^"]+)"|([^\s\\]+))/iu.exec(instruction);
   if (explicit) {
     const target = explicit[1] ?? explicit[2] ?? null;
@@ -108,4 +109,3 @@ export function collectTargetingRefFields(
   }
   return results;
 }
-
