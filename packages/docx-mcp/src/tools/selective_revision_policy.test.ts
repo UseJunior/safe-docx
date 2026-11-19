@@ -183,7 +183,7 @@ describe('session selective revision policy', () => {
       expect([session.editCount, session.editRevision, session.saveCache.size]).toEqual([0, 0, 0]);
     });
 
-    test.openspec('Complete resolution and subsequent AI edits')(`${call.name} resolves a selected grid revision and publishes its mutation bookkeeping`, async () => {
+    test(`${call.name} resolves a selected grid revision and publishes its mutation bookkeeping`, async () => {
       const opened = await openSession([], {
         mgr: createTestSessionManager({ defaultAiAuthor: AI }),
         xml: `<w:document xmlns:w="${W}"><w:body><w:p><w:r><w:t>Anchor</w:t></w:r></w:p>`
