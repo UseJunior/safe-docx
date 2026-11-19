@@ -1074,4 +1074,24 @@ describe('LibreOffice render failure reasons', () => {
     const killed = await defaultRendererTools().run(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"]);
     expect(killed.signal).toBe('SIGTERM');
   });
+
+  itAllure('a signal-killed run through the default runner reports the signal without the Command failed echo', async () => {
+    const killed = await defaultRendererTools().run(process.execPath, ['-e', "process.stderr.write('Error: render aborted\\n'); process.kill(process.pid, 'SIGKILL')"]);
+    expect(killed.signal).toBe('SIGKILL');
+    expect(killed.stderr).not.toContain('Command failed');
+    expect(describeSofficeFailure(killed, 'doc.pdf', false)).toBe('killed by SIGKILL, no doc.pdf written (output: Error: render aborted)');
+    const silent = await defaultRendererTools().run(process.execPath, ['-e', "process.kill(process.pid, 'SIGKILL')"]);
+    expect(describeSofficeFailure(silent, 'doc.pdf', false)).toBe('killed by SIGKILL, no doc.pdf written');
+  });
+
+  itAllure('a non-zero exit through the default runner keeps stderr, drops benign lines and has no Command failed echo', async () => {
+    const script = `process.stderr.write(${JSON.stringify('soffice[1] Task policy set failed: 4 ((os/kern) invalid argument)\nError: bad file\n')}); process.exit(81)`;
+    const failed = await defaultRendererTools().run(process.execPath, ['-e', script]);
+    expect(describeSofficeFailure(failed, 'doc.pdf', true)).toBe('exit 81, doc.pdf written (output: Error: bad file)');
+    const silent = await defaultRendererTools().run(process.execPath, ['-e', 'process.exit(2)']);
+    expect(describeSofficeFailure(silent, 'doc.pdf', false)).toBe('exit 2, no doc.pdf written');
+    expect(describeSofficeFailure({ code: 1, stdout: '', stderr: 'Command failed: /opt/soffice --headless /tmp/x/doc.docx', signal: 'SIGKILL' }, 'doc.pdf', false)).toBe('killed by SIGKILL, no doc.pdf written');
+    const missing = await defaultRendererTools().run('/definitely/not/a/tool', []);
+    expect(missing.stderr).toMatch(/ENOENT|spawn/);
+  });
 });
