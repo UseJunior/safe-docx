@@ -22,8 +22,8 @@ function childElements(parent: Element, localName: string): Element[] {
 }
 
 /**
- * The first direct `w:` child named `localName`. Unlike getFirstChild (a
- * descendant search) it never reaches into a nested `w:tblPrChange` /
+ * The first direct `w:` child named `localName`. Like getFirstChild,
+ * it never reaches into a nested `w:tblPrChange` /
  * `w:trPrChange` (the previous state) or a nested table.
  */
 function ownChild(parent: Element, localName: string): Element | null {
@@ -36,10 +36,13 @@ function ownChild(parent: Element, localName: string): Element | null {
 }
 
 /**
- * A table-style `w:rPr` without its `w:rPrChange`, which records the
- * previous state of a tracked formatting change. The property readers search
- * descendants, so the change record would otherwise read as current. The
- * copy is detached and only ever read.
+ * A current `w:rPr` view without its previous tracked formatting snapshot.
+ * Direct-child property readers ignore snapshots; removing them from stored
+ * style/default views also keeps downstream consumers from treating history
+ * as current formatting. The source DOM is preserved by a detached copy.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @see https://github.com/UseJunior/safe-docx/issues/1179
  */
 function currentRPr(rPr: Element | null): Element | null {
   if (!rPr || !ownChild(rPr, 'rPrChange')) return rPr;

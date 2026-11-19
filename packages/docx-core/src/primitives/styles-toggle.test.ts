@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { OOXML } from './namespaces.js';
-import { extractEffectiveRunFormatting, parseStylesXml, type RunFormatting } from './styles.js';
+import { extractEffectiveRunFormatting, extractParagraphFormatting, parseStylesXml, type RunFormatting } from './styles.js';
 import { parseXml } from './xml.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Effective Run Formatting' });
@@ -84,7 +84,9 @@ describe('effective toggle-property evaluation', () => {
       },
     );
 
-  test(
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.29' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' })(
     'tracked rPrChange and pPrChange snapshots are not read as current formatting across direct runs, paragraph styles, and character styles (#1179)',
     async ({ given, when, then }: AllureBddContext) => {
       let directFormatting!: RunFormatting;
@@ -150,4 +152,25 @@ describe('effective toggle-property evaluation', () => {
       });
     },
   );
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.29' })(
+    'a paragraph with no current layout or style never inherits its old property snapshot',
+    async ({ given, when, then }: AllureBddContext) => {
+      let pPr!: Element;
+      let styles!: ReturnType<typeof parseStylesXml>;
+      let formatting!: ReturnType<typeof extractParagraphFormatting>;
+      await given('only historical style, alignment, indentation and outline properties', () => {
+        const doc = parseXml(`<w:pPr xmlns:w="${OOXML.W_NS}"><w:pPrChange w:id="1" w:author="Reviewer"><w:pPr><w:pStyle w:val="Old"/><w:jc w:val="right"/><w:ind w:left="720"/><w:outlineLvl w:val="0"/></w:pPr></w:pPrChange></w:pPr>`);
+        pPr = doc.documentElement!;
+        styles = parseStylesXml(null);
+      });
+      await when('current paragraph formatting is read', () => { formatting = extractParagraphFormatting(pPr, styles); });
+      await then('all properties use current defaults', () => {
+        expect(formatting.styleId).toBeNull();
+        expect(formatting.alignment).toBe('LEFT');
+        expect(formatting.leftIndentPt).toBe(0);
+        expect(formatting.outlineLevel).toBeNull();
+      });
+    },
+  );
+
 });
