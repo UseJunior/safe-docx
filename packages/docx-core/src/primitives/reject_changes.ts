@@ -11,13 +11,14 @@
  *   mark was a tracked insertion into the following paragraph
  * - Stripping rsidDel attributes
  *
- * Numbering, table-grid/exception, cell-topology, custom XML, and extension
+ * Numbering, custom XML, and extension
  * conflict records are not semantically resolved here; see the advanced
  * revision classification manifest.
  *
  * Operates on the W3C DOM (`@xmldom/xmldom`).
  */
 
+import { resolveTableCellRevisions } from './table_cell_revisions.js';
 import { OOXML } from './namespaces.js';
 import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
 import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
@@ -215,10 +216,10 @@ function paragraphHasParaMarker(
   return false;
 }
 
-// Property change element local names (all 6 types)
+// Property change element local names
 const PR_CHANGE_LOCALS = [
   'rPrChange', 'pPrChange', 'sectPrChange',
-  'tblPrChange', 'trPrChange', 'tcPrChange',
+  'tblPrChange', 'trPrChange', 'tcPrChange', 'tblGridChange', 'tblPrExChange',
 ];
 
 // EG_ParaRPrTrackChanges (wml.xsd): the paragraph-mark revision markers that
@@ -668,6 +669,8 @@ function unwrapMoveSourcesPass(
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
  */
 function restorePropertyChangesPass(
   doc: Document,
@@ -742,6 +745,15 @@ function restorePropertyChangesPass(
         // `w:trPrChange` carries CT_TrPrBase, which has no row-revision
         // children of its own, so transplanting the survivors cannot collide
         // with the restored properties.
+        if (localName === 'tcPrChange') {
+          for (const marker of Array.from(parentProp.childNodes).filter((node): node is Element =>
+            node.nodeType === 1 && ['cellIns', 'cellDel', 'cellMerge'].some(name => isW(node, name)))) {
+            for (const prior of Array.from(restored.childNodes)) {
+              if (['cellIns', 'cellDel', 'cellMerge'].some(name => isW(prior, name))) restored.removeChild(prior);
+            }
+            restored.appendChild(marker.cloneNode(true));
+          }
+        }
         if (localName === 'trPrChange') {
           const survivingRowMarkers = Array.from(parentProp.childNodes)
             .filter((node): node is Element =>
@@ -765,7 +777,8 @@ function restorePropertyChangesPass(
             restored.insertBefore(reference, restored.firstChild);
           }
         }
-        grandParent.replaceChild(restored, parentProp);
+        if (localName === 'tblPrExChange' && !Array.from(restored.childNodes).some(n => n.nodeType === 1)) grandParent.removeChild(parentProp);
+        else grandParent.replaceChild(restored, parentProp);
       } else if (localName === 'sectPrChange') {
         // CT_SectPrChange's w:sectPr snapshot is optional (ECMA-376 Part 1
         // § 17.13.5.32; wml.xsd minOccurs="0"). An absent snapshot records
@@ -902,12 +915,13 @@ export function rejectChanges(
     unwrapDeletionsAndRestoreTextPass(doc, root, filter, selective, rowRevisions.deletions);
   const moveFromUnwrapped = unwrapMoveSourcesPass(root, filter);
   const propertyChangesReverted = restorePropertyChangesPass(doc, root, filter);
+  const cells = resolveTableCellRevisions(root, 'reject', filter);
   cleanupParagraphMarksAndRevisionsPass(root, filter, selective, markInsertedParagraphs, resolvedMarkProperties);
   return {
-    insertionsRemoved,
-    deletionsRestored,
+    insertionsRemoved: insertionsRemoved + cells.insertions,
+    deletionsRestored: deletionsRestored + cells.deletions,
     movesReverted: moveFromUnwrapped + moveToRemoved,
-    propertyChangesReverted,
+    propertyChangesReverted: propertyChangesReverted + cells.merges,
     unresolvedRowRevisions: 0,
   };
 }

@@ -964,11 +964,11 @@
           "ECMA-PART1-17-13-5-33"
         ]
       },
-      "classification": "conformance-gap",
+      "classification": "implemented",
       "operations": {
         "emit": "non-goal",
-        "accept": "conformance-gap",
-        "reject": "conformance-gap",
+        "accept": "implemented",
+        "reject": "implemented",
         "validate": "implemented",
         "comparison": {
           "inplace": "non-goal",
@@ -980,38 +980,6 @@
         }
       },
       "evidence": [
-        {
-          "id": "ADV-UNRESOLVED-RECORDS-01",
-          "sources": [
-            "packages/docx-core/src/primitives/accept_changes.ts",
-            "packages/docx-core/src/primitives/reject_changes.ts"
-          ],
-          "test": {
-            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
-          },
-          "claims": [
-            {
-              "element": "tblPrExChange",
-              "operation": "accept",
-              "story": "main"
-            },
-            {
-              "element": "tblPrExChange",
-              "operation": "reject",
-              "story": "main"
-            },
-            {
-              "element": "tblGridChange",
-              "operation": "accept",
-              "story": "main"
-            },
-            {
-              "element": "tblGridChange",
-              "operation": "reject",
-              "story": "main"
-            }
-          ]
-        },
         {
           "id": "ADV-VALIDATOR-COVERAGE-01",
           "sources": [
@@ -1032,9 +1000,42 @@
               "story": "main"
             }
           ]
+        },
+        {
+          "id": "ADV-TABLE-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts",
+            "packages/docx-core/src/primitives/table_cell_revisions.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "tblGridChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "tblGridChange",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "tblPrExChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "tblPrExChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
         }
       ],
-      "notes": "Metadata is recognized and tblGridChange placement is checked; neither record is semantically resolved."
+      "notes": "Native and comparison resolvers settle table snapshots and live cell revisions. Emission and reconstruction remain bounded by the listed operations."
     },
     {
       "id": "advanced-revision.cell-topology",
@@ -1054,11 +1055,11 @@
           "ECMA-PART1-17-13-5-3"
         ]
       },
-      "classification": "preservation-only",
+      "classification": "implemented",
       "operations": {
         "emit": "non-goal",
-        "accept": "conformance-gap",
-        "reject": "conformance-gap",
+        "accept": "implemented",
+        "reject": "implemented",
         "preserve": "preservation-only",
         "validate": "implemented",
         "comparison": {
@@ -1083,42 +1084,12 @@
           "claims": [
             {
               "element": "cellDel",
-              "operation": "accept",
-              "story": "main"
-            },
-            {
-              "element": "cellDel",
-              "operation": "reject",
-              "story": "main"
-            },
-            {
-              "element": "cellDel",
               "operation": "preserve",
               "story": "main"
             },
             {
               "element": "cellIns",
-              "operation": "accept",
-              "story": "main"
-            },
-            {
-              "element": "cellIns",
-              "operation": "reject",
-              "story": "main"
-            },
-            {
-              "element": "cellIns",
               "operation": "preserve",
-              "story": "main"
-            },
-            {
-              "element": "cellMerge",
-              "operation": "accept",
-              "story": "main"
-            },
-            {
-              "element": "cellMerge",
-              "operation": "reject",
               "story": "main"
             },
             {
@@ -1153,9 +1124,52 @@
               "story": "main"
             }
           ]
+        },
+        {
+          "id": "ADV-TABLE-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts",
+            "packages/docx-core/src/primitives/table_cell_revisions.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "cellDel",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "cellDel",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "cellIns",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "cellIns",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "cellMerge",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "cellMerge",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
         }
       ],
-      "notes": "Existing records are tolerated and retained by ordinary accept/reject, but topology semantics are not applied."
+      "notes": "Native and comparison resolvers settle table snapshots and live cell revisions. Emission and reconstruction remain bounded by the listed operations."
     },
     {
       "id": "advanced-revision.custom-xml-ranges",

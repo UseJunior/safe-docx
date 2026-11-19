@@ -359,7 +359,7 @@ describe('pending table-level records carried by one input', () => {
 });
 
 describe('docx-core resolution of the emitted records', () => {
-  test('docx-core acceptChanges/rejectChanges resolve w:tblPrChange but still keep w:tblPrExChange (#1401)', async () => {
+  test('docx-core acceptChanges/rejectChanges resolve w:tblPrChange and w:tblPrExChange (#1401)', async () => {
     const original = await buildDocxFromBodyXml(body(table(`<w:tblStyle w:val="TableGrid"/>${WIDTH}`, ROWS)));
     const revised = await buildDocxFromBodyXml(body(table(`<w:tblStyle w:val="PlainTable1"/>${WIDTH}`, ROWS)));
     const { document } = await compareDocuments(original, revised);
@@ -368,10 +368,7 @@ describe('docx-core resolution of the emitted records', () => {
       await doc[resolve]();
       const xml = await xmlOf((await doc.toBuffer()).buffer);
       expect(records(xml, 'tblPrChange'), resolve).toHaveLength(0);
-      // Characterization: docx-core's native engines do not resolve
-      // w:tblPrExChange yet. The companions' snapshots equal their live
-      // exceptions, so the residue changes no property value.
-      expect(records(xml, 'tblPrExChange'), resolve).toHaveLength(2);
+      expect(records(xml, 'tblPrExChange'), resolve).toHaveLength(0);
     }
   });
 });

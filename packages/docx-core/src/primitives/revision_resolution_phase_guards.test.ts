@@ -94,7 +94,7 @@ for (const mode of ['accept', 'reject'] as const) {
     test.openspec('selective and deferred revisions survive')('keeps foreign nested wrappers, deferred cells and save IDs byte-identical during selective resolution', () => {
       const foreign = revision(keep, 'foreign', '<w:r w:rsidDel="ABCD"><w:delText>foreign</w:delText></w:r>', 'Human');
       const doc = xml(`<w:p w:rsidDel="1234">${revision(keep, 'outer', run('A') + foreign + run('B'))}</w:p>` +
-        `<w:tbl><w:tr><w:tc><w:tcPr>${revision('cellDel', 'deferred')}</w:tcPr><w:p/></w:tc></w:tr></w:tbl>`);
+        `<w:tbl><w:tr><w:tc><w:tcPr>${revision('cellDel', 'deferred', '', 'Human')}</w:tcPr><w:p/></w:tc></w:tr></w:tbl>`);
       const before = serializeXml(elements(doc, keep).find(el => el.getAttributeNS(W, 'id') === 'foreign')!);
       const deferred = serializeXml(elements(doc, 'tbl')[0]!);
       resolve(doc, { filter: foreignFilter });
@@ -103,13 +103,13 @@ for (const mode of ['accept', 'reject'] as const) {
       expect(elements(doc, 'p')[0]!.getAttributeNS(W, 'rsidDel')).toBe('1234');
     });
 
-    test('preserves deferred cell/grid/numbering revisions as a no-op', () => {
+    test('preserves unselected cell/grid/numbering revisions as a no-op', () => {
       const doc = xml('<w:tbl><w:tblGrid><w:tblGridChange w:id="1" w:author="AI"><w:tblGrid/></w:tblGridChange></w:tblGrid>' +
         '<w:tr><w:tc><w:tcPr><w:cellIns w:id="2" w:author="AI"/><w:cellDel w:id="3" w:author="AI"/>' +
         '<w:cellMerge w:id="4" w:author="AI"/></w:tcPr><w:p><w:pPr><w:numPr>' +
         '<w:numberingChange w:id="5" w:author="AI"/></w:numPr></w:pPr></w:p></w:tc></w:tr></w:tbl>');
       const before = serializeXml(doc);
-      expect(Object.values(resolve(doc)).every(n => n === 0)).toBe(true);
+      expect(Object.values(resolve(doc, { filter: () => false })).every(n => n === 0)).toBe(true);
       expect(serializeXml(doc)).toBe(before);
     });
 
