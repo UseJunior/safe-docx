@@ -55,6 +55,11 @@ function count(xml: string, pattern: RegExp): number {
   return xml.match(pattern)?.length ?? 0;
 }
 
+/** Neutral dates on move-range start markers, which the schema requires (#1528). */
+function neutralMoveDates(xml: string): number {
+  return count(xml, new RegExp(`w:date="${MOVE_RANGE_NEUTRAL_DATE}"`, 'g'));
+}
+
 function stripDates(xml: string): string {
   return xml.replace(/\s+w:date="[^"]*"/g, '');
 }
@@ -189,7 +194,7 @@ describe('compareDocuments date: null', () => {
       await then('the preserved insertion still carries its own author and date', async () => {
         const xml = (await storyParts(result.document)).get('word/document.xml')!;
         expect(xml).toMatch(new RegExp(`w:author="Prior Reviewer"[^>]*w:date="${PRIOR_STAMP}"|w:date="${PRIOR_STAMP}"[^>]*w:author="Prior Reviewer"`));
-        expect(count(xml, /w:date="/g)).toBe(count(xml, new RegExp(`w:date="${PRIOR_STAMP}"`, 'g')));
+        expect(count(xml, /w:date="/g) - neutralMoveDates(xml)).toBe(count(xml, new RegExp(`w:date="${PRIOR_STAMP}"`, 'g')));
       });
     },
   );
@@ -208,7 +213,7 @@ describe('compareDocuments date: null', () => {
       await then('the preserved insertion keeps that date', async () => {
         const xml = (await storyParts(result.document)).get('word/document.xml')!;
         expect(xml).toMatch(/w:date="1901-01-01T00:00:00(Z|&#90;)"/);
-        expect(count(xml, /w:date="/g)).toBe(1);
+        expect(count(xml, /w:date="/g) - neutralMoveDates(xml)).toBe(1);
       });
     },
   );
