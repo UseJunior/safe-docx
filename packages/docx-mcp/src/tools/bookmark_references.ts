@@ -23,29 +23,6 @@ export function collectLocalUserBookmarks(paragraph: Element): string[] {
   return names;
 }
 
-export function hasDeletedParagraphMark(paragraph: Element): boolean {
-  for (const child of Array.from(paragraph.childNodes)) {
-    if (child.nodeType !== 1 || (child as Element).namespaceURI !== OOXML.W_NS || (child as Element).localName !== W.pPr) {
-      continue;
-    }
-    for (const pPrChild of Array.from(child.childNodes)) {
-      if (pPrChild.nodeType !== 1 || (pPrChild as Element).namespaceURI !== OOXML.W_NS || (pPrChild as Element).localName !== W.rPr) {
-        continue;
-      }
-      for (const rPrChild of Array.from(pPrChild.childNodes)) {
-        if (
-          rPrChild.nodeType === 1 &&
-          (rPrChild as Element).namespaceURI === OOXML.W_NS &&
-          ((rPrChild as Element).localName === W.del || (rPrChild as Element).localName === W.moveFrom)
-        ) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
 function extractTargetedBookmark(instruction: string, candidateBookmarks: ReadonlySet<string>): string | null {
   instruction = instruction.trim();
   const explicit = /^\s*(?:REF|PAGEREF|NOTEREF)\s+(?:"([^"]+)"|([^\s\\]+))/iu.exec(instruction);

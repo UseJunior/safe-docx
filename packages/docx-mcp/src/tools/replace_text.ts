@@ -17,6 +17,7 @@ import {
   hasHighlightTags,
   hasHyperlinkTags,
   paragraphHasVisibleContent,
+  isParagraphMarkTrackedDeleted,
   replaceParagraphTextRange,
   stripHyperlinkTags,
   stripAllInlineTags,
@@ -106,7 +107,7 @@ function hiddenConstructRemovalWarning(label: string, tracked: boolean): string 
 }
 
 export type { AffectedRefField } from './bookmark_references.js';
-import { collectLocalUserBookmarks, collectTargetingRefFields, hasDeletedParagraphMark, type AffectedRefField } from './bookmark_references.js';
+import { collectLocalUserBookmarks, collectTargetingRefFields, type AffectedRefField } from './bookmark_references.js';
 
 function mergeAddRunProps(
   a: NonNullable<ReplacementPart['addRunProps']> | null | undefined,
@@ -353,7 +354,7 @@ function planReplaceText(
       if (outcome.kind !== 'none') editWarnings.push(outcome.message);
     };
     const reportRemovedHiddenConstructs = (): void => {
-      if (localBookmarksBefore.length > 0 && (!pEl.parentNode || hasDeletedParagraphMark(pEl))) {
+      if (localBookmarksBefore.length > 0 && (!pEl.parentNode || isParagraphMarkTrackedDeleted(pEl))) {
         affectedRefFields.push(...collectTargetingRefFields(doc, pEl, localBookmarksBefore));
         for (const ref of affectedRefFields) {
           editWarnings.push(`The deleted paragraph held bookmark "${ref.bookmark}", which is targeted by field "${ref.instruction}"${ref.paragraph_id ? ` in paragraph ${ref.paragraph_id}` : ''}; update or remove the cross-reference.`);
