@@ -225,6 +225,9 @@ describe('tagged publication range statistics', () => {
     const plainRuns = publish(
       '<w:p><w:r><w:t>stable</w:t></w:r></w:p>',
       `<w:p><w:r><w:t>stable</w:t></w:r>${insertedRuns}</w:p>`,
+      // Token-minimal on purpose: the contrast needs one range per plain run,
+      // which readable-semantic regrouping (the default since #1526) merges.
+      { revisionGrouping: 'token-minimal' },
     );
     const emitted = parseXml(publication.xml);
 

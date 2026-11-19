@@ -189,7 +189,7 @@ export interface StandaloneTaggedPackageOptions {
   formatDetection: FormatDetectionSettings;
   numbering: NumberingIntegrationOptions;
   revisionAttributionRanges?: readonly import('../compare-types.js').RevisionAttributionRange[];
-  /** @internal Markdoc-only tracked-revision presentation policy. */
+  /** @internal Tracked-revision presentation policy; omitted, the serializer applies the public default. */
   revisionGrouping?: import('../compare-types.js').RevisionGroupingPolicy;
   /** @internal Test seam for the final structural publication gate. */
   publicationSafetyEvaluator?: typeof evaluateSafetyChecks;
@@ -278,6 +278,7 @@ async function reconcileTaggedNotes(options: {
   author: string;
   date: Date;
   formatDetection: FormatDetectionSettings;
+  revisionGrouping?: import('../compare-types.js').RevisionGroupingPolicy;
   baseSide?: 'original' | 'revised';
   baseNotesArchive?: DocxArchive;
   stabilizedNoteKinds: Set<'footnote' | 'endnote'>;
@@ -362,6 +363,7 @@ async function reconcileTaggedNotes(options: {
           author: options.author,
           date: options.date,
           formatDetection: options.formatDetection,
+          revisionGrouping: options.revisionGrouping,
           unrepresentedChanges: definitionChanges,
         },
       );
@@ -653,6 +655,7 @@ export async function buildStandaloneTaggedPackage(
       author: options.author,
       date: options.date,
       formatDetection: options.formatDetection,
+      revisionGrouping: options.revisionGrouping,
       stabilizedNoteKinds,
       reconciledNotePairs: reconciled,
       unrepresentedChanges,
@@ -1064,7 +1067,7 @@ export interface AtomizerOptions {
   numbering?: Partial<NumberingIntegrationOptions>;
   /** @internal Exact source ranges to carry through tagged serialization. */
   revisionAttributionRanges?: import('../compare-types.js').RevisionAttributionRange[];
-  /** @internal Markdoc-only tracked-revision presentation policy. */
+  /** @internal Tracked-revision presentation policy; omitted, the serializer applies the public default. */
   revisionGrouping?: import('../compare-types.js').RevisionGroupingPolicy;
   /** @internal Test seam for exercising fail-safe publication without malformed fixtures. */
   taggedTreePublicationSafetyEvaluator?: typeof evaluateSafetyChecks;

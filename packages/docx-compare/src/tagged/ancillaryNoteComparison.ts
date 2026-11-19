@@ -7,7 +7,7 @@ import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { buildTaggedTreePublication } from './taggedTreeShadow.js';
 import { refuseUnreportedBlockContainer } from './unrepresentedChanges.js';
-import type { UnrepresentedChange } from '../compare-types.js';
+import type { RevisionGroupingPolicy, UnrepresentedChange } from '../compare-types.js';
 import { compareSourceProjectedFormattingFidelity } from './formattingFidelity.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
 import {
@@ -29,6 +29,11 @@ export interface NoteDefinitionComparisonOptions {
    * carry, so the caller can list them instead of dropping them.
    */
   unrepresentedChanges?: UnrepresentedChange[];
+  /**
+   * The main story's grouping, so a note redline reads like the body's
+   * (#1526). Omitted, the serializer's public default applies.
+   */
+  revisionGrouping?: RevisionGroupingPolicy;
 }
 
 function namespaceAttributes(entry: Element): string {
@@ -207,6 +212,7 @@ export function compareNoteDefinitions(
     date: options.date,
     detectFormatChanges: options.formatDetection?.detectFormatChanges ?? true,
     detectMoves: false,
+    revisionGrouping: options.revisionGrouping,
   });
   refuseUnreportedBlockContainer(
     publication.unrepresentedChanges,
