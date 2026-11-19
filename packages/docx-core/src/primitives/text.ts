@@ -751,6 +751,20 @@ function addParagraphMarkDeletion(p: Element, ctx: RevisionContext): void {
 }
 
 /**
+ * True when `p` is a paragraph its table cell cannot lose: the cell's only
+ * block-level content, or the paragraph that must close a cell ending in a
+ * nested table.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.66
+ * @see https://github.com/UseJunior/safe-docx/issues/1524
+ */
+function isRequiredTableCellParagraph(p: Element): boolean {
+  const parent = p.parentNode;
+  if (!parent || parent.nodeType !== 1 || !isW(parent as Element, 'tc')) return false;
+  return !canSafelyRemoveEmptyParagraph(p);
+}
+
+/**
  * True when a blanking edit left nothing in the paragraph that renders or
  * anchors: only w:pPr, proofing marks, and runs or hyperlinks whose content
  * was removed. Range markers (bookmarks, comment anchors), embedded content,
@@ -1417,10 +1431,13 @@ export function replaceParagraphTextRange(
     // cross-reference target, while the untracked edit below keeps the
     // paragraph with its markers. Tracked and clean must agree on whether the
     // paragraph survives, so this asks the same question removeBlankedParagraph
-    // asks (issue #1098).
+    // asks (issue #1098). A table cell must keep a paragraph, so a cell's
+    // last remaining paragraph keeps its mark: Word records only the run
+    // deletion there (issue #1524).
     if (
       start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent &&
-      isParagraphInertAfterBlanking(p, true)
+      isParagraphInertAfterBlanking(p, true) &&
+      !isRequiredTableCellParagraph(p)
     ) {
       addParagraphMarkDeletion(p, ctx);
     }

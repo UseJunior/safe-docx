@@ -3869,3 +3869,59 @@ describe('formatTrackedInsertionTextRange (#1225)', () => {
     });
   });
 });
+
+// ── tracked blanking of a table cell's paragraph (issue #1524) ──────
+
+describe('replaceParagraphTextRange: tracked blanking inside a table cell', () => {
+  const cellTest = test.conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.66' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' },
+  );
+  const cell = (inner: string) => `<w:tbl><w:tr><w:tc><w:tcPr/>${inner}</w:tc></w:tr></w:tbl><w:p/>`;
+  const paraMarkDel = (p: Element) => {
+    const pPr = getDirectChildrenByName(p, 'pPr')[0];
+    const rPr = pPr ? getDirectChildrenByName(pPr, 'rPr')[0] : undefined;
+    return rPr ? getDirectChildrenByName(rPr, 'del').length > 0 : false;
+  };
+  const cellParagraphs = (doc: Document) =>
+    Array.from(doc.getElementsByTagNameNS(W_NS, 'tc').item(0)!.childNodes)
+      .filter((n): n is Element => n.nodeType === 1 && isWElement(n as Element, 'p'));
+
+  cellTest('blanking a cell\'s only paragraph deletes its runs but not its paragraph mark', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let p!: Element;
+    await given('a table cell whose only paragraph reads "Cell text"', () => {
+      doc = makeDoc(cell('<w:p><w:r><w:t>Cell text</w:t></w:r></w:p>'));
+      p = firstParagraph(doc);
+    });
+    await when('the whole paragraph text is replaced with nothing under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 9, '', trackedCtx());
+    });
+    await then('runs are in w:del, the mark is live, and accept/reject keep one paragraph', () => {
+      expect(p.getElementsByTagNameNS(W_NS, 'delText').item(0)?.textContent).toBe('Cell text');
+      expect(paraMarkDel(p)).toBe(false);
+      const rejected = doc.cloneNode(true) as Document;
+      rejectChanges(rejected);
+      expect(cellParagraphs(rejected).map(getParagraphText)).toEqual(['Cell text']);
+      acceptChanges(doc);
+      expect(cellParagraphs(doc).map(getParagraphText)).toEqual(['']);
+    });
+  });
+
+  cellTest('blanking one of two cell paragraphs still deletes that paragraph mark', async ({ given, when, then }: AllureBddContext) => {
+    let doc!: Document;
+    let p!: Element;
+    await given('a table cell with paragraphs "First" and "Second"', () => {
+      doc = makeDoc(cell('<w:p><w:r><w:t>First</w:t></w:r></w:p><w:p><w:r><w:t>Second</w:t></w:r></w:p>'));
+      p = firstParagraph(doc);
+    });
+    await when('"First" is blanked under tracked changes', () => {
+      replaceParagraphTextRange(p, 0, 5, '', trackedCtx());
+    });
+    await then('its paragraph mark is deleted and accept-all leaves one paragraph', () => {
+      expect(paraMarkDel(p)).toBe(true);
+      acceptChanges(doc);
+      expect(cellParagraphs(doc).map(getParagraphText)).toEqual(['Second']);
+    });
+  });
+});
