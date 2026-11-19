@@ -195,13 +195,19 @@ describe('Traceability: equivalent placement for boundary insertions', () => {
     'Scenario: a slide never crosses a custom XML move range boundary',
     async () => {
       for (const kind of ['customXmlMoveFrom', 'customXmlMoveTo']) {
+        for (const boundary of ['start', 'end']) {
         const docx = await buildDocxFromBodyXml(
-          `<w:p><w:${kind}RangeStart w:id="7" w:author="Reviewer"/><w:r><w:t xml:space="preserve">Alpha </w:t></w:r><w:${kind}RangeEnd w:id="7"/>`
-          + '<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>[Term]</w:t></w:r><w:r><w:t xml:space="preserve"> shares.</w:t></w:r></w:p>',
+          '<w:p>' + (boundary === 'end' ? `<w:${kind}RangeStart w:id="7" w:author="Reviewer"/>` : '')
+          + '<w:r><w:t xml:space="preserve">Alpha </w:t></w:r>'
+          + (boundary === 'end' ? `<w:${kind}RangeEnd w:id="7"/>` : `<w:${kind}RangeStart w:id="7" w:author="Reviewer"/>`)
+          + '<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>[Term]</w:t></w:r>'
+          + (boundary === 'start' ? `<w:${kind}RangeEnd w:id="7"/>` : '')
+          + '<w:r><w:t xml:space="preserve"> shares.</w:t></w:r></w:p>',
         );
         const imported = await importDocxToMarkdoc(docx);
         const revised = withChange(imported.markdoc, 'Alpha \\[Term\\] shares.', 'Alpha up to \\[Term\\] shares.');
         await expect(compileMarkdoc(imported.anchoredSource, revised)).rejects.toMatchObject({ code: 'MIXED_FORMATTING_REQUIRES_DETAIL' });
+        }
       }
     },
   );
