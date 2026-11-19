@@ -407,7 +407,7 @@ describe('ECMA-376 advanced revision records', () => {
   );
 
   test(
-    '[ADV-TOPOLOGY-PRESERVATION-01] retains all cell-topology records without applying semantics',
+    '[ADV-TOPOLOGY-PRESERVATION-01] retains unselected cell-topology records',
     async ({ when, then }: AllureBddContext) => {
       const body =
         `<q:tbl><q:tr><q:tc><q:tcPr>` +
@@ -419,8 +419,8 @@ describe('ECMA-376 advanced revision records', () => {
       const rejected = documentWith(body);
       const source = cloneDocument(accepted);
       await when('ordinary accept and reject run over topology records', () => {
-        acceptChanges(accepted);
-        rejectChanges(rejected);
+        acceptChanges(accepted, { filter: () => false });
+        rejectChanges(rejected, { filter: () => false });
       });
       await then('all three records remain in both projections', () => {
         for (const local of ['cellDel', 'cellIns', 'cellMerge']) {
@@ -430,7 +430,7 @@ describe('ECMA-376 advanced revision records', () => {
       });
       await revisionEvidence('ADV-TOPOLOGY-PRESERVATION-01', documentEvidenceCases({
         elements: ['cellDel', 'cellIns', 'cellMerge'],
-        operations: ['accept', 'reject', 'preserve'],
+        operations: ['preserve'],
         buildFixture: () => cloneDocument(source),
         observe: (run, element) => {
           const inputTarget = run.input.getElementsByTagNameNS(W_NS, element).item(0);
@@ -550,7 +550,7 @@ describe('ECMA-376 advanced revision records', () => {
     );
 
   test(
-      '[ADV-UNRESOLVED-RECORDS-01] leaves unsupported numbering and table-grid records unresolved',
+      '[ADV-UNRESOLVED-RECORDS-01] leaves unsupported numbering records unresolved',
       async ({ given, when, then }: AllureBddContext) => {
         const records =
           `<q:p><q:pPr><q:numPr><q:numberingChange ${metadata}/></q:numPr></q:pPr></q:p>` +
@@ -566,13 +566,13 @@ describe('ECMA-376 advanced revision records', () => {
           rejectChanges(rejected);
         });
         await then('the records remain, making the conformance gap executable and visible', () => {
-          for (const local of ['numberingChange', 'tblPrExChange', 'tblGridChange']) {
+          for (const local of ['numberingChange']) {
             expect(count(accepted, local)).toBe(1);
             expect(count(rejected, local)).toBe(1);
           }
         });
         await revisionEvidence('ADV-UNRESOLVED-RECORDS-01', documentEvidenceCases({
-          elements: ['numberingChange', 'tblPrExChange', 'tblGridChange'],
+          elements: ['numberingChange'],
           operations: ['accept', 'reject'],
           buildFixture: () => cloneDocument(source),
           observe: (run, element) => {
@@ -840,4 +840,14 @@ describe('ECMA-376 advanced revision records', () => {
       },
       30_000,
     );
+});
+
+test('[ADV-TABLE-RESOLUTION-01] resolves table snapshots and cell revisions', async () => {
+  for (const element of ['tblGridChange', 'tblPrExChange', 'cellDel', 'cellIns', 'cellMerge']) {
+    await revisionEvidence('ADV-TABLE-RESOLUTION-01', documentEvidenceCases({
+      elements: [element], operations: ['accept', 'reject'],
+      buildFixture: () => validatorFixtureFor(element),
+      observe: (run, local) => count(run.input, local) === 1 && run.input.getElementsByTagNameNS(W_NS, local).item(0)?.getAttributeNS(W_NS, 'author') === 'Reviewer' && count(run.output, local) === 0,
+    }));
+  }
 });

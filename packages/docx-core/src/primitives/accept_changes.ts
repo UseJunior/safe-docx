@@ -11,7 +11,7 @@
  *   mark was a tracked deletion into the following paragraph
  * - Cleaning up move range markers and rsidDel attributes
  *
- * Numbering, table-grid/exception, cell-topology, custom XML, and extension
+ * Numbering, custom XML, and extension
  * conflict records are not semantically resolved here; see the advanced
  * revision classification manifest.
  *
@@ -20,6 +20,7 @@
  * custom WmlElement AST).
  */
 
+import { resolveTableCellRevisions } from './table_cell_revisions.js';
 import { OOXML } from './namespaces.js';
 import { carryHeaderFooterRefsFromRemovedBoundary } from './section_boundary_references.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
@@ -98,7 +99,7 @@ function isRowPropertyRevisionMarker(el: Element): boolean {
 }
 
 /**
- * Pass 1: Row topology (cell-topology records remain deferred).
+ * Pass 1: Row topology (cells resolve after property snapshots settle).
  * Resolve row topology before collecting paragraph-mark revisions: a selected
  * deleted row disappears as one revision, while an inserted row is retained
  * and only its row marker is stripped. Must precede paragraph discovery.
@@ -188,10 +189,10 @@ function paragraphHasParaMarker(
   return false;
 }
 
-// Property change element local names (all 6 types)
+// Property change element local names
 const PR_CHANGE_LOCALS = [
   'rPrChange', 'pPrChange', 'sectPrChange',
-  'tblPrChange', 'trPrChange', 'tcPrChange',
+  'tblPrChange', 'trPrChange', 'tcPrChange', 'tblGridChange', 'tblPrExChange',
 ];
 
 /**
@@ -565,6 +566,8 @@ function unwrapInsertionsAndMoveDestinationsPass(
  * Remove property change records and empty paragraph-level w:sectPr containers
  * from accepted section-break removals.
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.35
  */
 function resolvePropertyChangesPass(
   root: Element,
@@ -576,7 +579,13 @@ function resolvePropertyChangesPass(
     .filter((section): section is Element => section !== null);
   let propertyChangesResolved = 0;
   for (const localName of PR_CHANGE_LOCALS) {
-    propertyChangesResolved += removeAllByLocalName(root, localName, filter);
+    for (const change of collectByLocalName(root, localName).filter(filter)) {
+      const parent = change.parentNode;
+      if (!parent) continue;
+      parent.removeChild(change);
+      if (isW(parent, 'tblPrEx') && !Array.from(parent.childNodes).some(n => n.nodeType === 1)) parent.parentNode?.removeChild(parent);
+      propertyChangesResolved++;
+    }
   }
   for (const section of acceptedSectionBreakRemovals) {
     section.parentNode?.removeChild(section);
@@ -716,13 +725,14 @@ export function acceptChanges(
   const { deletionsAccepted, moveFromRemoved } = removeDeletionsAndMoveSourcesPass(root, filter, rowRevisions.deletions);
   const { insertionsAccepted, moveToUnwrapped } = unwrapInsertionsAndMoveDestinationsPass(root, filter, rowRevisions.insertions);
   const propertyChangesResolved = resolvePropertyChangesPass(root, filter);
+  const cells = resolveTableCellRevisions(root, 'accept', filter);
   cleanupParagraphMarksAndRevisionsPass(root, filter, selective, markDeletedParagraphs, resolvedMarkProperties);
 
   return {
-    insertionsAccepted,
-    deletionsAccepted,
+    insertionsAccepted: insertionsAccepted + cells.insertions,
+    deletionsAccepted: deletionsAccepted + cells.deletions,
     movesResolved: moveFromRemoved + moveToUnwrapped,
-    propertyChangesResolved,
+    propertyChangesResolved: propertyChangesResolved + cells.merges,
     unresolvedRowRevisions: 0,
   };
 }

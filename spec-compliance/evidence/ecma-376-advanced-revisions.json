@@ -1446,6 +1446,136 @@
       }
     },
     {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "cellDel",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "cellDel",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "cellIns",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "cellIns",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "cellMerge",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "cellMerge",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "tblGridChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "tblGridChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "tblPrExChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
+      "id": "ADV-TABLE-RESOLUTION-01",
+      "element": "tblPrExChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "observable": true,
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
+      }
+    },
+    {
       "id": "ADV-TCPR-EMISSION-01",
       "element": "tcPrChange",
       "operation": "emit",
@@ -1461,46 +1591,7 @@
     {
       "id": "ADV-TOPOLOGY-PRESERVATION-01",
       "element": "cellDel",
-      "operation": "accept",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-TOPOLOGY-PRESERVATION-01",
-      "element": "cellDel",
       "operation": "preserve",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-TOPOLOGY-PRESERVATION-01",
-      "element": "cellDel",
-      "operation": "reject",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-TOPOLOGY-PRESERVATION-01",
-      "element": "cellIns",
-      "operation": "accept",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -1525,47 +1616,8 @@
     },
     {
       "id": "ADV-TOPOLOGY-PRESERVATION-01",
-      "element": "cellIns",
-      "operation": "reject",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-TOPOLOGY-PRESERVATION-01",
-      "element": "cellMerge",
-      "operation": "accept",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-TOPOLOGY-PRESERVATION-01",
       "element": "cellMerge",
       "operation": "preserve",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-TOPOLOGY-PRESERVATION-01",
-      "element": "cellMerge",
-      "operation": "reject",
       "story": "main",
       "assertions": {
         "observable": true,
@@ -1604,58 +1656,6 @@
     {
       "id": "ADV-UNRESOLVED-RECORDS-01",
       "element": "numberingChange",
-      "operation": "reject",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-UNRESOLVED-RECORDS-01",
-      "element": "tblGridChange",
-      "operation": "accept",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-UNRESOLVED-RECORDS-01",
-      "element": "tblGridChange",
-      "operation": "reject",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-UNRESOLVED-RECORDS-01",
-      "element": "tblPrExChange",
-      "operation": "accept",
-      "story": "main",
-      "assertions": {
-        "observable": true,
-        "mutationsDetected": [
-          "remove-target",
-          "corrupt-target"
-        ]
-      }
-    },
-    {
-      "id": "ADV-UNRESOLVED-RECORDS-01",
-      "element": "tblPrExChange",
       "operation": "reject",
       "story": "main",
       "assertions": {
