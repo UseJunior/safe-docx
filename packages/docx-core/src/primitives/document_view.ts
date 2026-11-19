@@ -11,7 +11,11 @@ import {
   computeListLabelForParagraph,
   getNumberingLevel,
 } from './numbering.js';
-import { collectNumberingLinkedStyleIds, resolveParagraphNumbering } from './paragraph_list_numbering.js';
+import {
+  collectNumberingLinkedStyleIds,
+  isBlankedParagraphWithDeletedMark,
+  resolveParagraphNumbering,
+} from './paragraph_list_numbering.js';
 import {
   parseStylesXml,
   parseThemeXml,
@@ -576,8 +580,11 @@ export function buildNodesForDocumentView(params: {
       // Word shows a number on an empty list paragraph, so the counters
       // still step even though the view omits the node; otherwise the next
       // paragraph would repeat its number, and labels here would disagree
-      // with computeParagraphListLabels.
-      if (numId && ilvl != null) computeListLabelForParagraph(numberingModel, counters, { numId, ilvl });
+      // with computeParagraphListLabels. A tracked whole-paragraph deletion
+      // (whose paragraph mark carries w:del/w:moveFrom) does not step the counter.
+      if (numId && ilvl != null && !isBlankedParagraphWithDeletedMark(p)) {
+        computeListLabelForParagraph(numberingModel, counters, { numId, ilvl });
+      }
       continue;
     }
 
@@ -588,7 +595,7 @@ export function buildNodesForDocumentView(params: {
     let listLevel = -1;
     let manualLabelMatchEnd = 0;
 
-    if (numId && ilvl != null) {
+    if (numId && ilvl != null && !isBlankedParagraphWithDeletedMark(p)) {
       isAutoNumbered = true;
       listLevel = ilvl;
       labelString = computeListLabelForParagraph(numberingModel, counters, { numId, ilvl }) || '';

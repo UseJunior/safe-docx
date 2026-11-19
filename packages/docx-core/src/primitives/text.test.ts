@@ -2259,6 +2259,41 @@ describe('replaceParagraphTextRange — untracked full blanking (#740)', () => {
     });
   });
 
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' })('numbered paragraph owning a bookmark is removed on untracked blanking and mark-deleted on tracked blanking (#1222)', async ({ given, when, then }: AllureBddContext) => {
+    let cleanDoc: Document;
+    let trackedDoc: Document;
+    const xml =
+      numbered('first') +
+      '<w:p>' +
+        '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+        '<w:bookmarkStart w:id="5" w:name="_Ref100000001"/>' +
+        '<w:r><w:t>bookmarked</w:t></w:r>' +
+        '<w:bookmarkEnd w:id="5"/>' +
+      '</w:p>' +
+      numbered('last');
+
+    await given('a three-item numbered list whose middle item holds a _Ref bookmark', () => {
+      cleanDoc = makeDoc(xml);
+      trackedDoc = makeDoc(xml);
+    });
+
+    await when('the middle item is blanked untracked and tracked', () => {
+      replaceParagraphTextRange(paragraphAt(cleanDoc, 1), 0, 'bookmarked'.length, '', undefined, { removeBookmarkedNumberedParagraph: true });
+      const ctx = createRevisionContext({ author: 'AI', date: '2026-01-01T00:00:00Z', idState: createRevisionIdState(10) });
+      replaceParagraphTextRange(paragraphAt(trackedDoc, 1), 0, 'bookmarked'.length, '', ctx, { removeBookmarkedNumberedParagraph: true });
+    });
+
+    await then('the untracked edit removes the numbered paragraph, and the tracked edit marks its paragraph break deleted', () => {
+      expect(cleanDoc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(2);
+      expect(Array.from(cleanDoc.getElementsByTagNameNS(W_NS, W.p)).map(getParagraphText)).toEqual(['first', 'last']);
+
+      const middleTracked = paragraphAt(trackedDoc, 1);
+      const pPr = getDirectChildrenByName(middleTracked, W.pPr)[0]!;
+      const rPr = getDirectChildrenByName(pPr, W.rPr)[0]!;
+      expect(getDirectChildrenByName(rPr, 'del')).toHaveLength(1);
+    });
+  });
+
   test('untracked: a partial replacement or a non-empty replacement never removes the paragraph', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
 

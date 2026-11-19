@@ -16,10 +16,12 @@ import {
   isEmptyNumberedParagraph,
   paragraphHasVisibleContent,
   replaceParagraphTextRange,
+  removeEmptyBookmarkedNumberedParagraph,
   type DocxDocument,
   type RevisionContext,
 } from '@usejunior/docx-core';
 import { previewText, RESULT_PREVIEW_CHARS } from './preview.js';
+import { collectLocalUserBookmarks, collectTargetingRefFields } from './bookmark_references.js';
 
 export const EMPTY_NUMBERED_PARAGRAPH_POLICIES = ['warn', 'error', 'remove_paragraph', 'ignore'] as const;
 export type EmptyNumberedParagraphPolicy = (typeof EMPTY_NUMBERED_PARAGRAPH_POLICIES)[number];
@@ -121,8 +123,9 @@ export type EmptyNumberedParagraphOutcome =
  * full-text blank, so an untracked edit removes the paragraph and a tracked
  * edit deletes the text and the paragraph mark (accept-all removes the
  * paragraph, reject-all restores it). A paragraph the blanking rules keep
- * (section properties, a bookmark or comment anchor, a field, or a table
- * cell's only paragraph) stays; the caller reports it.
+ * (section properties, a spanning bookmark or comment anchor, a field, or a
+ * required table-cell paragraph) stays; local bookmarks may be removed under
+ * this explicit policy, with their cross-reference targets reported.
  */
 function removeEmptyNumberedParagraph(doc: DocxDocument, paragraph: Element, ctx: RevisionContext | undefined): boolean {
   const remaining = getParagraphText(paragraph);
@@ -130,6 +133,8 @@ function removeEmptyNumberedParagraph(doc: DocxDocument, paragraph: Element, ctx
     replaceParagraphTextRange(paragraph, 0, remaining.length, '', ctx);
     doc.markMutated();
   }
+  removeEmptyBookmarkedNumberedParagraph(paragraph, ctx, doc.isParagraphNumbered(paragraph));
+  doc.markMutated();
   return !isNowEmptyNumberedParagraph(doc, paragraph);
 }
 
@@ -161,12 +166,16 @@ export function applyEmptyNumberedParagraphPolicy(params: {
     );
   }
   if (policy === 'remove_paragraph') {
+    const bookmarks = collectLocalUserBookmarks(paragraph);
+    const references = collectTargetingRefFields(doc, paragraph, bookmarks);
+    const referenceNotice = bookmarks.map(bookmark => ` The deleted paragraph held bookmark "${bookmark}".`).join('')
+      + references.map(ref => ` Field "${ref.instruction}"${ref.paragraph_id ? ` in paragraph ${ref.paragraph_id}` : ''} targets deleted bookmark "${ref.bookmark}"; update or remove the cross-reference.`).join('');
     if (removeEmptyNumberedParagraph(doc, paragraph, ctx)) {
       return {
         kind: 'removed',
-        message: ctx
+        message: (ctx
           ? `Paragraph ${paragraphId} was left as an empty numbered paragraph, so its remaining text and paragraph mark were deleted as a tracked change (on_empty_numbered_paragraph: "remove_paragraph"); accepting the deletion removes the list item.`
-          : `Paragraph ${paragraphId} was left as an empty numbered paragraph and was removed (on_empty_numbered_paragraph: "remove_paragraph"); the list numbering continues without it.`,
+          : `Paragraph ${paragraphId} was left as an empty numbered paragraph and was removed (on_empty_numbered_paragraph: "remove_paragraph"); the list numbering continues without it.`) + referenceNotice,
       };
     }
     return {
