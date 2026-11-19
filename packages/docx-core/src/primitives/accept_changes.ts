@@ -99,7 +99,7 @@ function isRowPropertyRevisionMarker(el: Element): boolean {
 }
 
 /**
- * Pass 1: Row topology (cell-topology records remain deferred).
+ * Pass 1: Row topology (cells resolve after property snapshots settle).
  * Resolve row topology before collecting paragraph-mark revisions: a selected
  * deleted row disappears as one revision, while an inserted row is retained
  * and only its row marker is stripped. Must precede paragraph discovery.

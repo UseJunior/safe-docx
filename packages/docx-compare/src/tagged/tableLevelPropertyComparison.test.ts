@@ -110,15 +110,7 @@ async function assertSchema(buffer: Buffer): Promise<void> {
   }
 }
 
-/**
- * Accept-all projects to the revised document and reject-all to the original:
- * text, table footprint and every table-level property through the comparison
- * acceptor; text, footprint, `w:tblPr` and `w:tblGrid` through docx-core
- * `acceptChanges`/`rejectChanges`. docx-core does not resolve
- * `w:tblPrExChange` or `w:tblGridChange` yet (#1401; pinned below), so its row
- * exceptions are left out, and so is its grid when the output carries a
- * `w:tblGridChange`.
- */
+/** Compare both engines against each source's resolved text, footprint and properties. */
 async function assertParity(original: Buffer, revised: Buffer, compared: Buffer): Promise<void> {
   const output = await xmlOf(compared);
   const accepted = await DocxDocument.load(compared);
@@ -129,11 +121,6 @@ async function assertParity(original: Buffer, revised: Buffer, compared: Buffer)
   const expectedReject = rejectAllChanges(await xmlOf(original));
   // Measured as the pipeline does: against each source side's own projection.
   expect(compareSourceProjectedFormattingFidelity(expectedReject, expectedAccept, output).score).toBe(1);
-  const carriesGridRecord = records(output, 'tblGridChange').length > 0;
-  const withoutGrid = (footprint: ReturnType<typeof bodyTableFootprint>) => ({
-    ...footprint,
-    tables: footprint.tables.map(({ gridColumnWidths: _grid, ...rest }) => rest),
-  });
   for (const [projected, expected, engine] of [
     [acceptAllChanges(output), expectedAccept, 'comparison'],
     [await xmlOf((await accepted.toBuffer()).buffer), expectedAccept, 'docx-core'],
@@ -141,21 +128,8 @@ async function assertParity(original: Buffer, revised: Buffer, compared: Buffer)
     [await xmlOf((await rejected.toBuffer()).buffer), expectedReject, 'docx-core'],
   ] as const) {
     expect(extractTextWithParagraphs(projected)).toBe(extractTextWithParagraphs(expected));
-    const skipGrid = engine === 'docx-core' && carriesGridRecord;
-    if (skipGrid) {
-      expect(withoutGrid(bodyTableFootprint(projected))).toEqual(withoutGrid(bodyTableFootprint(expected)));
-    } else {
-      expect(bodyTableFootprint(projected)).toEqual(bodyTableFootprint(expected));
-    }
-    const actualProperties = tableProperties(projected);
-    const expectedProperties = tableProperties(expected);
-    if (engine === 'comparison') {
-      expect(actualProperties).toEqual(expectedProperties);
-    } else {
-      const coreView = (properties: typeof actualProperties) =>
-        properties.map(({ tblPr, grid }) => (skipGrid ? { tblPr } : { tblPr, grid }));
-      expect(coreView(actualProperties)).toEqual(coreView(expectedProperties));
-    }
+    expect(bodyTableFootprint(projected), engine).toEqual(bodyTableFootprint(expected));
+    expect(tableProperties(projected), engine).toEqual(tableProperties(expected));
   }
 }
 

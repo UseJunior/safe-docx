@@ -407,7 +407,7 @@ describe('ECMA-376 advanced revision records', () => {
   );
 
   test(
-    '[ADV-TOPOLOGY-PRESERVATION-01] retains all cell-topology records without applying semantics',
+    '[ADV-TOPOLOGY-PRESERVATION-01] retains unselected cell-topology records',
     async ({ when, then }: AllureBddContext) => {
       const body =
         `<q:tbl><q:tr><q:tc><q:tcPr>` +
@@ -550,7 +550,7 @@ describe('ECMA-376 advanced revision records', () => {
     );
 
   test(
-      '[ADV-UNRESOLVED-RECORDS-01] leaves unsupported numbering and table-grid records unresolved',
+      '[ADV-UNRESOLVED-RECORDS-01] leaves unsupported numbering records unresolved',
       async ({ given, when, then }: AllureBddContext) => {
         const records =
           `<q:p><q:pPr><q:numPr><q:numberingChange ${metadata}/></q:numPr></q:pPr></q:p>` +

@@ -128,7 +128,7 @@ function isRowPropertyRevisionMarker(el: Element): boolean {
 }
 
 /**
- * Pass 1: Row topology (cell-topology records remain deferred).
+ * Pass 1: Row topology (cells resolve after property snapshots settle).
  * Resolve row topology before paragraph-mark analysis, mirroring Word's
  * accept/reject semantics for direct w:trPr row revision markers.
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
