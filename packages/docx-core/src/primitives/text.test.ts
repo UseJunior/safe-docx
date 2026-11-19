@@ -2221,13 +2221,14 @@ describe('replaceParagraphTextRange — untracked full blanking (#740)', () => {
     });
   });
 
-  test('untracked: an unnumbered paragraph with a bookmark or a numbered paragraph with comment anchors is kept', async ({ given, when, then }: AllureBddContext) => {
+  test('untracked: a paragraph that owns bookmark or comment anchors is kept', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
 
-    await given('an unnumbered paragraph owning a bookmark and a numbered paragraph owning a comment range, between plain items', () => {
+    await given('two numbered paragraphs owning a bookmark and a comment range respectively, between plain items', () => {
       doc = makeDoc(
         numbered('first') +
         '<w:p>' +
+          '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
           '<w:bookmarkStart w:id="5" w:name="ClauseRef"/>' +
           '<w:r><w:t>bookmarked</w:t></w:r>' +
           '<w:bookmarkEnd w:id="5"/>' +
