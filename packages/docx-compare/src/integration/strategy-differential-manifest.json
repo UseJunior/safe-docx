@@ -416,14 +416,14 @@
         "strategy": "tagged-tree",
         "projections": {
           "accept": {
-            "xmlSha256": "30c15c0c78523152071149cca650240dda28adde32402ab845d589f27842608f",
+            "xmlSha256": "cdd555970341b4277dc45c8d3385ef0ff01e17b2c530ff8afa4f291adcb73b76",
             "textSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "sourceTextSha256": "97c196cd5e2a64c7fc89d3bcfed44be264fc2989b33fa9e09786f5c8c52e3e05",
             "matchesSourceText": true,
             "firstDifference": null
           },
           "reject": {
-            "xmlSha256": "655ea477111817908262ea93e96c56ebfe4b48bf87593d2291f2348118966d9c",
+            "xmlSha256": "bcb5388418e3749e8f3da5b89ce558f6851dc7b34284e48955c1417dc7589b8e",
             "textSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "sourceTextSha256": "f6c16bacb61bcd8cec2839c4cb671b4bee8576d7695bf20cc3af6451702cfd4a",
             "matchesSourceText": true,
@@ -493,8 +493,8 @@
           },
           {
             "path": "word/document.xml",
-            "bytes": 924894,
-            "sha256": "4c6cab11bfe1e3eff9494b9172fb69aac703ad5a0161ff7a41aa51dc49c87871",
+            "bytes": 892538,
+            "sha256": "0af4a198f140e347e4f0be115ded509aea4e9c659c9e62b389a530250a73ccd6",
             "kind": "xml"
           },
           {
@@ -583,8 +583,8 @@
           },
           {
             "path": "word/footnotes.xml",
-            "bytes": 29013,
-            "sha256": "55fe6f72ff6fdd2838ce5735b3891544f45f207789c8b98b127af0dffc9501f5",
+            "bytes": 28303,
+            "sha256": "b678e53d8a759810fcc07e85223ab922c235e3cc023d932704e8f4717b58d91f",
             "kind": "xml"
           },
           {
@@ -722,11 +722,11 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 477,
-          "deletions": 412,
+          "insertions": 337,
+          "deletions": 295,
           "modifications": 528,
-          "insertedRanges": 477,
-          "deletedRanges": 412,
+          "insertedRanges": 337,
+          "deletedRanges": 295,
           "insertedAtoms": 3263,
           "deletedAtoms": 1440,
           "modifiedParagraphs": 528,
