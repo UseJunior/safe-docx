@@ -895,9 +895,9 @@ export async function batchEdit(
     }
 
     if (emptyNumberedFindings.length > 0 && emptyNumberedPolicy === 'error') {
-      // Unreachable while the preview runs replace_text's own plan (see
-      // previewEmptyNumberedParagraphs); reported rather than ignored if the
-      // two ever diverge.
+      // Reached when another edit to the session lands between the preview
+      // and the steps (each step is its own session mutation), so the
+      // preview judged a different document (#1525).
       const refusal = emptyNumberedBatchError(session.doc, emptyNumberedFindings);
       return {
         success: false,
