@@ -2258,7 +2258,7 @@ describe('replaceParagraphTextRange — untracked full blanking (#740)', () => {
     });
   });
 
-  test('numbered paragraph owning a bookmark is removed on untracked blanking and mark-deleted on tracked blanking (#1222)', async ({ given, when, then }: AllureBddContext) => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' })('numbered paragraph owning a bookmark is removed on untracked blanking and mark-deleted on tracked blanking (#1222)', async ({ given, when, then }: AllureBddContext) => {
     let cleanDoc: Document;
     let trackedDoc: Document;
     const xml =

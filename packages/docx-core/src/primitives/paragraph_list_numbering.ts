@@ -169,6 +169,9 @@ export type ParagraphListLabel = ListLabelSnapshot & { source: ParagraphNumberin
  * `w:moveFrom`) and the paragraph has no surviving live `w:t` text. Such a
  * paragraph is a tracked whole-paragraph deletion and does not advance list
  * counters in the live document view.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/1222
  */
 export function isBlankedParagraphWithDeletedMark(p: Element): boolean {
   const pPr = directChild(p, W.pPr);
