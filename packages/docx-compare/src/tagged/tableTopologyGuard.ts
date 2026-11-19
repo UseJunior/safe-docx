@@ -186,13 +186,6 @@ export function guardBodyTableTopology(tree: TaggedNode): void {
     if (element.namespaceURI === W_NS && element.localName === 'tbl') {
       const index = tableIndex++;
       if (node.tag === 'both') {
-        const a = grid(node.original);
-        const b = grid(node.revised);
-        if (a.length !== b.length) throw new UnsupportedTableTopologyComparisonError('tblGrid', index,
-          undefined, undefined, Math.min(a.length, b.length));
-        const widthIndex = a.findIndex((width, column) => width !== b[column]);
-        if (widthIndex >= 0) throw new UnsupportedTableTopologyComparisonError('tblGridWidth', index,
-          undefined, undefined, widthIndex);
         nextOwner = { original: node.original, revised: node.revised, index };
       } else {
         guardUnmatchedTable(node.node, index);

@@ -8,7 +8,7 @@ const SYNTHETIC_DOC = parseXml(
 );
 
 const EXCLUDED_PPR_CHANGE_CHILDREN = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
-const EXCLUDED_TRPR_CHANGE_CHILDREN = new Set(['w:trPrChange', 'w:ins', 'w:del']);
+const EXCLUDED_TRPR_CHANGE_CHILDREN = new Set(['trPrChange', 'ins', 'del']);
 // CT_TcPrInner (the inner pPr under <w:tcPrChange>) preserves cell-topology
 // revision children (w:cellIns, w:cellDel, w:cellMerge). Only the
 // change-of-a-change marker w:tcPrChange itself is excluded. See:
@@ -263,18 +263,25 @@ export function buildTrPrChangeElement(oldTrPr: Element | null, ctx: RevisionCon
     'trPrChange',
     revisionAttributes(ctx),
   );
-  const previousTrPr = createWmlElement(getOwnerDocument(oldTrPr), 'trPr');
-
-  if (oldTrPr) {
-    for (const child of childElements(oldTrPr)) {
-      if (!EXCLUDED_TRPR_CHANGE_CHILDREN.has(child.tagName)) {
-        previousTrPr.appendChild(child.cloneNode(true));
-      }
-    }
-  }
+  const previousTrPr = buildTrPrBaseSnapshot(oldTrPr, getOwnerDocument(oldTrPr));
 
   trPrChange.appendChild(previousTrPr);
   return trPrChange;
+}
+
+/**
+ * Capture the row-property base shared by native edits and table-grid companions.
+ * Row insertion/deletion markers and prior history are separate revisions.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ */
+export function buildTrPrBaseSnapshot(oldTrPr: Element | null, doc: Document): Element {
+  const snapshot = createWmlElement(doc, 'trPr');
+  if (oldTrPr) for (const child of childElements(oldTrPr)) {
+    if (child.namespaceURI !== OOXML.W_NS || !EXCLUDED_TRPR_CHANGE_CHILDREN.has(child.localName)) {
+      snapshot.appendChild(child.cloneNode(true));
+    }
+  }
+  return snapshot;
 }
 
 /**

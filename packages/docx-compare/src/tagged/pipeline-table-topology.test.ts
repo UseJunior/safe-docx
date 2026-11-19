@@ -91,17 +91,21 @@ describe('main-body table comparison topology', () => {
     },
   );
 
-  test.openspec('[SDX-COMPTABLE-02] changed grid topology fails closed')(
-    'refuses changed column count and width before publishing a DOCX', async () => {
+  test.openspec('[SDX-COMPTABLE-02] changed grids use native table revisions')(
+    'tracks changed column count and width with exact structural projections', async () => {
       const original = await docx(table(2, twoRows));
       const added = await docx(table(3, [row(['A', 'X', 'B']), row(['C', 'Y', 'D'])]));
-      await expect(compareDocuments(original, added)).rejects.toMatchObject({
-        name: 'UnsupportedTableTopologyComparisonError', feature: 'tblGrid', tableIndex: 0, columnIndex: 2,
-      });
       const widened = await docx(table(2, twoRows).replace('w:w="1000"', 'w:w="2000"'));
-      await expect(compareDocuments(original, widened)).rejects.toMatchObject({
-        name: 'UnsupportedTableTopologyComparisonError', feature: 'tblGridWidth', tableIndex: 0, columnIndex: 0,
-      });
+      for (const [before, after] of [[original, added], [added, original], [original, widened]]) {
+        const result = await compareDocuments(before!, after!);
+        const parsed = parseXml(await xml(result.document));
+        expect(parsed.getElementsByTagNameNS(W_NS, 'tblGridChange')).toHaveLength(1);
+        expect(parsed.getElementsByTagNameNS(W_NS, 'tblPrChange')).toHaveLength(1);
+        expect(parsed.getElementsByTagNameNS(W_NS, 'tblPrExChange').length).toBeGreaterThan(0);
+        expect(parsed.getElementsByTagNameNS(W_NS, 'trPrChange').length).toBeGreaterThan(0);
+        await assertProjections(before!, after!, result.document);
+        await assertSchema(result.document);
+      }
     },
   );
 

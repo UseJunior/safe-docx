@@ -44,7 +44,8 @@ export type PropertyScope =
   | 'tableCell'
   | 'section'
   | 'table'
-  | 'tableRowExceptions';
+  | 'tableRowExceptions'
+  | 'tableGrid';
 
 /** The direct property element each scope is carried by. */
 export const PROPERTY_SCOPE_ELEMENT: Readonly<Record<PropertyScope, string>> = {
@@ -56,6 +57,7 @@ export const PROPERTY_SCOPE_ELEMENT: Readonly<Record<PropertyScope, string>> = {
   section: 'w:sectPr',
   table: 'w:tblPr',
   tableRowExceptions: 'w:tblPrEx',
+  tableGrid: 'w:tblGrid',
 };
 
 /**
@@ -86,7 +88,7 @@ export function correlationStatus(
   if (moves.some((move) => move.destination === node)) return CorrelationStatus.MovedDestination;
   if (node.tag === 'original') return CorrelationStatus.Deleted;
   if (node.tag === 'revised') return CorrelationStatus.Inserted;
-  return node.propertyDelta ? CorrelationStatus.FormatChanged : CorrelationStatus.Equal;
+  return node.propertyDelta || node.gridDelta ? CorrelationStatus.FormatChanged : CorrelationStatus.Equal;
 }
 
 /** Metadata retained from an input revision wrapper rather than flattened into text. */
@@ -192,6 +194,8 @@ export interface BothNode extends TaggedNodeBase {
    * `w:trPr`, so its table-property exceptions carry their own delta (#1399).
    */
   rowExceptionsDelta?: PropertyDelta;
+  /** Grid geometry is structural, independent of optional formatting detection. */
+  gridDelta?: PropertyDelta;
 }
 
 /** A node present only in the original document — a deletion. */

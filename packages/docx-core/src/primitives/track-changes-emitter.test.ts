@@ -214,6 +214,16 @@ describe('track-changes-emitter', () => {
     });
   });
 
+  test('row snapshots filter revision children by namespace rather than source prefix', () => {
+    const row = parseFragment('<w:trPr xmlns:q="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><q:trHeight q:val="360"/><q:ins q:id="50"/><q:del q:id="51"/><q:trPrChange q:id="99"/></w:trPr>');
+    const record = buildTrPrChangeElement(row, createRevisionContext({ author: 'Comparison', idState: createRevisionIdState() }));
+    const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    expect(record.getElementsByTagNameNS(ns, 'trHeight')).toHaveLength(1);
+    expect(record.getElementsByTagNameNS(ns, 'ins')).toHaveLength(0);
+    expect(record.getElementsByTagNameNS(ns, 'del')).toHaveLength(0);
+    expect(record.getElementsByTagNameNS(ns, 'trPrChange')).toHaveLength(0);
+  });
+
   test('buildTcPrChangeElement snapshots prior cell properties preserving cell-topology revision children but stripping nested tcPrChange', async ({ given, when, then }: AllureBddContext) => {
     let tcPr: Element;
     let serialized: string;
