@@ -77,6 +77,12 @@ export class DocxZip {
     return normalizePartText(path, await file.async('text'));
   }
 
+  /** Read portable bytes without decoding a binary package part. */
+  async readBytes(path: string): Promise<Uint8Array | null> {
+    const file = this.zip.file(path);
+    return file ? file.async('uint8array') : null;
+  }
+
   writeText(path: string, text: string): void {
     // createFolders defaults to true and would add a directory entry (e.g.
     // `word/`) absent from the Word-authored input archive.

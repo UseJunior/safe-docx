@@ -103,7 +103,10 @@ await runInContext(`(async () => {
   changedMedia.set(media);
   changedMedia[media.length] = 1;
   mediaArchive.setFile(mediaPath, changedMedia);
-  await compare.compareDocuments(imageFixture, await mediaArchive.save(), {author:'Browser image'});
+  let assetRefusal;
+  try { await compare.compareDocuments(imageFixture, await mediaArchive.save(), {author:'Browser image'}); } catch (error) { assetRefusal = error; }
+  if (assetRefusal?.code !== 'REVISION_FIDELITY_VIOLATION') throw Error('Unreversible side-story asset swap was not refused');
+  await compare.compareDocuments(imageFixture, await mediaArchive.save(), {author:'Browser image', revisionFidelity:false});
   const importedTarget = await runtime.importRelationshipTarget(
     await core.DocxArchive.load(imageFixture), 'word/header1.xml',
     {target:'media/image1.png', targetMode:null}, mediaArchive, 'word/header1.xml');

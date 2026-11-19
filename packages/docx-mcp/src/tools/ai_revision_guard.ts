@@ -1,5 +1,8 @@
 import {
   DocxDocument,
+  assertRevisionFidelity,
+  auditSectPr,
+  RevisionFidelityViolation,
   type AiRevisionDiagnostic,
   type AiRevisionValidationTouchedContext,
   type RevisionContext,
@@ -180,7 +183,8 @@ export async function preflightAiRevisionMutation(
   touched?: AiRevisionValidationTouchedContext,
   advisories?: AiRevisionPreflightAdvisories,
 ): Promise<AiRevisionPreflightResult> {
-  if (!session.aiAuthor) return PREFLIGHT_PROCEED;
+  const aiAuthor = session.aiAuthor ?? ctx?.author;
+  if (!aiAuthor) return PREFLIGHT_PROCEED;
 
   const snapshot = await session.doc.toBuffer({ cleanBookmarks: false });
   // Two loads of the same bytes: `previewDoc` is mutated below, `baselineDoc`
@@ -194,36 +198,57 @@ export async function preflightAiRevisionMutation(
     ? await DocxDocument.load(snapshot.buffer)
     : null;
   await mutatePreview(previewDoc, cloneRevisionContext(ctx));
-  const validation = await previewDoc.validateAiRevisions(session.aiAuthor, touched);
+  const validation = await previewDoc.validateAiRevisions(aiAuthor, touched);
+  const complete = async (result: AiRevisionPreflightResult): Promise<AiRevisionPreflightResult> => {
+    if (!ctx || process.env.SAFE_DOCX_REVISION_FIDELITY === '0') return result;
+    const intended = session.doc.fork();
+    await mutatePreview(intended, undefined);
+    try {
+      const source = await session.doc.getRevisionFidelityParts();
+      // Header creation/retargeting is a separately reported package mutation;
+      // validate every existing selected story rather than treating that lifecycle as a revision.
+      const storyPaths = [...new Set(auditSectPr(source['word/document.xml']!, source['word/_rels/document.xml.rels']).bindings.map(b => b.targetPath))];
+      assertRevisionFidelity({
+        source,
+        intended: await intended.getRevisionFidelityParts(),
+        output: await previewDoc.getRevisionFidelityParts(),
+      }, { storyPaths });
+      return result;
+    } catch (error) {
+      if (!(error instanceof RevisionFidelityViolation)) throw error;
+      return { blocked: { ...err(error.code, error.message), diagnostics: error.failures }, warnings: [], conventionWarnings: [] };
+    }
+  };
+
   // Advisory only, and never on the blocked path: a blocked mutation is not
   // applied, so its formatting is not a finding the caller can act on.
   const conventionWarnings =
     advisories?.insertedText && baselineDoc
       ? checkFormattingConvention(previewDoc, {
           insertedText: advisories.insertedText,
-          aiAuthor: session.aiAuthor,
+          aiAuthor: aiAuthor,
           baselineDoc,
         })
       : [];
   const conventionMessages = conventionWarnings.map((w) => w.message);
   if (validation.errors.length === 0) {
-    return {
+    return complete({
       blocked: null,
       warnings: [...validation.warnings.map(formatAiRevisionWarning), ...conventionMessages],
       conventionWarnings,
-    };
+    });
   }
 
   // AI-attributed errors always fail. Unattributable errors (field structure,
   // package invariants — no w:author to classify by) fail only when this
   // mutation introduced them: documents arrive from the wild with anomalies
   // no AI operation created, and those must not brick every write.
-  const attributed = validation.errors.filter((e) => e.author === session.aiAuthor);
-  const unattributed = validation.errors.filter((e) => e.author !== session.aiAuthor);
+  const attributed = validation.errors.filter((e) => e.author === aiAuthor);
+  const unattributed = validation.errors.filter((e) => e.author !== aiAuthor);
   let introduced = unattributed;
   let demoted: AiRevisionDiagnostic[] = [];
   if (unattributed.length > 0) {
-    const preMutation = await session.doc.validateAiRevisions(session.aiAuthor, touched);
+    const preMutation = await session.doc.validateAiRevisions(aiAuthor, touched);
     ({ introduced, demoted } = splitIntroducedDiagnostics(
       unattributed,
       diagnosticCountMap(preMutation.errors),
@@ -234,14 +259,14 @@ export async function preflightAiRevisionMutation(
     // Demoted diagnostics are pre-existing anomalies this mutation did not
     // introduce; they must not block the write but they are still findings —
     // merge them into the surfaced warnings exactly as the failure path does.
-    return {
+    return complete({
       blocked: null,
       warnings: [
         ...[...validation.warnings, ...demoted].map(formatAiRevisionWarning),
         ...conventionMessages,
       ],
       conventionWarnings,
-    };
+    });
   }
 
   return {

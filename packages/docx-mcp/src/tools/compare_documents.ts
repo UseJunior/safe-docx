@@ -16,6 +16,7 @@ import {
   validateAndLoadDocxFromPath,
 } from './session_resolution.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
+import { RevisionFidelityViolation } from '@usejunior/docx-core';
 import { conformanceRefusalResponse } from './conformance_refusal.js';
 
 /**
@@ -145,6 +146,7 @@ export async function compareDocuments_tool(
     // never concurrency-safe across an await (issue #809).
     const result = await compareDocuments(originalBuffer, revisedBuffer, {
       author,
+      revisionFidelity: process.env.SAFE_DOCX_REVISION_FIDELITY !== '0',
       ignoreFormatting: params.ignore_formatting,
       detectMoves: params.compare_moves,
       revisionGrouping,
@@ -193,6 +195,7 @@ export async function compareDocuments_tool(
     }
     return ok(response);
   } catch (e: unknown) {
+    if (e instanceof RevisionFidelityViolation) return { ...err(e.code, e.message), diagnostics: e.failures };
     const refusal = conformanceRefusalResponse(e);
     if (refusal) return refusal;
     const msg = errorMessage(e);

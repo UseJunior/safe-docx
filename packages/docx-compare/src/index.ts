@@ -98,6 +98,7 @@ export async function compareDocuments(
   }
   const {
     author,
+    revisionFidelity,
     date,
     ignoreFormatting,
     detectMoves,
@@ -120,6 +121,7 @@ export async function compareDocuments(
     : undefined;
   const tagged = await compareDocumentsAtomizer(original as Buffer, revised as Buffer, {
     author,
+    revisionFidelity,
     date: placeholderDate ?? date ?? undefined,
     formatDetection:
       ignoreFormatting === undefined

@@ -20,6 +20,7 @@ are declared in [`numberingIntegration.ts`](src/tagged/numberingIntegration.ts).
 | Setting | Surface | Tagged observable and evidence |
 | --- | --- | --- |
 | `author` | Public / low-level | Supplies `w:author` on generated revision and property-change markup; covered by `src/tagged/taggedTreeSerializer.test.ts`. |
+| `revisionFidelity` | Public / low-level | Defaults to true: refuses final package bytes when accept/reject semantic projections diverge; false explicitly skips this additional guard. Covered by `../docx-core/test-primitives/revision_fidelity.test.ts` and `../docx-mcp/src/tools/revision_fidelity.test.ts`. |
 | `date` | Public / low-level | Supplies normalized `w:date` on generated revision and property-change markup; covered by `src/tagged/taggedTreeSerializer.test.ts`. |
 | `ignoreFormatting` | Public | Disables representation of authored property differences while still requiring fidelity to the revised/Accept formatting projection; covered by `src/compare-options.test.ts` and `src/tagged/taggedTreeShadow.test.ts`. |
 | `detectMoves` | Public | Controls tagged move classification; move and ordinary insertion/deletion serialization are covered by `src/tagged/taggedTreeConstruction.test.ts`. |

@@ -101,3 +101,17 @@ in a browser-like context without Node globals. It also checks hash compatibilit
 
 The Node entry installs native crypto behind the same digest primitive to retain
 throughput on media-heavy documents. The portable graph uses synchronous JavaScript.
+
+### Runtime revision fidelity
+
+`assertRevisionFidelity({ source, intended, output })` checks both effective
+revision projections without modifying or publishing its XML-part inputs.
+Mismatches throw `RevisionFidelityViolation` with code
+`REVISION_FIDELITY_VIOLATION` and bounded diagnostics naming the side, part and
+location. Checks cover text, paragraph/table structure, declared run/paragraph
+formatting, selected stories, referenced notes, drawings and embedded payloads.
+The comparison adapter retains its existing effective-formatting and field checks.
+
+Existing revisions are resolved on both the baseline and output using the same
+side. Separately reported, untracked header lifecycle changes are outside the
+edit guard's membership check; existing selected story content remains checked.
