@@ -2,7 +2,8 @@ import { expect } from 'vitest';
 import { testAllure } from '../../docx-core/src/testing/allure-test.js';
 import { parseMarkdoc, requireMarkdoc } from './markdoc.js';
 
-const test = testAllure.epic('DOCX Markdoc').withLabels({ feature: 'add-markdoc-table-columns' });
+const TEST_FEATURE = 'add-markdoc-table-columns';
+const test = testAllure.epic('DOCX Markdoc').withLabels({ feature: TEST_FEATURE });
 const source = `{% source sha256="${'0'.repeat(64)}" paragraphs=0 /%}\n`;
 const column = (attributes = '', cells = '{% column-cell text="Response" /%}') =>
   source + `{% insert-table-column anchor="_bk_table" width-twips=1800 edit="responses" ${attributes} %}\n${cells}\n{% /insert-table-column %}`;

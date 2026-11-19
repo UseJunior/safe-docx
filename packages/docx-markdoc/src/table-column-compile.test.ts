@@ -15,7 +15,8 @@ import { exportAdjacentRevisionPairs, exportEditPairs } from './export.js';
 import type { ImportResult } from './types.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-const test = testAllure.epic('DOCX Markdoc').withLabels({ feature: 'add-markdoc-table-columns' })
+const TEST_FEATURE = 'add-markdoc-table-columns';
+const test = testAllure.epic('DOCX Markdoc').withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.16' }, { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.33' });
 const schema = fileURLToPath(new URL('../../../scripts/check_emitted_document_schema.mjs', import.meta.url));
 const p = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
