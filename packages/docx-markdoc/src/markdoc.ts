@@ -796,7 +796,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         issues.push(issue('INVALID_COLUMN_INDEX', 'column-index must be a non-negative safe integer.', node));
       }
       const cells = directTagChildren(node);
-      if (hasMeaningfulNonTagContent(node) || cells.length === 0 || cells.some(cell => cell.tag !== 'column-cell')) {
+      if (node.children.some(child => child.type !== 'tag') || cells.length === 0 || cells.some(cell => cell.tag !== 'column-cell')) {
         issues.push(issue('INVALID_TABLE_COLUMN', 'insert-table-column requires direct column-cell tags only, one per source row.', node));
       }
       operations.push({

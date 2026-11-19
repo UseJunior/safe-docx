@@ -133,12 +133,14 @@ async function packageWithStories(
 
 const serializer = new XMLSerializer();
 
-/** Serialize without namespace declarations or rsid attributes. */
+/** Serialize without namespace declarations, rsids or explicit default portrait. */
 function canonical(element: Element): string {
   const clone = element.cloneNode(true) as Element;
   const strip = (node: Element): void => {
     for (const attribute of Array.from(node.attributes)) {
-      if (attribute.name.startsWith('xmlns') || attribute.localName?.startsWith('rsid')) {
+      if (attribute.name.startsWith('xmlns') || attribute.localName?.startsWith('rsid')
+        || (node.namespaceURI === W_NS && node.localName === 'pgSz'
+          && attribute.namespaceURI === W_NS && attribute.localName === 'orient' && attribute.value === 'portrait')) {
         node.removeAttribute(attribute.name);
       }
     }
@@ -491,6 +493,9 @@ describe('section-break inserts and deletes are paragraph-mark revisions (#1144)
     const trackedXml = await archive.getDocumentXml();
     const document = parseXml(trackedXml);
     expect(document.getElementsByTagNameNS(W_NS, 'sectPrChange').length).toBe(1);
+    const snapshotSize = document.getElementsByTagNameNS(W_NS, 'sectPrChange').item(0)!
+      .getElementsByTagNameNS(W_NS, 'pgSz').item(0)!;
+    expect(snapshotSize.getAttributeNS(W_NS, 'orient')).toBe('portrait');
     // The w:sectPrChange and the w:pPrChange beside it are two revisions (#1466).
     expect(await duplicateRevisionIdsInPackage(result.document)).toEqual([]);
     const body = document.getElementsByTagNameNS(W_NS, 'body').item(0)!;

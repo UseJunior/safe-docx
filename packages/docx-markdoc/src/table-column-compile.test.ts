@@ -101,14 +101,16 @@ test.openspec('[SDX-MDOC-COLUMN-01] a response column compiles with inverse trac
 test.openspec('[SDX-MDOC-COLUMN-02] landscape applies to the containing section')(
   'rotates only the containing section and restores its source page setup on Reject All', async () => {
     const firstBoundary = '<w:p><w:pPr>' + page + '</w:pPr><w:r><w:t>First section.</w:t></w:r></w:p>';
-    const imported = await importDocxToMarkdoc(await fixture(firstBoundary + table + p('Outside.')));
-    const result = await compileMarkdoc(imported.anchoredSource, authored(imported, [['Response'], ['Reviewed.']], 'landscape=true'));
-    const before = await shape(imported.anchoredSource); const clean = await shape(result.clean);
-    expect(clean.pages[0]).toEqual(before.pages[0]);
-    expect(clean.pages[1]).toMatchObject({ widthTwips: 15840, heightTwips: 12240, orientation: 'landscape' });
-    await verifyProjection(result.tracked, result.clean, 'accept');
-    await verifyProjection(result.tracked, imported.anchoredSource, 'reject');
-    await schemaValid(result.tracked);
+    for (const boundary of [firstBoundary, '<w:sdt><w:sdtPr/><w:sdtContent>' + firstBoundary + '</w:sdtContent></w:sdt>']) {
+      const imported = await importDocxToMarkdoc(await fixture(boundary + table + p('Outside.')));
+      const result = await compileMarkdoc(imported.anchoredSource, authored(imported, [['Response'], ['Reviewed.']], 'landscape=true'));
+      const before = await shape(imported.anchoredSource); const clean = await shape(result.clean);
+      expect(clean.pages[0]).toEqual(before.pages[0]);
+      expect(clean.pages[1]).toMatchObject({ widthTwips: 15840, heightTwips: 12240, orientation: 'landscape' });
+      await verifyProjection(result.tracked, result.clean, 'accept');
+      await verifyProjection(result.tracked, imported.anchoredSource, 'reject');
+      await schemaValid(result.tracked);
+    }
   }, 30000,
 );
 
@@ -166,6 +168,10 @@ test.openspec('[SDX-MDOC-COLUMN-03] ambiguous or unsupported column requests fai
       [valid + `\n{% delete-table-row anchor="${anchor.id}" edit="delete-row" /%}`, 'CONFLICTING_TABLE_OPERATIONS'],
       [authored(imported, [['Response'], ['Reviewed.']], '', 'Outside.'), 'UNSUPPORTED_TABLE_COLUMN'],
     ]) await expect(compileMarkdoc(imported.anchoredSource, request!)).rejects.toMatchObject({ code });
+    for (const block of ['![Lost](https://example.com/a.png)', '---', '```\n\n```']) {
+      const request = valid.replace('{% column-cell', block + '\n{% column-cell');
+      await expect(compileMarkdoc(imported.anchoredSource, request)).rejects.toMatchObject({ code: 'INVALID_MARKDOC' });
+    }
     expect(imported.anchoredSource).toEqual(original);
     const columnIR = requireMarkdoc(valid);
     expect(() => exportEditPairs(columnIR)).toThrowError(expect.objectContaining({ code: 'STRUCTURAL_EDIT_PAIR_EXPORT_UNSUPPORTED' }));

@@ -50,9 +50,11 @@ export function tableColumnTarget(document: DocxDocument, operation: InsertTable
   let sectionIndex = 0;
   for (const block of childElements(body as Element)) {
     if (block === table) break;
-    if (!isW(block, 'p')) continue;
-    const properties = childElements(block).find(child => isW(child, 'pPr'));
-    if (properties && childElements(properties).some(child => isW(child, 'sectPr'))) sectionIndex += 1;
+    const paragraphs = isW(block, 'p') ? [block] : Array.from(block.getElementsByTagNameNS(W, 'p'));
+    for (const preceding of paragraphs) {
+      const properties = childElements(preceding).find(child => isW(child, 'pPr'));
+      if (properties && childElements(properties).some(child => isW(child, 'sectPr'))) sectionIndex += 1;
+    }
   }
   return { table, columnIndex, sectionIndex };
 }

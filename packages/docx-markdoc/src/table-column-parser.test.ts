@@ -29,6 +29,8 @@ test.openspec('[SDX-MDOC-COLUMN-03] ambiguous or unsupported column requests fai
       column('column-index=-1'), column('column-index=0.5'), column('landscape="true"'),
       column().replace('edit="responses"', ''), column().replace('edit="responses"', 'edit=""'),
       column().replace('anchor="_bk_table"', ''),
+      ...['![Lost](https://example.com/a.png)', '---', '> ', '```\n\n```'].map(block =>
+        column('', block + '\n{% column-cell text="Response" /%}')),
       column('', ''), column('', 'Stray prose.'), column('', '{% cell text="Wrong child" /%}'),
       column('', '{% column-cell /%}'),
       column('', '{% column-cell text="One" %}Two{% /column-cell %}'),
