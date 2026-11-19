@@ -15,4 +15,4 @@
 
 ## 3. Verify
 
-- [ ] 3.1 Package tests, spec coverage, workspace lint, strict validation.
+- [x] 3.1 Package tests, spec coverage, workspace lint, strict validation.
