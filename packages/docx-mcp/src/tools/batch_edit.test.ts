@@ -4,6 +4,7 @@ import path from 'node:path';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { batchEdit } from './batch_edit.js';
 import { readFile } from './read_file.js';
+import { SessionManager } from '../session/manager.js';
 import {
   openSession,
   assertSuccess,
@@ -336,4 +337,86 @@ describe('batch_edit tool — edge cases', () => {
       assertFailure(result, 'PLAN_FILE_TOO_LARGE');
     });
   });
+
+  // A step whose planner refuses only on the document the earlier steps leave
+  // behind passes validation, so the refusal comes from the dry run. The whole
+  // batch is refused there, before any step touches the session (#1525).
+  async function bodyTexts(opened: Awaited<ReturnType<typeof openSession>>): Promise<string[]> {
+    const session = await opened.mgr.getSessionByFilePath(opened.filePath);
+    if (!session || session.provider !== 'docx') throw new Error('Expected DOCX session');
+    return session.doc.buildDocumentView({ includeSemanticTags: false }).nodes.map((n) => n.clean_text);
+  }
+
+  // Two dry runs can refuse: the AI-revision preflight (an AI author is set)
+  // and, under "error" without an AI author, the empty-numbered preview.
+  const dryRuns = [
+    { name: 'AI-revision preflight', policy: 'ignore', aiAuthor: 'SafeDocX AI' },
+    { name: 'empty-numbered preview', policy: 'error', aiAuthor: null },
+  ] as const;
+  for (const { name, policy, aiAuthor } of dryRuns) {
+    test(`refuses the whole batch when a replace_text planner refuses in the ${name}`, async ({ given, when, then }: AllureBddContext) => {
+      let opened: Awaited<ReturnType<typeof openSession>>;
+      let before: string[];
+      let result: Awaited<ReturnType<typeof batchEdit>>;
+
+      await given('a paragraph where the first step makes the second step\'s old_string ambiguous', async () => {
+        opened = await openSession(['The cat sat near the dog.', 'Second paragraph.'], {
+          mgr: new SessionManager({ defaultAiAuthor: aiAuthor }),
+        });
+        before = await bodyTexts(opened);
+      });
+
+      await when('batch_edit runs both steps', async () => {
+        const pid = opened.paraIds[0]!;
+        result = await batchEdit(opened.mgr, {
+          file_path: opened.filePath,
+          on_empty_numbered_paragraph: policy,
+          steps: [
+            { step_id: 'a', operation: 'replace_text', target_paragraph_id: opened.paraIds[1]!, old_string: 'Second', new_string: 'Other', instruction: 'rename' },
+            { step_id: 'b', operation: 'replace_text', target_paragraph_id: pid, old_string: 'dog', new_string: 'cat', instruction: 'swap' },
+            { step_id: 'c', operation: 'replace_text', target_paragraph_id: pid, old_string: 'cat', new_string: 'bird', instruction: 'rename' },
+          ],
+        });
+      });
+
+      await then('the batch is refused and no step is applied', async () => {
+        expect(result.success).toBe(false);
+        expect(JSON.stringify(result)).toContain('MULTIPLE_MATCHES');
+        expect((result as { error?: { code?: string } }).error?.code).toBe('BATCH_EDIT_ERROR');
+        expect(result).not.toHaveProperty('completed_step_ids');
+        expect(await bodyTexts(opened)).toEqual(before);
+      });
+    });
+
+    test(`refuses the whole batch when an insert_paragraph planner refuses in the ${name}`, async ({ given, when, then }: AllureBddContext) => {
+      let opened: Awaited<ReturnType<typeof openSession>>;
+      let before: string[];
+      let result: Awaited<ReturnType<typeof batchEdit>>;
+
+      await given('a session with two paragraphs', async () => {
+        opened = await openSession(['First paragraph.', 'Second paragraph.'], {
+          mgr: new SessionManager({ defaultAiAuthor: aiAuthor }),
+        });
+        before = await bodyTexts(opened);
+      });
+
+      await when('batch_edit runs a valid replace then an insert whose new_string has an unclosed tag', async () => {
+        result = await batchEdit(opened.mgr, {
+          file_path: opened.filePath,
+          on_empty_numbered_paragraph: policy,
+          steps: [
+            { step_id: 'a', operation: 'replace_text', target_paragraph_id: opened.paraIds[0]!, old_string: 'First', new_string: 'Opening', instruction: 'rename' },
+            { step_id: 'b', operation: 'insert_paragraph', positional_anchor_node_id: opened.paraIds[1]!, new_string: '<b>Unclosed bold', instruction: 'add' },
+          ],
+        });
+      });
+
+      await then('the batch is refused and no step is applied', async () => {
+        expect(result.success).toBe(false);
+        expect((result as { error?: { code?: string } }).error?.code).toBe('BATCH_EDIT_ERROR');
+        expect(result).not.toHaveProperty('completed_step_ids');
+        expect(await bodyTexts(opened)).toEqual(before);
+      });
+    });
+  }
 });
