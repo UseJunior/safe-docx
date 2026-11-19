@@ -3,7 +3,10 @@
 ### Requirement: Comparison revisions may omit w:date
 
 `compareDocuments` SHALL accept `date: null` and SHALL then write no `w:date`
-attribute on any revision it creates, in every story part. Revisions present in
+attribute on any revision it creates where ECMA-376 makes `w:date` optional, in
+every story part. The move-range start markers `w:moveFromRangeStart` and
+`w:moveToRangeStart` (CT_MoveBookmark, where `w:date` is required) SHALL instead
+carry the fixed neutral date `1970-01-01T00:00:00Z`. Revisions present in
 an input SHALL keep their own `w:date`. An omitted `date` SHALL stamp revisions
 with the current time, and a `Date` SHALL stamp them with that time.
 
@@ -11,8 +14,15 @@ with the current time, and a `Date` SHALL stamp them with that time.
 
 - **GIVEN** a pair with body, footnote, endnote, footer and move changes
 - **WHEN** it is compared with `date: null`
-- **THEN** no story part SHALL contain a generated `w:date`
+- **THEN** no story part SHALL contain a generated `w:date` outside the move-range start markers
 - **AND** the output SHALL equal the dated output with `w:date` removed, with the same revision count
+
+#### Scenario: Dateless move-range markers keep a neutral date
+
+- **GIVEN** a pair whose comparison detects moves
+- **WHEN** it is compared with `date: null`
+- **THEN** every `w:moveFromRangeStart` and `w:moveToRangeStart` SHALL carry `w:date="1970-01-01T00:00:00Z"`
+- **AND** the output SHALL pass the emitted-document schema check
 
 #### Scenario: Dateless comparison keeps the dates of pre-existing revisions
 

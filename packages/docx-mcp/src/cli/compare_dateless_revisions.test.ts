@@ -124,8 +124,9 @@ async function mcpXml(pair: Pair, name: string, revisionDate?: string): Promise<
   return documentXml(await fs.readFile(output));
 }
 
+// Move-range start markers keep the neutral date the schema requires (#1528).
 function dateCount(xml: string): number {
-  return xml.match(/w:date="/g)?.length ?? 0;
+  return (xml.match(/w:date="/g)?.length ?? 0) - (xml.match(/w:date="1970-01-01T00:00:00Z"/g)?.length ?? 0);
 }
 
 function revisionCount(xml: string): number {

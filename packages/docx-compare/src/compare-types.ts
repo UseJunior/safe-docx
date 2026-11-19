@@ -4,8 +4,11 @@ export interface CompareOptions {
   /**
    * Revision timestamp used for generated track changes (`w:date`).
    * Default (`undefined`): current time. `null` omits `w:date` from every
-   * revision this comparison creates (the attribute is optional in
-   * ECMA-376); revisions already present in an input keep their own dates.
+   * revision this comparison creates where the attribute is optional in
+   * ECMA-376; move-range start markers (`w:moveFromRangeStart` /
+   * `w:moveToRangeStart`), where the schema requires it, get the fixed date
+   * `1970-01-01T00:00:00Z`. Revisions already present in an input keep their
+   * own dates.
    */
   date?: Date | null;
   /** Ignore formatting differences. Default: false */

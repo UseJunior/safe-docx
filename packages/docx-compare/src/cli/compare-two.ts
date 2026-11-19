@@ -19,6 +19,7 @@ const USAGE =
   'token-minimal emits the smallest word-level deletion/insertion set.\n' +
   '  --no-moves         Do not detect moved content (moves are detected by default)\n' +
   '  --no-date          Omit w:date from the revisions this comparison creates (default: current time); ' +
+  'move-range start markers, where the schema requires w:date, get 1970-01-01T00:00:00Z; ' +
   'revisions already in the inputs keep their dates\n' +
   'Comparison always publishes the revised-based tagged package; engine, mode, strategy, premerge, ' +
   'and word-refinement selectors have been removed.\n' +

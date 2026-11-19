@@ -36,14 +36,19 @@ docx-comparison original.docx revised.docx [output.docx] \
 `--grouping` defaults to `readable-semantic`; an unknown value fails with the
 list of accepted values. `--no-moves` turns move detection off (on by default).
 `--no-date` omits `w:date` from the revisions the comparison creates (by
-default they carry the current time). `safe-docx compare` accepts the same flags.
+default they carry the current time); move-range start markers, where the
+schema requires `w:date`, get `1970-01-01T00:00:00Z`. `safe-docx compare` accepts the same flags.
 
 ## Revision dates
 
 `date` sets the `w:date` on every revision the comparison creates. Omitted, it
 is the current time; `date: null` writes no `w:date` at all, which ECMA-376
 Part 1 §17.13.5.14 / §17.13.5.18 allow ("no date information shall be
-associated"). Revisions already present in either input keep their own dates.
+associated"). The exception is the move-range start markers
+`w:moveFromRangeStart` / `w:moveToRangeStart` (CT_MoveBookmark), where the
+transitional schema requires `w:date`: they get the fixed neutral date
+`1970-01-01T00:00:00Z`, which records nothing about when the comparison ran.
+Revisions already present in either input keep their own dates.
 The MCP `compare_documents` tool takes `revision_date: 'now' | 'none' | <ISO 8601>`.
 
 ## Package provenance

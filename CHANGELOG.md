@@ -10,6 +10,12 @@
   `compare_documents` tool gains `revision_date` (`'now'` default, `'none'`,
   or an ISO 8601 date-time). (#1495)
 
+- With `date: null` / `--no-date` / `revision_date: 'none'`, move-range start
+  markers (`w:moveFromRangeStart`, `w:moveToRangeStart`) now carry the fixed
+  date `1970-01-01T00:00:00Z` instead of no date, because the schema requires
+  `w:date` on them; outputs with detected moves previously failed schema
+  validation. All other new revisions still carry no date. (#1528)
+
 - **Behaviour change:** `compareDocuments` in `@usejunior/docx-compare` and
   the `docx-comparison` CLI now default to `revisionGrouping:
   'readable-semantic'`, the default the MCP `compare_documents` tool already
