@@ -1548,6 +1548,29 @@ const CHANGE_ELEMENT_BY_SCOPE = {
 } as const;
 
 /**
+ * Record the old implicit portrait value when the new section sets landscape.
+ * Word Reject otherwise restores dimensions but retains the live landscape
+ * flag. Keep this comparison policy separate from the canonical base snapshot.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see https://github.com/UseJunior/safe-docx/issues/1480
+ */
+function comparisonSectionSnapshot(
+  original: WmlElement | null | undefined,
+  revised: WmlElement | null | undefined,
+  document: Document,
+): Element {
+  const snapshot = buildSectPrBaseSnapshot(original, document);
+  const oldSize = childElements(snapshot).find(child => child.namespaceURI === W_NS && child.localName === 'pgSz');
+  const newSize = revised && childElements(revised).find(child => child.namespaceURI === W_NS && child.localName === 'pgSz');
+  if (oldSize && !oldSize.hasAttributeNS(W_NS, 'orient') && newSize?.getAttributeNS(W_NS, 'orient') === 'landscape') {
+    oldSize.setAttributeNS(W_NS, 'w:orient', 'portrait');
+  }
+  return snapshot;
+}
+
+/**
  * Emit the native property-change record for an aligned node. Section
  * snapshots use the shared `CT_SectPrBase` policy, so live header/footer
  * references are never copied into `w:sectPrChange/w:sectPr` (#944).
@@ -1582,7 +1605,7 @@ function applyPropertyDelta(
     }
     const change = node.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
     appendChangeMetadata(change, revision);
-    change.appendChild(buildSectPrBaseSnapshot(original, node.ownerDocument!));
+    change.appendChild(comparisonSectionSnapshot(original, revised, node.ownerDocument!));
     node.appendChild(change);
     return;
   }
@@ -1812,7 +1835,7 @@ function applyParagraphPropertyDelta(
     if (!liveSection) live.appendChild(section);
     const change = paragraph.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
     appendChangeMetadata(change, revision);
-    change.appendChild(buildSectPrBaseSnapshot(originalSection, paragraph.ownerDocument!));
+    change.appendChild(comparisonSectionSnapshot(originalSection, liveSection, paragraph.ownerDocument!));
     section.appendChild(change);
   }
   // The original's pending w:pPrChange, when it has one, is the paragraph's

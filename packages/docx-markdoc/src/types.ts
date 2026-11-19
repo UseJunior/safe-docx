@@ -256,6 +256,20 @@ export type DeleteTableRowOperation = {
 
 export type TableRowOperation = InsertTableRowsOperation | DeleteTableRowOperation;
 
+export type InsertTableColumnOperation = {
+  kind: 'insert-table-column';
+  operationId: string;
+  anchorId: string;
+  /** Omitted means append; otherwise a zero-based logical grid boundary. */
+  columnIndex?: number;
+  widthTwips: number;
+  /** One cell per source row, each with one or more plain paragraphs. */
+  cells: string[][];
+  landscape?: boolean;
+};
+
+export type TableOperation = TableRowOperation | InsertTableColumnOperation;
+
 export type StoryDeclaration = {
   id: string;
   kind: 'header' | 'footer';
@@ -279,7 +293,7 @@ export type EditOperation =
   | ReplaceSourceOperation
   | DeleteSourceOperation
   | InsertOperation
-  | TableRowOperation;
+  | TableOperation;
 
 export type MarkdocEditIR = {
   version: typeof IR_VERSION;

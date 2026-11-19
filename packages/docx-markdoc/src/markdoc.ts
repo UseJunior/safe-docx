@@ -166,6 +166,16 @@ export const markdocConfig: Config = {
         position: { type: String, required: true, matches: ['before', 'after'] },
       },
     },
+    'insert-table-column': {
+      attributes: {
+        anchor: stringRequired,
+        ...editNameAttributes,
+        'width-twips': { type: Number, required: true },
+        'column-index': { type: Number },
+        landscape: { type: Boolean },
+      },
+    },
+    'column-cell': { attributes: { text: { type: String } } },
     row: {},
     cell: {
       selfClosing: true,
@@ -372,6 +382,34 @@ function directTagChildren(node: Node): Node[] {
 
 function hasMeaningfulNonTagContent(node: Node): boolean {
   return node.children.some((child) => child.type !== 'tag' && textProjection(child, 'revised').trim().length > 0);
+}
+
+/** Plain cell paragraphs have no formatting that compilation could silently drop. */
+function columnCellParagraphs(node: Node, issues: ValidationIssue[]): string[] {
+  if (node.attributes.text !== undefined) {
+    if (node.children.length > 0 || typeof node.attributes.text !== 'string'
+      || /[\r\n\t]/u.test(String(node.attributes.text))) {
+      issues.push(issue('INVALID_COLUMN_CELL', 'Use either one single-line text attribute or plain paragraph content in a column-cell.', node));
+    }
+    return [String(node.attributes.text)];
+  }
+  if (node.children.length === 0 || node.children.some(child => child.type !== 'paragraph')) {
+    issues.push(issue('INVALID_COLUMN_CELL', 'A column-cell requires a text attribute or one or more plain paragraphs.', node));
+  }
+  const text = (current: Node): string => {
+    if (current.type === 'text') return String(current.attributes.content ?? '');
+    if (current.type === 'softbreak') return ' ';
+    if (current.type !== 'paragraph' && current.type !== 'inline') {
+      issues.push(issue('INVALID_COLUMN_CELL', 'Column-cell content admits plain paragraphs only; formatting, links, tags and line breaks are unsupported.', current));
+      return '';
+    }
+    return current.children.map(text).join('');
+  };
+  return node.children.filter(child => child.type === 'paragraph').map(paragraph => {
+    const value = text(paragraph);
+    if (/[\r\n\t]/u.test(value)) issues.push(issue('INVALID_COLUMN_CELL', 'Column-cell paragraph text cannot contain CR, LF or tab.', paragraph));
+    return value;
+  });
 }
 
 function assertNoNestedTags(node: Node, issues: ValidationIssue[]): void {
@@ -747,6 +785,31 @@ export function parseMarkdoc(source: string): ValidationResult {
       assertions.push({ id, kind: a.kind === 'present' ? 'present' : 'absent', text: assertedText });
       continue;
     }
+    if (node.tag === 'insert-table-column') {
+      const operationId = editName(node, issues, true) ?? '';
+      const widthTwips = a['width-twips'];
+      const columnIndex = a['column-index'];
+      if (!Number.isSafeInteger(widthTwips) || Number(widthTwips) <= 0) {
+        issues.push(issue('INVALID_COLUMN_WIDTH', 'width-twips must be a positive safe integer.', node));
+      }
+      if (columnIndex !== undefined && (!Number.isSafeInteger(columnIndex) || Number(columnIndex) < 0)) {
+        issues.push(issue('INVALID_COLUMN_INDEX', 'column-index must be a non-negative safe integer.', node));
+      }
+      const cells = directTagChildren(node);
+      if (hasMeaningfulNonTagContent(node) || cells.length === 0 || cells.some(cell => cell.tag !== 'column-cell')) {
+        issues.push(issue('INVALID_TABLE_COLUMN', 'insert-table-column requires direct column-cell tags only, one per source row.', node));
+      }
+      operations.push({
+        kind: 'insert-table-column', operationId, anchorId: String(a.anchor ?? ''),
+        widthTwips: Number(widthTwips),
+        ...(columnIndex === undefined ? {} : { columnIndex: Number(columnIndex) }),
+        ...(a.landscape === undefined ? {} : { landscape: Boolean(a.landscape) }),
+        cells: cells.filter(cell => cell.tag === 'column-cell').map(cell => columnCellParagraphs(cell, issues)),
+      });
+      if (operationIds.has(operationId)) issues.push(issue('DUPLICATE_EDIT', `Duplicate edit name ${operationId}.`, node));
+      operationIds.add(operationId);
+      continue;
+    }
     if (node.tag === 'insert-table-rows') {
       const operationId = editName(node, issues, true) ?? '';
       if (hasMeaningfulNonTagContent(node)) {
@@ -1010,7 +1073,7 @@ export function parseMarkdoc(source: string): ValidationResult {
         : 0;
       const anchor: AnnotationAnchor = operation.kind === 'insert-before' || operation.kind === 'insert-after'
         ? { kind: 'point', point: { paragraphId, offset } }
-        : operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row'
+        : operation.kind === 'insert-table-rows' || operation.kind === 'delete-table-row' || operation.kind === 'insert-table-column'
           ? { kind: 'point', point: { paragraphId, offset: 0 } }
           : { kind: 'range', start: { paragraphId, offset: 0 }, end: { paragraphId, offset: operation.revisedText.length } };
       annotations.push({

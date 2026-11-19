@@ -1009,6 +1009,10 @@ The section editing primitive updates explicit width, height, and orientation
 attributes atomically, preserves untargeted attributes such as paper code, and
 requires both dimensions before creating a missing `w:pgSz`.
 
+Comparison snapshots explicitly record an old implicit portrait orientation when
+the live page size changes to landscape, so Word Reject restores both the
+original dimensions and orientation.
+
 ### ECMA-PART1-17-6-11 — w:pgMar page margin emission
 
 - **Edition:** ECMA-376 5
