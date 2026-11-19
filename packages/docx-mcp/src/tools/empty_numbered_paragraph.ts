@@ -123,8 +123,9 @@ export type EmptyNumberedParagraphOutcome =
  * full-text blank, so an untracked edit removes the paragraph and a tracked
  * edit deletes the text and the paragraph mark (accept-all removes the
  * paragraph, reject-all restores it). A paragraph the blanking rules keep
- * (section properties, a bookmark or comment anchor, a field, or a table
- * cell's only paragraph) stays; the caller reports it.
+ * (section properties, a spanning bookmark or comment anchor, a field, or a
+ * required table-cell paragraph) stays; local bookmarks may be removed under
+ * this explicit policy, with their cross-reference targets reported.
  */
 function removeEmptyNumberedParagraph(doc: DocxDocument, paragraph: Element, ctx: RevisionContext | undefined): boolean {
   const remaining = getParagraphText(paragraph);

@@ -56,12 +56,12 @@ full-text blank makes. Untracked, the paragraph is then removed by the
 existing rules; tracked, the whitespace and the paragraph mark are deleted
 as tracked changes, so accept-all removes the list item and reject-all
 restores the paragraph. Paragraphs those rules keep (section properties, a
-bookmark or comment anchor, a field, a table cell's only paragraph) are not
+spanning bookmark or comment anchor, a field, a required table-cell paragraph) are not
 removed, and the response names the reason. `remove_paragraph` therefore
 does not duplicate the existing auto-removal (which already handles a
 full-text blank of an unanchored paragraph); its own reach is the
-whitespace-left cases, and it does not override the anchor-preservation
-rules.
+whitespace-left cases and explicitly requested local bookmark removal;
+spanning bookmarks and other protected anchors remain preserved.
 
 ### `remove_paragraph` in `batch_edit`: deferred to the end of the batch
 

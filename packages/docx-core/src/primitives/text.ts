@@ -779,7 +779,7 @@ function isRequiredTableCellParagraph(p: Element): boolean {
  * was removed. Range markers (bookmarks, comment anchors), embedded content,
  * and every other child count as content for unnumbered paragraphs.
  *
- * For a numbered paragraph (`bookmarksAreInert = true`), keeping an emptied
+ * For an explicitly removed numbered paragraph (`bookmarksAreInert = true`), keeping an emptied
  * paragraph solely because it holds a bookmark leaves a bare list label in
  * the document and prevents following sections from renumbering (issue #1222).
  * Treating bookmarks as inert on numbered paragraphs allows the paragraph mark
@@ -1469,7 +1469,7 @@ export function replaceParagraphTextRange(
     // same way: accepting a deleted mark would merge the comment's markers into
     // the next paragraph, or drop a bookmark whose whole content was deleted
     // and with it a cross-reference target, while the untracked edit below
-    // keeps the paragraph with its markers. For numbered paragraphs, bookmarks
+    // keeps the paragraph with its markers. When explicitly removing numbered paragraphs, local bookmarks
     // do not keep the paragraph alive so an empty numbered heading does not
     // survive as a bare section label (#1222). Tracked and clean must agree on
     // whether the paragraph survives, so this asks the same question
