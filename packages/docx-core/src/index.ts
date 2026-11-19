@@ -27,6 +27,7 @@ export {
   buildSectPrBaseSnapshot,
   buildTcPrChangeElement,
   buildTrPrChangeElement,
+  buildTrPrBaseSnapshot,
   buildRPrChangeElement,
   createRevisionContainer,
   createRevisionContext,

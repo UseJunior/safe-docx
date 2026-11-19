@@ -9,6 +9,7 @@ import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { validateAiRevisions } from '../primitives/validate_ai_revisions.js';
 import { compareDocumentsAtomizer as compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({
@@ -850,4 +851,31 @@ test('[ADV-TABLE-RESOLUTION-01] resolves table snapshots and cell revisions', as
       observe: (run, local) => count(run.input, local) === 1 && run.input.getElementsByTagNameNS(W_NS, local).item(0)?.getAttributeNS(W_NS, 'author') === 'Reviewer' && count(run.output, local) === 0,
     }));
   }
+});
+
+test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.33' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.35' },
+)('[ADV-GRID-COMPARISON-01] emits grid history and its Word row companions', async () => {
+  const body = (width: number) => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="${width}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>`;
+  await revisionEvidence('ADV-GRID-COMPARISON-01', revisionEvidenceCases({
+    elements: ['tblGridChange', 'tblPrExChange'], operations: ['emit', 'comparison.inplace'], story: 'main',
+    buildFixture: () => ({ originalWidth: 1000, revisedWidth: 2000 }),
+    run: async fixture => {
+      const before = await buildDocxFromBodyXml(body(fixture.originalWidth));
+      const after = await buildDocxFromBodyXml(body(fixture.revisedWidth));
+      const result = await compareDocuments(before, after);
+      return { engine: result.engine, doc: parseXml((await getResultParts(result.document)).documentXml) };
+    },
+    observe: (run, element) => {
+      const gridHistory = run.doc.getElementsByTagNameNS(W_NS, 'tblGridChange').item(0);
+      return run.engine === 'tagged-tree' && count(run.doc, element) === 1 &&
+        gridHistory?.getElementsByTagNameNS(W_NS, 'gridCol').item(0)?.getAttributeNS(W_NS, 'w') === '1000' &&
+        run.doc.getElementsByTagNameNS(W_NS, 'gridCol').item(0)?.getAttributeNS(W_NS, 'w') === '2000';
+    },
+    mutations: () => [
+      { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, revisedWidth: fixture.originalWidth }, context }) },
+      { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, originalWidth: 900 }, context }) },
+    ],
+  }));
 });

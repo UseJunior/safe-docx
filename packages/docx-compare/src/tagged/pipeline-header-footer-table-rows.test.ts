@@ -567,8 +567,8 @@ describe('a table inside a header text box (#1393)', { timeout: LOAD_SENSITIVE_T
     );
   }
 
-  test.openspec('[SDX-CMP-STORY-05] Unsupported topology remains unrepresented')(
-    'keeps a grid-width change inside a header text box listed instead of aborting',
+  test(
+    'tracks a grid-width change inside a header text box with inverse projections',
     async ({ given, when, then }: AllureBddContext) => {
       const [original, revised] = await given('a default header text box table whose first grid column widens, beside a body edit', () =>
         Promise.all([
@@ -580,10 +580,25 @@ describe('a table inside a header text box (#1393)', { timeout: LOAD_SENSITIVE_T
               : paragraph(text('Plain')))),
         ]));
       const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
-      await then('the default header is listed, the body edit is tracked and the package is schema-valid', async () => {
-        expect(result.unrepresentedChanges).toEqual([
-          expect.objectContaining({ scope: 'header', kind: 'changed', role: 'default' }),
-        ]);
+      await then('the grid and body edit are tracked and the package is schema-valid', async () => {
+        expect(result.unrepresentedChanges).toBeUndefined();
+        const headerPath = partPath({ kind: 'header', role: 'default' });
+        const header = (await (await DocxArchive.load(result.document)).getFile(headerPath))!;
+        expect(parseXml(header).getElementsByTagNameNS(W_NS, 'tblGridChange')).toHaveLength(1);
+        for (const [mode, source] of [['accept', revised], ['reject', original]] as const) {
+          const expected = (await (await DocxArchive.load(source)).getFile(headerPath))!;
+          const grid = (xml: string) => Array.from(parseXml(xml).getElementsByTagNameNS(W_NS, 'gridCol'))
+            .map(column => column.getAttributeNS(W_NS, 'w'));
+          const native = await DocxDocument.load(result.document);
+          await native[mode === 'accept' ? 'acceptChanges' : 'rejectChanges']();
+          const nativeHeader = (await (await DocxArchive.load((await native.toBuffer()).buffer)).getFile(headerPath))!;
+          const astHeader = (mode === 'accept' ? acceptAllChanges : rejectAllChanges)(header);
+          expect(grid(nativeHeader), mode + ' native').toEqual(grid(expected));
+          expect(grid(astHeader), mode + ' AST').toEqual(grid(expected));
+          for (const applier of ['ast', 'core'] as const) {
+            expect(await boxRows(result.document, mode, applier)).toEqual(await boxRows(source, 'none', 'ast'));
+          }
+        }
         expect(await bodyText(result.document, acceptAllChanges)).toBe(await bodyText(revised));
         expect(await bodyText(result.document, rejectAllChanges)).toBe(await bodyText(original));
         await assertSchema(result.document);

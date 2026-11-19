@@ -17,6 +17,7 @@ import { paragraphPropertySignature } from './paragraphPropertyParity.js';
 import { placeSinglePropertyRevision, splitLayeredRunFormatting } from './layeredFormattingRevision.js';
 import {
   addRowExceptionRevisionCompanions,
+  addGridRevisionCompanions,
   isTableLevelPropertyElement,
   resolveTableLevelProperty,
   tableLevelPropertyOf,
@@ -1543,6 +1544,7 @@ const CHANGE_ELEMENT_BY_SCOPE = {
   section: 'w:sectPrChange',
   table: 'w:tblPrChange',
   tableRowExceptions: 'w:tblPrExChange',
+  tableGrid: 'w:tblGridChange',
 } as const;
 
 /**
@@ -1564,7 +1566,7 @@ function applyPropertyDelta(
   const delta = tagged.propertyDelta;
   // Table properties publish inline with the table's children, through
   // resolveTableLevelProperty (#1399).
-  if (delta.scope === 'table' || delta.scope === 'tableRowExceptions') return;
+  if (delta.scope === 'table' || delta.scope === 'tableRowExceptions' || delta.scope === 'tableGrid') return;
   if (delta.scope === 'paragraph') {
     applyParagraphPropertyDelta(node, delta.original, delta.revised, revision, allocateRevision);
     return;
@@ -2782,13 +2784,17 @@ function emitNode(
     const tableLevelRecords: TableLevelRecordFactory = {
       comparison: (localName, document) => {
         const change = document.createElementNS(W_NS, `w:${localName}`) as WmlElement;
-        appendChangeMetadata(change, allocateRevision());
+        const revision = allocateRevision();
+        // CT_TblGridChange extends CT_Markup, not CT_TrackChange.
+        if (localName === 'tblGridChange') change.setAttributeNS(W_NS, 'w:id', String(revision.id));
+        else appendChangeMetadata(change, revision);
         return change;
       },
       freshId: () => allocateRevision().id,
     };
     const publishedTableLevel = new Set<string>();
     let tablePropertiesRecord: 'none' | 'unchanged' | 'preserved' | 'comparison' = 'none';
+    let tableGridRecord: typeof tablePropertiesRecord | 'unchanged' | 'preserved' | 'comparison' = 'none';
     for (let index = 0; index < node.children.length; index++) {
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
@@ -2801,6 +2807,7 @@ function emitNode(
         publishedTableLevel.add(localName);
         const allowComparisonRecord = localName === 'tblPr'
           ? node.propertyDelta?.scope === 'table'
+          : localName === 'tblGrid' ? !!node.gridDelta
           : localName === 'tblPrEx' && !!node.rowExceptionsDelta;
         const resolution = resolveTableLevelProperty(
           tableLevelPropertyOf(node.original, localName),
@@ -2811,6 +2818,7 @@ function emitNode(
           allowComparisonRecord,
         );
         if (localName === 'tblPr') tablePropertiesRecord = resolution.record;
+        if (localName === 'tblGrid') tableGridRecord = resolution.record;
         if (resolution.element) emitted.push(resolution.element);
         continue;
       }
@@ -2969,7 +2977,9 @@ function emitNode(
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
     replaceElementChildren(base, tableChildrenInSchemaOrder(base, rowChildrenInSchemaOrder(base, emitted)));
-    if (tablePropertiesRecord === 'comparison' || tablePropertiesRecord === 'preserved') {
+    if (tableGridRecord === 'comparison' || tableGridRecord === 'preserved') {
+      addGridRevisionCompanions(base, tableLevelRecords);
+    } else if (tablePropertiesRecord === 'comparison' || tablePropertiesRecord === 'preserved') {
       addRowExceptionRevisionCompanions(base, tableLevelRecords);
     }
   }

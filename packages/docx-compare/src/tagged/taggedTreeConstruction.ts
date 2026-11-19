@@ -296,6 +296,23 @@ function rowExceptionsDelta(original: WmlElement, revised: WmlElement): Property
 }
 
 /**
+ * Compare live table grids atomically; history is projected by the serializer.
+ * Geometry remains tracked even when optional formatting detection is disabled.
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.33
+ * @see #1398
+ */
+function tableGridDelta(original: WmlElement, revised: WmlElement): PropertyDelta | undefined {
+  if (original.localName !== 'tbl' || revised.localName !== 'tbl') return undefined;
+  const before = tableLevelPropertyOf(original, 'tblGrid');
+  const after = tableLevelPropertyOf(revised, 'tblGrid');
+  const live = (grid: Element | null) => grid ? childElements(grid)
+    .filter(child => child.namespaceURI === original.namespaceURI && child.localName === 'gridCol')
+    .map(child => subtreeSignature(child)).join('\u0002') : '';
+  if (live(before) === live(after)) return undefined;
+  return { scope: 'tableGrid', original: before, revised: after, changedProperties: ['gridCol'] };
+}
+
+/**
  * Restrict text-run anchors to pairs that the container's text alignment also
  * pairs. Run alignment keys compare whole run text, so when the two inputs
  * split identical text into different runs, a short run such as `" "` or a
@@ -1261,6 +1278,7 @@ function constructBoth(
   }
   emitGap(originalChildren.length, revisedChildren.length);
   const exceptionsDelta = options.detectFormatChanges ? rowExceptionsDelta(original, revised) : undefined;
+  const gridDelta = tableGridDelta(original, revised);
   return {
     tag: 'both',
     original,
@@ -1268,6 +1286,7 @@ function constructBoth(
     children,
     propertyDelta: options.detectFormatChanges ? propertyDelta(original, revised) : undefined,
     ...(exceptionsDelta ? { rowExceptionsDelta: exceptionsDelta } : {}),
+    ...(gridDelta ? { gridDelta } : {}),
   };
 }
 
