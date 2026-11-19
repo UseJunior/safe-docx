@@ -262,4 +262,22 @@ describe('local PDF tool resolver', () => {
     expect(killed.signal).toBe('SIGTERM');
     expect(describeSofficeFailure(killed, 'input.pdf', false)).toMatch(/^killed by SIGTERM, no input.pdf written/);
   });
+
+  itAllure('a signal-killed run through the default runner reports the signal without the Command failed echo', async () => {
+    const killed = await defaultPdfRenderTools().run(process.execPath, ['-e', "process.stderr.write('Error: render aborted\\n'); process.kill(process.pid, 'SIGKILL')"]);
+    expect(killed.signal).toBe('SIGKILL');
+    expect(killed.stderr).not.toContain('Command failed');
+    expect(describeSofficeFailure(killed, 'input.pdf', false)).toBe('killed by SIGKILL, no input.pdf written (output: Error: render aborted)');
+    const silent = await defaultPdfRenderTools().run(process.execPath, ['-e', "process.kill(process.pid, 'SIGKILL')"]);
+    expect(describeSofficeFailure(silent, 'input.pdf', false)).toBe('killed by SIGKILL, no input.pdf written');
+  });
+
+  itAllure('a non-zero exit through the default runner keeps stderr, drops benign lines and has no Command failed echo', async () => {
+    const script = `process.stderr.write(${JSON.stringify(`${BENIGN_TASK_POLICY}\nError: source file could not be loaded\n`)}); process.exit(81)`;
+    const failed = await defaultPdfRenderTools().run(process.execPath, ['-e', script]);
+    expect(describeSofficeFailure(failed, 'input.pdf', true)).toBe('exit 81, input.pdf written (output: Error: source file could not be loaded)');
+    const silent = await defaultPdfRenderTools().run(process.execPath, ['-e', 'process.exit(2)']);
+    expect(describeSofficeFailure(silent, 'input.pdf', false)).toBe('exit 2, no input.pdf written');
+    expect(describeSofficeFailure({ code: 1, stdout: '', stderr: 'Command failed: /opt/soffice --headless /tmp/x/input.docx', signal: 'SIGKILL' }, 'input.pdf', false)).toBe('killed by SIGKILL, no input.pdf written');
+  });
 });
