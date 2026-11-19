@@ -894,9 +894,26 @@ export async function batchEdit(
       };
     }
 
-    // "error" was enforced by the preview above, before any step ran: the
-    // preview runs each step's own planner, so the real run cannot leave a
-    // finding the preview missed (#1525).
+    if (emptyNumberedFindings.length > 0 && emptyNumberedPolicy === 'error') {
+      // Reached when another edit to the session lands between the preview
+      // and the steps (each step is its own session mutation), so the
+      // preview judged a different document (#1525).
+      const refusal = emptyNumberedBatchError(session.doc, emptyNumberedFindings);
+      return {
+        success: false,
+        error: {
+          code: EMPTY_NUMBERED_PARAGRAPH_ERROR_CODE,
+          message: `${refusal.message} The steps were applied before this was detected.`,
+          hint: 'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
+        },
+        file_path: manager.normalizePath(session.originalPath),
+        completed_count: result.completed_step_ids.length,
+        completed_step_ids: result.completed_step_ids,
+        step_results: result.step_results,
+        empty_numbered_paragraphs: refusal.findings,
+        ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
+      };
+    }
     if (emptyNumberedPolicy === 'warn') {
       allWarnings.push(...emptyNumberedWarnings(session.doc, emptyNumberedFindings));
     } else if (emptyNumberedPolicy === 'remove_paragraph' && emptyNumberedFindings.length > 0) {
