@@ -47,3 +47,16 @@
 - [x] 7.8 Report covered ancillary text-box stories as explicit compiled-verifier exclusions.
 - [x] 7.9 Re-run the private third-pair oracle and record aggregate-only results.
 - [ ] 7.10 Run mandatory pre-submit checks, publish through a focused PR, and perform a real-document smoke.
+
+## 8. Inserted and deleted body text boxes (#1031)
+
+- [x] 8.1 Pair main-document text boxes by anchor identity, with positional fallback only for unidentified boxes.
+- [x] 8.2 Leave unpaired boxes in the outer comparison and mark their stories with the anchor's revision kind.
+- [x] 8.3 Locate compared stories by placeholder token so inserted/deleted boxes cannot shift the splice target.
+- [x] 8.4 Add issue-reproduction, deleted-mirror, swap, twinned-box, and identity-change fixtures with accept/reject and schema evidence.
+
+## 9. Inserted and deleted header/footer text boxes (#1384)
+
+- [x] 9.1 Pair header/footer text boxes by anchor identity and compare a part whole when a box has no counterpart.
+- [x] 9.2 Locate paired box stories in that part by placeholder token and mark lifecycle boxes' stories with the anchor's revision kind.
+- [x] 9.3 Add default, first and even header/footer fixtures, twinned, mixed edit, hyperlink and refusal cases with accept/reject, schema and LibreOffice evidence.

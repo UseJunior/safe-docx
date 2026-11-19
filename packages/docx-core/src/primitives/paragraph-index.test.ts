@@ -149,5 +149,34 @@ describe('buildParagraphIndex', () => {
       ]);
     });
   });
+
+  test('does not count <w:br/> or <w:tab/> inside w:del or w:moveFrom as visible text', async ({ given, then }: AllureBddContext) => {
+    let defaultIndex: ReturnType<typeof buildParagraphIndex>;
+    let liveIndex: ReturnType<typeof buildParagraphIndex>;
+    await given('a paragraph containing deleted and moved-from runs that hold <w:br/> and <w:tab/> elements', () => {
+      const p = paragraph(
+        `<w:p>` +
+        `<w:r><w:t>A: ___</w:t></w:r>` +
+        `<w:del w:id="1" w:author="AI" w:date="2026-01-01T00:00:00Z">` +
+          `<w:r><w:br/><w:delText>B: ___</w:delText><w:br/><w:delText>C: </w:delText></w:r>` +
+        `</w:del>` +
+        `<w:moveFrom w:id="2" w:author="AI" w:date="2026-01-01T00:00:00Z">` +
+          `<w:r><w:tab/><w:delText>Moved</w:delText><w:br/></w:r>` +
+        `</w:moveFrom>` +
+        `<w:ins w:id="3" w:author="AI" w:date="2026-01-01T00:00:00Z">` +
+          `<w:r><w:t>___</w:t><w:br/><w:t>B: ______</w:t></w:r>` +
+        `</w:ins>` +
+        `</w:p>`,
+      );
+      defaultIndex = buildParagraphIndex(p);
+      liveIndex = buildParagraphIndex(p, { skipTrackedDeletions: true });
+    });
+    await then('neither default nor skipTrackedDeletions index includes deleted breaks or tabs in visible text', () => {
+      expect(defaultIndex.text).toBe('A: ______\nB: ______');
+      expect(liveIndex.text).toBe('A: ______\nB: ______');
+      expect(liveIndex.runs).toHaveLength(2);
+      expect(liveIndex.runs.map((r) => r.visibleText)).toEqual(['A: ___', '___\nB: ______']);
+    });
+  });
 });
 

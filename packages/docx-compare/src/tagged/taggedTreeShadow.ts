@@ -24,6 +24,7 @@ import type {
 } from '../compare-types.js';
 import { paragraphJoinParts, representative, type TaggedMoveRelation, type TaggedNode } from './taggedTree.js';
 import { guardBodyTableTopology } from './tableTopologyGuard.js';
+import { leaveOutRowlessTables, replaceSkeletonChangedRows } from './tableTopologyNormalization.js';
 import { collectContentControlPropertyChanges } from './unrepresentedChanges.js';
 
 export type TaggedTreeDivergenceClass = 'projection-inequivalent' | 'projection-equivalent';
@@ -62,7 +63,7 @@ export interface TaggedTreeShadowInput {
   retainStatisticsMarkers?: boolean;
   /** @internal First package-wide ID available to generated comparison revisions. */
   minimumRevisionId?: number;
-  /** @internal Main-body only; selected side stories keep their unrepresented contract. */
+  /** @internal Main-body table-topology guard; nested stories try it first (#1393). */
   guardTableTopology?: boolean;
 }
 
@@ -361,6 +362,10 @@ function deriveTaggedTreeStats(tree: TaggedNode, movedNodes: ReadonlySet<TaggedN
         ? Math.max(1, taggedAtomWeight(node, 'revised'))
         : 1;
     }
+    if (node.tag === 'both' && node.rowExceptionsDelta) {
+      formatChanges++;
+      formatChangeAtoms++;
+    }
     if (node.tag === 'both' && node.revised.localName === 'p') {
       let hasOriginal = false;
       let hasRevised = false;
@@ -497,7 +502,14 @@ export function buildTaggedTreePublication(
     revisionAttributionRanges: input.revisionAttributionRanges,
     minimumRevisionId: input.minimumRevisionId,
   });
-  if (input.guardTableTopology) guardBodyTableTopology(constructed.tree);
+  const leftOutTables: UnrepresentedChange[] = [];
+  if (input.guardTableTopology) {
+    // The main body always sets it; a header, footer or text-box story sets
+    // it first and drops it only when it refuses that story's tables (#1393).
+    leftOutTables.push(...leaveOutRowlessTables(constructed.tree));
+    replaceSkeletonChangedRows(constructed.tree);
+    guardBodyTableTopology(constructed.tree);
+  }
   const serialized = serializeTaggedTree(
     constructed.tree,
     createPreservePlan(original, revised, constructed.tree, {
@@ -525,7 +537,7 @@ export function buildTaggedTreePublication(
     stats: consumed.stats,
     serializedRangeStats: consumed.serializedRangeStats,
     moves: constructed.moves,
-    unrepresentedChanges: collectContentControlPropertyChanges(constructed.tree),
+    unrepresentedChanges: [...collectContentControlPropertyChanges(constructed.tree), ...leftOutTables],
   };
 }
 

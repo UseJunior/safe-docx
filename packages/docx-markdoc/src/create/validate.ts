@@ -1,7 +1,7 @@
 import type { Node as MarkdocNode } from '@markdoc/markdoc';
 import { BookmarkNameError, bookmarkNamesForSlugs } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
-import { HEADING_NUMBER_SCHEMES, type HeadingNumberScheme } from './list-numbering.js';
+import { HEADING_NUMBER_SCHEMES, RUN_IN_LEVELS, type HeadingNumberScheme, type RunInLevel } from './list-numbering.js';
 
 /**
  * The closed creation grammar, checked before any rendering so every
@@ -9,18 +9,116 @@ import { HEADING_NUMBER_SCHEMES, type HeadingNumberScheme } from './list-numberi
  * being flattened by the lenient engine.
  */
 
-const FRONTMATTER_KEYS = new Set(['title', 'author', 'date', 'footer', 'page-numbers', 'fill-ins', 'heading-numbers']);
+/**
+ * Running header and footer keys, the same in the frontmatter (which sets the
+ * first section's) and on `{% section %}` (which sets the next section's).
+ * See {@link checkRunningTextKeys} for what each needs.
+ */
+export const RUNNING_TEXT_KEYS = [
+  'header',
+  'header-align',
+  'header-first',
+  'footer',
+  'footer-align',
+  'footer-italic',
+  'footer-layout',
+  'footer-first',
+  'page-numbers',
+  'page-number-align',
+  'page-number-format',
+] as const;
+
+/** Every frontmatter key the creation grammar admits, in the order diagnostics list them. */
+export const CREATION_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(['title', 'author', 'date', 'modified', 'last-modified-by', 'application', ...RUNNING_TEXT_KEYS, 'fill-ins', 'heading-numbers']);
+
+/** `header-align`, `footer-align` and `page-number-align` values. */
+export const RUNNING_TEXT_ALIGNMENTS = ['left', 'center', 'right'] as const;
+export type RunningTextAlignment = (typeof RUNNING_TEXT_ALIGNMENTS)[number];
+/**
+ * `page-number-format` values: `plain` shows "1", `dashed` "- 1 -", and
+ * `page-of-total` "Page 1 of 3" (a PAGE and a NUMPAGES field).
+ * `lower-roman` and `upper-roman` show the page number alone as "i" or "I":
+ * the section's `w:pgNumType w:fmt`, which every section showing that
+ * footer carries, inherited footers included (#1426).
+ */
+export const PAGE_NUMBER_FORMATS = ['plain', 'dashed', 'page-of-total', 'lower-roman', 'upper-roman'] as const;
+export type PageNumberFormat = (typeof PAGE_NUMBER_FORMATS)[number];
+/**
+ * `footer-layout` values: `stacked` puts the footer text and the page number
+ * in paragraphs of their own; `one-line` puts them on one line, the text at
+ * the left margin and the number at the right, after a right tab stop.
+ */
+export const FOOTER_LAYOUTS = ['stacked', 'one-line'] as const;
+export type FooterLayout = (typeof FOOTER_LAYOUTS)[number];
+/**
+ * `header-first` and `footer-first` take the first page's own text, or this
+ * word for an empty header or footer on the first page.
+ */
+export const FIRST_PAGE_NONE = 'none';
+/**
+ * `fill-ins` values: `markup` (the default) makes only `{% fill %}…{% /fill %}`
+ * a fill-in; `brackets` makes every `[…]` one (the v0.24 behaviour).
+ */
+export const FILL_IN_MODES = ['markup', 'brackets'] as const;
+export type FillInMode = (typeof FILL_IN_MODES)[number];
+
+/**
+ * `{% paragraph-layout align="…" %}` values: the paragraph's own alignment, in place of
+ * the profile's body alignment (justified by default).
+ */
+export const PARAGRAPH_LAYOUT_ALIGNMENTS = ['left', 'center', 'right', 'justify'] as const;
+export type ParagraphLayoutAlignment = (typeof PARAGRAPH_LAYOUT_ALIGNMENTS)[number];
+/**
+ * `{% paragraph-layout indent-left="…" %}` values, in inches from the left margin: where
+ * every line of the paragraph starts (with `indent-hanging`, every line but
+ * the first).
+ */
+export const PARAGRAPH_LAYOUT_LEFT_INDENTS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '1.75', '2'] as const;
+/**
+ * `{% paragraph-layout indent-hanging="…" %}` values, in inches: how far the first line
+ * starts to the left of the others. It needs an `indent-left` at least as
+ * large, so the first line never starts in the margin.
+ */
+export const PARAGRAPH_LAYOUT_HANGING_INDENTS = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '1.75', '2'] as const;
+/** The attributes of `{% paragraph-layout %}`, each taking a value from its closed list above. */
+export const PARAGRAPH_LAYOUT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
+  align: PARAGRAPH_LAYOUT_ALIGNMENTS,
+  'indent-left': PARAGRAPH_LAYOUT_LEFT_INDENTS,
+  'indent-hanging': PARAGRAPH_LAYOUT_HANGING_INDENTS,
+};
+/**
+ * `{% paragraph-layout %}` pagination flags, each `true` when given: `keep-with-next`
+ * keeps the paragraph on the page of the one after it (`w:keepNext`), and
+ * `keep-lines` keeps all its lines on one page (`w:keepLines`).
+ */
+export const PARAGRAPH_LAYOUT_FLAGS = ['keep-with-next', 'keep-lines'] as const;
+/** A `{% paragraph-layout %}` attribute value as written: a number (`indent-left=0.5`) reads as its decimal text. */
+export function paragraphLayoutValue(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return typeof value === 'string' ? value : undefined;
+}
 
 /** Block tags and the attributes each admits. */
 export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
   center: new Set(),
   legend: new Set(),
+  'paragraph-layout': new Set([...Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES), ...PARAGRAPH_LAYOUT_FLAGS]),
   signer: new Set(['name', 'date']),
   'page-break': new Set(),
-  section: new Set(['footer', 'page-numbers']),
+  section: new Set([...RUNNING_TEXT_KEYS, 'page-number-start']),
   table: new Set(['widths']),
   footnote: new Set(['id']),
+  'run-in-paragraph': new Set(['level', 'heading', 'id']),
+  toc: new Set(),
 };
+/** The largest `{% section page-number-start=… %}`: where a section's page numbers restart. */
+export const PAGE_NUMBER_START_MAX = 9999;
+/** The levels a `{% tc level=… %}` entry, and so a table of contents, may take. */
+export const TOC_ENTRY_LEVELS = [1, 2, 3] as const;
+/** The table-of-contents level each run-in paragraph level lists at; clauses are not listed. */
+export const RUN_IN_TOC_LEVEL: Readonly<Partial<Record<RunInLevel, number>>> = { article: 1, section: 2 };
+/** Text a TC field instruction cannot carry: a double quote, a backslash or a control character. */
+export const TOC_ENTRY_UNSUPPORTED_TEXT = /["\\\u0000-\u001f]/u;
 /**
  * Inline tags and the attributes each admits. `literal` makes its content
  * literal text and `fill` marks a fill-in (both checked below); `u` underlines
@@ -36,12 +134,13 @@ export const CREATION_BLOCK_TAGS: Record<string, ReadonlySet<string>> = {
  * (an engine branch or a creation theme plugin) and, when it changes the text,
  * a case in the round-trip oracle.
  */
-const INLINE_TAGS: Record<string, ReadonlySet<string>> = {
+export const CREATION_INLINE_TAGS: Record<string, ReadonlySet<string>> = {
   literal: new Set(),
   fill: new Set(),
   u: new Set(),
   fnref: new Set(['id']),
   xref: new Set(['to', 'show', 'number', 'format']),
+  tc: new Set(['level']),
 };
 /**
  * `{% xref show="…" %}` values: the target's number (a REF field with a number
@@ -61,7 +160,7 @@ export const XREF_FORMATS: ReadonlySet<string> = new Set(['section']);
 /** A target id: lowercase kebab-case starting with a letter, such as `purchase-price-adjustment`. */
 const TARGET_ID_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** Tags that structure the document and may appear only at the top level. */
-const TOP_LEVEL_ONLY = new Set(['page-break', 'section', 'footnote']);
+const TOP_LEVEL_ONLY = new Set(['page-break', 'section', 'footnote', 'run-in-paragraph', 'toc']);
 
 const LEGACY_HINTS: Array<[RegExp, string]> = [
   [/^<center\b/i, '{% center %}…{% /center %}'],
@@ -75,10 +174,31 @@ const LEGACY_HINTS: Array<[RegExp, string]> = [
 
 export type CreationFrontmatter = {
   title?: string;
+  /** Written as the document's `dc:creator`. */
   author?: string;
+  /** Written as `dcterms:created`, and as `dcterms:modified` unless `modified` is set. Absent, both are 2006-01-01T00:00:00Z (`CREATION_EPOCH_ISO`). */
   date?: string;
+  /** Written as `dcterms:modified` in place of `date`; never earlier than `date`. */
+  modified?: string;
+  /** Written as `cp:lastModifiedBy`. */
+  lastModifiedBy?: string;
+  /** docProps/app.xml `Application`: absent, `safe-docx`; null (frontmatter `application: none`) leaves it out. */
+  application?: string | null;
+  /** The first section's running header text. */
+  header?: string;
+  headerAlign?: RunningTextAlignment;
+  /** The first page's header text, or `none` for no header on the first page. */
+  headerFirst?: string;
   footer?: string;
+  /** The first page's footer text in place of `footer`, or `none` for an empty footer on the first page. */
+  footerFirst?: string;
+  footerAlign?: RunningTextAlignment;
+  /** Whether footer text is italic (the default) or upright. */
+  footerItalic?: boolean;
+  footerLayout?: FooterLayout;
   pageNumbers?: boolean;
+  pageNumberAlign?: RunningTextAlignment;
+  pageNumberFormat?: PageNumberFormat;
   /**
    * How fill-ins are written. 'markup' (default): only {% fill %}…{% /fill %}
    * is a fill-in and bare brackets are literal text. 'brackets': the v0.24
@@ -110,38 +230,159 @@ export function parseCreationFrontmatter(raw: string | undefined): CreationFront
   for (const [index, line] of raw.split('\n').entries()) {
     if (!line.trim()) continue;
     const match = /^([a-z-]+):\s*(.*)$/.exec(line.trim());
-    if (!match || !FRONTMATTER_KEYS.has(match[1]!)) {
-      throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `Unsupported frontmatter line ${index + 2}: '${line.trim()}'. Allowed keys: ${[...FRONTMATTER_KEYS].join(', ')}.`);
+    if (!match || !CREATION_FRONTMATTER_KEYS.has(match[1]!)) {
+      throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `Unsupported frontmatter line ${index + 2}: '${line.trim()}'. Allowed keys: ${[...CREATION_FRONTMATTER_KEYS].join(', ')}.`);
     }
     const key = match[1]!;
     let value = match[2]!.trim();
     if (/^(["']).*\1$/.test(value)) value = value.slice(1, -1);
     if (key === 'fill-ins') {
-      if (value !== 'markup' && value !== 'brackets') {
-        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be markup or brackets, got '${value}'.`);
+      if (!(FILL_IN_MODES as readonly string[]).includes(value)) {
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `fill-ins must be ${orList(FILL_IN_MODES)}, got '${value}'.`);
       }
-      result.fillIns = value;
+      result.fillIns = value as FillInMode;
     } else if (key === 'heading-numbers') {
       if (!(HEADING_NUMBER_SCHEMES as readonly string[]).includes(value)) {
         throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `heading-numbers must be ${HEADING_NUMBER_SCHEMES.join(' or ')}, got '${value}'.`);
       }
       result.headingNumbers = value as HeadingNumberScheme;
-    } else if (key === 'page-numbers') {
+    } else if (key === 'page-numbers' || key === 'footer-italic') {
       if (value !== 'true' && value !== 'false') {
-        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `page-numbers must be true or false, got '${value}'.`);
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be true or false, got '${value}'.`);
       }
-      result.pageNumbers = value === 'true';
-    } else if (key === 'date') {
+      result[key === 'page-numbers' ? 'pageNumbers' : 'footerItalic'] = value === 'true';
+    } else if (key in RUNNING_TEXT_VALUES) {
+      const allowed = RUNNING_TEXT_VALUES[key]!;
+      if (!allowed.includes(value)) {
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be ${orList(allowed)}, got '${value}'.`);
+      }
+      (result as Record<string, string>)[camelKey(key)] = value;
+    } else if (key === 'header' && (value === 'true' || value === 'false')) {
+      throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `header is the header text, not ${value}; leave the key out for no header.`);
+    } else if (key === 'header-first' || key === 'footer-first') {
+      if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be the first page's text, or none.`);
+      result[key === 'header-first' ? 'headerFirst' : 'footerFirst'] = value;
+    } else if (key === 'date' || key === 'modified') {
       if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?Z)?$/.test(value) || Number.isNaN(Date.parse(value))) {
-        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `date must be YYYY-MM-DD or a UTC ISO timestamp, got '${value}'.`);
+        throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must be YYYY-MM-DD or a UTC ISO timestamp, got '${value}'.`);
       }
-      result.date = value;
+      result[key] = value;
+    } else if (key === 'last-modified-by') {
+      if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must not be empty.`);
+      result.lastModifiedBy = value;
+    } else if (key === 'application') {
+      if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', 'application must be the application name, or none to leave it out.');
+      result.application = value === 'none' ? null : value;
     } else {
       if (!value) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${key} must not be empty.`);
       (result as Record<string, string>)[key] = value;
     }
   }
+  if (result.date !== undefined && result.modified !== undefined && compareCreationTimestamps(result.modified, result.date) < 0) {
+    throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `modified (${result.modified}) must not be earlier than date (${result.date}).`);
+  }
+  const problem = checkRunningTextKeys({
+    header: result.header,
+    'header-align': result.headerAlign,
+    'header-first': result.headerFirst,
+    footer: result.footer,
+    'footer-align': result.footerAlign,
+    'footer-italic': result.footerItalic,
+    'footer-layout': result.footerLayout,
+    'footer-first': result.footerFirst,
+    'page-numbers': result.pageNumbers,
+    'page-number-align': result.pageNumberAlign,
+    'page-number-format': result.pageNumberFormat,
+  }, { pageNumbers: 'page-numbers: true', footer: 'footer: …', header: 'header: …' }, 'frontmatter');
+  if (problem) throw new DocxMarkdocError('UNSUPPORTED_CREATION_FRONTMATTER', `${problem}.`);
   return result;
+}
+
+/** A frontmatter `date` or `modified` as the timestamp written to docProps: a bare date is midnight UTC. */
+export function creationTimestamp(value: string): string {
+  return value.includes('T') ? value : `${value}T00:00:00Z`;
+}
+
+/**
+ * Order two `date` / `modified` values without losing precision. Both are
+ * UTC and fixed-width up to the seconds, so those compare as text; any
+ * fractional digits then compare zero-padded to the same length (Date.parse
+ * would round them to milliseconds).
+ */
+export function compareCreationTimestamps(left: string, right: string): number {
+  const split = (value: string): [string, string] => {
+    const [seconds, fraction = ''] = creationTimestamp(value).replace(/Z$/u, '').split('.');
+    return [seconds!, fraction];
+  };
+  const [leftSeconds, leftFraction] = split(left);
+  const [rightSeconds, rightFraction] = split(right);
+  if (leftSeconds !== rightSeconds) return leftSeconds < rightSeconds ? -1 : 1;
+  const width = Math.max(leftFraction.length, rightFraction.length);
+  const a = leftFraction.padEnd(width, '0');
+  const b = rightFraction.padEnd(width, '0');
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
+/** The closed value set of each running-text key that takes a word. */
+const RUNNING_TEXT_VALUES: Record<string, readonly string[]> = {
+  'header-align': RUNNING_TEXT_ALIGNMENTS,
+  'footer-align': RUNNING_TEXT_ALIGNMENTS,
+  'page-number-align': RUNNING_TEXT_ALIGNMENTS,
+  'page-number-format': PAGE_NUMBER_FORMATS,
+  'footer-layout': FOOTER_LAYOUTS,
+};
+
+function orList(values: readonly string[]): string {
+  return values.length === 1 ? values[0]! : `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`;
+}
+
+function camelKey(key: string): string {
+  return key.replace(/-([a-z])/gu, (_, letter: string) => letter.toUpperCase());
+}
+
+/**
+ * What the running-text keys of one declaration (the frontmatter, or one
+ * `{% section %}`) need from each other: a key that shapes text needs that
+ * text in the same declaration, so it never silently formats nothing.
+ * `header-align` needs header text (the header's or its first page's);
+ * `footer-align` and `footer-italic` need footer text (likewise); `page-number-align` and
+ * `page-number-format` need page numbers; `footer-layout: one-line` needs
+ * both footer text and page numbers, and fixes where each sits, so it takes
+ * neither `footer-align` nor `page-number-align`. `header-first: none` needs
+ * a header and `footer-first: none` a footer in the same place (on
+ * `{% section %}`, `header=false` and `page-numbers=false` declare an empty
+ * one); first-page text alone declares an empty header or footer for the
+ * other pages. Returns the
+ * problem, or undefined. `spell` names the base keys as the declaration
+ * writes them.
+ */
+export function checkRunningTextKeys(
+  keys: Partial<Record<(typeof RUNNING_TEXT_KEYS)[number], unknown>>,
+  spell: { pageNumbers: string; footer: string; header: string },
+  where: 'frontmatter' | 'section' = 'section',
+): string | undefined {
+  const hasHeader = typeof keys.header === 'string' && keys.header.trim() !== '';
+  const hasFooter = typeof keys.footer === 'string' && keys.footer.trim() !== '';
+  const hasPageNumbers = keys['page-numbers'] === true;
+  const declaresHeader = hasHeader || (where === 'section' && keys.header === false);
+  const declaresFooter = hasFooter || hasPageNumbers || (where === 'section' && keys['page-numbers'] === false);
+  const firstText = (key: 'header-first' | 'footer-first') => typeof keys[key] === 'string' && keys[key] !== FIRST_PAGE_NONE;
+  if (keys['header-align'] !== undefined && !hasHeader && !firstText('header-first')) return `header-align needs header text (${spell.header} or header-first) in the same place`;
+  if (keys['header-first'] === FIRST_PAGE_NONE && !declaresHeader) return `header-first: none needs a header (${spell.header}) in the same place`;
+  if (keys['footer-first'] === FIRST_PAGE_NONE && !declaresFooter) return `footer-first: none needs a footer (${spell.footer} or ${spell.pageNumbers}) in the same place`;
+  for (const key of ['footer-align', 'footer-italic'] as const) {
+    if (keys[key] !== undefined && !hasFooter && !firstText('footer-first')) return `${key} needs footer text (${spell.footer} or footer-first) in the same place`;
+  }
+  for (const key of ['page-number-align', 'page-number-format'] as const) {
+    if (keys[key] !== undefined && !hasPageNumbers) return `${key} needs ${spell.pageNumbers} in the same place`;
+  }
+  if (keys['footer-layout'] === 'one-line') {
+    if (!hasFooter || !hasPageNumbers) return `footer-layout one-line puts footer text and the page number on one line, so it needs both ${spell.footer} and ${spell.pageNumbers}`;
+    for (const key of ['footer-align', 'page-number-align'] as const) {
+      if (keys[key] !== undefined) return `footer-layout one-line sets the text at the left margin and the number at the right, so it takes no ${key}`;
+    }
+  }
+  return undefined;
 }
 
 /** The block tag a paragraph stands for when its only content is one tag (`{% center %}x{% /center %}` on one line). */
@@ -239,7 +480,7 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         if (inFootnoteBody && (node.tag === 'fnref' || node.tag === 'footnote')) {
           creationError('NESTED_FOOTNOTE', 'A footnote cannot contain another footnote or a footnote reference.', node, line);
         }
-        const allowed = INLINE_TAGS[node.tag ?? ''];
+        const allowed = CREATION_INLINE_TAGS[node.tag ?? ''];
         if (!allowed) creationError('UNSUPPORTED_CREATION_SYNTAX', `Tag '{% ${node.tag} %}' cannot appear inside text.`, node, line);
         checkAttributes(node, allowed);
         if (node.tag === 'fnref') {
@@ -250,6 +491,10 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
         }
         if (node.tag === 'xref') {
           checkCrossReferenceTag(node, line, literal ? 'literal' : fillDepth > 0 ? 'fill' : null, formatted > 0);
+          return;
+        }
+        if (node.tag === 'tc') {
+          checkTableOfContentsEntryTag(node, line, literal ? 'literal' : fillDepth > 0 ? 'fill' : inFootnoteBody ? 'footnote' : null);
           return;
         }
         if (node.tag === 'fill') {
@@ -310,6 +555,25 @@ function checkCrossReferenceTag(node: MarkdocNode, line: number | undefined, ins
   }
 }
 
+/**
+ * One `{% tc level=N %}…{% /tc %}`: its content shows where it sits and is
+ * also the text of a table-of-contents entry at `level` (a TC field). The
+ * content is plain text, bold, italic or underlined, on one line, without a
+ * double quote or backslash, which a TC instruction cannot carry.
+ */
+function checkTableOfContentsEntryTag(node: MarkdocNode, line: number | undefined, inside: 'literal' | 'fill' | 'footnote' | null): void {
+  if (inside) creationError('INVALID_TOC_ENTRY', `{% tc %} cannot appear inside ${inside === 'footnote' ? 'a footnote' : `{% ${inside} %}`}.`, node, line);
+  const level = node.attributes.level;
+  if (!(TOC_ENTRY_LEVELS as readonly unknown[]).includes(level)) {
+    creationError('INVALID_TOC_ENTRY', `{% tc %} needs level=1, 2 or 3, the table-of-contents level it lists at; got ${JSON.stringify(level ?? null)}.`, node, line);
+  }
+  const plain = (child: MarkdocNode): boolean => child.type === 'text' || ((child.type === 'strong' || child.type === 'em' || (child.type === 'tag' && child.tag === 'u')) && child.children.every(plain));
+  if (!node.children.every(plain)) creationError('INVALID_TOC_ENTRY', '{% tc %} content must be plain text, bold, italic or underlined: no fill, cross-reference, footnote or line break.', node, line);
+  const text = node.children.map((child) => inlineText(child)).join('');
+  if (!text.trim()) creationError('INVALID_TOC_ENTRY', '{% tc %} needs text, such as {% tc level=1 %}Definitions{% /tc %}.', node, line);
+  if (TOC_ENTRY_UNSUPPORTED_TEXT.test(text)) creationError('INVALID_TOC_ENTRY', `{% tc %} text '${text.slice(0, 40)}' holds a double quote or backslash, which a table-of-contents entry cannot carry.`, node, line);
+}
+
 function checkList(list: MarkdocNode, depth: number): void {
   if (depth > 2) creationError('LIST_TOO_DEEP', 'Lists may nest at most three levels.', list);
   for (const item of list.children) {
@@ -361,18 +625,15 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
   checkAttributes(node, allowed);
   if (TOP_LEVEL_ONLY.has(node.tag!) && !topLevel) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% ${node.tag} /%} must stand at the top level.`, node, line);
   switch (node.tag) {
-    case 'center':
-    case 'legend': {
-      const paragraphs = node.children.filter((child) => child.type === 'paragraph');
-      if (paragraphs.length > 0) {
-        const other = node.children.find((child) => child.type !== 'paragraph');
-        if (other) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% ${node.tag} %} may contain only paragraphs, not '${other.type}'.`, other);
-        for (const paragraph of paragraphs) checkInline(paragraph.children, lineOf(paragraph), node.tag === 'center');
-      } else {
-        checkInline(node.children, line, node.tag === 'center');
-      }
+    case 'paragraph-layout':
+      checkParagraphLayoutAttributes(node, line);
+      if (node.children.length === 0) creationError('INVALID_PARAGRAPH_LAYOUT', '{% paragraph-layout %} needs text, such as {% paragraph-layout align="left" %}Notice address{% /paragraph-layout %}.', node, line);
+      checkTextBlockContent(node, line);
       return;
-    }
+    case 'center':
+    case 'legend':
+      checkTextBlockContent(node, line);
+      return;
     case 'signer': {
       // The name is either name="…" (plain text) or the tag's inline content, which may hold {% fill %}.
       const { name, date } = node.attributes;
@@ -408,10 +669,33 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
       return;
     case 'section': {
       if (node.children.length > 0) creationError('UNSUPPORTED_CREATION_SYNTAX', '{% section /%} is self-closing.', node, line);
-      const { footer } = node.attributes;
-      const pageNumbers = node.attributes['page-numbers'];
+      const { footer, header } = node.attributes;
       if (footer !== undefined && (typeof footer !== 'string' || !footer.trim())) creationError('INVALID_SECTION', 'section footer="…" must be a non-empty string.', node, line);
-      if (pageNumbers !== undefined && typeof pageNumbers !== 'boolean') creationError('INVALID_SECTION', 'section page-numbers must be true or false.', node, line);
+      if (header !== undefined && header !== false && (typeof header !== 'string' || !header.trim())) {
+        creationError('INVALID_SECTION', 'section header="…" must be a non-empty string, or header=false for an empty header.', node, line);
+      }
+      for (const key of ['header-first', 'footer-first']) {
+        const value = node.attributes[key];
+        if (value !== undefined && (typeof value !== 'string' || !value.trim())) creationError('INVALID_SECTION', `section ${key}="…" must be the first page's text, or "none".`, node, line);
+      }
+      for (const key of ['page-numbers', 'footer-italic']) {
+        const value = node.attributes[key];
+        if (value !== undefined && typeof value !== 'boolean') creationError('INVALID_SECTION', `section ${key} must be true or false.`, node, line);
+      }
+      for (const [key, allowed] of Object.entries(RUNNING_TEXT_VALUES)) {
+        const value = node.attributes[key];
+        if (value !== undefined && (typeof value !== 'string' || !allowed.includes(value))) {
+          creationError('INVALID_SECTION', `section ${key} must be ${orList(allowed.map((word) => `"${word}"`))}, got ${JSON.stringify(value)}.`, node, line);
+        }
+      }
+      const start = node.attributes['page-number-start'];
+      if (start !== undefined && (!Number.isInteger(start) || (start as number) < 1 || (start as number) > PAGE_NUMBER_START_MAX)) {
+        creationError('INVALID_SECTION', `section page-number-start must be a whole number from 1 to ${PAGE_NUMBER_START_MAX}, such as page-number-start=1; got ${JSON.stringify(start)}.`, node, line);
+      }
+      const { 'page-number-start': _start, ...running } = node.attributes;
+      void _start;
+      const problem = checkRunningTextKeys(running, { pageNumbers: 'page-numbers=true', footer: 'footer="…"', header: 'header="…"' });
+      if (problem) creationError('INVALID_SECTION', `${problem}.`, node, line);
       return;
     }
     case 'table':
@@ -420,6 +704,86 @@ function checkBlockTag(node: MarkdocNode, topLevel: boolean, line: number | unde
     case 'footnote':
       checkFootnoteBlock(node, line);
       return;
+    case 'run-in-paragraph':
+      checkRunInParagraphTag(node, line);
+      return;
+    case 'toc':
+      if (node.children.length > 0) creationError('INVALID_TOC', '{% toc /%} is self-closing; its entries come from the headings, run-in paragraphs and {% tc %} entries.', node, line);
+      return;
+  }
+}
+
+/**
+ * One `{% run-in-paragraph level="…" heading="…" %}`: a level from
+ * `RUN_IN_LEVELS`, a heading on one line (required for an article or a
+ * section, which a table of contents lists), and at most one paragraph of
+ * body text, which follows the heading in the same paragraph.
+ */
+function checkRunInParagraphTag(node: MarkdocNode, line: number | undefined): void {
+  const { level, heading } = node.attributes;
+  if (typeof level !== 'string' || !(RUN_IN_LEVELS as readonly string[]).includes(level)) {
+    creationError('INVALID_RUN_IN_PARAGRAPH', `{% run-in-paragraph %} needs level=${orList(RUN_IN_LEVELS.map((word) => `"${word}"`))}; got ${JSON.stringify(level ?? null)}.`, node, line);
+  }
+  if (heading !== undefined && (typeof heading !== 'string' || !heading.trim() || /[\r\n]/u.test(heading))) {
+    creationError('INVALID_RUN_IN_PARAGRAPH', 'run-in-paragraph heading="…" must be one line of text.', node, line);
+  }
+  if (heading === undefined && (level === 'article' || level === 'section')) {
+    creationError('INVALID_RUN_IN_PARAGRAPH', `A run-in ${level} needs heading="…", such as heading="Engagement".`, node, line);
+  }
+  if (typeof heading === 'string') checkInline([{ type: 'text', attributes: { content: heading }, children: [] } as unknown as MarkdocNode], line, true);
+  const paragraphs = node.children.filter((child) => child.type === 'paragraph');
+  if (paragraphs.length === 0) {
+    if (node.children.length > 0) checkInline(node.children, line, true);
+    else if (heading === undefined) creationError('INVALID_RUN_IN_PARAGRAPH', 'A run-in clause needs a heading or text.', node, line);
+    return;
+  }
+  const other = node.children.find((child) => child.type !== 'paragraph');
+  if (other) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% run-in-paragraph %} may contain only one paragraph, not '${other.type}'.`, other);
+  if (paragraphs.length > 1) creationError('INVALID_RUN_IN_PARAGRAPH', '{% run-in-paragraph %} holds one paragraph; start another run-in paragraph or a plain paragraph after it.', paragraphs[1], lineOf(paragraphs[1]));
+  checkInline(paragraphs[0]!.children, lineOf(paragraphs[0]), true);
+}
+
+/**
+ * The content of a `center`, `legend` or `paragraph-layout` block: one line of inline
+ * text, or paragraphs of it and nothing else. A legend is never highlighted.
+ */
+function checkTextBlockContent(node: MarkdocNode, line: number | undefined): void {
+  const highlight = node.tag !== 'legend';
+  const paragraphs = node.children.filter((child) => child.type === 'paragraph');
+  if (paragraphs.length === 0) {
+    checkInline(node.children, line, highlight);
+    return;
+  }
+  const other = node.children.find((child) => child.type !== 'paragraph');
+  if (other) creationError('UNSUPPORTED_CREATION_SYNTAX', `{% ${node.tag} %} may contain only paragraphs, not '${other.type}'.`, other);
+  for (const paragraph of paragraphs) checkInline(paragraph.children, lineOf(paragraph), highlight);
+}
+
+/**
+ * `{% paragraph-layout %}` attributes: at least one, each from its closed list
+ * (`PARAGRAPH_LAYOUT_ATTRIBUTES`) or a flag set to `true` (`PARAGRAPH_LAYOUT_FLAGS`), and an `indent-hanging` no larger than its
+ * `indent-left`, so the first line never starts in the left margin.
+ */
+function checkParagraphLayoutAttributes(node: MarkdocNode, line: number | undefined): void {
+  const given = Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES).filter((key) => node.attributes[key] !== undefined);
+  const flags = PARAGRAPH_LAYOUT_FLAGS.filter((key) => node.attributes[key] !== undefined);
+  if (given.length === 0 && flags.length === 0) creationError('INVALID_PARAGRAPH_LAYOUT', `{% paragraph-layout %} needs at least one of ${orList([...Object.keys(PARAGRAPH_LAYOUT_ATTRIBUTES), ...PARAGRAPH_LAYOUT_FLAGS])}.`, node, line);
+  for (const key of flags) {
+    if (node.attributes[key] !== true) creationError('INVALID_PARAGRAPH_LAYOUT', `paragraph-layout ${key} must be true (written ${key}=true), got ${JSON.stringify(node.attributes[key])}.`, node, line);
+  }
+  for (const key of given) {
+    const allowed = PARAGRAPH_LAYOUT_ATTRIBUTES[key]!;
+    const value = paragraphLayoutValue(node.attributes[key]);
+    if (value === undefined || !allowed.includes(value)) {
+      creationError('INVALID_PARAGRAPH_LAYOUT', `paragraph-layout ${key} must be ${orList(allowed.map((word) => `"${word}"`))}, got ${JSON.stringify(node.attributes[key])}.`, node, line);
+    }
+  }
+  const hanging = paragraphLayoutValue(node.attributes['indent-hanging']);
+  if (hanging !== undefined) {
+    const left = paragraphLayoutValue(node.attributes['indent-left']);
+    if (left === undefined || Number(left) < Number(hanging)) {
+      creationError('INVALID_PARAGRAPH_LAYOUT', `paragraph-layout indent-hanging="${hanging}" needs an indent-left of at least "${hanging}", so the first line does not start in the margin.`, node, line);
+    }
   }
 }
 
@@ -523,6 +887,8 @@ export function validateCreationAst(children: MarkdocNode[], options: { fillIns?
   try {
     validateBlocks(children);
     if (options.headingNumbers) checkHeadingNumbering(children);
+    checkRunInParagraphs(children, options.headingNumbers);
+    checkTableOfContents(children);
     checkFootnotePairs(children);
     checkCrossReferenceTargets(children, options.headingNumbers !== undefined);
   } finally {
@@ -645,13 +1011,86 @@ function checkHeadingNumbering(children: MarkdocNode[]): void {
   }
 }
 
+/** A top-level block's tag: a block tag, or a paragraph holding only one. */
+function topLevelTag(node: MarkdocNode): MarkdocNode | undefined {
+  return node.type === 'tag' ? node : soleInlineTag(node);
+}
+
+/**
+ * Run-in paragraphs number as one outline: an article, its sections, their
+ * clauses and the clauses' subclauses. Each level needs the level above it
+ * since the last paragraph of that level, as Word counts it: a section's
+ * number names its article, and a clause placed with no section in its
+ * article would make Word and LibreOffice show different full numbers
+ * ("2(a)" or "2.01(a)", #1250 evidence), so it is refused, as is a section
+ * before any article. Run-in paragraphs are an outline of their own, so they
+ * do not mix with numbered `##`/`###` headings.
+ */
+function checkRunInParagraphs(children: MarkdocNode[], headingNumbers: HeadingNumberScheme | undefined): void {
+  const above: Record<RunInLevel, RunInLevel | null> = { article: null, section: 'article', clause: 'section', subclause: 'clause' };
+  const seen = new Set<RunInLevel>();
+  for (const node of children) {
+    const tag = topLevelTag(node);
+    if (tag?.tag !== 'run-in-paragraph') continue;
+    if (headingNumbers) {
+      creationError('RUN_IN_WITH_HEADING_NUMBERS', 'Run-in paragraphs number their own outline; drop frontmatter heading-numbers, or write the Articles and Sections as ## and ### headings.', node);
+    }
+    const level = tag.attributes.level as RunInLevel;
+    const needs = above[level];
+    if (needs && !seen.has(needs)) {
+      creationError('RUN_IN_SKIPS_LEVEL', `A run-in ${level} follows a run-in ${needs}; put a {% run-in-paragraph level="${needs}" %} before it${needs === 'section' ? ' in this article' : needs === 'clause' ? ' in this section' : ''}.`, node);
+    }
+    // A level restarts the levels below it.
+    for (const lower of RUN_IN_LEVELS.slice(RUN_IN_LEVELS.indexOf(level) + 1)) seen.delete(lower);
+    seen.add(level);
+  }
+}
+
+/** The plain text of a heading's inline content, as its table-of-contents entry shows it. */
+function headingEntryText(node: MarkdocNode): string {
+  return node.children.map((child) => inlineText(child)).join('').trim();
+}
+
+/**
+ * A document has at most one `{% toc /%}`, and it lists at least one entry:
+ * a `##` or `###` heading, a run-in article or section, or a `{% tc %}`
+ * entry. With a table of contents, each heading and run-in heading becomes
+ * an entry (a TC field), so its text must be one a TC instruction can
+ * carry: no cross-reference, double quote or backslash.
+ */
+function checkTableOfContents(children: MarkdocNode[]): void {
+  const tocs = children.filter((node) => topLevelTag(node)?.tag === 'toc');
+  if (tocs.length === 0) return;
+  if (tocs.length > 1) creationError('DUPLICATE_TOC', `A document has one {% toc /%}; the first is at line ${lineOf(tocs[0]) ?? '?'}.`, tocs[1]);
+  let entries = 0;
+  for (const node of children) {
+    const tag = topLevelTag(node);
+    if (node.type === 'heading' && Number(node.attributes.level) >= 2) {
+      entries += 1;
+      const text = headingEntryText(node);
+      if (holdsTag(node, 'xref') || TOC_ENTRY_UNSUPPORTED_TEXT.test(text)) {
+        creationError('TOC_ENTRY_TEXT_UNSUPPORTED', `Heading '${text.slice(0, 40)}' is a table-of-contents entry, which cannot hold a cross-reference, double quote or backslash.`, node);
+      }
+    } else if (tag?.tag === 'run-in-paragraph' && RUN_IN_TOC_LEVEL[tag.attributes.level as RunInLevel] !== undefined) {
+      entries += 1;
+      if (TOC_ENTRY_UNSUPPORTED_TEXT.test(String(tag.attributes.heading))) {
+        creationError('TOC_ENTRY_TEXT_UNSUPPORTED', `Run-in heading '${String(tag.attributes.heading).slice(0, 40)}' is a table-of-contents entry, which cannot hold a double quote or backslash.`, node);
+      }
+    }
+    if (holdsTag(node, 'tc')) entries += 1;
+  }
+  if (entries === 0) {
+    creationError('TOC_WITHOUT_ENTRIES', '{% toc /%} has nothing to list; add ## or ### headings, run-in articles or sections, or {% tc level=1 %}…{% /tc %} entries.', tocs[0]);
+  }
+}
+
 /**
  * Where a target's number comes from: `headingNumbered` marks a numbered
  * heading, or an ordered list item under one, numbered by the heading
  * definition ("Section 1.01", "Section 1.01(a)"); `articleClause` marks such
  * an item directly under an Article, before any Section.
  */
-type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number; headingNumbered?: true; articleClause?: true; node: MarkdocNode };
+type TargetSite = { kind: 'heading' | 'numbered' | 'bullet'; line?: number; headingNumbered?: true; articleClause?: true; runIn?: RunInLevel; node: MarkdocNode };
 
 /** Which numbered heading a top-level block sits under, with `heading-numbers` on. */
 type HeadingScope = 'none' | 'article' | 'section';
@@ -664,6 +1103,16 @@ type HeadingScope = 'none' | 'article' | 'section';
  */
 function collectTargets(node: MarkdocNode, ordered: boolean, line: number | undefined, out: Map<string, TargetSite>, scope: HeadingScope = 'none'): void {
   const here = lineOf(node) ?? line;
+  if (node.type === 'tag' && node.tag === 'run-in-paragraph' && node.attributes.id !== undefined) {
+    // A run-in paragraph is numbered by the run-in definition: "2.", "2.01", "(a)", "(i)".
+    const id = node.attributes.id;
+    if (typeof id !== 'string' || !TARGET_ID_RE.test(id)) {
+      creationError('INVALID_ID', `Id '${String(id)}' must be lowercase kebab-case starting with a letter, such as purchase-price-adjustment.`, undefined, here);
+    }
+    const earlier = out.get(id);
+    if (earlier) creationError('DUPLICATE_ID', `Id '${id}' is used twice (first at line ${earlier.line ?? '?'}).`, undefined, here);
+    out.set(id, { kind: 'numbered', node, runIn: node.attributes.level as RunInLevel, ...(here === undefined ? {} : { line: here }) });
+  }
   const id = node.type === 'tag' || node.type === 'document' ? undefined : node.attributes.id;
   if (id !== undefined) {
     if (node.type !== 'heading' && node.type !== 'item') {
@@ -895,6 +1344,16 @@ function checkCrossReferenceTargets(children: MarkdocNode[], headingNumbers = fa
     const target = targets.get(reference.to);
     if (!target) {
       creationError('XREF_UNKNOWN_ID', `{% xref to="${reference.to}" /%} names no {% #${reference.to} %} target.`, undefined, reference.line);
+    }
+    if (target.runIn && (reference.show === 'text' || reference.number === 'relative')) {
+      creationError(
+        'XREF_RUN_IN_FORM_UNSUPPORTED',
+        reference.show === 'text'
+          ? `{% xref to="${reference.to}" show="text" /%} names a run-in paragraph (line ${target.line ?? '?'}), whose text runs on past its heading into the body; refer to its number instead.`
+          : `{% xref to="${reference.to}" number="relative" /%} names a run-in paragraph (line ${target.line ?? '?'}); use number="full" or number="paragraph".`,
+        undefined,
+        reference.line,
+      );
     }
     if (reference.show === 'text') {
       checkTextReferenceTarget(reference, target);

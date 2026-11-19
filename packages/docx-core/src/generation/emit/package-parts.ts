@@ -3,7 +3,8 @@
  * document properties. Built with the same skeleton-parse + namespace-aware
  * DOM approach as the WML parts — no string concatenation of dynamic values.
  *
- * docProps/core.xml dates come exclusively from the spec (meta.createdIso);
+ * docProps/core.xml dates come exclusively from the spec (meta.createdIso and
+ * meta.modifiedIso);
  * generation never reads the clock, keeping output byte-deterministic.
  */
 
@@ -37,7 +38,7 @@ const EXTENDED_PROPS_NS = 'http://schemas.openxmlformats.org/officeDocument/2006
 /** Emit every package-plumbing part into the context's file map. */
 export function emitPackageParts(spec: DocumentSpec, ctx: CompileContext): void {
   ctx.setFileContent('docProps/core.xml', emitCoreProps(spec));
-  ctx.setFileContent('docProps/app.xml', emitAppProps());
+  ctx.setFileContent('docProps/app.xml', emitAppProps(spec));
   ctx.setFileContent('_rels/.rels', emitPackageRels());
   ctx.setFileContent('word/_rels/document.xml.rels', emitDocumentRels(ctx));
   ctx.setFileContent('[Content_Types].xml', emitContentTypes(ctx));
@@ -119,19 +120,29 @@ function emitCoreProps(spec: DocumentSpec): string {
 
   if (meta?.title) addText(CORE_PROPS_NS.dc, 'dc:title', meta.title);
   if (meta?.author) addText(CORE_PROPS_NS.dc, 'dc:creator', meta.author);
+  if (meta?.lastModifiedBy) addText(CORE_PROPS_NS.cp, 'cp:lastModifiedBy', meta.lastModifiedBy);
   if (meta?.createdIso) {
     addText(CORE_PROPS_NS.dcterms, 'dcterms:created', meta.createdIso, { 'xsi:type': 'dcterms:W3CDTF' });
-    addText(CORE_PROPS_NS.dcterms, 'dcterms:modified', meta.createdIso, { 'xsi:type': 'dcterms:W3CDTF' });
+  }
+  const modifiedIso = meta?.modifiedIso ?? meta?.createdIso;
+  if (modifiedIso) {
+    addText(CORE_PROPS_NS.dcterms, 'dcterms:modified', modifiedIso, { 'xsi:type': 'dcterms:W3CDTF' });
   }
 
   return XML_DECL + serializeXml(doc);
 }
 
-function emitAppProps(): string {
+/** The default `Application`, kept so a spec without `meta.application` compiles to the bytes it always did. */
+export const DEFAULT_GENERATED_APPLICATION = 'safe-docx';
+
+function emitAppProps(spec: DocumentSpec): string {
   const doc = parseXml(`<Properties xmlns="${EXTENDED_PROPS_NS}"/>`);
   const root = doc.documentElement!;
-  const app = doc.createElementNS(EXTENDED_PROPS_NS, 'Application');
-  app.appendChild(doc.createTextNode('safe-docx'));
-  root.appendChild(app);
+  const application = spec.meta?.application === undefined ? DEFAULT_GENERATED_APPLICATION : spec.meta.application;
+  if (application !== null) {
+    const app = doc.createElementNS(EXTENDED_PROPS_NS, 'Application');
+    app.appendChild(doc.createTextNode(application));
+    root.appendChild(app);
+  }
   return XML_DECL + serializeXml(doc);
 }

@@ -1,12 +1,7 @@
-let cached: typeof import('@usejunior/google-docs-core') | null | undefined;
+import { ProviderLoader } from './provider_loader.js';
 
-export async function loadGDocsCore(): Promise<typeof import('@usejunior/google-docs-core') | null> {
-  if (cached !== undefined) return cached;
-  try {
-    cached = await import('@usejunior/google-docs-core');
-    return cached;
-  } catch {
-    cached = null;
-    return null;
-  }
+export const gdocsProviderLoader = new ProviderLoader(() => import('@usejunior/google-docs-core'));
+
+export function loadGDocsCore(): Promise<typeof import('@usejunior/google-docs-core') | null> {
+  return gdocsProviderLoader.load();
 }

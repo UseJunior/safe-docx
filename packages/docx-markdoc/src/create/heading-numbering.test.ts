@@ -330,5 +330,6 @@ describeWithLibreOffice('Traceability: numbered headings in a real LibreOffice P
         await rm(dir, { recursive: true, force: true });
       }
     },
+    60_000,
   );
 });

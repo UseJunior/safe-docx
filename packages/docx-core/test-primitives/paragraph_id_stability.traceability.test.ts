@@ -1,7 +1,10 @@
 import { describe, expect } from 'vitest';
 import { parseXml } from '../src/primitives/xml.js';
 import { OOXML } from '../src/primitives/namespaces.js';
-import { getParagraphBookmarkId, insertParagraphBookmarks } from '../src/primitives/bookmarks.js';
+import { getParagraphBookmarkId, getW14ParaId, insertParagraphBookmarks } from '../src/primitives/bookmarks.js';
+import { DocxDocument } from '../src/primitives/document.js';
+import { createRevisionContext, createRevisionIdState } from '../src/primitives/track-changes-emitter.js';
+import { createZipBuffer, readZipText } from '../src/primitives/zip.js';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 
 const TEST_FEATURE = 'document-paragraph-id-stability-and-fingerprint';
@@ -217,6 +220,110 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
         // order (e.g., if derivation later considered prior-document state)
         // would fail the test loudly. See companion scenario for the seed math.
         expect(firstOpenIds).toEqual(['_bk_04c5b72c79', '_bk_a2abd08897']);
+      });
+    },
+  );
+
+  test(
+    'insertParagraph assigns distinct w14:paraId values and keeps _bk_* IDs stable across save and reopen (#1220)',
+    async ({ given, when, then }: AllureBddContext) => {
+      const contentTypesXml =
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+        `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+        `<Default Extension="xml" ContentType="application/xml"/>` +
+        `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+        `</Types>`;
+      const relsXml =
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+        `</Relationships>`;
+      const documentXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="${OOXML.W_NS}" xmlns:w14="${OOXML.W14_NS}" ` +
+        `xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14"><w:body>` +
+        `<w:p w14:paraId="10000001" w14:textId="77777777"><w:r><w:t>Alpha</w:t></w:r></w:p>` +
+        `<w:p w14:paraId="10000002" w14:textId="77777777"><w:r><w:t>Bravo</w:t></w:r></w:p>` +
+        `<w:sectPr/></w:body></w:document>`;
+
+      let doc!: DocxDocument;
+      let alphaId = '';
+      let bravoId = '';
+      let charlieId = '';
+      let deltaId = '';
+      let echoId = '';
+      let foxtrotId = '';
+
+      await given('a document with two w14:paraId-bearing paragraphs Alpha (10000001) and Bravo (10000002)', async () => {
+        const buffer = await createZipBuffer({
+          '[Content_Types].xml': contentTypesXml,
+          '_rels/.rels': relsXml,
+          'word/document.xml': documentXml,
+        });
+        doc = await DocxDocument.load(buffer);
+        doc.insertParagraphBookmarks('attachment-1220');
+        const initial = doc.readParagraphs().paragraphs;
+        alphaId = initial[0]!.id;
+        bravoId = initial[1]!.id;
+      });
+
+      await when('three tracked insertParagraph calls insert Charlie, Delta (with styleSourceId), and Echo\\n\\nFoxtrot', async () => {
+        const idState = createRevisionIdState();
+        const ctx = createRevisionContext({ author: 'SafeDocX', idState });
+
+        const insCharlie = doc.insertParagraph({
+          positionalAnchorNodeId: bravoId,
+          relativePosition: 'AFTER',
+          newText: 'Charlie',
+        }, ctx);
+        charlieId = insCharlie.newParagraphId;
+
+        const insDelta = doc.insertParagraph({
+          positionalAnchorNodeId: bravoId,
+          relativePosition: 'BEFORE',
+          styleSourceId: alphaId,
+          newText: 'Delta',
+        }, ctx);
+        deltaId = insDelta.newParagraphId;
+
+        const insMulti = doc.insertParagraph({
+          positionalAnchorNodeId: alphaId,
+          relativePosition: 'AFTER',
+          newText: 'Echo\n\nFoxtrot',
+        }, ctx);
+        echoId = insMulti.newParagraphIds[0]!;
+        foxtrotId = insMulti.newParagraphIds[1]!;
+      });
+
+      await then('no w14:paraId is duplicated in clean or tracked output, and _bk_* IDs remain stable across save and reopen', async () => {
+        const expectedOrderIds = [alphaId, echoId, foxtrotId, deltaId, bravoId, charlieId];
+        expect(new Set(expectedOrderIds).size).toBe(6);
+
+        const trackedSaved = await doc.toBuffer({ cleanBookmarks: true });
+        const cleanSaved = await doc.toAcceptedBuffer({ author: 'SafeDocX' }, { cleanBookmarks: true });
+
+        for (const [label, savedBuffer] of [['tracked', trackedSaved.buffer], ['clean', cleanSaved.buffer]] as const) {
+          const savedXml = (await readZipText(savedBuffer, 'word/document.xml'))!;
+          const parsed = parseXml(savedXml);
+          const paragraphs = Array.from(parsed.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+          expect(paragraphs, `${label} paragraph count`).toHaveLength(6);
+
+          const paraIds = paragraphs.map((p) => getW14ParaId(p as Element)?.toUpperCase() ?? null);
+          expect(paraIds.every((id) => id !== null && /^[0-9A-F]{8}$/.test(id)), `${label} valid 8-hex paraIds`).toBe(true);
+          expect(new Set(paraIds).size, `${label} unique w14:paraId count`).toBe(6);
+          expect(paraIds[0]).toBe('10000001');
+          expect(paraIds[4]).toBe('10000002');
+          for (const insertedIndex of [1, 2, 3, 5]) {
+            expect(paraIds[insertedIndex]).not.toBe('10000001');
+            expect(paraIds[insertedIndex]).not.toBe('10000002');
+          }
+
+          const reopened = await DocxDocument.load(savedBuffer);
+          reopened.insertParagraphBookmarks('reopened-1220');
+          const reopenedIds = reopened.readParagraphs().paragraphs.map((p) => p.id);
+          expect(reopenedIds, `${label} reopened _bk_* IDs`).toEqual(expectedOrderIds);
+        }
       });
     },
   );

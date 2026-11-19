@@ -287,6 +287,53 @@ describe('complete tagged-tree construction', () => {
     },
   );
 
+  moveConformanceTest('keeps resegmented runs in text-identical paragraphs out of global moves (#1414)', () => {
+    for (const terms of [['Alpha', 'Bravo'], ['Alpha', 'Alpha']]) {
+      for (const splitSource of [false, true]) {
+        const paragraph = (term: string, revised: boolean): string => '<w:p>'
+          + (revised || splitSource
+            ? `<w:r><w:t>“</w:t></w:r><w:r>${revised ? '<w:rPr><w:u w:val="single"/></w:rPr>' : ''}<w:t>${term}</w:t></w:r><w:r><w:t>” has the meaning given in the preamble.</w:t></w:r>`
+            : `<w:r><w:t>“${term}” has the meaning given in the preamble.</w:t></w:r>`)
+          + '</w:p>';
+        const original = documentWithBody(terms.map((term) => paragraph(term, false)).join(''));
+        const revised = documentWithBody(terms.map((term) => paragraph(term, true)).join(''));
+        const result = constructTaggedTree(original, revised);
+        expect(result.moves).toEqual([]);
+        const output = serializeTaggedTree(result.tree, createPreservePlan(original, revised, result.tree, {
+          author: 'Comparator', date: '2026-11-11T00:00:00Z',
+        }), { moves: result.moves });
+        expect(output).toContain('<w:rPrChange');
+        expect(output).not.toMatch(/<w:(?:ins|del|moveFrom|moveTo)(?:\s|>)/u);
+        expect(resolvedText(acceptAllChanges(output))).toBe(revised.textContent);
+        expect(resolvedText(rejectAllChanges(output))).toBe(original.textContent);
+      }
+    }
+  });
+
+  moveConformanceTest('still detects non-text runs moved between text-identical paragraph pairs', () => {
+    for (const [localName, content] of [
+      ['sym', '<w:sym w:font="Wingdings" w:char="F0FC"/>'],
+      ['br', '<w:br w:type="page"/>'],
+      ['drawing', '<w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:docPr id="1" name="Picture 1"/></wp:inline></w:drawing>'],
+    ]) {
+      const first = '<w:r><w:t>First paragraph text.</w:t></w:r>';
+      const second = '<w:r><w:t>Second paragraph text.</w:t></w:r>';
+      const moved = `<w:r>${content}</w:r>`;
+      const original = documentWithBody(`<w:p>${first}${moved}</w:p><w:p>${second}</w:p>`);
+      const revised = documentWithBody(`<w:p>${first}</w:p><w:p>${second}${moved}</w:p>`);
+      const result = constructTaggedTree(original, revised);
+      expect(result.moves).toHaveLength(1);
+      const output = serializeTaggedTree(result.tree, createPreservePlan(original, revised, result.tree, {
+        author: 'Comparator', date: '2026-11-11T00:00:00Z',
+      }), { moves: result.moves });
+      for (const [projection, owner] of [[acceptAllChanges(output), 1], [rejectAllChanges(output), 0]] as const) {
+        const paragraphs = parseXml(projection).getElementsByTagNameNS(W_NS, 'p');
+        expect(paragraphs[owner]!.getElementsByTagNameNS(W_NS, localName!).length).toBe(1);
+        expect(paragraphs[1 - owner]!.getElementsByTagNameNS(W_NS, localName!).length).toBe(0);
+      }
+    }
+  });
+
   test('honors fuzzy move threshold, minimum word count, and case behavior', () => {
     const original = body([
       'Opening anchor remains unchanged.',
@@ -315,7 +362,7 @@ describe('complete tagged-tree construction', () => {
     }).moves).toHaveLength(0);
   });
 
-  test('pairs only outermost overlapping candidates and remains stable for repeated similar blocks', () => {
+  test('leaves relocated block containers unpaired and remains stable for repeated similar blocks', () => {
     const nested = (text: string) => '<w:sdt><w:sdtContent>'
       + `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`
       + '</w:sdtContent></w:sdt>';
@@ -330,9 +377,9 @@ describe('complete tagged-tree construction', () => {
       moveMinimumWordCount: 5,
       moveSimilarityThreshold: 0.7,
     });
-    expect(nestedResult.moves).toHaveLength(1);
-    expect(nestedResult.moves[0]?.source.node.localName).toBe('sdt');
-    expect(nestedResult.moves[0]?.destination.node.localName).toBe('sdt');
+    // No revision particle can wrap a block w:sdt, so a relocated one is a
+    // tracked deletion and insertion of its content, never a move (#1386).
+    expect(nestedResult.moves).toHaveLength(0);
 
     const repeatedOriginalXml = [
       'Opening anchor remains unchanged.',
@@ -699,8 +746,14 @@ describe('complete tagged-tree construction', () => {
     const accepted = parseXml(acceptAllChanges(output));
     const rejected = parseXml(rejectAllChanges(output));
 
-    expect(accepted.getElementsByTagNameNS(W_NS, 'fldSimple')[0]!.getAttributeNS(W_NS, 'instr')).toBe(' TIME ');
-    expect(rejected.getElementsByTagNameNS(W_NS, 'fldSimple')[0]!.getAttributeNS(W_NS, 'instr')).toBe(' DATE ');
+    // A changed simple field is tracked as complex-field runs (#1422), so each
+    // projection carries the instruction in w:instrText rather than w:instr.
+    const instruction = (document: ReturnType<typeof parseXml>): string =>
+      Array.from(document.getElementsByTagNameNS(W_NS, 'fldSimple'), (field) => field.getAttributeNS(W_NS, 'instr') ?? '')
+        .concat(Array.from(document.getElementsByTagNameNS(W_NS, 'instrText'), (text) => text.textContent ?? ''))
+        .join('');
+    expect(instruction(accepted)).toBe(' TIME ');
+    expect(instruction(rejected)).toBe(' DATE ');
     expect(accepted.getElementsByTagNameNS(W_NS, 't')[0]!.getAttribute('xml:space')).toBeNull();
     expect(rejected.getElementsByTagNameNS(W_NS, 't')[0]!.getAttribute('xml:space')).toBe('preserve');
   });

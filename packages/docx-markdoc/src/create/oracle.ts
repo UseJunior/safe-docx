@@ -1,4 +1,5 @@
 import Markdoc, { type Node as MarkdocNode } from '@markdoc/markdoc';
+import { keepsPreviousWithNext, runInKeepsWithNext } from './keep-next-rules.js';
 import { parseCreationFrontmatter } from './validate.js';
 
 /**
@@ -21,6 +22,15 @@ import { parseCreationFrontmatter } from './validate.js';
  *   `•`, `◦`, `▪`;
  * - a table's first row is its header and repeats on continuation pages;
  * - a footer page number is a PAGE field, and pages number continuously from 1;
+ *   `page-number-format: dashed` shows it as `- 1 -` and `page-of-total` as
+ *   `Page 1 of 3`, the total a NUMPAGES field; `footer-layout: one-line`
+ *   puts the footer text, a tab and the number in one paragraph;
+ * - a header is one paragraph of its text; a section that declares no header
+ *   or footer inherits the previous one, first-page variants included; with
+ *   `header-first` or `footer-first` in effect, a section's first page shows
+ *   the variant (its text, or nothing for `none`; a footer variant keeps the
+ *   page number) where there is one, and the section's own header or footer
+ *   where there is not;
  * - a `{% fnref /%}` adds no text to its paragraph; its `{% footnote %}` body
  *   becomes a note numbered 1, 2, 3, … in the order of the references, and
  *   the body blocks themselves are not body paragraphs;
@@ -51,7 +61,12 @@ import { parseCreationFrontmatter } from './validate.js';
  *   counted from 1 under each heading; an xref to a numbered heading shows
  *   its label in both forms, and to such a clause its label after the
  *   Section it is in (`Section 2.04(b)(i)`), or after the Article when no
- *   Section of that Article precedes it (`ARTICLE II(a)`).
+ *   Section of that Article precedes it (`ARTICLE II(a)`);
+ * - each paragraph of a `{% paragraph-layout %}` is a body paragraph carrying, in its own
+ *   `w:pPr`, the tag's alignment as `w:jc` (`justify` is `both`) and its
+ *   indents as `w:ind` in twips (1440 to the inch): `indent-left` as
+ *   `w:left`, `indent-hanging` as `w:hanging` (see {@link SourceBodyEntry.layout});
+ *   no other body paragraph sets either directly.
  */
 
 /** The only normalization applied before comparing; anything wider could hide an omission. */
@@ -66,6 +81,35 @@ export function normalizeOracleText(text: string): string {
 const SIGNATURE_LINE = '_'.repeat(30);
 /** Marker for a footer PAGE field in the expected projection; any decimal page number satisfies it. */
 export const PAGE_NUMBER_FIELD = '\u0000PAGE';
+/** Marker for a footer NUMPAGES field (the page count) in the expected projection; any decimal number satisfies it. */
+export const PAGE_COUNT_FIELD = '\u0000NUMPAGES';
+/** What a field marker matches in a read-back line: a page number in decimal or roman numerals, or a page count. */
+const PAGE_NUMBER_PATTERN = '(?:\\d+|[ivxlcdm]+|[IVXLCDM]+)';
+/** Every field marker in an expected header or footer line. */
+const FIELD_MARKERS = /\u0000(?:PAGE|NUMPAGES)(?![A-Z])/gu;
+const hasFieldMarker = (text: string) => /\u0000(?:PAGE|NUMPAGES)(?![A-Z])/u.test(text);
+
+/**
+ * The page number a `page-number-format` shows, written with field markers.
+ * Contract constants, duplicated on purpose from the lowering.
+ */
+const PAGE_NUMBER_TEXT: Record<string, string> = {
+  plain: PAGE_NUMBER_FIELD,
+  dashed: `- ${PAGE_NUMBER_FIELD} -`,
+  'page-of-total': `Page ${PAGE_NUMBER_FIELD} of ${PAGE_COUNT_FIELD}`,
+  'lower-roman': PAGE_NUMBER_FIELD,
+  'upper-roman': PAGE_NUMBER_FIELD,
+};
+
+/** The page numerals of each `page-number-format`: roman for the roman formats, decimal otherwise. */
+export type PageNumeral = 'decimal' | 'lower-roman' | 'upper-roman';
+
+/** A page number as the PDF prints it in `numeral`. */
+export function pageNumeral(n: number, numeral: PageNumeral): string {
+  if (numeral === 'decimal') return String(n);
+  const lower = roman(n);
+  return numeral === 'lower-roman' ? lower : lower.toUpperCase();
+}
 
 export type SourceBodyEntry = {
   text: string;
@@ -80,7 +124,52 @@ export type SourceBodyEntry = {
   table?: { id: number; row: number };
   /** Offsets in `text` of the footnote references in this paragraph, in order. */
   footnoteMarks?: number[];
+  /** A paragraph of the table of contents' cached result: one generated entry, not source text. */
+  tableOfContents?: true;
+  /**
+   * For a paragraph of a `{% paragraph-layout %}`: its direct `w:jc`, `w:ind`, `w:keepNext` and `w:keepLines` as one
+   * token, `jc=<val>` then `ind.left=<twips>` and `ind.hanging=<twips>`, then
+   * `keepNext` and `keepLines` for `keep-with-next` and `keep-lines`
+   * (`jc=left ind.left=720 ind.hanging=720 keepNext`), in the form the read-back
+   * writes. Absent on every other paragraph.
+   */
+  layout?: string;
+  /**
+   * Create sets `w:keepNext` on this paragraph by its own rule, not the source's flags: it is the last
+   * paragraph before a legend or a first signer, or a run-in article. The round trip admits a
+   * read-back `keepNext` the source does not write only here.
+   */
+  generatedKeepNext?: true;
+  /** A signature block's paragraph (a following signer is not a first signer). */
+  signer?: true;
 };
+
+/** `w:jc` values of the `{% paragraph-layout align %}` words, duplicated on purpose from the lowering. */
+const LAYOUT_JC: Readonly<Record<string, string>> = { left: 'left', center: 'center', right: 'right', justify: 'both' };
+
+/** A `{% paragraph-layout %}` attribute's text: a number (`indent-left=0.5`) reads as its decimal text. */
+function layoutWord(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** The layout token a `{% paragraph-layout %}` tag's attributes call for, read straight from the source. */
+function sourceParagraphLayout(node: MarkdocNode): string {
+  const parts: string[] = [];
+  const align = layoutWord(node.attributes.align);
+  if (align !== undefined) parts.push(`jc=${LAYOUT_JC[align] ?? align}`);
+  const twips = (key: string) => {
+    const inches = layoutWord(node.attributes[key]);
+    return inches === undefined ? undefined : Math.round(Number(inches) * 1440);
+  };
+  const left = twips('indent-left');
+  const hanging = twips('indent-hanging');
+  if (left !== undefined) parts.push(`ind.left=${left}`);
+  if (hanging !== undefined) parts.push(`ind.hanging=${hanging}`);
+  if (node.attributes['keep-with-next'] === true) parts.push('keepNext');
+  if (node.attributes['keep-lines'] === true) parts.push('keepLines');
+  return parts.join(' ');
+}
 
 /** A footnote as written in the source: its id and its paragraphs' text. */
 export type SourceFootnote = { id: string; paragraphs: string[] };
@@ -90,8 +179,23 @@ export type SourceProjection = {
   body: SourceBodyEntry[];
   /** Per section: the declared footer paragraphs, or null when the section declares none (it then inherits). */
   footers: Array<string[] | null>;
+  /** Per section: the declared header paragraphs, or null when the section declares none (it then inherits). Absent means none anywhere. */
+  headers?: Array<string[] | null>;
+  /**
+   * Per section: null when its first page shows its header and footer; with
+   * `header-first` or `footer-first` in effect, its first page's header and
+   * footer (null when the section has none). Absent when no section has one.
+   */
+  firstPage?: Array<{ header: string[] | null; footer: string[] | null } | null>;
   /** Footnotes in the order of their references in `body`; the note numbered n is entry n - 1. */
   footnotes?: SourceFootnote[];
+  /**
+   * Per section: the numerals its pages number in (the format of the footer
+   * it shows, declared or inherited) and the page number it restarts at
+   * (`page-number-start`), as the section's `w:pgNumType` must say. Absent
+   * when every page numbers in decimal, continuously.
+   */
+  pageNumbering?: Array<{ numeral: PageNumeral; start?: number }>;
   /**
    * Every `{% xref /%}` as written and where its number sits: body
    * references in reading order, then those in footnotes, note by note in
@@ -276,6 +380,42 @@ function headingLabels(ast: MarkdocNode): { headings: Map<MarkdocNode, HeadingPl
   return { headings, clauseContext };
 }
 
+/**
+ * The labels run-in paragraphs show, read from the source alone (#1417):
+ * an article "2.", a section "2.01" (restarting under each article), a
+ * clause "(a)" (restarting under each section) and a subclause "(i)"
+ * (restarting under each clause). `values` holds the value of each level
+ * through the paragraph's own.
+ */
+type RunInPlace = { label: string; level: number; values: number[] };
+const RUN_IN_LEVEL_INDEX: Readonly<Record<string, number>> = { article: 0, section: 1, clause: 2, subclause: 3 };
+
+function runInPlaces(ast: MarkdocNode): Map<MarkdocNode, RunInPlace> {
+  const places = new Map<MarkdocNode, RunInPlace>();
+  const counts = [0, 0, 0, 0];
+  for (const node of ast.children) {
+    const tag = node.type === 'tag' ? node : soleTag(node);
+    if (tag?.tag !== 'run-in-paragraph') continue;
+    const level = RUN_IN_LEVEL_INDEX[String(tag.attributes.level)] ?? 0;
+    counts[level]! += 1;
+    for (let lower = level + 1; lower < counts.length; lower += 1) counts[lower] = 0;
+    const values = counts.slice(0, level + 1);
+    const label = [`${values[0]}.`, `${values[0]}.${String(values[1]).padStart(2, '0')}`, `(${letters(values[2] ?? 0)})`, `(${roman(values[3] ?? 0)})`][level]!;
+    places.set(tag, { label, level, values });
+  }
+  return places;
+}
+
+/** The punctuation that ends a run-in heading as written; any other heading is followed by a period. */
+const RUN_IN_HEADING_END = /[.:;?!]$/u;
+
+/** The heading of a run-in paragraph as it shows: its text, then a period unless it ends in punctuation. */
+function runInHeading(tag: MarkdocNode): string {
+  const heading = tag.attributes.heading;
+  if (typeof heading !== 'string') return '';
+  return RUN_IN_HEADING_END.test(heading.trimEnd()) ? heading : `${heading}.`;
+}
+
 function lineOf(node: MarkdocNode): number | undefined {
   const start = node.lines?.[0];
   return start === undefined ? undefined : start + 1;
@@ -353,6 +493,18 @@ function crossReferenceTexts(ast: MarkdocNode, reader: ProjectionReader): { text
   // The place of every numbered heading and ordered list item, keyed by its node, for the walker's position.
   const places = new Map<MarkdocNode, ListPlace>();
   const { headings, clauseContext } = headingLabels(ast);
+  // A run-in paragraph's full number names its section ("2.01(a)(i)"); an article's drops the period of "2.".
+  for (const [tag, place] of runInPlaces(ast)) {
+    const own = place.level === 0 ? String(place.values[0]) : place.label;
+    const parts = place.level < 2
+      ? [{ level: place.level, text: own }]
+      : [{ level: 1, text: `${place.values[0]}.${String(place.values[1]).padStart(2, '0')}` }, ...place.values.slice(2).map((value, index) => ({ level: index + 2, text: index === 0 ? `(${letters(value)})` : `(${roman(value)})` }))];
+    const listPlace = { list: 'run-in', values: place.values };
+    places.set(tag, listPlace);
+    if (tag.attributes.id !== undefined) {
+      texts.set(String(tag.attributes.id), { full: parts.map((part) => part.text).join(''), paragraph: own, text: '', place: listPlace, parts });
+    }
+  }
   const visit = (list: MarkdocNode, ancestors: readonly number[], context: HeadingPlace | undefined, chain: string) => {
     if (list.attributes.ordered !== true) {
       // Bullets show no number; a text reference may still name one.
@@ -443,7 +595,7 @@ function inlineText(node: MarkdocNode, references: CrossReferenceTexts = new Map
  * Inline tags (`fill`, `literal`, `u`) are never blocks: a paragraph holding
  * only `{% u %}Defined Term{% /u %}` is still a body paragraph with that text.
  */
-const BLOCK_TAGS: ReadonlySet<string> = new Set(['center', 'legend', 'signer', 'table', 'section', 'page-break', 'footnote']);
+const BLOCK_TAGS: ReadonlySet<string> = new Set(['center', 'legend', 'paragraph-layout', 'signer', 'table', 'section', 'page-break', 'footnote', 'run-in-paragraph', 'toc']);
 
 /** The one block tag a paragraph stands for when that tag is its only content. */
 function soleTag(paragraph: MarkdocNode): MarkdocNode | undefined {
@@ -466,6 +618,35 @@ function paragraphsOfTag(node: MarkdocNode): MarkdocNode[] {
  */
 export type ProjectionReader = 'word' | 'libreoffice';
 
+/**
+ * The entries a `{% toc /%}` lists, read from the source alone (#1426): in
+ * document order, each `##` and `###` heading (after its label with
+ * `heading-numbers: legal`: "ARTICLE II Remedies"), each run-in article and
+ * section as its label and heading ("2.01 Engagement"), and each
+ * `{% tc %}` entry's text. A paragraph's `{% tc %}` entries come before its
+ * own heading entry, as the TC fields trail the paragraph in that order.
+ * This is the table of contents' cached result and what Word and
+ * LibreOffice list when they update it (TC entries, no page numbers).
+ */
+function tableOfContentsEntries(ast: MarkdocNode, headings: ReadonlyMap<MarkdocNode, HeadingPlace>, runIn: ReadonlyMap<MarkdocNode, RunInPlace>): string[] {
+  const plain = (node: MarkdocNode): string => scanMarks(inlineText(node)).text;
+  const tcs = (node: MarkdocNode): string[] => (node.type === 'tag' && node.tag === 'tc' ? [plain(node).trim()] : node.children.flatMap(tcs));
+  const entries: string[] = [];
+  for (const node of ast.children) {
+    const tag = node.type === 'tag' ? node : soleTag(node);
+    if (tag?.tag === 'footnote') continue;
+    entries.push(...tcs(node));
+    if (node.type === 'heading' && Number(node.attributes.level) >= 2) {
+      const label = headings.get(node)?.label;
+      const text = plain(node).trim();
+      entries.push(label === undefined ? text : `${label} ${text}`);
+    }
+    const place = tag?.tag === 'run-in-paragraph' ? runIn.get(tag) : undefined;
+    if (place && place.level < 2) entries.push(`${place.label} ${String(tag!.attributes.heading).trim()}`);
+  }
+  return entries;
+}
+
 /** Read the expected plain text straight from the Markdoc source. */
 export function projectSourceText(source: string, options: { reader?: ProjectionReader } = {}): SourceProjection {
   const ast = Markdoc.parse(source);
@@ -479,12 +660,22 @@ export function projectSourceText(source: string, options: { reader?: Projection
     if (place) position.lists.set(place.list, place.values);
   };
   const frontmatter = parseCreationFrontmatter(ast.attributes.frontmatter as string | undefined);
-  const footerOf = (text: unknown, pageNumbers: unknown): string[] =>
-    [...(typeof text === 'string' && text ? [text] : []), ...(pageNumbers === true ? [PAGE_NUMBER_FIELD] : [])];
+  const footerOf = (text: unknown, pageNumbers: unknown, format?: unknown, layout?: unknown): string[] => {
+    const number = PAGE_NUMBER_TEXT[typeof format === 'string' ? format : 'plain'] ?? PAGE_NUMBER_FIELD;
+    const hasText = typeof text === 'string' && text !== '';
+    if (layout === 'one-line' && hasText && pageNumbers === true) return [`${text}\t${number}`];
+    return [...(hasText ? [text] : []), ...(pageNumbers === true ? [number] : [])];
+  };
   const body: SourceProjection['body'] = [];
   const footers: SourceProjection['footers'] = [
-    frontmatter.footer || frontmatter.pageNumbers ? footerOf(frontmatter.footer, frontmatter.pageNumbers) : null,
+    frontmatter.footer || frontmatter.pageNumbers || frontmatter.footerFirst ? footerOf(frontmatter.footer, frontmatter.pageNumbers, frontmatter.pageNumberFormat, frontmatter.footerLayout) : null,
   ];
+  // First-page text alone declares a header or footer that is empty on the other pages.
+  const headers: Array<string[] | null> = [frontmatter.header ? [frontmatter.header] : frontmatter.headerFirst ? [] : null];
+  // Each section's first-page variants as declared with its header and footer (undefined: none declared).
+  const variant = (value: unknown, lines: (text: string) => string[]) => (typeof value !== 'string' ? undefined : value === 'none' ? [] : lines(value));
+  const headerFirsts: Array<string[] | undefined> = [variant(frontmatter.headerFirst, (text) => [text])];
+  const footerFirsts: Array<string[] | undefined> = [variant(frontmatter.footerFirst, (text) => footerOf(text, frontmatter.pageNumbers, frontmatter.pageNumberFormat, frontmatter.footerLayout))];
   let section = 0;
   let tables = 0;
   const references: string[] = [];
@@ -496,8 +687,21 @@ export function projectSourceText(source: string, options: { reader?: Projection
     bodyXrefs.push(...xrefs.map((xref) => ({ ...xref, story: 'body' as const, entry: body.length })));
     body.push({ text, ...(lineOf(node) === undefined ? {} : { line: lineOf(node)! }), section, ...extra, ...(marks.length ? { footnoteMarks: marks.map((mark) => mark.offset) } : {}) });
   };
+  // The paragraph before a legend or a first signer in the same section, when it is not a table cell, is kept with
+  // it by create. A table of contents is one block: create gives its keep to its first entry.
+  const keepPrevious = () => {
+    let index = body.length - 1;
+    const previous = body[index];
+    if (!previous || previous.cell || (previous.section ?? 0) !== section) return;
+    if (previous.tableOfContents) while (index > 0 && body[index - 1]!.tableOfContents && body[index - 1]!.section === previous.section) index -= 1;
+    body[index]!.generatedKeepNext = true;
+  };
   const targets: Record<string, string> = {};
   const { headings, clauseContext } = headingLabels(ast);
+  const runIn = runInPlaces(ast);
+  // Each section's page numerals: the format of the footer it shows, a section that declares none inheriting.
+  const numeralOf = (format: unknown): PageNumeral => (format === 'lower-roman' || format === 'upper-roman' ? format : 'decimal');
+  const numberings: Array<{ numeral: PageNumeral; start?: number }> = [{ numeral: numeralOf(frontmatter.pageNumbers ? frontmatter.pageNumberFormat : undefined) }];
   const listItems = (list: MarkdocNode, depth: number, clauses: boolean) => {
     const ordered = list.attributes.ordered === true;
     let n = depth === 0 && ordered && Number.isInteger(list.attributes.start) ? Number(list.attributes.start) : 1;
@@ -518,12 +722,20 @@ export function projectSourceText(source: string, options: { reader?: Projection
     switch (node.tag) {
       case 'center':
       case 'legend':
+        if (node.tag === 'legend' && keepsPreviousWithNext('legend', body.at(-1)?.signer ? 'signer' : 'other')) keepPrevious();
         for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph);
         return;
+      case 'paragraph-layout': {
+        const layout = sourceParagraphLayout(node);
+        for (const paragraph of paragraphsOfTag(node)) push(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph), paragraph, { layout });
+        return;
+      }
       case 'signer': {
         const name = node.attributes.name !== undefined ? String(node.attributes.name) : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
         const date = node.attributes.date === undefined ? '' : `\t${String(node.attributes.date)}`;
+        if (keepsPreviousWithNext('signer', body.at(-1)?.signer ? 'signer' : 'other')) keepPrevious();
         push(`${SIGNATURE_LINE}\n${name}${date}`, node);
+        body.at(-1)!.signer = true;
         return;
       }
       case 'table': {
@@ -543,10 +755,30 @@ export function projectSourceText(source: string, options: { reader?: Projection
         notes.set(String(node.attributes.id), paragraphsOfTag(node).map((paragraph) => scanMarks(paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))));
         position.footnote = false;
         return;
+      case 'run-in-paragraph': {
+        reach(node);
+        const body = node.children.length === 0 ? '' : paragraphsOfTag(node).map((paragraph) => (paragraph === node ? node.children.map(textOf).join('') : textOf(paragraph))).join('');
+        const heading = runInHeading(node);
+        const text = heading && body ? `${heading} ${body}` : heading || body;
+        if (node.attributes.id !== undefined) targets[String(node.attributes.id)] = scanMarks(text).text;
+        push(text, node, { marker: runIn.get(node)!.label, ...(runInKeepsWithNext(String(node.attributes.level)) ? { generatedKeepNext: true as const } : {}) });
+        return;
+      }
+      case 'toc':
+        for (const entry of tableOfContentsEntries(ast, headings, runIn)) push(entry, node, { tableOfContents: true });
+        return;
       case 'section': {
-        const { footer } = node.attributes;
+        const { footer, header } = node.attributes;
         const pageNumbers = node.attributes['page-numbers'];
-        footers.push(footer !== undefined || pageNumbers !== undefined ? footerOf(footer, pageNumbers) : null);
+        numberings.push(footer !== undefined || pageNumbers !== undefined || node.attributes['footer-first'] !== undefined
+          ? { numeral: numeralOf(pageNumbers === true ? node.attributes['page-number-format'] : undefined) }
+          : { numeral: numberings.at(-1)!.numeral });
+        const start = node.attributes['page-number-start'];
+        if (Number.isInteger(start)) numberings.at(-1)!.start = Number(start);
+        footers.push(footer !== undefined || pageNumbers !== undefined || node.attributes['footer-first'] !== undefined ? footerOf(footer, pageNumbers, node.attributes['page-number-format'], node.attributes['footer-layout']) : null);
+        headers.push(typeof header === 'string' ? [header] : header === false || node.attributes['header-first'] !== undefined ? [] : null);
+        headerFirsts.push(variant(node.attributes['header-first'], (text) => [text]));
+        footerFirsts.push(variant(node.attributes['footer-first'], (text) => footerOf(text, pageNumbers, node.attributes['page-number-format'], node.attributes['footer-layout'])));
         section += 1;
         return;
       }
@@ -574,9 +806,29 @@ export function projectSourceText(source: string, options: { reader?: Projection
   const xrefs = [...bodyXrefs, ...noteXrefs];
   const inventory = xrefInventory(ast).sort();
   const footnoteInventory = fnrefInventory(ast).sort();
+  // A section that declares no header or footer inherits the previous one with its first-page variant.
+  type Running = { lines: string[]; first?: string[] } | null;
+  const inherit = (declared: Array<string[] | null>, firsts: Array<string[] | undefined>): Running[] => {
+    const out: Running[] = [];
+    declared.forEach((lines, index) => {
+      const first = firsts[index];
+      out.push(lines === null ? out[index - 1] ?? null : { lines, ...(first === undefined ? {} : { first }) });
+    });
+    return out;
+  };
+  const runningHeaders = inherit(headers, headerFirsts);
+  const runningFooters = inherit(footers, footerFirsts);
+  const firstPage = runningHeaders.map((header, index) => {
+    const footer = runningFooters[index] ?? null;
+    if (header?.first === undefined && footer?.first === undefined) return null;
+    return { header: header ? header.first ?? header.lines : null, footer: footer ? footer.first ?? footer.lines : null };
+  });
   return {
     body,
     footers,
+    ...(numberings.some((entry) => entry.numeral !== 'decimal' || entry.start !== undefined) ? { pageNumbering: numberings } : {}),
+    ...(headers.some((header) => header !== null) ? { headers } : {}),
+    ...(firstPage.some((entry) => entry !== null) ? { firstPage } : {}),
     ...(footnotes.length ? { footnotes } : {}),
     ...(footnoteInventory.length ? { footnoteReferenceInventory: footnoteInventory } : {}),
     ...(xrefs.length || inventory.length ? { crossReferences: xrefs, crossReferenceTargets: targets, crossReferenceInventory: inventory } : {}),
@@ -687,7 +939,16 @@ export function compareParagraphs(expected: Array<{ text: string; line?: number 
   const knownGenerated: string[] = [];
   const exp = expected.map((entry) => ({ ...entry, text: entry.text === PAGE_NUMBER_FIELD ? entry.text : normalizeOracleText(entry.text) })).filter((entry) => entry.text);
   const act = actual.map(normalizeOracleText).filter(Boolean);
-  const matches = (e: { text: string }, a: string) => e.text === a || (e.text === PAGE_NUMBER_FIELD && /^\d+$/u.test(a));
+  // A line holding field markers matches its text with each marker read as a decimal number.
+  const patterns = new Map<string, RegExp>();
+  const patternOf = (text: string) => {
+    if (!patterns.has(text)) {
+      const parts = text.split(FIELD_MARKERS).map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'));
+      patterns.set(text, new RegExp(`^${parts.join(PAGE_NUMBER_PATTERN)}$`, 'u'));
+    }
+    return patterns.get(text)!;
+  };
+  const matches = (e: { text: string }, a: string) => e.text === a || (hasFieldMarker(e.text) && patternOf(e.text).test(a));
   const ops = myersDiff(exp, act, matches) ?? null;
   const mismatches: ParagraphMismatch[] = [];
   if (!ops) {
@@ -701,7 +962,7 @@ export function compareParagraphs(expected: Array<{ text: string; line?: number 
     for (let p = 0; p < pairs; p += 1) {
       const { e, i } = pendingDeletes[p]!;
       const { a, i: j } = pendingInserts[p]!;
-      const { missing, extra } = wordSpans(e.text === PAGE_NUMBER_FIELD ? '' : e.text, a);
+      const { missing, extra } = wordSpans(normalizeOracleText(e.text.replace(FIELD_MARKERS, '')), a);
       mismatches.push({ kind: 'changed', expected: e.text, actual: a, expectedIndex: i, actualIndex: j, ...(e.line === undefined ? {} : { line: e.line }), missingWords: missing, extraWords: extra });
     }
     for (const { e, i } of pendingDeletes.slice(pairs)) mismatches.push({ kind: 'missing', expected: e.text, expectedIndex: i, ...(e.line === undefined ? {} : { line: e.line }) });
@@ -712,7 +973,7 @@ export function compareParagraphs(expected: Array<{ text: string; line?: number 
   for (const op of ops) {
     if (op.kind === 'equal') {
       flush();
-      if (op.a!.text === PAGE_NUMBER_FIELD) knownGenerated.push(`page number field rendered as "${op.b}"`);
+      if (hasFieldMarker(op.a!.text)) knownGenerated.push(`page number field rendered as "${op.b}"`);
     } else if (op.kind === 'delete') pendingDeletes.push({ e: op.a!, i: op.ai! });
     else pendingInserts.push({ a: op.b!, i: op.bi! });
   }
@@ -756,6 +1017,11 @@ export type PdfWordComparison = {
     splitRows: Array<{ table: number; row: number; pages: number[] }>;
     /** Lines LibreOffice exported without space glyphs (one PDF token), split back into source words on the evidence of the page's layout text. */
     joinedLines: Array<{ page: number; words: string }>;
+    /**
+     * Source words holding a dash that LibreOffice wrapped right after the dash at a line end ("re-" ending one
+     * line, "evaluate" starting the next, for "re-evaluate"), rejoined; the tokens as read.
+     */
+    wrappedHyphens: Array<{ page: number; words: string }>;
     /** Source words holding a footnote number that came out broken right after the number ("Closing1 ."); the tokens as read. */
     markSplits: Array<{ page: number; words: string }>;
   };
@@ -831,8 +1097,13 @@ export const PDF_WORD_LIMITATIONS =
   'List labels are expected words, and so is each footnote number, joined to the text around its reference (LibreOffice sets it as a superscript with no space). pdftotext can break such a word right after the number when text follows it on the baseline ("Closing1 ." for "Closing1."); such a word, and any word spelled like it or like a run of its pieces, is compared on both sides as pieces broken after its numbers, and then each must come out as pdftotext can print it: a word holding the numbers whole or broken only there, into consecutive tokens on one page; any other such word whole. A word holding a footnote number in a table row split across pages must come out whole, or the row is not read back. Footnote text is read from the foot of each page, after the body: the rest of a note continued from the page before, then each note that starts there (its number, then its text); read in page order these areas must spell every note exactly once and in order, and each note must start on the page holding its reference (for a table row split across pages, the page where the mark is printed). A page holding nothing but the rest of a continued note belongs to the content before it and must show that section\'s footer. A repeated table header is expected without its footnote numbers, as LibreOffice draws it. ' +
   'Every page break is explained from the source: the checker searches for where each page can start between the source words around it (including inside wordless content such as empty table rows), and a start fixes what the page must show first, namely its section\'s footer and page number, the table header LibreOffice repeats when a table continues across the break, and the source words at the top of the page. Sections start on new pages. ' +
   'A justified line that LibreOffice exported without space glyphs reads back as one token. Such a token is split back into words only when it spells, character for character, a run of two or more consecutive source words and that is its one reading which the pdftotext -layout text of the same page (word boundaries by glyph position) shows more often than the raw text does, each split needing an occurrence of its own; without layout text, or with a different page count, nothing is split. The evidence is counted per page rather than tied to the line\'s position, so a changed run-together line passes only if the page\'s layout text shows the source reading in a place the raw text does not, which another run-together line that alignment placed as a single source word could supply. ' +
+  'A source word holding a dash (Unicode Pd, as in "re-evaluate") can wrap right after the dash, so that one raw line ends with "re-" and the next starts with "evaluate". Such tokens are rejoined only when they are consecutive in one page\'s body (not in a table row read back across pages, and not compared as pieces), every one but the last ends in a dash and is the last word of its raw line, and, within one maximal run of alignment operations that are not matches (including a run at the start or end of the text), none of them was placed and a missing source word is exactly their concatenation; each missing word is used once, and the whole comparison is then repeated on the rejoined words. The same holds for a word that wraps right before an opening parenthesis ("1.02(b)" ending one line, "(i)." starting the next, for the cross-reference "1.02(b)(i)."). A dash followed by a space on one line, a dash at a line end whose joined form is not the missing source word, and a word wrapped across a page break are not rejoined and fail. So does a wrap whose fragment the first alignment matched to a neighbouring source word spelled the same ("re-" then "evaluate" for the source words "re-evaluate evaluate"), because only unplaced tokens are rejoined. The raw text cannot tell such a wrap from a line break after the dash, just as no line break between words is checked. ' +
   'Two observed LibreOffice behaviours are assumed: a header row is never left alone at a page bottom (it stays with the first body row), and a table\'s last row can spill its empty remainder onto the next page, repeating the header there. ' +
   'The check passes only when every start that fits explains the same source words; if none fits, or starts that fit disagree (for example, a table with empty trailing rows followed by a table with the same header, or two such tables back to back at a page start), it fails. The text alone cannot always show layout, so such cases fail even when the PDF is right (a false failure); an ambiguity is never settled by a guess.';
+
+/** Added to the limitations when the source has a header or a first-page variant. */
+export const PDF_HEADER_LIMITATIONS =
+  'With a header, LibreOffice writes each page\'s header before its footer, and both before the body; the region at the head of each page is the header\'s words, then the footer\'s, with the page number and the page count as the PDF numbers them. With w:titlePg, the first page of each section must show its first-page header and footer, and its other pages the others. A page whose region matches no section\'s header and footer fails.';
 
 /**
  * A source word as the PDF shows it, or a piece of one: a word holding a footnote number that text follows, and
@@ -907,16 +1178,83 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   const expectedGlued = expected.map((token) => (token.piece?.at ?? 0) > 0);
   const plainWords = entryWords.map((tokens) => tokens.map((word) => word.replace(/[\uE000\uE001]/gu, '')));
 
-  // Effective footer per section: a section that declares none inherits the previous one.
-  const effective: Array<{ text: string[]; pageNumbers: boolean }> = [];
+  // Effective header and footer per section: a section that declares none inherits the previous one. Their
+  // words keep the field markers, which become the page number and the page count when a page is placed.
+  const storyWords = (lines: readonly string[] | null | undefined) => (lines ?? []).flatMap((line) => line.split(/(\u0000(?:PAGE|NUMPAGES)(?![A-Z]))/u)).flatMap((part) => (part.startsWith('\u0000') ? [part] : words(part)));
+  const effective: Array<{ header: string[]; footer: string[]; first?: { header: string[]; footer: string[] } }> = [];
   source.footers.forEach((declared, section) => {
-    const own = declared === null ? undefined : { text: declared.filter((line) => line !== PAGE_NUMBER_FIELD).flatMap(words), pageNumbers: declared.includes(PAGE_NUMBER_FIELD) };
-    effective.push(own ?? effective[section - 1] ?? { text: [], pageNumbers: false });
+    const header = source.headers?.[section];
+    const first = source.firstPage?.[section];
+    effective.push({
+      header: header === null || header === undefined ? effective[section - 1]?.header ?? [] : storyWords(header),
+      footer: declared === null ? effective[section - 1]?.footer ?? [] : storyWords(declared),
+      ...(first ? { first: { header: storyWords(first.header), footer: storyWords(first.footer) } } : {}),
+    });
   });
-  const regionFor = (section: number, page: number): string[] => {
-    const footer = effective[Math.min(section, effective.length - 1)] ?? { text: [], pageNumbers: false };
-    return [...footer.text, ...(footer.pageNumbers ? [String(page + 1)] : [])];
+  const pageCount = String(pageTexts.length);
+  /**
+   * What LibreOffice writes at the head of a page of `section`: the header's words, then the footer's, the
+   * PAGE field as the page number and NUMPAGES as the page count. `opens` is true on the section's first page,
+   * which shows the first-page header and footer when the section has them (`header-first: none`).
+   */
+  // With roman numerals or a restart (`source.pageNumbering`), a page's number depends on where its section
+  // starts, which only the break model knows: the PAGE field then matches any number in the section's numerals,
+  // and the sections' w:pgNumType is checked against the source on the DOCX itself.
+  const numbering = source.pageNumbering;
+  const fitsNumeral = (numeral: PageNumeral, word: string) => (numeral === 'decimal' ? /^\d+$/u : numeral === 'lower-roman' ? /^[ivxlcdm]+$/u : /^[IVXLCDM]+$/u).test(word);
+  const NUMERAL_SLOT = '\u0007';
+  const regionWords = (section: number, page: number, opens = false): string[] => {
+    const own = effective[Math.min(section, effective.length - 1)] ?? { header: [], footer: [] };
+    const story = opens && own.first ? own.first : own;
+    const numeral = numbering?.[Math.min(section, numbering.length - 1)]?.numeral;
+    return [...story.header, ...story.footer].map((word) => (word === PAGE_NUMBER_FIELD ? (numeral === undefined ? String(page + 1) : `${NUMERAL_SLOT}${numeral}`) : word === PAGE_COUNT_FIELD ? pageCount : word));
   };
+  /** A region with each numeral slot filled by the page's own token there, when that token is a number in the slot's numerals. */
+  const resolveRegion = (region: readonly string[], tokens: readonly string[], at = 0): string[] => region.map((word, offset) => {
+    if (!word.startsWith(NUMERAL_SLOT)) return word;
+    const token = tokens[at + offset];
+    return token !== undefined && fitsNumeral(word.slice(1) as PageNumeral, token) ? token : `<${word.slice(1)} page number>`;
+  });
+  /**
+   * With roman numerals or restarts, the page numbers the PDF prints must be the ones its sections give, in
+   * order: sections start on new pages and each has at least one, so some assignment of consecutive pages to
+   * sections 0, 1, … must explain every printed number exactly, a section's first page showing its
+   * `page-number-start` (or the previous page's number plus one) and each later page one more, in the
+   * section's numerals. No such assignment is a footer mismatch.
+   */
+  const pageNumberSequenceMismatches = (pageSections: ReadonlyArray<number | undefined>): PdfWordComparison['footerMismatches'] => {
+    if (!numbering || pageTexts.length === 0) return [];
+    const tokens = pageTexts.map((text) => words(text));
+    const printed = (section: number, page: number, opens: boolean): string | null | undefined => {
+      const slot = regionWords(section, page, opens).findIndex((word) => word.startsWith(NUMERAL_SLOT));
+      return slot === -1 ? null : tokens[page]![slot];
+    };
+    const fits = (section: number, page: number, value: number, opens: boolean) => {
+      const own = printed(section, page, opens);
+      return own === null || own === pageNumeral(value, numbering[Math.min(section, numbering.length - 1)]!.numeral);
+    };
+    // Every (section, page number) the current page can have: a page holding source words belongs to their section.
+    const allowed = (page: number, section: number) => pageSections[page] === undefined || pageSections[page] === section;
+    let reachable = new Set<string>();
+    const first = numbering[0]?.start ?? 1;
+    if (allowed(0, 0) && fits(0, 0, first, true)) reachable.add(`0:${first}`);
+    for (let page = 1; page < pageTexts.length; page += 1) {
+      const next = new Set<string>();
+      for (const state of reachable) {
+        const [section, value] = state.split(':').map(Number) as [number, number];
+        if (allowed(page, section) && fits(section, page, value + 1, false)) next.add(`${section}:${value + 1}`);
+        const following = section + 1;
+        if (following < effective.length && allowed(page, following)) {
+          const start = numbering[Math.min(following, numbering.length - 1)]?.start ?? value + 1;
+          if (fits(following, page, start, true)) next.add(`${following}:${start}`);
+        }
+      }
+      reachable = next;
+    }
+    if ([...reachable].some((state) => state.startsWith(`${effective.length - 1}:`))) return [];
+    return [{ page: 0, section: null, expected: 'page numbers in each section\'s numerals, restarting where page-number-start says', found: tokens.map((page, index) => `${index + 1}:${page.slice(0, 3).join(' ')}`).join(' | '), reason: 'no assignment of pages to sections explains the printed page numbers' }];
+  };
+  const regionFor = (section: number, page: number, opens = false): string[] => resolveRegion(regionWords(section, page, opens), pageTexts[page] === undefined ? [] : words(pageTexts[page]!));
   const headers = new Map<number, string[]>();
   // A repeated header row is a copy LibreOffice draws without footnote numbers (observed: "Holder1" on the
   // first page, "Holder" on the pages after), so its words carry none.
@@ -928,7 +1266,7 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   const footnoteAreas = stripFootnoteAreas(pageTexts.map(words), notes, words);
   const pages = footnoteAreas.bodies;
   // Footer region at each page head: the longest candidate region that matches; checked by the break model.
-  const candidates = (page: number) => [...new Set(effective.map((_, section) => regionFor(section, page).join('\u0001')))].map((key) => (key ? key.split('\u0001') : []))
+  const candidates = (page: number) => [...new Set(effective.flatMap((_, section) => [regionFor(section, page).join('\u0001'), regionFor(section, page, true).join('\u0001')]))].map((key) => (key ? key.split('\u0001') : []))
     .sort((a, b) => b.length - a.length);
   const startsWith = (tokens: readonly string[], seq: readonly string[], at = 0) => seq.length > 0 && at + seq.length <= tokens.length && seq.every((word, offset) => tokens[at + offset] === word);
   const regions = pages.map((tokens, page) => candidates(page).find((region) => region.length === 0 || startsWith(tokens, region)) ?? []);
@@ -960,8 +1298,9 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
   };
 
   // Align the PDF words with the source, then explain page breaks and footnote placement.
-  type Evaluation = { result: PdfWordComparison; extraIdx: number[]; pdf: PdfPiece[] };
-  const evaluate = (read: readonly PdfToken[], split: ReturnType<typeof joinSplitRows>, joinedLines: PdfWordComparison['knownGenerated']['joinedLines']): Evaluation => {
+  type Recovered = Pick<PdfWordComparison['knownGenerated'], 'joinedLines' | 'wrappedHyphens'>;
+  type Evaluation = { result: PdfWordComparison; extraIdx: number[]; pdf: PdfPiece[]; ops: Array<Op<ExpectedToken, PdfPiece>> | null };
+  const evaluate = (read: readonly PdfToken[], split: ReturnType<typeof joinSplitRows>, recovered: Recovered): Evaluation => {
     const pdf: PdfPiece[] = read.flatMap((token, index) => {
       const pieces = spellings.get(token.word);
       return pieces ? pieces.map((word, at) => ({ ...token, word, token: index, piece: { at, of: pieces.length } })) : [{ ...token, token: index }];
@@ -1000,12 +1339,16 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
         source, expected, headers, pages: pages.length, firstOnPage, lastOnPage, aligned, headRuns, pinned,
         noteOnly,
         found: (page) => regions[page]!.join(' '),
-        region: (section, page) => regionFor(section, page).join(' '),
+        region: (section, page, opens) => regionFor(section, page, opens).join(' '),
         sectionCount: effective.length,
         spell: (word) => spellings.get(word),
       });
       for (const index of model.explained) missing.delete(index);
       footerMismatches.push(...model.footerMismatches);
+      // The section each page's aligned source words belong to pins where the page numbering restarts.
+      const pageSections: Array<number | undefined> = pages.map(() => undefined);
+      for (const { index, page } of aligned) pageSections[page] ??= source.body[expected[index]!.entry]?.section ?? 0;
+      footerMismatches.push(...pageNumberSequenceMismatches(pageSections));
       unverifiedTableHeaders.push(...model.unverified);
       repeatedTableHeaders.push(...model.repeated);
     } else {
@@ -1053,33 +1396,148 @@ export function comparePdfWords(source: SourceProjection, pageTexts: readonly st
         listMarkers,
         repeatedTableHeaders,
         splitRows: split.rows.map(({ table, row, pages: spanned }) => ({ table, row, pages: spanned.map((page) => page + 1) })),
-        joinedLines,
+        joinedLines: recovered.joinedLines,
+        wrappedHyphens: recovered.wrappedHyphens,
         markSplits,
       },
-      limitations: PDF_WORD_LIMITATIONS,
+      limitations: source.headers || source.firstPage ? `${PDF_WORD_LIMITATIONS} ${PDF_HEADER_LIMITATIONS}` : PDF_WORD_LIMITATIONS,
     };
-    return { result, extraIdx, pdf };
+    return { result, extraIdx, pdf, ops };
   };
 
-  const first = readBodies(bodies);
-  const unsplit = evaluate(first.read, first.split, []);
+  // Per page body word: whether it is the last word of its line in the raw text. pdftotext builds raw lines from
+  // glyph baselines, so a line end there is where the PDF breaks the line. If a page's lines do not tokenize to its
+  // words, no word on it counts as ending a line.
+  const bodyLineEnds = pageTexts.map((text, page) => {
+    const ends = text.normalize('NFKC').split('\n').flatMap((line) => words(line).map((_, at, all) => at === all.length - 1));
+    if (ends.length !== words(text).length) return bodies[page]!.map(() => false);
+    const offset = regions[page]!.length + headRuns[page]!.length;
+    return ends.slice(offset, offset + bodies[page]!.length);
+  });
+
+  // A reading of the page bodies: the words as read (possibly split or rejoined below), where their lines end, and
+  // the evaluation rebuilt from them (split rows, alignment, page model, footnotes).
+  type Reading = { bodies: string[][]; lineEnds: boolean[][]; recovered: Recovered; evaluation: Evaluation };
+  const evaluateBodies = (pageBodies: string[][], lineEnds: boolean[][], recovered: Recovered): Reading => {
+    const read = readBodies(pageBodies);
+    return { bodies: pageBodies, lineEnds, recovered, evaluation: evaluate(read.read, read.split, recovered) };
+  };
+  let reading = evaluateBodies(bodies, bodyLineEnds, { joinedLines: [], wrappedHyphens: [] });
+  if (reading.evaluation.result.passed) return reading.evaluation.result;
   // Layout text is evidence only page for page; with a different page count it is not used at all.
   const layout = layoutTexts?.length === pageTexts.length ? layoutTexts : undefined;
-  if (unsplit.result.passed || !layout) return unsplit.result;
-  // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
-  // tokens the first alignment could not place or, when it was over budget, every token; never a word of a
-  // rejoined row, which matched the source exactly, nor a word compared as pieces. The readings, and the raw and
-  // layout text they are counted in, are in pieces too, so a run-together line can end in a word that pdftotext
-  // also broke after its footnote number ("TheClosing1" then ".").
-  const joinable = (unsplit.result.alignment === 'complete' ? unsplit.extraIdx.map((index) => unsplit.pdf[index]!) : unsplit.pdf)
-    .filter((token) => token.origin >= 0 && !token.piece);
-  const splits = splitJoinedTokens(joinable, expected.map((token) => token.word), bodies, pageTexts.map((text) => asPieces(words(text))), layout.map((text) => asPieces(words(text))));
-  if (splits.size === 0) return unsplit.result;
-  // Split the page bodies as read, then rebuild everything from them: split rows, alignment, page model, footnotes.
-  const resplit = bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
-  const second = readBodies(resplit);
-  const joinedLines = [...splits].map(([key, split]) => ({ page: Number(key.split(':')[0]) + 1, words: split.join(' ') }));
-  return evaluate(second.read, second.split, joinedLines).result;
+  if (layout) {
+    // A justified line LibreOffice exported without space glyphs reads back as one token. The candidates are the
+    // tokens the first alignment could not place or, when it was over budget, every token; never a word of a
+    // rejoined row, which matched the source exactly, nor a word compared as pieces. The readings, and the raw and
+    // layout text they are counted in, are in pieces too, so a run-together line can end in a word that pdftotext
+    // also broke after its footnote number ("TheClosing1" then ".").
+    const unsplit = reading.evaluation;
+    const joinable = (unsplit.ops ? unsplit.extraIdx.map((index) => unsplit.pdf[index]!) : unsplit.pdf)
+      .filter((token) => token.origin >= 0 && !token.piece);
+    const splits = splitJoinedTokens(joinable, expected.map((token) => token.word), reading.bodies, pageTexts.map((text) => asPieces(words(text))), layout.map((text) => asPieces(words(text))));
+    if (splits.size > 0) {
+      // Split the page bodies as read; only the last word of a split token can end its line.
+      const resplit = reading.bodies.map((tokens, page) => tokens.flatMap((word, index) => splits.get(`${page}:${index}`) ?? [word]));
+      const ends = reading.bodies.map((tokens, page) => tokens.flatMap((_, index) => {
+        const end = reading.lineEnds[page]![index]!;
+        const split = splits.get(`${page}:${index}`);
+        return split ? split.map((__, at) => at === split.length - 1 && end) : [end];
+      }));
+      const joinedLines = [...splits].map(([key, split]) => ({ page: Number(key.split(':')[0]) + 1, words: split.join(' ') }));
+      reading = evaluateBodies(resplit, ends, { ...reading.recovered, joinedLines });
+      if (reading.evaluation.result.passed) return reading.evaluation.result;
+    }
+  }
+  // A word holding a dash that LibreOffice wrapped right after the dash reads back as two tokens, one ending its
+  // line. Rejoin them only where the alignment left exactly that source word missing (see `wrappedDashJoins`).
+  const { ops, pdf } = reading.evaluation;
+  const joins = ops ? wrappedDashJoins(ops, expected, pdf, reading.lineEnds) : new Map<string, number>();
+  if (joins.size === 0) return reading.evaluation.result;
+  const rejoined: string[][] = [];
+  const rejoinedEnds: boolean[][] = [];
+  const wrappedHyphens: Recovered['wrappedHyphens'] = [];
+  reading.bodies.forEach((tokens, page) => {
+    const out: string[] = [];
+    const ends: boolean[] = [];
+    for (let index = 0; index < tokens.length;) {
+      const count = joins.get(`${page}:${index}`) ?? 1;
+      if (count > 1) wrappedHyphens.push({ page: page + 1, words: tokens.slice(index, index + count).join(' ') });
+      out.push(tokens.slice(index, index + count).join(''));
+      ends.push(reading.lineEnds[page]![index + count - 1]!);
+      index += count;
+    }
+    rejoined.push(out);
+    rejoinedEnds.push(ends);
+  });
+  return evaluateBodies(rejoined, rejoinedEnds, { ...reading.recovered, wrappedHyphens }).evaluation.result;
+}
+
+/**
+ * A source word holding a dash ("re-evaluate", "1990–2000"), or an opening parenthesis after its first character
+ * ("1.02(b)(i)", a cross-reference number), can wrap right after the dash or right before the parenthesis: LibreOffice ends one
+ * line with "re-" and starts the next with "evaluate", and `pdftotext -raw` reads two tokens. The raw text alone
+ * cannot tell that wrap from a stray dash, so a rejoin needs both of these: the tokens are consecutive on one page
+ * in the body as read (never in a rejoined table row, never compared as pieces), every token but the last is the last word of its
+ * raw line and ends in a dash (Unicode Pd) or is followed by a token starting with "("; and, within one maximal run of alignment operations
+ * that are not matches (a run at the start or end of the text included), the alignment left every one of them
+ * unplaced and left a source word missing that is, character for character, their concatenation. Each missing
+ * source word is used once. A fragment the alignment matched to a neighbouring source word spelled the same is
+ * not rejoined (a false failure, never a guess). Returns, by `page:index` of the first token in the page bodies
+ * as read, how many tokens to join. The caller then rebuilds the whole comparison from the joined bodies, so a
+ * join passes only if the joined word then aligns.
+ */
+function wrappedDashJoins(
+  ops: ReadonlyArray<Op<ExpectedToken, PdfPiece>>,
+  expected: readonly ExpectedToken[],
+  pdf: readonly PdfPiece[],
+  lineEnds: readonly (readonly boolean[])[],
+): Map<string, number> {
+  const joins = new Map<string, number>();
+  const plain = (index: number) => {
+    const token = pdf[index];
+    return token && !token.piece && token.origin >= 0 ? token : undefined;
+  };
+  // A token that continues onto the next line: it ends its raw line and ends in a dash, or the next line starts
+  // with "(", where LibreOffice also breaks a word ("1.02(b)" then "(i)" for the cross-reference "1.02(b)(i)").
+  const wraps = (token: PdfPiece, next: PdfPiece) => lineEnds[token.page]?.[token.origin] === true && (/\p{Pd}$/u.test(token.word) || /^\(/u.test(next.word));
+  for (let start = 0; start < ops.length;) {
+    if (ops[start]!.kind === 'equal') {
+      start += 1;
+      continue;
+    }
+    let end = start;
+    while (end < ops.length && ops[end]!.kind !== 'equal') end += 1;
+    const stretch = ops.slice(start, end);
+    start = end;
+    const missing = new Map<string, number>();
+    for (const op of stretch) {
+      if (op.kind !== 'delete' || expected[op.ai!]!.piece) continue;
+      const word = expected[op.ai!]!.word;
+      missing.set(word, (missing.get(word) ?? 0) + 1);
+    }
+    const unplaced = new Set(stretch.flatMap((op) => (op.kind === 'insert' ? [op.bi!] : [])));
+    const order = [...unplaced].sort((a, b) => a - b);
+    for (let at = 0; at < order.length; at += 1) {
+      const first = plain(order[at]!);
+      if (!first) continue;
+      let joined = first.word;
+      for (let next = order[at]! + 1; ; next += 1) {
+        const before = pdf[next - 1]!;
+        const token = plain(next);
+        if (!token || !wraps(before, token) || !unplaced.has(next) || token.page !== before.page || token.origin !== before.origin + 1) break;
+        joined += token.word;
+        const left = missing.get(joined) ?? 0;
+        if (left > 0) {
+          missing.set(joined, left - 1);
+          joins.set(`${first.page}:${first.origin}`, next - order[at]! + 1);
+          at = order.indexOf(next);
+          break;
+        }
+      }
+    }
+  }
+  return joins;
 }
 
 /** A body word as read: its page in the reading (after split rows are rejoined), where it is printed, and its index in its page's body (-1 in a rejoined row). */
@@ -1410,7 +1868,8 @@ type BreakModelInput = {
   /** Pages holding nothing but the rest of a note continued from the page before (and their footer region). */
   noteOnly: ReadonlySet<number>;
   found: (page: number) => string;
-  region: (section: number, page: number) => string;
+  /** The header and footer region a page of `section` shows; `opens` on the section's first page. */
+  region: (section: number, page: number, opens: boolean) => string;
   sectionCount: number;
   /** The pieces a word is compared as (see `ExpectedToken`), or undefined for a word compared whole. */
   spell: (word: string) => readonly string[] | undefined;
@@ -1530,6 +1989,10 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
       return b !== undefined && a !== undefined && sectionOf(b) !== sectionOf(a);
     };
     const changes = Array.from({ length: items.length + 1 }, (_, pos) => pos).filter(changeAt);
+    // A page opens its section when it is the first page, or starts where the section changes (a spilled row
+    // remainder and a page continuing a split row or a note never start a section).
+    const opensSection = (page: number, placement: { pos: number; spill: boolean; pinned?: true }) =>
+      page === 0 || (changes.includes(placement.pos) && !placement.spill && placement.pinned !== true);
     const tokenItemsFrom = (pos: number) => items.map((item, index) => ({ item, index })).filter(({ item, index }) => index >= pos && item.token !== undefined);
 
     /** A spill page holds the rest of the row before `pos`, so it belongs to that row's section and starts no new one. */
@@ -1608,7 +2071,7 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
               ? { ...placed, section: sectionOf(beforeEntry(pos) ?? afterEntry(pos) ?? 0), pinned: true as const }
               : placed;
           if (!placement) continue;
-          if (footers && region(placement.section, page) !== found(page)) continue;
+          if (footers && region(placement.section, page, opensSection(page, placement)) !== found(page)) continue;
           // Equivalent starts (same repeated header, same explained words, same section) lead to the same outcomes.
           if (chosen.length > 0 && !hasContent(chosen.at(-1)!, pos)) continue;
           const key = `${placement.table}|${placement.spill}|${placement.pinned}|${placement.explained.join(',')}|${placement.section}|${changes.includes(pos)}|${pos === from}`;
@@ -1651,7 +2114,7 @@ function explainPageBreaks(input: BreakModelInput): BreakModelResult {
       const relaxed = solutions[0]!;
       relaxed.forEach((placement, k) => {
         const page = group.pages[k]!;
-        const want = region(placement.section, page);
+        const want = region(placement.section, page, opensSection(page, placement));
         if (want !== found(page)) result.footerMismatches.push({ page: page + 1, section: placement.section, expected: want, found: found(page) });
       });
       if (signatures.size === 1) for (const placement of relaxed) for (const index of placement.explained) result.explained.add(index);

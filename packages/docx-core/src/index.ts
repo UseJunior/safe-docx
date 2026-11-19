@@ -31,6 +31,7 @@ export {
   createRevisionContainer,
   createRevisionContext,
   createRevisionIdState,
+  inferStartingRevisionIdState,
   escapeXmlAttr,
   formatDate,
   prepareElementForDeletion,
@@ -40,6 +41,8 @@ export {
   wrapElementWithDel,
   wrapElementWithIns,
 } from './primitives/track-changes-emitter.js';
+export { RevisionIdAllocator } from './primitives/revision-id-allocator.js';
+export { getSidePartRevisionSeedDocs } from './primitives/revision-parts.js';
 export type {
   RevisionContext,
   RevisionContextOptions,
@@ -100,6 +103,8 @@ export {
   type BookmarkNameErrorCode,
   CROSS_REFERENCE_NUMBERS,
   CROSS_REFERENCE_SHOWS,
+  tableOfContentsEntryInstruction,
+  tableOfContentsInstruction,
 } from './generation/index.js';
 
 export {
@@ -113,6 +118,7 @@ export type {
   CrossReferenceNumber,
   CrossReferenceShow,
   CrossReferenceSpec,
+  DocumentCompatibilitySpec,
   DocumentDefaultsSpec,
   DocumentMetaSpec,
   DocumentSpec,
@@ -134,6 +140,8 @@ export type {
   StyleSpec,
   TableBorders,
   TableCellSpec,
+  TableOfContentsEntrySpec,
+  TableOfContentsFieldSpec,
   TableRowSpec,
   TableSpec,
   TabSpec,

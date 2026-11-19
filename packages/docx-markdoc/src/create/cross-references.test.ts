@@ -381,5 +381,6 @@ describeWithLibreOffice('Traceability: cross-references in a real LibreOffice PD
         await rm(dir, { recursive: true, force: true });
       }
     },
+    60_000,
   );
 });

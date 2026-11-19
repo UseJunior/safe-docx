@@ -201,9 +201,8 @@ relationship references. The following section inherits its current properties
 by default. Set `inherit_properties=false` to reset its non-relationship
 properties, then provide complete page dimensions and margins in `new_section`
 when those elements need to be recreated. Header/footer parts and relationship
-attachments are deliberately preserved; edit those through the separate
-header/footer capability when available. Call `get_sections` again after a
-successful split because every later section index shifts.
+attachments are deliberately preserved; edit those with `get_headers_footers`
+and `set_header_footer`. Call `get_sections` again after a successful split because every later section index shifts.
 
 ## Step 6: Save Reviewable Outputs
 
@@ -250,6 +249,8 @@ Visual review remains appropriate for material documents because Safe Docx is no
 | Delete an ordinary DOCX body paragraph | `replace_text` with the complete text and an empty `new_string` |
 | Remove or repair direct DOCX paragraph numbering | `format_numbering` |
 | Inspect, split, or change DOCX sections | `get_sections`, `insert_section_break`, `format_section` |
+| Read, edit, or attach DOCX headers and footers per section | `get_headers_footers`, `set_header_footer`, `replace_text` |
+| Read or change DOCX document properties (title, author, dates, application) | `get_document_properties`, `set_document_properties` |
 | Apply several edits together | `batch_edit` |
 | Convert DOCX to ODT | `convert_to_odt` |
 | Convert DOCX to Markdown | `export` with `format="markdown"` |

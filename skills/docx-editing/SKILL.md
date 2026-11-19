@@ -305,6 +305,10 @@ Two modes:
 - **Two files:** `compare_documents(original_file_path, revised_file_path, save_to_local_path)` — produces a redline
 - **Session edits:** `compare_documents(session_id)` — compares current session state against the original
 
+DOCX redlines default to `revision_grouping: "readable-semantic"`: each rewritten passage shows as one deletion followed by one insertion instead of alternating word by word. Pass `revision_grouping: "token-minimal"` for the smallest word-level change set. Accept All and Reject All results are identical in both modes.
+
+`revision_date` sets the timestamp (`w:date`) on the revisions the comparison creates. `"now"` (default) uses the current time; an ISO 8601 date-time such as `"2026-01-15T09:30:00Z"` uses that fixed time, so the revision timestamps are reproducible across runs; `"none"` omits `w:date` entirely (ECMA-376 makes it optional), so the new revisions do not record when the comparison ran (the file's ZIP timestamps are unaffected). Revisions already present in the inputs keep their own dates. DOCX only. The `safe-docx compare` CLI exposes the `"none"` case as `--no-date`.
+
 Use `extract_revisions` on any document with tracked changes to get structured JSON diffs. Whole-row table revisions come back as records with `scope: "row"` (`ROW_INSERTION`, `ROW_DELETION`, or `FORMAT_CHANGE` for a row property change), each carrying the revision `id`, `author` and `date`; `accept_changes` removes a row marked `ROW_DELETION`.
 
 ## Accepting Tracked Changes

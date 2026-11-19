@@ -8,6 +8,7 @@ import {
 } from './track-changes-emitter.js';
 import { buildParagraphIndex } from './paragraph-index.js';
 import { canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
+import { runContentVisibleLength } from './run_content_visible_text.js';
 import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 
 export type TextRun = {
@@ -27,7 +28,7 @@ export type TextRun = {
  * @see #651
  */
 export function getParagraphRuns(p: Element): TextRun[] {
-  return buildParagraphIndex(p).runs
+  return buildParagraphIndex(p, { skipTrackedDeletions: true }).runs
     .filter((run) => run.visibleText.length > 0)
     .map((run) => ({
       r: run.element,
@@ -121,8 +122,82 @@ function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
   return clone;
 }
 
-function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlSpace = false): void {
-  // Convert \t and \n to OOXML equivalents where possible.
+/**
+ * The source `w:sym` for each character of a replacement, or `null` where the
+ * character is written as ordinary text.
+ *
+ * A symbol's glyph depends on its own `w:font` attribute, which the run
+ * properties need not repeat. The replacement is plain characters, so without
+ * this a formatting-only edit over a checkbox would write the private-use
+ * character as literal `w:t` text in the template run's font and lose the
+ * glyph (issue #1046).
+ *
+ * A symbol is kept only where position establishes that the replacement
+ * character is that symbol: inside the common prefix or the common suffix of
+ * the replaced text and the replacement text. A text-identical rebuild is all
+ * prefix, so every symbol and every literal character keeps its own form.
+ * Matching on the character alone is not enough: a literal character can
+ * equal a symbol's character (a literal `A` beside `w:char="0041"`, or a
+ * private-use character typed as text), and it must stay text. A character in
+ * the changed middle is new text and is written literally.
+ */
+function replacementSymbolSources(
+  runs: TextRun[],
+  start: number,
+  end: number,
+  replacementText: string,
+): Array<Element | null> | undefined {
+  const rangeSymbols: Array<Element | null> = new Array(end - start).fill(null);
+  let found = false;
+  let runStart = 0;
+  for (const run of runs) {
+    const runEnd = runStart + run.text.length;
+    if (runEnd > start && runStart < end) {
+      const elements = getDirectContentElements(run.r);
+      const lengths = elements.map((el) => runContentVisibleLength(el));
+      // Only a run whose content elements account for its text exactly can
+      // be mapped element by element; anything else stays text.
+      if (lengths.reduce((sum, length) => sum + length, 0) === run.text.length) {
+        let offset = runStart;
+        elements.forEach((el, index) => {
+          if (isW(el, SYM_LOCAL_NAME) && lengths[index] === 1 && offset >= start && offset < end) {
+            rangeSymbols[offset - start] = el.cloneNode(true) as Element;
+            found = true;
+          }
+          offset += lengths[index]!;
+        });
+      }
+    }
+    runStart = runEnd;
+  }
+  if (!found) return undefined;
+
+  const oldText = runs.map((run) => run.text).join('').slice(start, end);
+  const newLength = replacementText.length;
+  let prefix = 0;
+  while (prefix < oldText.length && prefix < newLength && oldText[prefix] === replacementText[prefix]) prefix++;
+  let suffix = 0;
+  const maxSuffix = Math.min(oldText.length, newLength) - prefix;
+  while (
+    suffix < maxSuffix
+    && oldText[oldText.length - 1 - suffix] === replacementText[newLength - 1 - suffix]
+  ) suffix++;
+
+  const sources: Array<Element | null> = new Array(newLength).fill(null);
+  for (let i = 0; i < prefix; i++) sources[i] = rangeSymbols[i]!;
+  for (let k = 1; k <= suffix; k++) sources[newLength - k] = rangeSymbols[oldText.length - k]!;
+  return sources;
+}
+
+function appendTextToRun(
+  doc: Document,
+  run: Element,
+  text: string,
+  preserveXmlSpace = false,
+  symbolAt?: (index: number) => Element | null,
+): void {
+  // Convert \t and \n to OOXML equivalents where possible, and a character
+  // that keeps a replaced symbol's position back to a copy of that w:sym.
   let buf = '';
   const flush = () => {
     if (!buf) return;
@@ -149,18 +224,27 @@ function appendTextToRun(doc: Document, run: Element, text: string, preserveXmlS
       run.appendChild(doc.createElementNS(OOXML.W_NS, 'w:br'));
       continue;
     }
+    const symbol = symbolAt?.(i);
+    if (symbol) {
+      flush();
+      run.appendChild(symbol.cloneNode(true));
+      continue;
+    }
     buf += ch;
   }
   flush();
 }
 
 
+/**
+ * Raw-offset length of one run content element. Kept as a public alias of
+ * {@link runContentVisibleLength}, the single definition every paragraph
+ * walker shares.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1045
+ */
 export function visibleLengthForEl(el: Element): number {
-  if (el.namespaceURI !== OOXML.W_NS) return 0;
-  if (el.localName === W.t) return (el.textContent ?? '').length;
-  if (el.localName === W.tab) return 1;
-  if (el.localName === W.br) return 1;
-  return 0;
+  return runContentVisibleLength(el);
 }
 
 export function getDirectContentElements(run: Element): Element[] {
@@ -247,7 +331,7 @@ export function splitRunAtVisibleOffset(
       if (!leftText) lEl.parentNode?.removeChild(lEl);
       if (!rightText) rEl.parentNode?.removeChild(rEl);
     } else {
-      // tab/br are length 1 and should not be split; move to the right by default.
+      // tab/br/sym are length 1 and should not be split; move to the right by default.
       lEl.parentNode?.removeChild(lEl);
     }
     pos += len;
@@ -294,10 +378,10 @@ function runEndsWithZeroLengthContent(run: Element): boolean {
 
 /**
  * Zero-visible-length run content that a replaced range deletes with the
- * surrounding text: a `w:sym` symbol character (issue #1044), the
- * `w:fldChar` / `w:instrText` markers of a complex field whose markers sit
- * inside the range (issue #1082: a result-less field such as an `XE` index
- * entry or a `TC` entry — begin, instruction, end, no `separate`), and a
+ * surrounding text: the `w:fldChar` / `w:instrText` markers of a complex
+ * field whose markers sit inside the range (issue #1082: a result-less field
+ * such as an `XE` index entry or a `TC` entry — begin, instruction, end, no
+ * `separate`), and a
  * footnote or endnote reference mark (issue #1094). A field whose cached
  * result is empty (begin, instruction, separate, end) is also zero-length and
  * is handled the same way. A field with a non-empty cached result never
@@ -311,7 +395,6 @@ function runEndsWithZeroLengthContent(run: Element): boolean {
  * caller replacing the text around it has covered it.
  */
 const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
-  SYM_LOCAL_NAME,
   W.fldChar,
   W.instrText,
   W.footnoteReference,
@@ -322,10 +405,10 @@ const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
  * True when a run removed from a replaced range must be kept for `w:del`
  * wrapping. Visible text qualifies, and so does zero-length content the range
  * deletes with the text. A `w:sym` symbol character (a Wingdings checkbox, a
- * bullet) is run content that Word renders as a character, but it contributes
- * no visible length in the paragraph text coordinate space, so the length test
- * alone let a sym-only run be detached and never recorded — an untracked
- * deletion inside a tracked edit (issue #1044). Complex field markers
+ * bullet) is visible text: it occupies one character of the paragraph text
+ * (issue #1046). Before it did, the length test alone let a sym-only run be
+ * detached and never recorded — an untracked deletion inside a tracked edit
+ * (issue #1044). Complex field markers
  * (`w:fldChar`, `w:instrText`) had the same defect (issue #1082): a run
  * holding only a marker was dropped, so reject-all could not restore the
  * field. Recording the run puts it in the same `w:del` as the surrounding
@@ -340,6 +423,7 @@ const DELETABLE_ZERO_LENGTH_LOCALS: ReadonlySet<string> = new Set([
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @see https://github.com/UseJunior/safe-docx/issues/1044
+ * @see https://github.com/UseJunior/safe-docx/issues/1046
  * @see https://github.com/UseJunior/safe-docx/issues/1082
  * @see https://github.com/UseJunior/safe-docx/issues/1094
  */
@@ -667,6 +751,20 @@ function addParagraphMarkDeletion(p: Element, ctx: RevisionContext): void {
 }
 
 /**
+ * True when `p` is a paragraph its table cell cannot lose: the cell's only
+ * block-level content, or the paragraph that must close a cell ending in a
+ * nested table.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.66
+ * @see https://github.com/UseJunior/safe-docx/issues/1524
+ */
+function isRequiredTableCellParagraph(p: Element): boolean {
+  const parent = p.parentNode;
+  if (!parent || parent.nodeType !== 1 || !isW(parent as Element, 'tc')) return false;
+  return !canSafelyRemoveEmptyParagraph(p);
+}
+
+/**
  * True when a blanking edit left nothing in the paragraph that renders or
  * anchors: only w:pPr, proofing marks, and runs or hyperlinks whose content
  * was removed. Range markers (bookmarks, comment anchors), embedded content,
@@ -954,6 +1052,51 @@ function getContainerBoundaryError(
   );
 }
 
+/** Refuse stale or inconsistent run endpoints before boundary splitting writes. */
+function validateSiblingRange(start: Element, end: Element): void {
+  if (!start.parentNode || !end.parentNode) throw new Error('Run has no parent');
+  if (start.parentNode === end.parentNode) {
+    for (let node: Node | null = start; node; node = node.nextSibling) {
+      if (node === end) return;
+    }
+  }
+  throw new SafeDocxError(
+    'UNSAFE_CONTAINER_BOUNDARY',
+    'Replacement range start and end runs are not reachable siblings',
+  );
+}
+
+/**
+ * Emit deletions at their original positions. Preserved objects and markers
+ * close the segment so rejecting the edit restores the original order.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see #1312
+ */
+function createDeletionSegmentBuilder(doc: Document, ctx?: RevisionContext) {
+  let currentDeletion: Element | null = null;
+  return {
+    terminate(): void {
+      currentDeletion = null;
+    },
+    removeRun(run: Element): void {
+      const parent = run.parentNode;
+      if (!parent) return;
+      if (ctx && runCarriesDeletableContent(run)) {
+        if (!currentDeletion) {
+          currentDeletion = createRevisionContainer(doc, 'del', ctx);
+          parent.insertBefore(currentDeletion, run);
+        }
+        parent.removeChild(run);
+        currentDeletion.appendChild(prepareElementForDeletion(run));
+      } else {
+        parent.removeChild(run);
+      }
+    },
+  };
+}
+
 /**
  * Replace a visible paragraph range while keeping tracked runs inside their
  * existing run container. In particular, edits wholly inside `w:hyperlink`
@@ -1021,6 +1164,7 @@ export function replaceParagraphTextRange(
     fullText,
   );
   if (containerBoundaryError) throw containerBoundaryError;
+  validateSiblingRange(startRun.r, endRun.r);
 
   // A cached result may span many runs, but every touched run must belong to
   // the same complex field. Moving ordinary text, a field marker, or another
@@ -1070,6 +1214,7 @@ export function replaceParagraphTextRange(
   }
 
   const parts: ReplacementPart[] = typeof replacement === 'string' ? [{ text: replacement }] : replacement;
+  const symbolSources = replacementSymbolSources(runs, start, end, parts.map((part) => part.text).join(''));
 
   // Split boundary runs so we can remove whole runs cleanly.
   //
@@ -1170,25 +1315,7 @@ export function replaceParagraphTextRange(
       cur = nextNode;
     }
   } else {
-    // The open deletion segment; reset to null whenever preserved embedded
-    // content interrupts the removed stretch so the next removed run starts
-    // a new w:del at its own position.
-    let currentDeletion: Element | null = null;
-
-    const removeRunInPlace = (runEl: Element): void => {
-      const parentNode = runEl.parentNode;
-      if (!parentNode) return;
-      if (ctx && runCarriesDeletableContent(runEl)) {
-        if (!currentDeletion) {
-          currentDeletion = createRevisionContainer(doc, 'del', ctx);
-          parentNode.insertBefore(currentDeletion, runEl);
-        }
-        parentNode.removeChild(runEl);
-        currentDeletion.appendChild(prepareElementForDeletion(runEl));
-      } else {
-        parentNode.removeChild(runEl);
-      }
-    };
+    const deletionSegments = createDeletionSegmentBuilder(doc, ctx);
 
     // Split a run holding both text and embedded content into consecutive
     // homogeneous runs (formatting cloned), inserted at the run's position in
@@ -1220,26 +1347,26 @@ export function replaceParagraphTextRange(
       if (cur.nodeType === 1 && !isW(cur as Element, W.r)) {
         // A sibling marker stays where it is; the next removed run opens a
         // new w:del after it (issue #1083).
-        currentDeletion = null;
+        deletionSegments.terminate();
       } else if (cur.nodeType === 1) {
         const runEl = cur as Element;
         const embeddedContent = getEmbeddedContentElements(runEl);
         if (embeddedContent.length === 0) {
-          removeRunInPlace(runEl);
+          deletionSegments.removeRun(runEl);
         } else if (!runCarriesDeletableContent(runEl)) {
           // Embedded-only run: the replaced text lives entirely in sibling
           // runs. Leave it in the paragraph as-is. A run that also holds a
           // w:sym is mixed, not embedded-only: the split below keeps the
           // embedded content live and deletes the symbol with the range.
           preservedEmbeddedContent = true;
-          currentDeletion = null;
+          deletionSegments.terminate();
         } else {
           for (const piece of splitMixedRun(runEl)) {
             if (piece.embedded) {
               preservedEmbeddedContent = true;
-              currentDeletion = null;
+              deletionSegments.terminate();
             } else {
-              removeRunInPlace(piece.el);
+              deletionSegments.removeRun(piece.el);
             }
           }
         }
@@ -1251,6 +1378,7 @@ export function replaceParagraphTextRange(
 
   // Build replacement runs using the same formatting/template logic as the legacy path.
   const replacementRuns: Element[] = [];
+  let replacementOffset = 0;
   for (const part of parts) {
     const tmpl = part.templateRun ?? templateRun;
     const sourceRPr = getDirectChild(tmpl, W.rPr);
@@ -1262,7 +1390,15 @@ export function replaceParagraphTextRange(
     if (ctx && hasExplicitFormattingMutation && rPrComparableSignature(newRPr) !== sourceRPrSignature) {
       ensureRPr(doc, newRun).appendChild(buildRPrChangeElement(getSnapshotRPr(doc, sourceRPr), ctx));
     }
-    appendTextToRun(doc, newRun, part.text, part.preserveXmlSpace);
+    const partOffset = replacementOffset;
+    replacementOffset += part.text.length;
+    appendTextToRun(
+      doc,
+      newRun,
+      part.text,
+      part.preserveXmlSpace,
+      symbolSources && ((index) => symbolSources[partOffset + index] ?? null),
+    );
     if (getRunVisibleLength(newRun) > 0) {
       replacementRuns.push(newRun);
     }
@@ -1295,10 +1431,13 @@ export function replaceParagraphTextRange(
     // cross-reference target, while the untracked edit below keeps the
     // paragraph with its markers. Tracked and clean must agree on whether the
     // paragraph survives, so this asks the same question removeBlankedParagraph
-    // asks (issue #1098).
+    // asks (issue #1098). A table cell must keep a paragraph, so a cell's
+    // last remaining paragraph keeps its mark: Word records only the run
+    // deletion there (issue #1524).
     if (
       start === 0 && end === fullText.length && replacementRuns.length === 0 && !preservedEmbeddedContent &&
-      isParagraphInertAfterBlanking(p, true)
+      isParagraphInertAfterBlanking(p, true) &&
+      !isRequiredTableCellParagraph(p)
     ) {
       addParagraphMarkDeletion(p, ctx);
     }

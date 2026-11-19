@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
-import { bookmarkNameForSlug, checkGeneratedPackage, generateDocx } from '@usejunior/docx-core';
+import Markdoc from '@markdoc/markdoc';
+import { DocxZip, bookmarkNameForSlug, checkGeneratedPackage, generateDocx, readDocumentProperties, tableOfContentsInstruction, type DocumentProperties } from '@usejunior/docx-core';
 import { DocxMarkdocError } from '../errors.js';
 import { importDocxToMarkdoc } from '../import.js';
 import { requireMarkdoc } from '../markdoc.js';
-import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, sourceCrossReferenceForm, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
-import { lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FooterProjection } from './lower.js';
+import { ORACLE_NORMALIZATION, compareParagraphs, normalizeOracleText, projectSourceText, sourceCrossReferenceForm, type PageNumeral, type SequenceComparison, type SourceCrossReference, type SourceProjection } from './oracle.js';
+import { CREATION_EPOCH_ISO, lowerCreationMarkdoc, type CreationLowering, type CreationProjection, type FirstPageProjection, type FooterProjection } from './lower.js';
 import { readCreatedDocx, type CreationReadback } from './readback.js';
+import { TOC_STYLES } from './profile.js';
+import { creationTimestamp, parseCreationFrontmatter, type CreationFrontmatter } from './validate.js';
 
 export type CreationCheck = { passed: boolean; detail?: string };
 
@@ -20,8 +23,33 @@ export type CreationCertificate = {
   checks: {
     package: CreationCheck & { issues: string[] };
     determinism: CreationCheck;
-    readback: CreationCheck & { paragraphs: number; negativeControlDetected: boolean };
+    /**
+     * Body paragraph text read back against the lowering's projection. When
+     * either side has a paragraph with direct alignment or indents (a
+     * `{% paragraph-layout %}`), `layouts` records the comparison of every paragraph's
+     * direct `w:jc` and `w:ind` too; its negative control drops the layout
+     * of the first laid-out paragraph (or gives the first paragraph one).
+     */
+    readback: CreationCheck & { paragraphs: number; negativeControlDetected: boolean; layouts?: { paragraphs: number; negativeControlDetected: boolean } };
     footers: CreationCheck & { sections: number; negativeControlDetected: boolean };
+    /**
+     * Present when the lowering or the DOCX has a header: each section's
+     * default header, and for each section with `w:titlePg` its first-page
+     * header and footer, read back against the lowering's projection. The
+     * negative control perturbs one expected header.
+     */
+    headers?: CreationCheck & {
+      sections: number;
+      firstPageSections: number;
+      negativeControlDetected: boolean;
+      /**
+       * Present when a section has first-page slots (`w:titlePg`): one
+       * control per slot of the first such section, each of which must be
+       * detected, that changes the expected first-page header or footer by
+       * one character. The default slots are compared separately.
+       */
+      firstPageNegativeControlDetected?: boolean;
+    };
     /**
      * Footnotes read back from word/footnotes.xml, in reference order, and
      * where each reference sits, against the lowering's projection. The
@@ -42,6 +70,17 @@ export type CreationCertificate = {
     };
     brownfield: CreationCheck & { anchoredParagraphs: number };
     /**
+     * The document properties read back from docProps/core.xml and
+     * docProps/app.xml, against the values the frontmatter calls for, read
+     * straight from it (never from the lowering): `dc:creator` (author),
+     * `dcterms:created` (date), `dcterms:modified` (modified, else date),
+     * `cp:lastModifiedBy`, `Application` (absent or a name), and `dc:title`
+     * when the frontmatter sets one. Without a `date` both dates are
+     * 2006-01-01T00:00:00Z. The negative control changes the expected
+     * Application.
+     */
+    properties: CreationCheck & { values: Record<string, string | null>; negativeControlDetected: boolean };
+    /**
      * Present when the source or the DOCX has a cross-reference: each REF
      * field's instruction (bookmark name and number switch, or none for a
      * text reference), in reading order, against the `{% xref /%}` it came
@@ -60,6 +99,10 @@ export type CreationCertificate = {
      * relative reference expect its full number instead.
      */
     crossReferences?: CrossReferenceCheck;
+    /** Present when the source or the DOCX numbers a section's pages in roman numerals or restarts them (#1426). */
+    pageNumbering?: PageNumberingCheck;
+    /** Present when the DOCX has a table of contents (#1426). */
+    tableOfContents?: TableOfContentsCheck;
     /**
      * Independent round trip (#1185): the created DOCX re-imported through
      * `docx-markdoc import`, compared with plain text read straight from the
@@ -68,8 +111,38 @@ export type CreationCertificate = {
     roundTrip: CreationCheck & {
       normalization: string;
       body: SequenceComparison;
-      footers: Array<{ section: number; expected: string[] | null; actual: string[] | null; comparison?: SequenceComparison; passed: boolean }>;
-      negativeControls: Record<'deletedWord' | 'deletedParagraph' | 'deletedTableCell' | 'deletedFooterText', boolean | 'not applicable'>;
+      footers: StoryComparison[];
+      /** Present when the source or the import has a header: each section's default header. */
+      headers?: StoryComparison[];
+      /**
+       * Present when the source or the import has a section with a
+       * first-page header (`header-first: none`): that section's first-page
+       * header and footer.
+       */
+      firstPage?: Array<StoryComparison & { slot: 'header' | 'footer' }>;
+      /**
+       * `deletedHeaderText` is present with `headers`, and 'not applicable' when no header has text.
+       * `changedFirstPageHeader` and `changedFirstPageFooter` are present with `firstPage`: in the first
+       * section with first-page slots, a slot with content is expected empty (its text and page number
+       * deleted), and an empty one is expected to show the section's own header or footer (the header
+       * leaking onto a first page that drops it). 'not applicable' when neither has content.
+       */
+      negativeControls: Record<'deletedWord' | 'deletedParagraph' | 'deletedTableCell' | 'deletedFooterText', boolean | 'not applicable'> & {
+        deletedHeaderText?: boolean | 'not applicable';
+        changedFirstPageHeader?: boolean | 'not applicable';
+        changedFirstPageFooter?: boolean | 'not applicable';
+      };
+      /**
+       * Present when the source or the DOCX has a paragraph with direct
+       * alignment or indents (#1424): each `{% paragraph-layout %}` paragraph's text and
+       * the layout its attributes call for, read straight from the source,
+       * against every body paragraph of the DOCX whose own `w:pPr` sets
+       * `w:jc` or `w:ind`, in order. A missing, misplaced, changed or extra
+       * layout fails. The negative controls change the first expected
+       * layout and drop the first expected paragraph; each must be
+       * detected ('not applicable' when the source has none).
+       */
+      paragraphLayout?: ParagraphLayoutComparison;
       /**
        * Present when the source or the import has footnotes: every note's
        * paragraphs, in reference order, against the imported footnote
@@ -96,7 +169,28 @@ export type CreationCertificate = {
   profile: CreationLowering['profile'];
   blocks: CreationLowering['blocks'];
   footers: FooterProjection[];
+  /** Present when the DOCX has a header: each section's default header, as read back. */
+  headers?: FooterProjection[];
+  /** Present when a section has a first-page header: per section, as read back. */
+  firstPage?: FirstPageProjection[];
 };
+
+/** Each section's `w:pgNumType` against the source: see {@link pageNumberingCheck}. */
+export type PageNumberingCheck = CreationCheck & { sections: Array<{ format?: string; start?: number } | null>; negativeControlDetected: boolean };
+
+/** The cached table of contents against the document's TC entries: see {@link tableOfContentsCheck}. */
+export type TableOfContentsCheck = CreationCheck & { entries: number; tcEntries: number; negativeControlDetected: boolean };
+
+/** Laid-out paragraphs from the source against those of the DOCX: see `roundTrip.paragraphLayout`. */
+export type ParagraphLayoutComparison = {
+  passed: boolean;
+  paragraphs: { expected: number; actual: number };
+  mismatches: Array<{ paragraph: number; expected: string | null; actual: string | null }>;
+  negativeControls: Record<'changedLayout' | 'droppedParagraph' | 'movedLayout', boolean | 'not applicable'>;
+};
+
+/** One section's header or footer, from the source against the import. */
+export type StoryComparison = { section: number; expected: string[] | null; actual: string[] | null; comparison?: SequenceComparison; passed: boolean };
 
 export type CrossReferenceCheck = CreationCheck & {
   /** Tags in the source, fields placed in the DOCX, and how many of the tags are text and relative references. */
@@ -227,7 +321,73 @@ function shortenBookmark(readback: CreationReadback, name: string): CreationRead
   };
 }
 
-function crossReferenceCheck(expected: SourceProjection, readback: CreationReadback): CrossReferenceCheck | undefined {
+/** The `w:pgNumType w:fmt` of each page numeral. */
+const PAGE_NUMERAL_FORMATS: Readonly<Record<PageNumeral, string | undefined>> = { decimal: undefined, 'lower-roman': 'lowerRoman', 'upper-roman': 'upperRoman' };
+
+/**
+ * Each section's `w:pgNumType` against the source (#1426): the format of
+ * the footer it shows, roman or decimal, and the page number it restarts at.
+ * Recorded when either side has one; the negative control expects the first
+ * section's numbering changed and must fail.
+ */
+export function pageNumberingCheck(expected: SourceProjection, readback: CreationReadback): PageNumberingCheck | undefined {
+  const want = readback.pageNumbering.map((_, section) => {
+    const entry = expected.pageNumbering?.[section];
+    const format = entry ? PAGE_NUMERAL_FORMATS[entry.numeral] : undefined;
+    return format === undefined && entry?.start === undefined ? null : { ...(format ? { format } : {}), ...(entry?.start === undefined ? {} : { start: entry.start }) };
+  });
+  if ([...want, ...readback.pageNumbering].every((entry) => entry === null)) return undefined;
+  const differs = (expectation: typeof want) => JSON.stringify(expectation) !== JSON.stringify(readback.pageNumbering);
+  const negativeControlDetected = differs(want.map((entry, section) => (section === 0 ? (entry === null ? { format: 'lowerRoman' } : null) : entry)));
+  const passed = !differs(want) && negativeControlDetected;
+  return {
+    passed,
+    sections: want,
+    negativeControlDetected,
+    ...(passed ? {} : { detail: differs(want) ? `expected ${JSON.stringify(want)}, read ${JSON.stringify(readback.pageNumbering)}` : 'a negative control was not detected' }),
+  };
+}
+
+/**
+ * The table of contents against the TC entries it lists (#1426): its
+ * instruction is the one create writes, and its cached result holds one
+ * paragraph per TC entry of levels 1 to 3, in document order, with the
+ * entry's text in the `toc n` style of its level. That is what Word and
+ * LibreOffice list when they update the field, so a stale cached result
+ * fails; the negative control expects a changed first entry and must fail.
+ * The source oracle checks the entries themselves (the round trip).
+ */
+export function tableOfContentsCheck(readback: CreationReadback): TableOfContentsCheck | undefined {
+  const toc = readback.tableOfContents;
+  if (!toc?.instruction) return undefined;
+  const instruction = tableOfContentsInstruction({ levels: { from: 1, to: TOC_STYLES.length } });
+  const listed = toc.tcEntries.filter((entry) => entry.level >= 1 && entry.level <= TOC_STYLES.length);
+  const expected = listed.map((entry) => ({ text: entry.text, style: TOC_STYLES[entry.level - 1]! }));
+  const mismatchesOf = (want: typeof expected): string[] => {
+    const out: string[] = [];
+    if (toc.instruction !== instruction) out.push(`instruction ${JSON.stringify(toc.instruction)}, expected ${JSON.stringify(instruction)}`);
+    for (let index = 0; index < Math.max(want.length, toc.entries.length); index += 1) {
+      const entry = want[index];
+      const read = toc.entries[index];
+      if (!entry || !read || normalizeOracleText(entry.text) !== normalizeOracleText(read.text) || entry.style !== read.style) {
+        out.push(`entry ${index + 1}: expected ${JSON.stringify(entry ?? null)}, cached ${JSON.stringify(read ?? null)}`);
+      }
+    }
+    return out;
+  };
+  const mismatches = mismatchesOf(expected);
+  const negativeControlDetected = expected.length === 0 ? false : mismatchesOf([{ ...expected[0]!, text: `${expected[0]!.text} x` }, ...expected.slice(1)]).length > 0;
+  const passed = mismatches.length === 0 && negativeControlDetected;
+  return {
+    passed,
+    entries: toc.entries.length,
+    tcEntries: toc.tcEntries.length,
+    negativeControlDetected,
+    ...(passed ? {} : { detail: mismatches.length > 0 ? mismatches.slice(0, 3).join('; ') : 'a negative control was not detected' }),
+  };
+}
+
+export function crossReferenceCheck(expected: SourceProjection, readback: CreationReadback): CrossReferenceCheck | undefined {
   const xrefs = expected.crossReferences ?? [];
   const inventory = expected.crossReferenceInventory ?? [];
   const sites = (readback.crossReferences?.length ?? 0) + (readback.footnoteCrossReferences?.length ?? 0);
@@ -299,14 +459,51 @@ export type CreatedDocument = {
 
 const sha256 = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 
-/** Footer paragraphs of each section from re-imported Markdoc: the story bound to `<section>:default`. */
-function importedFooters(ir: ReturnType<typeof requireMarkdoc>, sections: number): Array<string[] | null> {
+/** Footer (or header) paragraphs of each section from re-imported Markdoc: the story bound to `<section>:<slot>`. */
+function importedFooters(ir: ReturnType<typeof requireMarkdoc>, sections: number, kind: 'header' | 'footer' = 'footer', slot: 'default' | 'first' = 'default'): Array<string[] | null> {
   const stories = ir.stories ?? [];
   const storyParagraphs = ir.storyScaffold ?? [];
   return Array.from({ length: sections }, (_, section) => {
-    const story = stories.find((entry) => entry.kind === 'footer' && entry.bindings.includes(`${section}:default`));
+    const story = stories.find((entry) => entry.kind === kind && entry.bindings.includes(`${section}:${slot}`));
     return story ? storyParagraphs.filter((paragraph) => paragraph.story === story.id).map((paragraph) => paragraph.originalText) : null;
   });
+}
+
+/**
+ * Compare each section's expected header or footer with the imported one. A
+ * section without a reference on one side passes only when the other side has
+ * no text either.
+ */
+function compareStories(expected: ReadonlyArray<string[] | null>, actual: ReadonlyArray<string[] | null>, sections: number): StoryComparison[] {
+  return Array.from({ length: Math.max(sections, expected.length) }, (_, section) => {
+    const want = expected[section] ?? null;
+    const got = actual[section] ?? null;
+    if (want === null || got === null) {
+      const passed = (want === null || want.every((line) => !normalizeEmpty(line))) && (got === null || got.every((line) => !normalizeEmpty(line)));
+      return { section, expected: want, actual: got, passed };
+    }
+    const comparison = compareParagraphs(want.map((text) => ({ text })), got);
+    return { section, expected: want, actual: got, comparison, passed: comparison.passed };
+  });
+}
+
+/** True when some section's expected story disagrees with the imported one (both present). */
+function storiesDiffer(expected: ReadonlyArray<string[] | null>, actual: ReadonlyArray<string[] | null>): boolean {
+  return expected.some((want, section) => {
+    const got = actual[section] ?? null;
+    return want !== null && got !== null && !compareParagraphs(want.map((text) => ({ text })), got).passed;
+  });
+}
+
+/** A header or footer line with its own text removed and only its field markers kept ("Page \u0000PAGE" → "\u0000PAGE"). */
+function fieldsOnly(line: string): string {
+  return (line.match(/\u0000[A-Z]+/gu) ?? []).join(' ');
+}
+
+/** The first section whose header or footer has text of its own, and that story with the text deleted. */
+function withoutStoryText(stories: ReadonlyArray<string[] | null>): { index: number; stories: Array<string[] | null> } {
+  const index = stories.findIndex((story) => story?.some((line) => line.trim() && fieldsOnly(line) !== line.trim()));
+  return { index, stories: stories.map((story, i) => (i === index ? story!.map(fieldsOnly).filter(Boolean) : story)) };
 }
 
 /** Note paragraphs in order, each note closed by a separator entry so a paragraph cannot move between notes unseen. */
@@ -394,55 +591,143 @@ function footnoteRoundTrip(expected: SourceProjection, ir: ReturnType<typeof req
   };
 }
 
+/** A body paragraph as compared: its layout token (null for none), then its normalized text. */
+type BodyLayout = { layout: string | null; text: string; generatedKeepNext?: true };
+
+/**
+ * Position by position over the non-empty body paragraphs: a layout must sit on the same paragraph on both sides,
+ * and a laid-out paragraph must carry the same text. Text without a layout is the body comparison's job.
+ */
+function bodyLayoutMismatches(expected: readonly BodyLayout[], actual: readonly BodyLayout[]): ParagraphLayoutComparison['mismatches'] {
+  const show = (entry: BodyLayout | undefined) => (entry ? `${entry.layout ?? 'no layout'} | ${entry.text}` : null);
+  const out: ParagraphLayoutComparison['mismatches'] = [];
+  for (let index = 0; index < Math.max(expected.length, actual.length); index += 1) {
+    const a = expected[index];
+    const b = actual[index];
+    const layoutDiffers = (a?.layout ?? null) !== (b?.layout ?? null) || (a === undefined) !== (b === undefined);
+    const textDiffers = (a?.layout != null || b?.layout != null) && a?.text !== b?.text;
+    if (layoutDiffers || textDiffers) out.push({ paragraph: index + 1, expected: show(a), actual: show(b) });
+  }
+  return out;
+}
+
+/**
+ * Each body paragraph's layout as the source calls for it (from `{% paragraph-layout %}`)
+ * against the layout its own `w:pPr` sets (`w:jc`, `w:ind`) in the DOCX, position by
+ * position over the non-empty paragraphs, or undefined when neither side has a
+ * layout. The expectation never comes from the lowering. Empty paragraphs are left
+ * out on both sides (create generates them after a table and as section breaks).
+ */
+function paragraphLayoutRoundTrip(expected: SourceProjection, readback: CreationReadback): ParagraphLayoutComparison | undefined {
+  const kept = (entry: BodyLayout) => entry.text !== '' || entry.layout !== null;
+  const wanted: BodyLayout[] = expected.body.map((entry) => ({ layout: entry.layout ?? null, text: normalizeOracleText(entry.text), ...(entry.generatedKeepNext ? { generatedKeepNext: true as const } : {}) })).filter(kept);
+  const raw: BodyLayout[] = readback.paragraphs.map((text, index) => ({ layout: readback.layouts[index] ?? null, text: normalizeOracleText(text) })).filter(kept);
+  // Create sets keep-with-next by its own rules (before a legend or a first signer, on a run-in article), which the
+  // source does not spell out but the source oracle marks: a read-back keepNext the source does not ask for is set
+  // aside only on a paragraph the oracle marks, so an authored keep that is missing and a keep anywhere else both fail.
+  const found: BodyLayout[] = raw.map((entry, index) => {
+    if (entry.layout === null || !wanted[index]?.generatedKeepNext || wanted[index]?.layout?.split(' ').includes('keepNext')) return entry;
+    const rest = entry.layout.split(' ').filter((part) => part !== 'keepNext').join(' ');
+    return { ...entry, layout: rest === '' ? null : rest };
+  });
+  const laidOut = (entries: readonly BodyLayout[]) => entries.filter((entry) => entry.layout !== null).length;
+  if (laidOut(wanted) === 0 && laidOut(found) === 0) return undefined;
+  const mismatches = bodyLayoutMismatches(wanted, found);
+  // Three negative controls, each of which must be detected: the first layout changed, its paragraph dropped, and
+  // its layout swapped with the nearest paragraph that lays out differently (the same text there or not).
+  const first = wanted.findIndex((entry) => entry.layout !== null);
+  // The nearest paragraph, either way, whose layout differs from the first layout.
+  const neighbour = first === -1 ? undefined : Array.from({ length: wanted.length }, (_, distance) => [first + distance, first - distance]).flat()
+    .find((index) => index >= 0 && index < wanted.length && wanted[index]!.layout !== wanted[first]!.layout);
+  const detects = (mutated: BodyLayout[]) => bodyLayoutMismatches(mutated, found).length > 0;
+  const negativeControls: ParagraphLayoutComparison['negativeControls'] = {
+    changedLayout: first === -1 ? 'not applicable' : detects(wanted.map((entry, index) => (index === first ? { ...entry, layout: `${entry.layout} ind.right=1` } : entry))),
+    droppedParagraph: first === -1 ? 'not applicable' : detects(wanted.filter((_, index) => index !== first)),
+    movedLayout: first === -1 || neighbour === undefined ? 'not applicable'
+      : detects(wanted.map((entry, index) => (index === first ? { ...entry, layout: wanted[neighbour]!.layout } : index === neighbour ? { ...entry, layout: wanted[first]!.layout } : entry))),
+  };
+  return {
+    passed: mismatches.length === 0 && Object.values(negativeControls).every((value) => value !== false),
+    paragraphs: { expected: laidOut(wanted), actual: laidOut(found) },
+    mismatches,
+    negativeControls,
+  };
+}
+
 /** Run the independent round-trip comparison, with negative controls that must each be detected. */
-function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sections: number): CreationCertificate['checks']['roundTrip'] {
+function roundTripCheck(expected: SourceProjection, importedMarkdoc: string, sections: number, readback: CreationReadback): CreationCertificate['checks']['roundTrip'] {
   const ir = requireMarkdoc(importedMarkdoc);
+  const paragraphLayout = paragraphLayoutRoundTrip(expected, readback);
   const footnotes = footnoteRoundTrip(expected, ir);
   const footnotesOk = !footnotes || (footnotes.comparison.passed && footnotes.notes.expected === footnotes.notes.actual && footnotes.negativeControlDetected !== false
     && footnotes.references.passed && footnotes.references.negativeControlDetected !== false);
   const actualBody = ir.scaffold.map((paragraph) => paragraph.originalText);
   const actualFooters = importedFooters(ir, sections);
+  const actualHeaders = importedFooters(ir, sections, 'header');
+  const actualFirst = { header: importedFooters(ir, sections, 'header', 'first'), footer: importedFooters(ir, sections, 'footer', 'first') };
   const body = compareParagraphs(expected.body, actualBody);
-  const footers = Array.from({ length: Math.max(sections, expected.footers.length) }, (_, section) => {
-    const want = expected.footers[section] ?? null;
-    const got = actualFooters[section] ?? null;
-    if (want === null || got === null) {
-      const passed = (want === null || want.every((line) => !normalizeEmpty(line))) && (got === null || got.every((line) => !normalizeEmpty(line)));
-      return { section, expected: want, actual: got, passed };
-    }
-    const comparison = compareParagraphs(want.map((text) => ({ text })), got);
-    return { section, expected: want, actual: got, comparison, passed: comparison.passed };
-  });
+  const footers = compareStories(expected.footers, actualFooters, sections);
+  const expectedHeaders = expected.headers ?? [];
+  const headersRecorded = [...expectedHeaders, ...actualHeaders].some((story) => story !== null);
+  const headers = compareStories(expectedHeaders, actualHeaders, sections);
+  // A first-page slot is compared for every section that has one on either side.
+  const expectedFirst = (slot: 'header' | 'footer') => Array.from({ length: Math.max(sections, expected.firstPage?.length ?? 0) }, (_, section) => expected.firstPage?.[section]?.[slot] ?? null);
+  const firstSections = Array.from({ length: Math.max(sections, expected.firstPage?.length ?? 0) }, (_, section) => section)
+    .filter((section) => expected.firstPage?.[section] || actualFirst.header[section] !== null || actualFirst.footer[section] !== null);
+  const firstPage = (['header', 'footer'] as const).flatMap((slot) => {
+    const compared = compareStories(expectedFirst(slot), actualFirst[slot], sections);
+    return firstSections.map((section) => ({ ...compared[section]!, slot }));
+  }).sort((a, b) => a.section - b.section);
   const detects = (mutated: SourceProjection) => {
     const mutatedBody = compareParagraphs(mutated.body, actualBody);
-    const mutatedFooters = mutated.footers.some((want, section) => {
-      const got = actualFooters[section] ?? null;
-      return want !== null && got !== null && !compareParagraphs(want.map((text) => ({ text })), got).passed;
-    });
-    return !mutatedBody.passed || mutatedFooters;
+    const firstDiffers = (['header', 'footer'] as const).some((slot) => storiesDiffer(
+      Array.from({ length: Math.max(sections, mutated.firstPage?.length ?? 0) }, (_, section) => mutated.firstPage?.[section]?.[slot] ?? null),
+      actualFirst[slot],
+    ));
+    return !mutatedBody.passed || storiesDiffer(mutated.footers, actualFooters) || storiesDiffer(mutated.headers ?? [], actualHeaders) || firstDiffers;
+  };
+  // The first section with first-page slots. A slot with content is expected empty; an empty slot is expected
+  // to show what the section's other pages show (its own header or footer, declared or inherited).
+  const firstIndex = (expected.firstPage ?? []).findIndex((entry) => entry !== null);
+  const hasContent = (lines: readonly string[] | null | undefined) => (lines ?? []).some((line) => normalizeEmpty(line) !== '');
+  const runningOf = (stories: ReadonlyArray<string[] | null>) => stories.slice(0, firstIndex + 1).reverse().find((story) => story !== null) ?? null;
+  const firstPageControl = (slot: 'header' | 'footer'): boolean | 'not applicable' => {
+    const entry = expected.firstPage![firstIndex]!;
+    const running = runningOf(slot === 'header' ? expectedHeaders : expected.footers);
+    const changed = hasContent(entry[slot]) ? [] : hasContent(running) ? running : undefined;
+    if (changed === undefined) return 'not applicable';
+    return detects({ ...expected, firstPage: expected.firstPage!.map((other, i) => (i === firstIndex ? { ...entry, [slot]: changed } : other)) });
   };
   const wordIndex = expected.body.findIndex((entry) => entry.text.trim().split(/\s+/u).length >= 2);
   const cellIndex = expected.body.findIndex((entry) => entry.cell && entry.text.trim());
-  const footerIndex = expected.footers.findIndex((footer) => footer?.some((line) => line.trim() && !line.startsWith('\u0000')));
+  const withoutFooterText = withoutStoryText(expected.footers);
+  const withoutHeaderText = withoutStoryText(expectedHeaders);
   const negativeControls: CreationCertificate['checks']['roundTrip']['negativeControls'] = {
     deletedWord: wordIndex === -1 ? 'not applicable' : detects({ ...expected, body: expected.body.map((entry, i) => (i === wordIndex ? { ...entry, text: entry.text.trim().split(/\s+/u).slice(1).join(' ') } : entry)) }),
     deletedParagraph: expected.body.length === 0 ? 'not applicable' : detects({ ...expected, body: expected.body.filter((entry) => entry.text.trim()).slice(1) }),
     deletedTableCell: cellIndex === -1 ? 'not applicable' : detects({ ...expected, body: expected.body.filter((_, i) => i !== cellIndex) }),
-    deletedFooterText: footerIndex === -1 ? 'not applicable' : detects({ ...expected, footers: expected.footers.map((footer, i) => (i === footerIndex ? footer!.filter((line) => line.startsWith('\u0000')) : footer)) }),
+    deletedFooterText: withoutFooterText.index === -1 ? 'not applicable' : detects({ ...expected, footers: withoutFooterText.stories }),
+    ...(headersRecorded ? { deletedHeaderText: withoutHeaderText.index === -1 ? 'not applicable' as const : detects({ ...expected, headers: withoutHeaderText.stories }) } : {}),
+    ...(firstPage.length > 0 && firstIndex !== -1 ? { changedFirstPageHeader: firstPageControl('header'), changedFirstPageFooter: firstPageControl('footer') } : {}),
   };
   const controlsOk = Object.values(negativeControls).every((value) => value !== false);
-  const footersOk = footers.every((footer) => footer.passed);
-  const mismatchCount = body.mismatches.length + footers.reduce((sum, footer) => sum + (footer.comparison?.mismatches.length ?? (footer.passed ? 0 : 1)), 0)
+  const stories = [...footers, ...headers, ...firstPage];
+  const footersOk = stories.every((story) => story.passed);
+  const mismatchCount = body.mismatches.length + stories.reduce((sum, story) => sum + (story.comparison?.mismatches.length ?? (story.passed ? 0 : 1)), 0)
     + (footnotes?.comparison.mismatches.length ?? 0) + (footnotes?.references.mismatches.length ?? 0);
-  const passed = body.passed && footersOk && controlsOk && footnotesOk;
+  const layoutOk = paragraphLayout?.passed !== false;
+  const passed = body.passed && footersOk && controlsOk && footnotesOk && layoutOk;
   return {
     passed,
     normalization: ORACLE_NORMALIZATION,
     body,
     footers,
+    ...(headersRecorded ? { headers } : {}),
+    ...(firstPage.length > 0 ? { firstPage } : {}),
     negativeControls,
+    ...(paragraphLayout ? { paragraphLayout } : {}),
     ...(footnotes ? { footnotes } : {}),
-    ...(passed ? {} : { detail: `${mismatchCount} round-trip mismatch(es)${controlsOk && footnotes?.negativeControlDetected !== false && footnotes?.references.negativeControlDetected !== false ? '' : '; a negative control was not detected'}${footnotes && footnotes.notes.expected !== footnotes.notes.actual ? `; expected ${footnotes.notes.expected} footnote(s), imported ${footnotes.notes.actual}` : ''}` }),
+    ...(passed ? {} : { detail: `${mismatchCount + (paragraphLayout?.mismatches.length ?? 0)} round-trip mismatch(es)${layoutOk ? '' : `; paragraph layout: ${paragraphLayout!.mismatches.length > 0 ? `expected ${JSON.stringify(paragraphLayout!.mismatches[0]!.expected)}, read ${JSON.stringify(paragraphLayout!.mismatches[0]!.actual)}` : 'a negative control was not detected'}`}${controlsOk && footnotes?.negativeControlDetected !== false && footnotes?.references.negativeControlDetected !== false ? '' : '; a negative control was not detected'}${footnotes && footnotes.notes.expected !== footnotes.notes.actual ? `; expected ${footnotes.notes.expected} footnote(s), imported ${footnotes.notes.actual}` : ''}` }),
   };
 }
 
@@ -469,6 +754,38 @@ function perturbFootnotes(projection: CreationProjection): CreationProjection {
   const last = footnotes.at(-1);
   if (last) last[last.length - 1] = `${last.at(-1) ?? ''}x`;
   return { ...projection, footnotes };
+}
+
+/**
+ * The first-page controls of the read-back check, or undefined when no section has first-page slots: the
+ * first such section's first-page header and footer, each changed by one character (a slot without a
+ * reference is expected to have one). Each changed projection must differ from the read-back.
+ */
+function firstPageControls(projection: CreationProjection, readback: CreationReadback): boolean | undefined {
+  const index = projection.firstPage.findIndex((entry) => entry !== null);
+  if (index === -1) return undefined;
+  const entry = projection.firstPage[index]!;
+  const changed = (lines: FooterProjection) => (lines ? [`${lines[0] ?? ''}x`, ...lines.slice(1)] : ['x']);
+  const variants: FirstPageProjection[] = [{ ...entry, header: changed(entry.header) }, { ...entry, footer: changed(entry.footer) }];
+  return variants.every((variant) => JSON.stringify(projection.firstPage.map((other, i) => (i === index ? variant : other))) !== JSON.stringify(readback.firstPage));
+}
+
+/** First index where two layout lists differ, or -1 when they are equal. */
+function firstLayoutMismatch(expected: ReadonlyArray<string | null>, actual: ReadonlyArray<string | null>): number {
+  const length = Math.max(expected.length, actual.length);
+  for (let index = 0; index < length; index += 1) {
+    if ((expected[index] ?? null) !== (actual[index] ?? null) || (index >= expected.length) !== (index >= actual.length)) return index;
+  }
+  return -1;
+}
+
+/** Drop the first expected layout, or give the first paragraph one when none has a layout, to prove the comparison can fail. */
+function perturbLayouts(layouts: ReadonlyArray<string | null>): Array<string | null> {
+  const copy = [...layouts];
+  const index = copy.findIndex((layout) => layout !== null);
+  if (index === -1) copy[0] = 'jc=left';
+  else copy[index] = null;
+  return copy;
 }
 
 function footersEqual(expected: readonly FooterProjection[], actual: readonly FooterProjection[]): boolean {
@@ -509,6 +826,42 @@ export function creationTextMirror(readback: CreationReadback, label = 'document
  *
  * @see https://github.com/UseJunior/safe-docx/issues/1162
  */
+/** The document properties a source's frontmatter calls for, by `core.<name>` / `app.<name>`. */
+export function expectedCreationProperties(frontmatter: CreationFrontmatter): Record<string, string | null> {
+  const created = frontmatter.date ? creationTimestamp(frontmatter.date) : CREATION_EPOCH_ISO;
+  return {
+    ...(frontmatter.title ? { 'core.title': frontmatter.title } : {}),
+    'core.creator': frontmatter.author ?? null,
+    'core.created': created,
+    'core.modified': frontmatter.modified ? creationTimestamp(frontmatter.modified) : created,
+    'core.lastModifiedBy': frontmatter.lastModifiedBy ?? null,
+    'app.application': frontmatter.application === undefined ? 'safe-docx' : frontmatter.application,
+  };
+}
+
+function propertyMismatches(expected: Record<string, string | null>, actual: DocumentProperties): string[] {
+  return Object.entries(expected).flatMap(([key, value]) => {
+    const [part, name] = key.split('.') as ['core' | 'app', string];
+    const read = (actual[part] as Record<string, string | null>)[name] ?? null;
+    return read === value ? [] : [`${key}: expected ${JSON.stringify(value)}, read ${JSON.stringify(read)}`];
+  });
+}
+
+/** The read-back document properties against the frontmatter, with a negative control on Application. */
+function propertiesCheck(frontmatter: CreationFrontmatter, actual: DocumentProperties): CreationCertificate['checks']['properties'] {
+  const expected = expectedCreationProperties(frontmatter);
+  const mismatches = propertyMismatches(expected, actual);
+  const application = expected['app.application'];
+  const negativeControlDetected = propertyMismatches({ ...expected, 'app.application': application === null ? 'safe-docx' : `${application}x` }, actual).length > 0;
+  const passed = mismatches.length === 0 && negativeControlDetected;
+  return {
+    passed,
+    values: expected,
+    negativeControlDetected,
+    ...(passed ? {} : { detail: mismatches.length > 0 ? mismatches.join('; ') : 'a negative control was not detected' }),
+  };
+}
+
 export async function createDocumentFromMarkdoc(source: string, options: CreateDocumentOptions = {}): Promise<CreatedDocument> {
   const transform = options.transformLowering ?? ((value: CreationLowering) => value);
   const lowering = transform(lowerCreationMarkdoc(source, options.profile));
@@ -519,8 +872,19 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
 
   const mismatch = firstParagraphMismatch(lowering.projection.paragraphs, readback.paragraphs);
   const readbackControl = firstParagraphMismatch(perturbParagraphs(lowering.projection.paragraphs), readback.paragraphs) !== -1;
+  // Direct paragraph layout: compared for every paragraph, recorded when either side has one.
+  const layoutMismatch = firstLayoutMismatch(lowering.projection.layouts, readback.layouts);
+  const layoutControl = firstLayoutMismatch(perturbLayouts(lowering.projection.layouts), readback.layouts) !== -1;
+  const layoutsRecorded = [...lowering.projection.layouts, ...readback.layouts].some((layout) => layout !== null);
+  const readbackPassed = mismatch === -1 && readbackControl && layoutMismatch === -1 && (!layoutsRecorded || layoutControl);
   const footersPassed = footersEqual(lowering.projection.footers, readback.footers);
   const footerControl = !footersEqual(perturbFooters(lowering.projection.footers), readback.footers);
+  // Headers and first-page slots are always compared; the check is recorded when either side has one.
+  const firstPagePassed = JSON.stringify(lowering.projection.firstPage) === JSON.stringify(readback.firstPage);
+  const headersPassed = footersEqual(lowering.projection.headers, readback.headers) && firstPagePassed;
+  const headerControl = !footersEqual(perturbFooters(lowering.projection.headers), readback.headers);
+  const firstPageControl = firstPageControls(lowering.projection, readback);
+  const headersRecorded = [...lowering.projection.headers, ...readback.headers, ...lowering.projection.firstPage, ...readback.firstPage].some((entry) => entry !== null);
   const footnotesPassed = footnotesEqual(lowering.projection, readback);
   const footnoteControl = lowering.projection.footnotes.length === 0 ? 'not applicable' as const : !footnotesEqual(perturbFootnotes(lowering.projection), readback);
   // Brownfield import anchors every paragraph with text and every table-cell
@@ -531,8 +895,10 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
   const editable = readback.paragraphs.filter((paragraph, index) => paragraph.length > 0 || readback.inTableCell[index]).length;
 
   const sourceProjection = projectSourceText(source);
-  const roundTrip = roundTripCheck(sourceProjection, imported.markdoc, readback.footers.length);
+  const roundTrip = roundTripCheck(sourceProjection, imported.markdoc, readback.footers.length, readback);
   const crossReferences = crossReferenceCheck(sourceProjection, readback);
+  const pageNumbering = pageNumberingCheck(sourceProjection, readback);
+  const tableOfContents = tableOfContentsCheck(readback);
   const placedReferences = readback.footnoteReferences.length;
   const referenceMismatches = footnoteReferenceMismatches(sourceProjection, placedReferences);
   const referenceControl = (sourceProjection.footnoteReferenceInventory?.length ?? 0) === 0
@@ -544,6 +910,10 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
     ...(footnoteControl === false || referenceControl === false ? ['a negative control was not detected'] : []),
   ];
 
+  // The expected properties come from the source's own frontmatter, never from the lowering.
+  const sourceFrontmatter = parseCreationFrontmatter(Markdoc.parse(source).attributes.frontmatter as string | undefined);
+  const properties = propertiesCheck(sourceFrontmatter, await readDocumentProperties(await DocxZip.load(docx)));
+
   const text = creationTextMirror(readback, options.mirrorLabel);
   const checks: CreationCertificate['checks'] = {
     package: {
@@ -552,12 +922,15 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
     },
     determinism: { passed: Buffer.compare(docx, again) === 0 },
     readback: {
-      passed: mismatch === -1 && readbackControl,
+      passed: readbackPassed,
       paragraphs: readback.paragraphs.length,
       negativeControlDetected: readbackControl,
-      ...(mismatch === -1 ? {} : {
+      ...(layoutsRecorded ? { layouts: { paragraphs: readback.layouts.filter((layout) => layout !== null).length, negativeControlDetected: layoutControl } } : {}),
+      ...(mismatch !== -1 ? {
         detail: `paragraph ${mismatch + 1}: expected ${JSON.stringify(lowering.projection.paragraphs[mismatch] ?? null)}, read ${JSON.stringify(readback.paragraphs[mismatch] ?? null)}`,
-      }),
+      } : layoutMismatch !== -1 ? {
+        detail: `paragraph ${layoutMismatch + 1} layout: expected ${JSON.stringify(lowering.projection.layouts[layoutMismatch] ?? null)}, read ${JSON.stringify(readback.layouts[layoutMismatch] ?? null)}`,
+      } : readbackPassed ? {} : { detail: 'a negative control was not detected' }),
     },
     footers: {
       passed: footersPassed && footerControl,
@@ -565,6 +938,16 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
       negativeControlDetected: footerControl,
       ...(footersPassed ? {} : { detail: `expected ${JSON.stringify(lowering.projection.footers)}, read ${JSON.stringify(readback.footers)}` }),
     },
+    ...(headersRecorded ? {
+      headers: {
+        passed: headersPassed && headerControl && firstPageControl !== false,
+        sections: readback.headers.length,
+        firstPageSections: readback.firstPage.filter((entry) => entry !== null).length,
+        negativeControlDetected: headerControl,
+        ...(firstPageControl === undefined ? {} : { firstPageNegativeControlDetected: firstPageControl }),
+        ...(headersPassed ? {} : { detail: `expected ${JSON.stringify({ headers: lowering.projection.headers, firstPage: lowering.projection.firstPage })}, read ${JSON.stringify({ headers: readback.headers, firstPage: readback.firstPage })}` }),
+      },
+    } : {}),
     footnotes: {
       passed: footnoteDetail.length === 0,
       notes: readback.footnotes.length,
@@ -583,7 +966,10 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
       anchoredParagraphs: anchored,
       ...(anchored === editable ? {} : { detail: `import anchored ${anchored} paragraphs; read-back has ${editable} anchorable paragraphs` }),
     },
+    properties,
     ...(crossReferences ? { crossReferences } : {}),
+    ...(pageNumbering ? { pageNumbering } : {}),
+    ...(tableOfContents ? { tableOfContents } : {}),
   };
   const certificate: CreationCertificate = {
     version: 1,
@@ -598,6 +984,8 @@ export async function createDocumentFromMarkdoc(source: string, options: CreateD
     profile: lowering.profile,
     blocks: lowering.blocks,
     footers: readback.footers,
+    ...(readback.headers.some((entry) => entry !== null) ? { headers: readback.headers } : {}),
+    ...(readback.firstPage.some((entry) => entry !== null) ? { firstPage: readback.firstPage } : {}),
   };
   if (!certificate.passed) {
     const failed = Object.entries(checks).filter(([, check]) => !check.passed).map(([name, check]) => `${name}${check.detail ? ` (${check.detail})` : ''}`);

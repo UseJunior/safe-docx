@@ -14,6 +14,7 @@
 // This is the *semantic* tier, not pixel-faithful HTML+CSS: exact layout is not reproduced.
 
 import { tokenizeToonInline } from './document_view.js';
+import { iterateSerializerBlocks } from './serialize_blocks.js';
 import type { DocumentViewNode } from './document_view.js';
 import { escapeHtmlAttribute } from './formatting_tags.js';
 import type { Footnote } from './footnotes.js';
@@ -358,55 +359,36 @@ export function serializeToHtml(
   const blocks: string[] = [];
   // Footnote markers rendered in the body, used to dedupe ids and gate definition back-links.
   const refs: FootnoteRefs = new Map();
-  let lists: ListBuilder | null = null;
-
-  const closeLists = (): void => {
-    if (lists && lists.isOpen) blocks.push(lists.flush());
-    lists = null;
-  };
-
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i]!;
-
-    // ── Tables: consume the whole run of same-table_id nodes at once ──
-    if (node.table_context) {
-      closeLists();
-      const tableId = node.table_context.table_id;
-      const group: DocumentViewNode[] = [];
-      while (i < nodes.length && nodes[i]!.table_context?.table_id === tableId) {
-        group.push(nodes[i]!);
-        i++;
+  for (const block of iterateSerializerBlocks(nodes, { isHeading: isStructuralHeading })) {
+    switch (block.kind) {
+      case 'table': {
+        const table = renderTable(block.nodes, refs);
+        if (table) blocks.push(table);
+        break;
       }
-      i--; // for-loop will re-increment
-      const table = renderTable(group, refs);
-      if (table) blocks.push(table);
-      continue;
+      case 'heading': {
+        const level = Math.min(6, Math.max(1, block.level));
+        blocks.push(`<h${level}>${inlineTagsToHtml(block.node.tagged_text, refs).trim()}</h${level}>`);
+        break;
+      }
+      case 'list': {
+        const listBuilder = new ListBuilder();
+        for (const node of block.nodes) {
+          const { tag, content } = renderListContent(node, refs);
+          listBuilder.item(Math.max(0, node.list_metadata.list_level), tag, content);
+        }
+        if (listBuilder.isOpen) {
+          blocks.push(listBuilder.flush());
+        }
+        break;
+      }
+      case 'paragraph': {
+        const html = inlineTagsToHtml(block.node.tagged_text, refs).trim();
+        if (html) blocks.push(`<p>${html}</p>`);
+        break;
+      }
     }
-
-    // ── Structural (Word-styled) headings ──
-    if (isStructuralHeading(node)) {
-      closeLists();
-      const level = Math.min(6, Math.max(1, node.heading!.level as number));
-      blocks.push(`<h${level}>${inlineTagsToHtml(node.tagged_text, refs).trim()}</h${level}>`);
-      continue;
-    }
-
-    // ── List items: accumulated in a stateful nested-list builder ──
-    if (node.list_metadata.list_level >= 0) {
-      if (!lists) lists = new ListBuilder();
-      const { tag, content } = renderListContent(node, refs);
-      lists.item(Math.max(0, node.list_metadata.list_level), tag, content);
-      continue;
-    }
-
-    // ── Normal paragraphs (heuristic headings land here: their run-in bold is already in the
-    //     inline tags, so they stay <p> rather than being promoted to a heading). ──
-    closeLists();
-    const html = inlineTagsToHtml(node.tagged_text, refs).trim();
-    if (html) blocks.push(`<p>${html}</p>`);
   }
-
-  closeLists();
 
   const footnotesHtml = renderFootnotes(footnotes, refs);
   if (footnotesHtml) blocks.push(footnotesHtml);

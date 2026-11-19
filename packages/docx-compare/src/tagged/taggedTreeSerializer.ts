@@ -11,6 +11,18 @@ import { alignComparisonSequences, tokenizeComparisonText } from '../textAlignme
 import type { RevisionAttribution, RevisionGroupingPolicy } from '../compare-types.js';
 import { getChangedPropertyNames } from '../propertyNaming.js';
 import { collectMoveContentIssues, placeParagraphMarkRevisionMarker } from './revisionMarkup.js';
+import { groupReadableSemanticRevisions } from './readableSemanticGrouping.js';
+import { isBlockContainer } from './blockContainer.js';
+import { paragraphPropertySignature } from './paragraphPropertyParity.js';
+import { placeSinglePropertyRevision, splitLayeredRunFormatting } from './layeredFormattingRevision.js';
+import {
+  addRowExceptionRevisionCompanions,
+  isTableLevelPropertyElement,
+  resolveTableLevelProperty,
+  tableLevelPropertyOf,
+  type TableLevelProperty,
+  type TableLevelRecordFactory,
+} from './tableLevelProperties.js';
 import {
   nextRevisionId,
   paragraphJoinParts,
@@ -26,38 +38,26 @@ import {
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-/** A whole block-level container cannot be nested in a run revision. */
+/**
+ * A whole block-level container was inserted or deleted in a story whose
+ * emptied container could not be reported.
+ *
+ * In the main document the container is published with its paragraph marks,
+ * runs and table rows tracked, and listed in `unrepresentedChanges` (#1386).
+ * Text-box, header/footer and note stories do not publish unrepresented
+ * changes, so there the comparison still refuses it.
+ */
 export class UnsupportedBlockContainerRevisionError extends Error {
-  readonly partPath = 'word/document.xml';
-  constructor(readonly change: 'insert' | 'delete', readonly container: 'sdt' | 'customXml') {
+  constructor(
+    readonly change: 'insert' | 'delete',
+    readonly container: 'sdt' | 'customXml',
+    readonly partPath: string = 'word/document.xml',
+  ) {
     super(`Unsupported ${change} of a block-level ${container} container`);
     this.name = 'UnsupportedBlockContainerRevisionError';
   }
 }
 
-/**
- * Distinguish block-level containers from run-level controls before revision wrapping.
- *
- * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
- * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
- * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
- * @see #1075
- */
-function isBlockContainer(element: WmlElement): element is WmlElement {
-  if (element.namespaceURI !== W_NS || !['sdt', 'customXml'].includes(element.localName)) return false;
-  const hasBlockContent = (container: WmlElement): boolean => {
-    const children = container.localName === 'sdt'
-      ? childElements(container)
-        .filter((child) => child.namespaceURI === W_NS && child.localName === 'sdtContent')
-        .flatMap((content) => childElements(content))
-      : childElements(container);
-    return children.some((child) => child.namespaceURI === W_NS
-      && (['p', 'tbl'].includes(child.localName)
-        || (['sdt', 'customXml'].includes(child.localName) && hasBlockContent(child))));
-  };
-  return hasBlockContent(element);
-}
 const OPERATION_PROVENANCE_ATTRIBUTE = 'data-safe-docx-operation';
 export const COMPARISON_REVISION_ATTRIBUTE = 'data-safe-docx-comparison-revision';
 const DIRECT_PROPERTY_BY_CONTAINER: Readonly<Record<string, string>> = {
@@ -173,6 +173,39 @@ function propertyInsertionPoint(container: WmlElement): Node | null {
   return exceptions ? exceptions.nextSibling : container.firstChild;
 }
 
+const TABLE_LEADING_RANGE_MARKUP = new Set([
+  'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+  'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+  'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+  'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+]);
+
+/**
+ * `emitted` children of a table in `CT_Tbl` order: only bare range markup may
+ * precede `w:tblPr`, and `w:tblGrid` follows it directly (§ 17.4.37). A
+ * side-only boundary emitted ahead of the table properties (inside a
+ * `w:ins`/`w:del`, which only row content admits) moves after `w:tblGrid`,
+ * where it still opens or closes at the table's start (#1399).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.37
+ */
+function tableChildrenInSchemaOrder(container: WmlElement, emitted: WmlElement[]): WmlElement[] {
+  if (container.namespaceURI !== W_NS || container.localName !== 'tbl') return emitted;
+  const isProperty = (child: WmlElement, name: string) => child.namespaceURI === W_NS && child.localName === name;
+  const properties = emitted.find((child) => isProperty(child, 'tblPr'));
+  const grid = emitted.find((child) => isProperty(child, 'tblGrid'));
+  const rest = emitted.filter((child) => child !== properties && child !== grid);
+  let leading = 0;
+  while (leading < rest.length && rest[leading]!.namespaceURI === W_NS &&
+    TABLE_LEADING_RANGE_MARKUP.has(rest[leading]!.localName)) leading++;
+  return [
+    ...rest.slice(0, leading),
+    ...(properties ? [properties] : []),
+    ...(grid ? [grid] : []),
+    ...rest.slice(leading),
+  ];
+}
+
 /** `emitted` children of a table row with `w:tblPrEx` moved ahead of `w:trPr` (§ 17.4.78). */
 function rowChildrenInSchemaOrder(container: WmlElement, emitted: WmlElement[]): WmlElement[] {
   if (container.localName !== 'tr') return emitted;
@@ -238,19 +271,92 @@ function markComparisonRevision(revision: WmlElement): void {
   revision.setAttribute(COMPARISON_REVISION_ATTRIBUTE, '1');
 }
 
-function wrapRevision(
-  node: WmlElement,
+function createRevisionWrapper(
+  owner: WmlElement,
   kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
   revision: ComparisonRevision,
-  operationIds: readonly string[] = [],
+  operationIds: readonly string[],
 ): WmlElement {
-  const wrapper = node.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+  const wrapper = owner.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   wrapper.setAttributeNS(W_NS, 'w:id', String(revision.id));
   wrapper.setAttributeNS(W_NS, 'w:author', revision.author);
   wrapper.setAttributeNS(W_NS, 'w:date', revision.date);
   markComparisonRevision(wrapper);
   markOperationProvenance(wrapper, operationIds);
+  return wrapper;
+}
+
+function isHyperlink(node: Node): boolean {
+  return node.nodeType === 1 &&
+    (node as WmlElement).namespaceURI === W_NS &&
+    (node as WmlElement).localName === 'hyperlink';
+}
+
+/**
+ * Track the content of a side-only `w:hyperlink` in place. A tracked run
+ * wrapper cannot contain `w:hyperlink` (CT_RunTrackChange admits run content
+ * only), but a hyperlink's EG_PContent admits the wrapper, so the
+ * relationship-bearing container stays in the paragraph and each stretch of
+ * its run content is wrapped, as Word writes an inserted or deleted link. A
+ * hyperlink nested in it is kept the same way, recursively; each further
+ * wrapper takes its own revision id.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/1381
+ */
+function trackHyperlinkContent(
+  hyperlink: WmlElement,
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+  nextRevision: () => ComparisonRevision,
+  operationIds: readonly string[],
+): void {
+  const children = Array.from(hyperlink.childNodes);
+  for (const child of children) hyperlink.removeChild(child);
+  let wrapper: WmlElement | undefined;
+  for (const child of children) {
+    if (isHyperlink(child)) {
+      wrapper = undefined;
+      trackHyperlinkContent(child as WmlElement, kind, nextRevision, operationIds);
+      hyperlink.appendChild(child);
+      continue;
+    }
+    if (child.nodeType !== 1) {
+      (wrapper ?? hyperlink).appendChild(child);
+      continue;
+    }
+    if (!wrapper) {
+      wrapper = createRevisionWrapper(hyperlink, kind, nextRevision(), operationIds);
+      hyperlink.appendChild(wrapper);
+    }
+    wrapper.appendChild(child);
+  }
+}
+
+function wrapRevision(
+  node: WmlElement,
+  kind: 'ins' | 'del' | 'moveFrom' | 'moveTo',
+  revision: ComparisonRevision,
+  operationIds: readonly string[] = [],
+  allocateRevision?: () => ComparisonRevision,
+): WmlElement {
   if (kind === 'del') node = convertDeletedText(node);
+  if (isHyperlink(node)) {
+    // The first wrapper keeps the caller's revision; a nested hyperlink
+    // splits the content into further wrappers, which need fresh ids.
+    let first = true;
+    trackHyperlinkContent(node, kind, () => {
+      if (first) {
+        first = false;
+        return revision;
+      }
+      if (!allocateRevision) {
+        throw new Error('a nested side-only hyperlink needs a revision allocator');
+      }
+      return allocateRevision();
+    }, operationIds);
+    return node;
+  }
+  const wrapper = createRevisionWrapper(node, kind, revision, operationIds);
   // Move sources retain ordinary text. Controlled Word 16.112.2 probes reject
   // delText in both run-level and whole-paragraph sources (issue-941 evidence).
   wrapper.appendChild(node);
@@ -258,20 +364,110 @@ function wrapRevision(
 }
 
 /**
+ * Deleted field characters that must stay deleted. Field characters are
+ * matched into fields by nesting, separately in the story's Reject All
+ * sequence (everything outside `w:ins` and `w:moveTo`) and its Accept All
+ * sequence (everything outside `w:del` and `w:moveFrom`). A deleted character
+ * stays deleted when Accept All removes its whole field, wherever the
+ * deletions holding that field sit, or when the field it belongs to in Accept
+ * All already holds an inserted character of the same type that replaces it.
+ * A field can cross paragraphs and block containers, so a field whose halves
+ * a comparison tracks in separate paragraphs (a field crossing the boundary
+ * of a block content control or `w:customXml` element) is decided over the
+ * whole story, not per deletion. When either sequence does not nest, no
+ * character is kept, which leaves the per-deletion behaviour unchanged.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @see https://github.com/UseJunior/safe-docx/issues/1462
+ */
+function fieldCharactersKeptDeleted(root: WmlElement): Set<Element> {
+  const within = (element: Element, names: readonly string[]): boolean => {
+    for (let node = element.parentNode; node && node !== root.parentNode; node = node.parentNode) {
+      if (node.nodeType === 1 && (node as Element).namespaceURI === W_NS
+        && names.includes((node as Element).localName)) return true;
+    }
+    return false;
+  };
+  const typeOf = (field: Element): string =>
+    field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '';
+  const characters = Array.from(root.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
+  const deleted = new Set(characters.filter((field) => within(field, ['del', 'moveFrom'])));
+  const inserted = new Set(characters.filter((field) => within(field, ['ins', 'moveTo'])));
+  // The field each character of one projection belongs to, or undefined when
+  // that projection's characters do not nest.
+  const fields = (sequence: readonly Element[]): Map<Element, Element[]> | undefined => {
+    const owner = new Map<Element, Element[]>();
+    const stack: Array<{ members: Element[]; separated: boolean }> = [];
+    for (const field of sequence) {
+      const type = typeOf(field);
+      if (type === 'begin') {
+        const members = [field];
+        owner.set(field, members);
+        stack.push({ members, separated: false });
+        continue;
+      }
+      const open = stack[stack.length - 1];
+      if (!open || (type === 'separate' && open.separated) || (type !== 'separate' && type !== 'end')) return undefined;
+      open.members.push(field);
+      owner.set(field, open.members);
+      if (type === 'separate') open.separated = true;
+      else stack.pop();
+    }
+    return stack.length === 0 ? owner : undefined;
+  };
+  const rejected = fields(characters.filter((field) => !inserted.has(field)));
+  const accepted = fields(characters.filter((field) => !deleted.has(field)));
+  const kept = new Set<Element>();
+  if (!rejected || !accepted) return kept;
+  for (const field of deleted) {
+    // A character that is both inserted and deleted (an earlier insertion
+    // this comparison deletes, or an earlier deletion inside content this
+    // comparison inserts) is in neither projection. Lifting it out of its
+    // deletion would leave it inside the insertion, live after Accept All,
+    // so it stays deleted.
+    const members = rejected.get(field);
+    if (!members) {
+      kept.add(field);
+      continue;
+    }
+    const live = members.find((member) => !deleted.has(member));
+    if (!live) {
+      kept.add(field);
+      continue;
+    }
+    const replacement = (accepted.get(live) ?? [])
+      .some((member) => inserted.has(member) && typeOf(member) === typeOf(field));
+    if (replacement) kept.add(field);
+  }
+  return kept;
+}
+
+/**
  * Keep partial field-character controls live and split deletion content around
  * them. Complete field sequences (including multiple or nested fields) belong
  * inside the deletion: hoisting their controls leaves live field objects after
  * Accept and can transfer deleted paragraph formatting onto surviving content.
+ * A character also stays deleted when Accept All removes its whole field,
+ * even when separate deletions hold that field, or when an inserted character
+ * replaces it (`fieldCharactersKeptDeleted`): hoisting one half of a field
+ * deleted across a paragraph or block-container boundary would leave an extra
+ * empty field, or a second end, after Accept All (#1462).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.deleted-field-code
  */
 function hoistFieldCharactersFromDeletions(root: WmlElement): void {
+  const keptDeleted = fieldCharactersKeptDeleted(root);
   const deletions = Array.from(root.getElementsByTagNameNS(W_NS, 'del')) as WmlElement[];
   for (const deletion of deletions) {
     const parent = deletion.parentNode;
     if (!parent) continue;
+    const partial = (element: Element): Element[] =>
+      Array.from(element.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName))
+        .filter((field) => !keptDeleted.has(field));
     const deletedFields = Array.from(deletion.getElementsByTagNameNS(W_NS, WML.FLD_CHAR.localName));
     const deletedFieldTypes = deletedFields.map((field) =>
       field.getAttributeNS(W_NS, 'fldCharType') ?? field.getAttribute('w:fldCharType') ?? '');
@@ -286,7 +482,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
       }
       return false;
     }) && separators.length === 0;
-    if (complete) continue;
+    if (complete || partial(deletion).length === 0) continue;
     let nextElement = deletion.nextSibling;
     while (nextElement && nextElement.nodeType !== 1) nextElement = nextElement.nextSibling;
     if (deletedFields.length === 1 && nextElement && (nextElement as WmlElement).localName === 'ins') {
@@ -300,7 +496,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
       }
     }
     const children = childElements(deletion);
-    if (!children.some((child) => child.getElementsByTagNameNS(W_NS, 'fldChar').length > 0)) continue;
+    if (!children.some((child) => partial(child).length > 0)) continue;
     const replacement: WmlElement[] = [];
     let wrapper: WmlElement | undefined;
     const flush = (): void => {
@@ -308,7 +504,7 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
       wrapper = undefined;
     };
     for (const child of children) {
-      if (child.getElementsByTagNameNS(W_NS, 'fldChar').length > 0) {
+      if (partial(child).length > 0) {
         flush();
         replacement.push(child);
       } else {
@@ -325,6 +521,83 @@ function hoistFieldCharactersFromDeletions(root: WmlElement): void {
 }
 
 const RUN_REVISION_WRAPPERS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+
+/**
+ * Re-express each simple field that sits directly in a run revision as the
+ * equivalent complex field. `w:ins`, `w:del`, `w:moveFrom` and `w:moveTo`
+ * admit only run content, and `w:fldSimple` is paragraph content, so a whole
+ * inserted or deleted simple field (including a changed instruction, which the
+ * comparison records as a deletion plus an insertion) cannot be wrapped as is.
+ * The complex form carries the same instruction, lock and dirty flags, field
+ * data and cached result, as begin / instruction / separate / result / end
+ * runs, which is the shape the atomic complex-field revision path emits.
+ * Deleted instructions use `w:delInstrText`. Simple fields outside a revision
+ * are left untouched.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @see https://github.com/UseJunior/safe-docx/issues/1422
+ */
+function expandRevisionWrappedSimpleFields(root: WmlElement): void {
+  const wrapped = (): WmlElement[] => (Array.from(root.getElementsByTagNameNS(W_NS, 'fldSimple')) as WmlElement[])
+    .filter((field) => field.parentNode !== null && isRunRevisionWrapper(field.parentNode));
+  // Expanding an outer field lifts any nested simple field into the wrapper.
+  for (let pending = wrapped(); pending.length > 0; pending = wrapped()) {
+    for (const field of pending) {
+      const wrapper = field.parentNode as WmlElement;
+      const document = field.ownerDocument!;
+      const deleted = wrapper.localName === 'del';
+      const content = childElements(field);
+      const fieldData = content.find((child) => child.namespaceURI === W_NS && child.localName === 'fldData');
+      const result = content.filter((child) => child !== fieldData);
+      const firstResultRun = result.flatMap((child) =>
+        child.localName === 'r' ? [child] : Array.from(child.getElementsByTagNameNS(W_NS, 'r')) as WmlElement[])[0];
+      const resultProperties = firstResultRun
+        ? childElements(firstResultRun).find((child) => child.localName === 'rPr')
+        : undefined;
+      const controlRun = (control: WmlElement): WmlElement => {
+        const run = document.createElementNS(W_NS, 'w:r') as WmlElement;
+        if (resultProperties) {
+          // Field-character runs share the result's look; a formatting
+          // revision belongs to the result run alone.
+          const properties = cloneElement(resultProperties);
+          for (const change of childElements(properties).filter((child) => child.localName === 'rPrChange')) {
+            properties.removeChild(change);
+          }
+          run.appendChild(properties);
+        }
+        run.appendChild(control);
+        return run;
+      };
+      const fieldCharacter = (type: 'begin' | 'separate' | 'end'): WmlElement => {
+        const control = document.createElementNS(W_NS, 'w:fldChar') as WmlElement;
+        control.setAttributeNS(W_NS, 'w:fldCharType', type);
+        if (type === 'begin') {
+          for (const flag of ['fldLock', 'dirty']) {
+            const value = field.getAttributeNS(W_NS, flag);
+            if (value !== null && value !== '') control.setAttributeNS(W_NS, `w:${flag}`, value);
+          }
+          if (fieldData) control.appendChild(fieldData);
+        }
+        return controlRun(control);
+      };
+      const instruction = document.createElementNS(W_NS, deleted ? 'w:delInstrText' : 'w:instrText') as WmlElement;
+      instruction.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+      instruction.appendChild(document.createTextNode(field.getAttributeNS(W_NS, 'instr') ?? ''));
+      const replacement = [
+        fieldCharacter('begin'),
+        controlRun(instruction),
+        fieldCharacter('separate'),
+        ...result,
+        fieldCharacter('end'),
+      ];
+      for (const item of replacement) wrapper.insertBefore(item, field);
+      wrapper.removeChild(field);
+    }
+  }
+}
 
 function isRunRevisionWrapper(node: Node): node is WmlElement {
   return node.nodeType === 1 &&
@@ -917,9 +1190,99 @@ function normalizeTerminalWholeParagraphMoveOwnership(
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/891
  */
+/**
+ * Whether two paragraphs carry the same paragraph properties, including any
+ * `w:pPrChange` snapshot, so merging one into the other keeps the same
+ * properties whichever mark survives.
+ */
+function sameMergeProperties(left: WmlElement, right: WmlElement): boolean {
+  if (paragraphPropertySignature(left) !== paragraphPropertySignature(right)) return false;
+  const snapshot = (paragraph: WmlElement): string => {
+    const pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
+    const change = pPr && childElements(pPr).find((child) => child.localName === 'pPrChange');
+    const properties = change && childElements(change).find((child) => child.localName === 'pPr');
+    if (!change) return 'none';
+    if (!properties) return '';
+    const holder = properties.cloneNode(true) as WmlElement;
+    const wrapper = paragraph.ownerDocument!.createElementNS(W_NS, 'w:p') as WmlElement;
+    wrapper.appendChild(holder);
+    return paragraphPropertySignature(wrapper);
+  };
+  return snapshot(left) === snapshot(right);
+}
+
+const MERGE_BASE_EXCLUDED = new Set(['rPr', 'sectPr', 'pPrChange']);
+
+/**
+ * Whether a whole-paragraph revision whose properties differ from its
+ * predecessor's can still move its mark there by transferring properties:
+ * only when nothing but a table or the end of the story follows it (the
+ * LibreOffice case #891 repairs), neither paragraph is numbered (a synthetic
+ * w:pPrChange loses numbering on LibreOffice Reject) and the container has
+ * no pending w:pPrChange of its own.
+ */
+function canTransferMergeProperties(paragraph: WmlElement, predecessor: WmlElement): boolean {
+  let next = paragraph.nextSibling;
+  while (next && next.nodeType !== 1) next = next.nextSibling;
+  if (next && (next as WmlElement).namespaceURI === W_NS && (next as WmlElement).localName === 'p') return false;
+  const pPr = (element: WmlElement) => childElements(element).find((child) => child.localName === 'pPr');
+  for (const element of [paragraph, predecessor]) {
+    const properties = pPr(element);
+    if (properties && properties.getElementsByTagNameNS(W_NS, 'numPr').length > 0) return false;
+  }
+  const own = pPr(paragraph);
+  return !own || !childElements(own).some((child) => child.localName === 'pPrChange');
+}
+
+/**
+ * Make the container's properties right in both projections once the merge
+ * relocates its mark (#1493). For a deleted container, Accept All shows the
+ * predecessor's content in it, so its live base becomes the predecessor's
+ * and a w:pPrChange restores its own on Reject All. For an inserted one,
+ * Reject All shows the predecessor's content in it, so it keeps its live base
+ * and the w:pPrChange records the predecessor's.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ */
+function transferMergeProperties(
+  containerProperties: WmlElement,
+  predecessorProperties: WmlElement,
+  kind: 'del' | 'ins',
+  revision: ComparisonRevision,
+): void {
+  const document = containerProperties.ownerDocument!;
+  const base = (properties: WmlElement) => childElements(properties)
+    .filter((child) => !MERGE_BASE_EXCLUDED.has(child.localName));
+  const ownBase = base(containerProperties);
+  const predecessorBase = base(predecessorProperties).map((child) => cloneElement(child));
+  // Reject All shows an inserted container with the predecessor's properties
+  // as the original has them: its pending w:pPrChange snapshot, if any.
+  const predecessorRecord = childElements(predecessorProperties).find((child) => child.localName === 'pPrChange');
+  const predecessorRejected = predecessorRecord && childElements(predecessorRecord).find((child) => child.localName === 'pPr');
+  const predecessorOriginal = predecessorRecord
+    ? (predecessorRejected ? base(predecessorRejected).map((child) => cloneElement(child)) : [])
+    : predecessorBase.map((child) => cloneElement(child));
+  const snapshot = document.createElementNS(W_NS, 'w:pPr') as WmlElement;
+  for (const child of kind === 'del' ? ownBase.map((element) => cloneElement(element)) : predecessorOriginal) {
+    snapshot.appendChild(child);
+  }
+  if (kind === 'del') {
+    for (const child of ownBase) containerProperties.removeChild(child);
+    const anchor = childElements(containerProperties).find((child) => MERGE_BASE_EXCLUDED.has(child.localName));
+    for (const child of predecessorBase) containerProperties.insertBefore(child, anchor ?? null);
+  }
+  const change = document.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
+  appendChangeMetadata(change, revision);
+  // Part of the same whole-paragraph revision, not a format change of its own.
+  change.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
+  change.appendChild(snapshot);
+  containerProperties.appendChild(change);
+}
+
 function normalizeWholeParagraphRevisionBoundaries(
   root: WmlElement,
   generatedRevisionIds: ReadonlySet<number>,
+  allocateRevision: () => ComparisonRevision,
 ): void {
   const revisionElements = (scope: WmlElement): WmlElement[] => {
     const revisions: WmlElement[] = [];
@@ -955,6 +1318,17 @@ function normalizeWholeParagraphRevisionBoundaries(
     if (carriesParagraphMarkRevision(predecessor)) return;
     // A w:sectPr boundary changes how the merged paragraph resolves on Reject All.
     if (carriesSection(paragraph) || carriesSection(predecessor)) return;
+    // Accept All merges the predecessor into the deleted container (Reject
+    // All, for an inserted one), and readers disagree on whose properties the
+    // merged paragraph keeps: LibreOffice and the tagged acceptor keep the
+    // predecessor's, ECMA-376 § 17.13.5.15 and Aspose.Words the surviving
+    // mark's (#1493). With equal properties the choice cannot matter. With
+    // different ones, a container followed by another paragraph keeps its own
+    // mark; one followed by a table or the end of its story, where
+    // LibreOffice cannot resolve its own mark, takes the predecessor's
+    // properties live and records its own in a w:pPrChange (see transfer).
+    const sameProperties = sameMergeProperties(predecessor, paragraph);
+    if (!sameProperties && !canTransferMergeProperties(paragraph, predecessor)) return;
     const predecessorPropertiesBefore = paragraphProperties(predecessor);
     const predecessorRevisions = predecessorPropertiesBefore
       ? revisionElements(predecessorPropertiesBefore)
@@ -1000,6 +1374,9 @@ function normalizeWholeParagraphRevisionBoundaries(
         ['sectPr', 'pPrChange'].includes(child.localName));
       predecessorProperties.insertBefore(predecessorMarkProperties, boundary ?? null);
     }
+    if (!sameProperties) {
+      transferMergeProperties(pPr, predecessorProperties, marker.localName as 'del' | 'ins', allocateRevision());
+    }
     marker.parentNode!.removeChild(marker);
     placeParagraphMarkRevisionMarker(predecessorMarkProperties, marker, marker.localName === 'del' ? 'w:del' : 'w:ins');
     if (childElements(markProperties).length === 0) pPr.removeChild(markProperties);
@@ -1037,16 +1414,23 @@ function markWholeTableRow(
     trPr = row.ownerDocument!.createElementNS(W_NS, 'w:trPr') as WmlElement;
     row.insertBefore(trPr, propertyInsertionPoint(row));
   }
-  const marker = row.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
-  marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
-  marker.setAttributeNS(W_NS, 'w:author', revision.author);
-  marker.setAttributeNS(W_NS, 'w:date', revision.date);
-  markComparisonRevision(marker);
-  const boundary = childElements(trPr).find((child) =>
-    kind === 'ins'
-      ? ['del', 'trPrChange'].includes(child.localName)
-      : child.localName === 'trPrChange');
-  trPr.insertBefore(marker, boundary ?? null);
+  // `w:trPr` holds at most one `w:ins` and one `w:del` (§ 17.4.81). A row
+  // whose source already carries a pending marker of this kind projects the
+  // same way without a second one: Accept/Reject resolve the existing marker.
+  const existing = childElements(trPr).some((child) =>
+    child.namespaceURI === W_NS && child.localName === kind);
+  if (!existing) {
+    const marker = row.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
+    marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
+    marker.setAttributeNS(W_NS, 'w:author', revision.author);
+    marker.setAttributeNS(W_NS, 'w:date', revision.date);
+    markComparisonRevision(marker);
+    const boundary = childElements(trPr).find((child) =>
+      kind === 'ins'
+        ? ['del', 'trPrChange'].includes(child.localName)
+        : child.localName === 'trPrChange');
+    trPr.insertBefore(marker, boundary ?? null);
+  }
 
   const ownsParagraph = (paragraph: WmlElement): boolean => {
     if (!ownedParagraphsOnly) return true;
@@ -1107,6 +1491,49 @@ function markWholeTable(
   return table;
 }
 
+/**
+ * Track a whole inserted or deleted block-level `w:sdt` or `w:customXml`.
+ *
+ * Neither container may be a child of `w:ins`/`w:del`, so, as Word does for an
+ * inserted content control, the container stays live and its content carries
+ * the revision: every paragraph's mark and runs, and every row of a contained
+ * table. Nested block containers are walked the same way. Accept/Reject then
+ * remove the content; an emptied container is a reader concern (see the
+ * `contentControl` unrepresented change).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @see https://github.com/UseJunior/safe-docx/issues/1386
+ */
+function markWholeBlockContainer(
+  container: WmlElement,
+  kind: 'ins' | 'del',
+  allocateRevision: () => ComparisonRevision,
+  operationIds: readonly string[],
+): WmlElement {
+  const content = container.localName === 'sdt'
+    ? childElements(container)
+      .filter((child) => child.namespaceURI === W_NS && child.localName === 'sdtContent')
+      .flatMap((sdtContent) => childElements(sdtContent))
+    : childElements(container);
+  for (const child of content) {
+    if (child.namespaceURI !== W_NS) continue;
+    if (child.localName === 'p') {
+      markWholeParagraph(child, kind, allocateRevision(), allocateRevision(), allocateRevision, operationIds);
+    } else if (child.localName === 'tbl') {
+      markWholeTable(child, kind, allocateRevision(), allocateRevision, operationIds);
+    } else if (isBlockContainer(child)) {
+      markWholeBlockContainer(child, kind, allocateRevision, operationIds);
+    }
+  }
+  return container;
+}
+
 const CHANGE_ELEMENT_BY_SCOPE = {
   run: 'w:rPrChange',
   paragraphMark: 'w:rPrChange',
@@ -1114,6 +1541,8 @@ const CHANGE_ELEMENT_BY_SCOPE = {
   tableRow: 'w:trPrChange',
   tableCell: 'w:tcPrChange',
   section: 'w:sectPrChange',
+  table: 'w:tblPrChange',
+  tableRowExceptions: 'w:tblPrExChange',
 } as const;
 
 /**
@@ -1122,6 +1551,7 @@ const CHANGE_ELEMENT_BY_SCOPE = {
  * references are never copied into `w:sectPrChange/w:sectPr` (#944).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
  * @see https://github.com/UseJunior/safe-docx/issues/944
  */
 function applyPropertyDelta(
@@ -1132,6 +1562,9 @@ function applyPropertyDelta(
 ): void {
   if (tagged.tag !== 'both' || !tagged.propertyDelta) return;
   const delta = tagged.propertyDelta;
+  // Table properties publish inline with the table's children, through
+  // resolveTableLevelProperty (#1399).
+  if (delta.scope === 'table' || delta.scope === 'tableRowExceptions') return;
   if (delta.scope === 'paragraph') {
     applyParagraphPropertyDelta(node, delta.original, delta.revised, revision, allocateRevision);
     return;
@@ -1153,6 +1586,14 @@ function applyPropertyDelta(
   }
   const live = delta.revised ? cloneElement(delta.revised) : undefined;
   const original = delta.original ? cloneElement(delta.original) : undefined;
+  if (original && delta.scope === 'tableRow') {
+    // `w:trPrChange` holds a `CT_TrPrBase`, which has no `w:ins` or `w:del`:
+    // a pending row insertion or deletion is a revision of the row, not one
+    // of its properties, and stays on the live `w:trPr` (#1400).
+    for (const child of childElements(original)) {
+      if (child.namespaceURI === W_NS && ['ins', 'del'].includes(child.localName)) original.removeChild(child);
+    }
+  }
   const expectedLocalName = live?.localName ?? original?.localName;
   let property = childElements(node).find((child) => child.localName === expectedLocalName);
   if (!property && (live || original)) {
@@ -1221,11 +1662,13 @@ function paragraphBaseSignature(properties: WmlElement | null | undefined): stri
  * aligned paragraph gains or loses its section break. It keeps the original
  * base properties and mark formatting, carries a deleted paragraph mark, and,
  * when the break was removed, the original full `w:sectPr` with its
- * header/footer references.
+ * header/footer references and any pending `w:sectPrChange`.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
  * @see https://github.com/UseJunior/safe-docx/issues/1144
+ * @see https://github.com/UseJunior/safe-docx/issues/1465
  */
 function buildSectionBoundaryParagraph(
   owner: WmlElement,
@@ -1237,7 +1680,16 @@ function buildSectionBoundaryParagraph(
   const paragraph = document.createElementNS(W_NS, 'w:p') as WmlElement;
   const properties = document.createElementNS(W_NS, 'w:pPr') as WmlElement;
   const originalChildren = original ? childElements(original) : [];
-  for (const child of originalChildren) {
+  // Reject All merges the leading paragraph's content into this one. Readers
+  // that keep the surviving mark's properties (ECMA-376 § 17.13.5.15,
+  // Aspose.Words) then show these base properties, so they are the ones the
+  // original rejects to: a pending w:pPrChange's snapshot when the original
+  // has one (the record itself stays on the leading paragraph), otherwise its
+  // base properties (#1493).
+  const pendingRecord = originalChildren.find((child) => child.localName === 'pPrChange');
+  const rejectedProperties = pendingRecord && childElements(pendingRecord).find((child) => child.localName === 'pPr');
+  const baseChildren = pendingRecord ? (rejectedProperties ? childElements(rejectedProperties) : []) : originalChildren;
+  for (const child of baseChildren) {
     if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) properties.appendChild(cloneElement(child));
   }
   const mark = document.createElementNS(W_NS, 'w:rPr') as WmlElement;
@@ -1253,13 +1705,10 @@ function buildSectionBoundaryParagraph(
   marker.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);
   placeParagraphMarkRevisionMarker(mark, marker, 'w:del');
   properties.appendChild(mark);
-  if (originalSection) {
-    const section = cloneElement(originalSection);
-    for (const stale of childElements(section).filter((child) => child.localName === 'sectPrChange')) {
-      section.removeChild(stale);
-    }
-    properties.appendChild(section);
-  }
+  // The original section's pending w:sectPrChange stays as written: it
+  // already restores the section properties the original rejects to, and
+  // this boundary paragraph is where that section survives Reject All (#1465).
+  if (originalSection) properties.appendChild(cloneElement(originalSection));
   paragraph.appendChild(properties);
   return paragraph;
 }
@@ -1312,18 +1761,28 @@ function applyParagraphPropertyDelta(
     live.insertBefore(mark, boundary ?? null);
     return mark;
   };
-  if ((liveMark ? new XMLSerializer().serializeToString(liveMark) : '') !==
-      (originalMark ? new XMLSerializer().serializeToString(originalMark) : '')) {
-    const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
-    appendChangeMetadata(markChange, revision);
-    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
-    if (originalMark) {
-      for (const child of childElements(originalMark)) {
-        if (child.localName !== 'rPrChange') snapshot.appendChild(cloneElement(child));
+  // One w:rPrChange per paragraph mark: the original's pending record, when
+  // it has one, stays as written; the revised input's own record is dropped
+  // (#1461).
+  const originalMarkRecord = (originalMark && childElements(originalMark).find((child) => child.localName === 'rPrChange')) ?? undefined;
+  const markSignature = (element: WmlElement | null | undefined): string => element
+    ? childElements(element).filter((child) => child.localName !== 'rPrChange')
+      .map((child) => new XMLSerializer().serializeToString(child)).join('')
+    : '';
+  const markChanged = markSignature(liveMark) !== markSignature(originalMark);
+  if (markChanged || originalMarkRecord || (liveMark && childElements(liveMark).some((child) => child.localName === 'rPrChange'))) {
+    placeSinglePropertyRevision(ensureMark(), 'rPrChange', originalMarkRecord, markChanged, () => {
+      const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
+      appendChangeMetadata(markChange, revision);
+      const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPr') as WmlElement;
+      if (originalMark) {
+        for (const child of childElements(originalMark)) {
+          if (child.localName !== 'rPrChange') snapshot.appendChild(cloneElement(child));
+        }
       }
-    }
-    markChange.appendChild(snapshot);
-    ensureMark().appendChild(markChange);
+      markChange.appendChild(snapshot);
+      return markChange;
+    });
   }
   // A prior w:sectPrChange in the revised input is not this comparison's
   // revision; drop it whether or not a new one is recorded below.
@@ -1354,19 +1813,29 @@ function applyParagraphPropertyDelta(
     change.appendChild(buildSectPrBaseSnapshot(originalSection, paragraph.ownerDocument!));
     section.appendChild(change);
   }
-  // With a split boundary, Reject All restores base formatting from the
-  // original mark, so a pPrChange is needed only for a real base change.
-  if (!splitsSectionBoundary || paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
-    const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
-    appendChangeMetadata(pPrChange, revision);
-    const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
-    if (original) {
-      for (const child of childElements(original)) {
-        if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) snapshot.appendChild(cloneElement(child));
+  // The original's pending w:pPrChange, when it has one, is the paragraph's
+  // one record: it already restores what the original rejects to (#1461).
+  // With a split boundary, rejecting the inserted mark merges this
+  // paragraph's content into the boundary paragraph and keeps the leading
+  // (this) paragraph's base properties, so the original's record must stay
+  // here, not on the boundary paragraph, even when the base properties are
+  // unchanged (#1465). Without one, a comparison record is needed only for a
+  // real base change.
+  const originalParagraphRecord = (original && childElements(original).find((child) => child.localName === 'pPrChange')) ?? undefined;
+  if (!splitsSectionBoundary || originalParagraphRecord ||
+    paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
+    placeSinglePropertyRevision(live, 'pPrChange', originalParagraphRecord, true, () => {
+      const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
+      appendChangeMetadata(pPrChange, revision);
+      const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
+      if (original) {
+        for (const child of childElements(original)) {
+          if (!['rPr', 'sectPr', 'pPrChange'].includes(child.localName)) snapshot.appendChild(cloneElement(child));
+        }
       }
-    }
-    pPrChange.appendChild(snapshot);
-    live.appendChild(pPrChange);
+      pPrChange.appendChild(snapshot);
+      return pPrChange;
+    });
   }
   const current = childElements(paragraph).find((child) => child.localName === 'pPr');
   if (current) paragraph.replaceChild(live, current);
@@ -1833,6 +2302,88 @@ function refineSimpleRunGap(
   };
   const hasAuxiliaryContent = [...originals, ...revised].some((run) =>
     childElements(run).some((child) => !['rPr', 't'].includes(child.localName)));
+  /**
+   * Equal `w:t` text whose runs also carry tabs (#1026). The text is common,
+   * but each tab is placed by its own side: at every text offset the tabs
+   * both sides hold there are common, and the rest are a tracked deletion or
+   * insertion. Cutting equal-text fragments from the revised runs instead
+   * carried the revised tabs into both projections, so a tab added or
+   * removed at a run edge, or moved between re-segmented runs, vanished from
+   * Reject All or was duplicated.
+   */
+  const emitEqualTextTabGap = (): WmlElement[] | undefined => {
+    const tabSlots = (runs: readonly WmlElement[]): Map<number, WmlElement[]> => {
+      const slots = new Map<number, WmlElement[]>();
+      let offset = 0;
+      for (const run of runs) {
+        for (const child of childElements(run)) {
+          if (child.localName === 't') offset += (child.textContent ?? '').length;
+          else if (child.localName === 'tab') slots.set(offset, [...(slots.get(offset) ?? []), run]);
+        }
+      }
+      return slots;
+    };
+    const tabRun = (run: WmlElement): WmlElement => {
+      const fragment = cloneElement(run);
+      for (const child of childElements(fragment)) {
+        if (child.localName !== 'rPr') fragment.removeChild(child);
+      }
+      for (const child of childElements(run)) {
+        if (child.localName === 'tab') {
+          fragment.appendChild(cloneElement(child));
+          break;
+        }
+      }
+      return fragment;
+    };
+    const withoutTabs = (run: WmlElement): WmlElement => {
+      for (const child of childElements(run)) {
+        if (child.localName === 'tab') run.removeChild(child);
+      }
+      return run;
+    };
+    const originalTabs = tabSlots(originals);
+    const revisedTabs = tabSlots(revised);
+    const boundaries = new Set<number>([0, before.length, ...originalTabs.keys(), ...revisedTabs.keys()]);
+    for (const runs of [originals, revised]) {
+      let offset = 0;
+      for (const run of runs) { offset += runText(run).length; boundaries.add(offset); }
+    }
+    const offsets = [...boundaries].sort((a, b) => a - b);
+    const ownerAt = (runs: readonly WmlElement[], offset: number): WmlElement => {
+      let end = 0;
+      for (const run of runs) { end += runText(run).length; if (offset < end) return run; }
+      return runs[runs.length - 1]!;
+    };
+    const push = (target: WmlElement[], next: WmlElement): void => { target.push(next); };
+    for (const [index, start] of offsets.entries()) {
+      const originalAt = originalTabs.get(start) ?? [];
+      const revisedAt = revisedTabs.get(start) ?? [];
+      const common = Math.min(originalAt.length, revisedAt.length);
+      for (let tab = 0; tab < common; tab++) {
+        if (!emit(tabRun(revisedAt[tab]!), 0, 0, push)) return undefined;
+      }
+      for (const run of originalAt.slice(common)) {
+        if (!emit(wrapRevision(tabRun(run), 'del', allocateRevision(), provenanceByRun.get(run) ?? []),
+          0, 0, push)) return undefined;
+      }
+      for (const run of revisedAt.slice(common)) {
+        if (!emit(wrapRevision(tabRun(run), 'ins', allocateRevision(), provenanceByRun.get(run) ?? []),
+          0, 0, push)) return undefined;
+      }
+      const next = offsets[index + 1];
+      if (next === undefined) break;
+      const value = before.slice(start, next);
+      if (value && !emit(
+        withoutTabs(emitCommonRun(ownerAt(originals, start), ownerAt(revised, start), value, allocateRevision)),
+        value.length,
+        value.length,
+        appendCoalescedTextEmission,
+      )) return undefined;
+    }
+    flushMarkers();
+    return emitted;
+  };
   if (before === after) {
     if (hasAuxiliaryContent) {
       const propertySignatures = new Set([...originals, ...revised].map((run) => {
@@ -1840,6 +2391,7 @@ function refineSimpleRunGap(
         return property ? new XMLSerializer().serializeToString(property) : '';
       }));
       if (propertySignatures.size > 1) return undefined;
+      return emitEqualTextTabGap();
     }
     const boundaries = new Set<number>([0, before.length]);
     for (const runs of [originals, revised]) {
@@ -2218,11 +2770,6 @@ function emitNode(
 ): WmlElement {
   const nodeRevision = allocateRevision();
   const base = cloneElement(representative(node, node.tag === 'original' ? 'original' : node.tag === 'revised' ? 'revised' : bothSide)!);
-  if ((node.tag === 'original' || node.tag === 'revised') && isBlockContainer(base)) {
-    throw new UnsupportedBlockContainerRevisionError(
-      node.tag === 'revised' ? 'insert' : 'delete', base.localName as 'sdt' | 'customXml',
-    );
-  }
   if (!node.opaque && node.children.length > 0) {
     const directPropertyTag = DIRECT_PROPERTY_BY_CONTAINER[base.localName];
     const retainedProperty = directPropertyTag
@@ -2232,9 +2779,41 @@ function emitNode(
     const propertyTag = node.tag === 'both' && node.propertyDelta
       ? PROPERTY_SCOPE_ELEMENT[node.propertyDelta.scope]
       : directPropertyTag;
+    const tableLevelRecords: TableLevelRecordFactory = {
+      comparison: (localName, document) => {
+        const change = document.createElementNS(W_NS, `w:${localName}`) as WmlElement;
+        appendChangeMetadata(change, allocateRevision());
+        return change;
+      },
+      freshId: () => allocateRevision().id,
+    };
+    const publishedTableLevel = new Set<string>();
+    let tablePropertiesRecord: 'none' | 'unchanged' | 'preserved' | 'comparison' = 'none';
     for (let index = 0; index < node.children.length; index++) {
       const child = node.children[index]!;
       const childElement = representative(child, child.tag === 'original' ? 'original' : 'revised');
+      if (node.tag === 'both' && isTableLevelPropertyElement(childElement)) {
+        // w:tblPr, w:tblGrid and w:tblPrEx take no w:ins/w:del among their
+        // children. Publish each once, at its first position, from the two
+        // sides' elements, with its own revision record when needed (#1399).
+        const localName = childElement!.localName as TableLevelProperty;
+        if (publishedTableLevel.has(localName)) continue;
+        publishedTableLevel.add(localName);
+        const allowComparisonRecord = localName === 'tblPr'
+          ? node.propertyDelta?.scope === 'table'
+          : localName === 'tblPrEx' && !!node.rowExceptionsDelta;
+        const resolution = resolveTableLevelProperty(
+          tableLevelPropertyOf(node.original, localName),
+          tableLevelPropertyOf(node.revised, localName),
+          localName,
+          base.ownerDocument!,
+          tableLevelRecords,
+          allowComparisonRecord,
+        );
+        if (localName === 'tblPr') tablePropertiesRecord = resolution.record;
+        if (resolution.element) emitted.push(resolution.element);
+        continue;
+      }
       if (propertyTag && childElement?.tagName === propertyTag) {
         continue;
       }
@@ -2268,13 +2847,14 @@ function emitNode(
       }
       if (
         childElement?.namespaceURI === W_NS &&
-        ['sdtPr', 'sdtEndPr'].includes(childElement.localName) &&
+        ['sdtPr', 'sdtEndPr', 'customXmlPr'].includes(childElement.localName) &&
         child.tag !== 'both'
       ) {
-        // CT_SdtBlock/CT_SdtRun carry w:sdtPr outside any revision particle, so
-        // a side-only property element cannot be wrapped. Keep the revised
-        // properties live; the difference is reported through
-        // unrepresentedChanges (#1095).
+        // CT_SdtBlock/CT_SdtRun carry w:sdtPr (and CT_CustomXml* their
+        // w:customXmlPr) outside any revision particle, so a side-only
+        // property element cannot be wrapped. Keep the revised properties
+        // live; the difference is reported through unrepresentedChanges
+        // (#1095, #1102).
         if (child.tag === 'revised') emitted.push(cloneElement(childElement));
         continue;
       }
@@ -2388,7 +2968,10 @@ function emitNode(
         emitted.push(moveMarker(base.ownerDocument!, relation, direction, 'End', plan.comparison));
       } else emitted.push(emitNode(child, plan, 'revised', moves, allocateRevision, allocateBookmarkId, originalBookmarkIds, splitBookmarkIds, revisionGrouping));
     }
-    replaceElementChildren(base, rowChildrenInSchemaOrder(base, emitted));
+    replaceElementChildren(base, tableChildrenInSchemaOrder(base, rowChildrenInSchemaOrder(base, emitted)));
+    if (tablePropertiesRecord === 'comparison' || tablePropertiesRecord === 'preserved') {
+      addRowExceptionRevisionCompanions(base, tableLevelRecords);
+    }
   }
   if (node.tag === 'both') {
     splitSharedBookmarkBoundaries(
@@ -2445,11 +3028,17 @@ function emitNode(
         base, 'del', revision, allocateRevision, operationProvenance(node),
       ), entry.originalStack);
     }
+    if (isBlockContainer(base)) {
+      return wrapPreserved(markWholeBlockContainer(
+        base, 'del', allocateRevision, operationProvenance(node),
+      ), entry.originalStack);
+    }
     return wrapPreserved(wrapRevision(
       base,
       relation ? 'moveFrom' : 'del',
       revision,
       operationProvenance(node),
+      allocateRevision,
     ), entry.originalStack);
   }
   if (node.tag === 'revised') {
@@ -2479,11 +3068,17 @@ function emitNode(
         base, 'ins', revision, allocateRevision, operationProvenance(node),
       ), entry.revisedStack);
     }
+    if (isBlockContainer(base)) {
+      return wrapPreserved(markWholeBlockContainer(
+        base, 'ins', allocateRevision, operationProvenance(node),
+      ), entry.revisedStack);
+    }
     return wrapPreserved(wrapRevision(
       base,
       relation ? 'moveTo' : 'ins',
       revision,
       operationProvenance(node),
+      allocateRevision,
     ), entry.revisedStack);
   }
   const stack = entry.revisedStack.length > 0 ? entry.revisedStack : entry.originalStack;
@@ -2497,7 +3092,12 @@ export interface TaggedTreeSerializerOptions {
   moves?: readonly TaggedMoveRelation[];
   /** @internal Retain private markers until publication statistics are read. */
   retainComparisonRevisionMarkers?: boolean;
-  /** Deliberately clone eligible inter-word spaces into both revision sides. */
+  /**
+   * Presentation policy for generated run revisions: `readable-whitespace`
+   * clones eligible inter-word spaces into both revision sides;
+   * `readable-semantic` regroups each paragraph's change clusters
+   * (see `readableSemanticGrouping.ts`).
+   */
   revisionGrouping?: RevisionGroupingPolicy;
 }
 
@@ -2573,13 +3173,28 @@ export function serializeTaggedTree(
     options.revisionGrouping ?? 'token-minimal',
   );
   splitRunsAroundRevisionWrappers(emitted, allocateRevision);
+  splitLayeredRunFormatting(emitted, {
+    isComparisonRecord: (record) => record.hasAttribute(COMPARISON_REVISION_ATTRIBUTE),
+    nextRevisionId: () => allocateRevision().id,
+    wrap: (run, kind) => wrapRevision(run, kind, allocateRevision()),
+  });
   insertSectionBoundaryParagraphs(emitted);
   splitCrossParagraphBookmarkCounterparts(emitted, originalBookmarkIds, allocateRevision);
   normalizeTerminalWholeParagraphMoveOwnership(emitted, options.moves ?? [], generatedRevisionIds);
   normalizeWholeParagraphMoveRangeStarts(emitted, options.moves ?? []);
-  normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds);
+  normalizeWholeParagraphRevisionBoundaries(emitted, generatedRevisionIds, allocateRevision);
   hoistFieldCharactersFromDeletions(emitted);
+  // After hoisting: partial-field hoisting lifts every field character out of
+  // a deletion, which must not include fields re-expressed from simple ones.
+  expandRevisionWrappedSimpleFields(emitted);
   hoistLiteralInsertionsFromDeletedFieldInstructions(emitted);
+  if (options.revisionGrouping === 'readable-semantic') {
+    groupReadableSemanticRevisions(emitted, {
+      allocateRevision,
+      comparisonRevisionAttribute: COMPARISON_REVISION_ATTRIBUTE,
+      operationProvenanceAttribute: OPERATION_PROVENANCE_ATTRIBUTE,
+    });
+  }
   if (!options.retainComparisonRevisionMarkers) {
     if (emitted.hasAttribute(COMPARISON_REVISION_ATTRIBUTE)) {
       emitted.removeAttribute(COMPARISON_REVISION_ATTRIBUTE);

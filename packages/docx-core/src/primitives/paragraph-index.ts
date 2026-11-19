@@ -1,11 +1,14 @@
 import { OOXML, W } from './namespaces.js';
 import { getAttributeSafe } from './xml-helpers.js';
+import { runContentVisibleText } from './run_content_visible_text.js';
+import { SYM_LOCAL_NAME } from './symbol_run_content.js';
 
 export type ParagraphNodeKind =
   | 'run'
   | 'text'
   | 'tab'
   | 'break'
+  | 'symbol'
   | 'comment-range-start'
   | 'comment-range-end'
   | 'comment-reference'
@@ -74,6 +77,7 @@ function kindOf(element: Element): ParagraphNodeKind {
     case W.t: return 'text';
     case W.tab: return 'tab';
     case W.br: return 'break';
+    case SYM_LOCAL_NAME: return 'symbol';
     case W.commentRangeStart: return 'comment-range-start';
     case W.commentRangeEnd: return 'comment-range-end';
     case W.commentReference: return 'comment-reference';
@@ -116,9 +120,11 @@ export function buildParagraphIndex(paragraph: Element, options: BuildParagraphI
     return fieldStack.at(-1)!.id;
   };
 
-  const visit = (element: Element, containingRun: IndexedParagraphNode | null): void => {
+  const visit = (element: Element, containingRun: IndexedParagraphNode | null, inDeletion = false): void => {
     if (element !== paragraph && element.namespaceURI === OOXML.W_NS && element.localName === W.p) return;
-    if (options.skipTrackedDeletions && element.namespaceURI === OOXML.W_NS && element.localName === W.del) return;
+    const isDeletionWrapper = element.namespaceURI === OOXML.W_NS && (element.localName === W.del || element.localName === W.moveFrom);
+    if (options.skipTrackedDeletions && isDeletionWrapper) return;
+    const nextInDeletion = inDeletion || isDeletionWrapper;
     const isRun = element.namespaceURI === OOXML.W_NS && element.localName === W.r;
     let activeRun = containingRun;
     if (isRun) {
@@ -177,30 +183,33 @@ export function buildParagraphIndex(paragraph: Element, options: BuildParagraphI
         }
       } else {
         const instructionFrame = [...fieldStack].reverse().find((frame) => frame.phase === 'instruction');
+        // What an element contributes is the shared run-content definition;
+        // whether it counts here is this walker's context rule: inside a run,
+        // outside a field instruction, and — for anything but w:t — not inside
+        // a tracked deletion.
+        const contribution = activeRun && !instructionFrame ? runContentVisibleText(element) : null;
         if (instructionFrame && (element.localName === W.instrText || element.localName === 'delInstrText')) {
           instructionFrame.instruction += element.textContent ?? '';
-        } else if (activeRun && !instructionFrame && (node.kind === 'text' || node.kind === 'tab' || node.kind === 'break')) {
-          const text = node.kind === 'text' ? (element.textContent ?? '') : node.kind === 'tab' ? '\t' : '\n';
+        } else if (activeRun && contribution !== null && (node.kind === 'text' || !nextInDeletion)) {
+          const text = contribution;
           const resultId = currentResultId();
           node.visibleText = text;
           node.visibleEnd += text.length;
           node.isFieldResult = resultId !== null;
           node.fieldResultId = resultId;
           visibleOffset += text.length;
-          if (activeRun) {
-            activeRun.visibleText += text;
-            activeRun.visibleEnd = visibleOffset;
-            activeRun.isFieldResult ||= resultId !== null;
-            if (activeRun.visibleText.length === text.length) activeRun.fieldResultId = resultId;
-            else if (activeRun.fieldResultId !== resultId) activeRun.fieldResultId = null;
-          }
+          activeRun.visibleText += text;
+          activeRun.visibleEnd = visibleOffset;
+          activeRun.isFieldResult ||= resultId !== null;
+          if (activeRun.visibleText.length === text.length) activeRun.fieldResultId = resultId;
+          else if (activeRun.fieldResultId !== resultId) activeRun.fieldResultId = null;
         }
       }
     }
 
     if (!isRun || activeRun) {
       for (const child of Array.from(element.childNodes)) {
-        if (child.nodeType === 1) visit(child as Element, activeRun);
+        if (child.nodeType === 1) visit(child as Element, activeRun, nextInDeletion);
       }
     }
   };

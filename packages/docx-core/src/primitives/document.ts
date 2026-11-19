@@ -1,5 +1,22 @@
-import { DocxZip } from './zip.js';
+import { createHash } from 'node:crypto';
+import { DocxZip, ZIP_EPOCH } from './zip.js';
+import {
+  readDocumentProperties,
+  setDocumentProperties,
+  type DocumentProperties,
+  type DocumentPropertiesMutation,
+  type DocumentPropertiesMutationResult,
+} from './document_properties.js';
 import { attributeXmlParseError, parseXml, serializeXml } from './xml.js';
+import { auditSectPr } from './sectPrAudit.js';
+import {
+  resolveSectionHeaderFooters,
+  readEvenAndOddHeaders,
+  setHeaderFooter as setHeaderFooterImpl,
+  type SectionHeaderFooters,
+  type SetHeaderFooterMutation,
+  type SetHeaderFooterResult,
+} from './header_footer.js';
 import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
 import { assertTransitionalWordprocessingML } from './conformance.js';
@@ -10,6 +27,7 @@ import {
   cleanupInternalBookmarks,
   collectBookmarkReservation,
   getParagraphBookmarkId,
+  getW14ParaId,
   insertSingleParagraphBookmark,
   type BookmarkReservation,
 } from './bookmarks.js';
@@ -79,7 +97,8 @@ import {
 } from './validate_ai_revisions.js';
 import {
   enumerateSelectedHeaderFooterPartPaths,
-  enumerateSelectedRevisionStoryPartPaths,
+  REVISION_STORY_PART_PATHS,
+  getSidePartRevisionSeedDocs,
 } from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
@@ -403,6 +422,21 @@ function collectNamedBookmarkIds(doc: Document): Set<string> {
 }
 
 export class DocxDocument {
+  /**
+   * Notify the document after mutating an exposed DOM element. Built-in edits
+   * notify automatically. Versions cover body, selected stories, and package
+   * parts; they are local to this instance, not a count of tool calls.
+   */
+  markMutated(): void {
+    this.mutationVersion += 1;
+    this.documentViewCache = null;
+  }
+
+  /** Read the mutation history without changing cache validity or the version. */
+  getMutationVersion(): number {
+    return this.mutationVersion;
+  }
+
   private zip: DocxZip;
   private documentXml: Document;
   private stylesXml: Document | null;
@@ -410,8 +444,8 @@ export class DocxDocument {
   private numberingXml: Document | null;
   private footnotesXml: Document | null;
   private relsMap: RelsMap;
-  private dirty: boolean;
-  private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
+  private mutationVersion = 0;
+  private documentViewCache: { version: number; includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
   private paragraphBookmarkReservation: BookmarkReservation | undefined;
   /**
    * Raw document.xml text as loaded, before normalize()/edits mutate the DOM.
@@ -419,6 +453,14 @@ export class DocxDocument {
    * not created via load().
    */
   private originalDocumentXmlText: string | null;
+  /**
+   * Header/footer part text before safe-docx first wrote paragraph bookmarks
+   * into it. A clean export removes those bookmarks and restores the original
+   * bytes of a part no edit changed.
+   */
+  private storyOriginalTexts = new Map<string, string>();
+  /** Header/footer relationships setHeaderFooter created in this session. */
+  private createdHeaderFooterRelationshipIds = new Set<string>();
 
   private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, themeXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap, originalDocumentXmlText: string | null = null) {
     this.zip = zip;
@@ -428,7 +470,6 @@ export class DocxDocument {
     this.numberingXml = numberingXml;
     this.footnotesXml = footnotesXml;
     this.relsMap = relsMap;
-    this.dirty = false;
     this.documentViewCache = null;
     this.paragraphBookmarkReservation = undefined;
     this.originalDocumentXmlText = originalDocumentXmlText;
@@ -442,6 +483,41 @@ export class DocxDocument {
       // that only held the part's text (#1024).
       throw await attributeXmlParseError(error, buffer);
     }
+  }
+
+  /**
+   * Fork an editing candidate without reopening the package. In particular the
+   * original source text remains the minimal-reserialization baseline, and
+   * bookmark reservations survive even when their blocks have been removed.
+   */
+  fork(): DocxDocument {
+    const clone = (doc: Document | null): Document | null => doc ? doc.cloneNode(true) as Document : null;
+    const fork = new DocxDocument(
+      this.zip.fork(), clone(this.documentXml)!, clone(this.stylesXml), clone(this.themeXml),
+      clone(this.numberingXml), clone(this.footnotesXml), new Map(this.relsMap), this.originalDocumentXmlText,
+    );
+    fork.mutationVersion = this.mutationVersion;
+    fork.storyOriginalTexts = new Map(this.storyOriginalTexts);
+    fork.createdHeaderFooterRelationshipIds = new Set(this.createdHeaderFooterRelationshipIds);
+    if (this.paragraphBookmarkReservation) {
+      fork.paragraphBookmarkReservation = {
+        usedNames: new Set(this.paragraphBookmarkReservation.usedNames),
+        nextNumericId: this.paragraphBookmarkReservation.nextNumericId,
+      };
+    }
+    return fork;
+  }
+
+  /**
+   * Deterministic internal editing state for mutation comparison. Candidates
+   * may contain malformed input being validated/refused; they are not emitted
+   * artifacts. Actual exports continue through toBuffer and its schema capture.
+   */
+  async getMutationSnapshot(): Promise<Buffer> {
+    return this.zip.toBuffer({
+      fileDate: ZIP_EPOCH,
+      textOverrides: { 'word/document.xml': serializeXml(this.documentXml) },
+    });
   }
 
   private static async loadUnattributed(buffer: Buffer): Promise<DocxDocument> {
@@ -496,8 +572,33 @@ export class DocxDocument {
     return getParagraphText(p);
   }
 
+  /**
+   * Header/footer parts selected by the live section references. Unlike the
+   * archive's document.xml, the live DOM reflects references attached in this
+   * session.
+   */
+  async getSelectedHeaderFooterPartPaths(): Promise<string[]> {
+    const relationshipsXml = await this.zip.readTextOrNull('word/_rels/document.xml.rels');
+    const audit = auditSectPr(serializeXml(this.documentXml), relationshipsXml);
+    const paths = new Set<string>();
+    for (const binding of audit.bindings) {
+      if (this.zip.hasFile(binding.targetPath)) paths.add(binding.targetPath);
+    }
+    return [...paths].sort();
+  }
+
+  /**
+   * Revision-bearing side stories selected by the live DOM, so accept/reject
+   * reach header/footer parts attached in this session (#1052).
+   */
+  private async getSelectedRevisionStoryPartPaths(): Promise<string[]> {
+    const paths = new Set<string>(REVISION_STORY_PART_PATHS);
+    for (const partPath of await this.getSelectedHeaderFooterPartPaths()) paths.add(partPath);
+    return [...paths].sort();
+  }
+
   private async selectedStoryDocument(partPath: string): Promise<Document> {
-    const selected = await enumerateSelectedHeaderFooterPartPaths(this.zip);
+    const selected = await this.getSelectedHeaderFooterPartPaths();
     if (!selected.includes(partPath)) {
       throw new Error(`Header/footer story is not selected by a section relationship: ${partPath}`);
     }
@@ -512,17 +613,18 @@ export class DocxDocument {
     bookmarkReservation?: BookmarkReservation,
   ): T {
     const bodyDocument = this.documentXml;
-    const dirty = this.dirty;
     const viewCache = this.documentViewCache;
     const previousReservation = this.paragraphBookmarkReservation;
     this.documentXml = story;
+    // A body view must never be served while traversing a different DOM.
+    this.documentViewCache = null;
     this.paragraphBookmarkReservation = bookmarkReservation;
     try {
       return mutation();
     } finally {
       this.documentXml = bodyDocument;
-      this.dirty = dirty;
-      this.documentViewCache = viewCache;
+      // Restore body-only state, never the document-wide mutation history.
+      this.documentViewCache = viewCache?.version === this.mutationVersion ? viewCache : null;
       this.paragraphBookmarkReservation = previousReservation;
     }
   }
@@ -545,7 +647,14 @@ export class DocxDocument {
     const story = await this.selectedStoryDocument(partPath);
     const reservation = this.paragraphBookmarkReservation;
     const result = insertParagraphBookmarks(story, attachmentId, reservation);
-    if (result.indexedParagraphs > 0) this.zip.writeText(partPath, serializeXml(story));
+    if (result.indexedParagraphs > 0) {
+      if (!this.storyOriginalTexts.has(partPath)) {
+        const original = await this.zip.readTextOrNull(partPath);
+        if (original !== null) this.storyOriginalTexts.set(partPath, original);
+      }
+      this.zip.writeText(partPath, serializeXml(story));
+      this.markMutated();
+    }
     return { paragraphCount: result.indexedParagraphs };
   }
 
@@ -566,13 +675,16 @@ export class DocxDocument {
     start: number;
     end: number;
     replaceText: string | ReplacementPart[];
-  }): Promise<void> {
+  }, ctx?: RevisionContext): Promise<void> {
     const story = await this.selectedStoryDocument(params.partPath);
     const paragraph = findParagraphByBookmarkId(story, params.targetParagraphId);
     if (!paragraph) throw new Error(`Paragraph not found in ${params.partPath}: ${params.targetParagraphId}`);
     assertStoryParagraphMutationSafe(paragraph, 'replace');
-    replaceParagraphTextRange(paragraph, params.start, params.end, params.replaceText);
+    // With a revision context the range is written as w:del/w:ins in the
+    // story part (#1051); without one it is an intended-clean edit.
+    replaceParagraphTextRange(paragraph, params.start, params.end, params.replaceText, ctx);
     this.zip.writeText(params.partPath, serializeXml(story));
+    this.markMutated();
   }
 
   /** Mutate intended-clean story text; comparison is responsible for tracked output. */
@@ -597,6 +709,7 @@ export class DocxDocument {
     }
     replaceParagraphTextRange(paragraph, match.start, match.end, params.replaceText);
     this.zip.writeText(params.partPath, serializeXml(story));
+    this.markMutated();
   }
 
   /**
@@ -618,6 +731,7 @@ export class DocxDocument {
     assertStoryParagraphMutationSafe(paragraph, 'replace');
     formatParagraphTextRange(paragraph, params.start, params.end, params.format);
     this.zip.writeText(params.partPath, serializeXml(story));
+    this.markMutated();
   }
 
   async insertStoryParagraph(params: {
@@ -672,6 +786,7 @@ export class DocxDocument {
     bookmarkStart?.parentNode?.removeChild(bookmarkStart);
     bookmarkEnd?.parentNode?.removeChild(bookmarkEnd);
     this.zip.writeText(partPath, serializeXml(story));
+    this.markMutated();
   }
 
   insertTableRow(params: InsertTableRowParams, ctx?: RevisionContext): InsertTableRowResult {
@@ -681,47 +796,41 @@ export class DocxDocument {
       ctx,
       this.paragraphBookmarkReservation,
     );
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
   deleteTableRow(params: DeleteTableRowParams, ctx?: RevisionContext): DeleteTableRowResult {
     const result = deleteTableRowImpl(this.documentXml, params, ctx);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
   /** Apply a planned clean column edit to the existing DOM, preserving held element references. */
   insertTableColumn(params: InsertTableColumnParams, ctx?: RevisionContext): InsertTableColumnResult {
     const result = insertTableColumnImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
   /** Apply a planned clean column deletion to the existing DOM. */
   deleteTableColumn(params: DeleteTableColumnParams, ctx?: RevisionContext): DeleteTableColumnResult {
     const result = deleteTableColumnImpl(this.documentXml, params, ctx);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
   /** Split one horizontal-spanning physical cell, preserving its authored content on the chosen side. */
   splitTableCell(params: SplitTableCellParams, ctx?: RevisionContext): SplitTableCellResult {
     const result = splitTableCellImpl(this.documentXml, params, ctx, this.paragraphBookmarkReservation);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
   /** Remove a physical cell and discard its content while an adjacent sibling absorbs its span. */
   absorbTableCell(params: AbsorbTableCellParams, ctx?: RevisionContext): AbsorbTableCellResult {
     const result = absorbTableCellImpl(this.documentXml, params, ctx);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
@@ -731,7 +840,7 @@ export class DocxDocument {
       attachmentId,
       this.paragraphBookmarkReservation,
     );
-    if (res.indexedParagraphs > 0) this.dirty = true;
+    if (res.indexedParagraphs > 0) this.markMutated();
     return { paragraphCount: res.indexedParagraphs };
   }
 
@@ -741,7 +850,7 @@ export class DocxDocument {
    * Should be called BEFORE bookmark allocation.
    */
   normalize(): NormalizationResult {
-    const mr = mergeRuns(this.documentXml);
+    const mr = this.mergeRunsOnly();
     const sr = simplifyRedlines(this.documentXml);
 
     // Prevent double elevation in footnote/endnote reference styles
@@ -753,9 +862,8 @@ export class DocxDocument {
       }
     }
 
-    if (mr.runsMerged > 0 || sr.wrappersConsolidated > 0 || de.doubleElevationsFixed > 0) {
-      this.dirty = true;
-      this.documentViewCache = null;
+    if (sr.wrappersConsolidated > 0 || de.doubleElevationsFixed > 0) {
+      this.markMutated();
     }
     return {
       runsMerged: mr.runsMerged,
@@ -778,7 +886,7 @@ export class DocxDocument {
     touched?: AiRevisionValidationTouchedContext,
   ): Promise<ValidateAiRevisionsResult> {
     const stories = [{ part: 'word/document.xml', doc: this.documentXml }];
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
       stories.push({ part: partPath, doc: parseXml(xml) });
@@ -801,6 +909,7 @@ export class DocxDocument {
     const total = emptyAcceptChangesResult();
     const bodyResult = acceptChangesImpl(this.documentXml);
     addAcceptChangesResult(total, bodyResult);
+    if (hasAcceptedChanges(bodyResult)) this.markMutated();
 
     // After accepting, footnotes whose body reference lived inside a removed
     // w:del are orphaned. Only worth checking when the body sweep removed
@@ -809,7 +918,7 @@ export class DocxDocument {
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
 
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
 
@@ -824,16 +933,13 @@ export class DocxDocument {
 
       if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(partPath, serializeXml(partDoc));
+        this.markMutated();
         if (partPath === 'word/footnotes.xml') {
           this.footnotesXml = partDoc;
         }
       }
     }
 
-    if (hasAcceptedChanges(total)) {
-      this.dirty = true;
-      this.documentViewCache = null;
-    }
     return total;
   }
 
@@ -845,6 +951,7 @@ export class DocxDocument {
     const total = emptyRejectChangesResult();
     const bodyResult = rejectChangesImpl(this.documentXml);
     addRejectChangesResult(total, bodyResult);
+    if (hasRejectedChanges(bodyResult)) this.markMutated();
 
     // After rejecting, footnotes whose body reference lived inside a removed
     // w:ins are orphaned. Only worth checking when the body sweep removed
@@ -853,7 +960,7 @@ export class DocxDocument {
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
 
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
 
@@ -868,16 +975,13 @@ export class DocxDocument {
 
       if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(partPath, serializeXml(partDoc));
+        this.markMutated();
         if (partPath === 'word/footnotes.xml') {
           this.footnotesXml = partDoc;
         }
       }
     }
 
-    if (hasRejectedChanges(total)) {
-      this.dirty = true;
-      this.documentViewCache = null;
-    }
     return total;
   }
 
@@ -897,7 +1001,7 @@ export class DocxDocument {
     const stories: Array<{ path: string | null; doc: Document }> = [
       { path: null, doc: this.documentXml },
     ];
-    for (const partPath of await enumerateSelectedRevisionStoryPartPaths(this.zip)) {
+    for (const partPath of await this.getSelectedRevisionStoryPartPaths()) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (xml) stories.push({ path: partPath, doc: parseXml(xml) });
     }
@@ -928,6 +1032,7 @@ export class DocxDocument {
 
     const bodyResult = acceptChangesImpl(this.documentXml, { filter });
     addAcceptChangesResult(total, bodyResult);
+    if (hasAcceptedChanges(bodyResult)) this.markMutated();
     const liveFootnoteRefIds = bodyResult.deletionsAccepted > 0
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
@@ -943,14 +1048,11 @@ export class DocxDocument {
       }
       if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(story.path, serializeXml(story.doc));
+        this.markMutated();
         if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
       }
     }
 
-    if (hasAcceptedChanges(total)) {
-      this.dirty = true;
-      this.documentViewCache = null;
-    }
     return { result: total, selectedIds: matchedIds };
   }
 
@@ -966,6 +1068,7 @@ export class DocxDocument {
 
     const bodyResult = rejectChangesImpl(this.documentXml, { filter });
     addRejectChangesResult(total, bodyResult);
+    if (hasRejectedChanges(bodyResult)) this.markMutated();
     const liveFootnoteRefIds = bodyResult.insertionsRemoved > 0
       ? collectLiveFootnoteRefIds(this.documentXml)
       : null;
@@ -981,20 +1084,17 @@ export class DocxDocument {
       }
       if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(story.path, serializeXml(story.doc));
+        this.markMutated();
         if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
       }
     }
 
-    if (hasRejectedChanges(total)) {
-      this.dirty = true;
-      this.documentViewCache = null;
-    }
     return { result: total, selectedIds: matchedIds };
   }
 
   removeJuniorBookmarks(): number {
     const removed = cleanupInternalBookmarks(this.documentXml);
-    if (removed > 0) this.dirty = true;
+    if (removed > 0) this.markMutated();
     return removed;
   }
 
@@ -1054,7 +1154,7 @@ export class DocxDocument {
     const showFormatting = opts?.showFormatting ?? false;
     const formattingMode: FormattingMode = opts?.formattingMode ?? 'compact';
     const cached = this.documentViewCache;
-    if (!this.dirty && cached && cached.includeSemanticTags === includeSemanticTags && cached.showFormatting === showFormatting && cached.formattingMode === formattingMode) {
+    if (cached && cached.version === this.mutationVersion && cached.includeSemanticTags === includeSemanticTags && cached.showFormatting === showFormatting && cached.formattingMode === formattingMode) {
       return { nodes: cached.nodes, styles: cached.styles };
     }
 
@@ -1075,8 +1175,7 @@ export class DocxDocument {
       footnotesXml: this.footnotesXml,
     });
 
-    this.documentViewCache = { includeSemanticTags, showFormatting, formattingMode, nodes, styles };
-    this.dirty = false;
+    this.documentViewCache = { version: this.mutationVersion, includeSemanticTags, showFormatting, formattingMode, nodes, styles };
     return { nodes, styles };
   }
 
@@ -1095,8 +1194,7 @@ export class DocxDocument {
       );
     }
     replaceParagraphTextRange(p, match.start, match.end, replaceText);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
   }
 
   /**
@@ -1108,16 +1206,14 @@ export class DocxDocument {
     const p = findParagraphByBookmarkId(this.documentXml, targetParagraphId);
     if (!p) throw new Error(`Paragraph not found: ${targetParagraphId}`);
     replaceParagraphTextRange(p, start, end, replaceText);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
   }
 
   formatTextAtRange(params: { targetParagraphId: string; start: number; end: number; format: TextRangeRunFormat }): void {
     const paragraph = findParagraphByBookmarkId(this.documentXml, params.targetParagraphId);
     if (!paragraph) throw new Error(`Paragraph not found: ${params.targetParagraphId}`);
     formatParagraphTextRange(paragraph, params.start, params.end, params.format);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
   }
 
   insertParagraph(params: {
@@ -1202,9 +1298,59 @@ export class DocxDocument {
       flush();
     }
 
-    function cloneParagraphShell(anchorPara: Element): Element {
+    const usedW14ParaIds = new Set<string>();
+    const existingParagraphs = doc.getElementsByTagNameNS(OOXML.W_NS, W.p);
+    for (let i = 0; i < existingParagraphs.length; i++) {
+      const p = existingParagraphs.item(i);
+      if (!p) continue;
+      const existingParaId = getW14ParaId(p);
+      if (existingParaId) {
+        usedW14ParaIds.add(existingParaId.toUpperCase());
+      }
+    }
+    const shouldAssignW14ParaId =
+      usedW14ParaIds.size > 0 ||
+      getW14ParaId(formattingSource) !== null ||
+      getW14ParaId(anchorP) !== null;
+
+    function allocateFreshW14ParaId(seedText: string, ordinal: number): string {
+      let attempt = 0;
+      while (attempt < 100_000) {
+        const digest = createHash('sha1')
+          .update(`w14:paraId:${usedW14ParaIds.size}:${ordinal}:${seedText}:${attempt}`)
+          .digest('hex')
+          .slice(0, 8);
+        // MS-DOCX § 2.5.3.1: ST_LongHexNumber for paraId must be > 0 and < 0x80000000.
+        const numeric = (Number.parseInt(digest, 16) & 0x7fffffff) || 1;
+        const candidate = numeric.toString(16).toUpperCase().padStart(8, '0');
+        if (!usedW14ParaIds.has(candidate) && candidate !== '77777777') {
+          usedW14ParaIds.add(candidate);
+          return candidate;
+        }
+        attempt += 1;
+      }
+      throw new Error('Unable to allocate unique w14:paraId');
+    }
+
+    function stripClonedParagraphIdentityAttributes(paragraph: Element): void {
+      paragraph.removeAttributeNS(OOXML.W14_NS, 'paraId');
+      paragraph.removeAttribute('w14:paraId');
+      paragraph.removeAttribute('paraId');
+      paragraph.removeAttributeNS(OOXML.W14_NS, 'textId');
+      paragraph.removeAttribute('w14:textId');
+      paragraph.removeAttribute('textId');
+    }
+
+    function cloneParagraphShell(anchorPara: Element, seedText: string, ordinal: number): Element {
       // Clone anchor paragraph to preserve formatting; then wipe its runs and keep pPr only.
       const newP = anchorPara.cloneNode(true) as Element;
+      stripClonedParagraphIdentityAttributes(newP);
+      if (shouldAssignW14ParaId) {
+        if (doc.documentElement && doc.documentElement.lookupNamespaceURI('w14') !== OOXML.W14_NS) {
+          doc.documentElement.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:w14', OOXML.W14_NS);
+        }
+        newP.setAttributeNS(OOXML.W14_NS, 'w14:paraId', allocateFreshW14ParaId(seedText, ordinal));
+      }
       const children = Array.from(newP.childNodes);
       for (const child of children) {
         if (child.nodeType === 1 && isWTag(child as Element, W.pPr)) continue;
@@ -1350,11 +1496,12 @@ export class DocxDocument {
 
     const paragraphsToInsert = newText.replace(/\r\n/g, '\n').split(/\n{2,}/);
 
-    const insertedIds: string[] = [];
-    let cursor: Node | null = getInsertionRefNode();
+    const insertedParagraphs: Element[] = [];
+    const cursor: Node | null = getInsertionRefNode();
 
-    for (const paraText of paragraphsToInsert) {
-      const newP = cloneParagraphShell(formattingSource);
+    for (let i = 0; i < paragraphsToInsert.length; i++) {
+      const paraText = paragraphsToInsert[i]!;
+      const newP = cloneParagraphShell(formattingSource, paraText, i);
       const newRun = cloneRunFormattingOnly(templateRun);
       appendTextToRun(newRun, paraText);
 
@@ -1370,18 +1517,16 @@ export class DocxDocument {
       }
 
       parent.insertBefore(newP, cursor);
-
-      const id = insertSingleParagraphBookmark(doc, newP, this.paragraphBookmarkReservation);
-      insertedIds.push(id);
-
-      if (relativePosition === 'AFTER') {
-        const endEl = nextElementSibling(newP);
-        cursor = endEl && isW(endEl, W.bookmarkEnd) ? endEl.nextSibling : newP.nextSibling;
-      }
+      insertedParagraphs.push(newP);
     }
 
-    this.dirty = true;
-    this.documentViewCache = null;
+    const insertedIds: string[] = [];
+    for (const newP of insertedParagraphs) {
+      const id = insertSingleParagraphBookmark(doc, newP, this.paragraphBookmarkReservation);
+      insertedIds.push(id);
+    }
+
+    this.markMutated();
     const result: { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } = {
       newParagraphId: insertedIds[0]!,
       newParagraphIds: insertedIds,
@@ -1396,8 +1541,7 @@ export class DocxDocument {
   ): ParagraphPropertiesMutationResult {
     const result = setParagraphProperties(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
-      this.dirty = true;
-      this.documentViewCache = null;
+      this.markMutated();
     }
     return result;
   }
@@ -1408,8 +1552,7 @@ export class DocxDocument {
   ): ParagraphSpacingMutationResult {
     const result = setParagraphSpacing(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
-      this.dirty = true;
-      this.documentViewCache = null;
+      this.markMutated();
     }
     return result;
   }
@@ -1429,14 +1572,64 @@ export class DocxDocument {
       ctx,
     );
     if (result.changed) {
-      this.dirty = true;
-      this.documentViewCache = null;
+      this.markMutated();
     }
+    return result;
+  }
+
+  /** Read the core (`docProps/core.xml`) and extended (`docProps/app.xml`) document properties. */
+  async getDocumentProperties(): Promise<DocumentProperties> {
+    return readDocumentProperties(this.zip);
+  }
+
+  /**
+   * Set or remove core and extended document properties. Document properties
+   * have no tracked-change form, so the write is a package mutation: callers
+   * that account for untracked changes must record it themselves.
+   */
+  async setDocumentProperties(mutation: DocumentPropertiesMutation): Promise<DocumentPropertiesMutationResult> {
+    const result = await setDocumentProperties(this.zip, mutation);
+    if (result.changed) this.markMutated();
     return result;
   }
 
   getSections(): DocumentSection[] {
     return getDocumentSections(this.documentXml);
+  }
+
+  /** Every section's header and footer references, with inheritance resolved (#1050). */
+  async getHeaderFooterSections(): Promise<{ sections: SectionHeaderFooters[]; evenAndOddHeaders: boolean }> {
+    const relsText = await this.zip.readTextOrNull('word/_rels/document.xml.rels');
+    return {
+      sections: resolveSectionHeaderFooters(this.documentXml, relsText ? parseXml(relsText) : null),
+      evenAndOddHeaders: readEvenAndOddHeaders(await this.zip.readTextOrNull('word/settings.xml')),
+    };
+  }
+
+  /** Paragraphs of a selected header/footer part in document order, with their `_bk_*` ids. */
+  async getStoryParagraphs(partPath: string): Promise<Array<{ id: string | null; text: string }>> {
+    const story = await this.selectedStoryDocument(partPath);
+    return Array.from(story.getElementsByTagNameNS(OOXML.W_NS, W.p)).map((p) => ({
+      id: getParagraphBookmarkId(p),
+      text: getParagraphText(p),
+    }));
+  }
+
+  /** The selected header/footer part holding paragraph `bookmarkId`, or null. */
+  async findStoryPartForParagraph(bookmarkId: string): Promise<string | null> {
+    for (const partPath of await this.getSelectedHeaderFooterPartPaths()) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (xml && xml.includes(bookmarkId) && findParagraphByBookmarkId(parseXml(xml), bookmarkId)) return partPath;
+    }
+    return null;
+  }
+
+  /** Create or reuse a header/footer part and attach it to one section (#1052, #1200). */
+  async setHeaderFooter(mutation: SetHeaderFooterMutation, ctx?: RevisionContext): Promise<SetHeaderFooterResult> {
+    const result = await setHeaderFooterImpl(this.zip, this.documentXml, mutation, ctx, this.createdHeaderFooterRelationshipIds);
+    for (const id of result.createdRelationshipIds) this.createdHeaderFooterRelationshipIds.add(id);
+    if (result.changed) this.markMutated();
+    return result;
   }
 
   insertSectionBreak(
@@ -1449,8 +1642,7 @@ export class DocxDocument {
       ctx,
       this.paragraphBookmarkReservation,
     );
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
@@ -1460,8 +1652,7 @@ export class DocxDocument {
   ): SectionPageNumberMutationResult {
     const result = setSectionPageNumberStart(this.documentXml, mutation, ctx);
     if (result.changed) {
-      this.dirty = true;
-      this.documentViewCache = null;
+      this.markMutated();
     }
     return result;
   }
@@ -1472,8 +1663,7 @@ export class DocxDocument {
   ): SectionPropertiesMutationResult {
     const result = updateSectionProperties(this.documentXml, mutation, ctx);
     if (result.changed) {
-      this.dirty = true;
-      this.documentViewCache = null;
+      this.markMutated();
     }
     return result;
   }
@@ -1484,8 +1674,7 @@ export class DocxDocument {
   ): TableRowHeightMutationResult {
     const result = setTableRowHeight(this.documentXml, mutation, ctx);
     if (result.affectedRows > 0) {
-      this.dirty = true;
-      this.documentViewCache = null;
+      this.markMutated();
     }
     return result;
   }
@@ -1496,8 +1685,7 @@ export class DocxDocument {
   ): TableCellPaddingMutationResult {
     const result = setTableCellPadding(this.documentXml, mutation, ctx);
     if (result.affectedCells > 0) {
-      this.dirty = true;
-      this.documentViewCache = null;
+      this.markMutated();
     }
     return result;
   }
@@ -1517,10 +1705,18 @@ export class DocxDocument {
    * disturb rsid attributes on runs the caller did not touch (#286).
    */
   mergeRunsOnly(opts: MergeRunsOptions = {}): MergeRunsResult {
+    // Normalization also strips rsid attributes from surviving single runs.
+    // Those edits are absent from the public merge/proofing result counts.
+    const stripsRsid = !opts.preserveRsidIdentity && this.getParagraphs().some((p) =>
+      Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.r)).some((run) =>
+        [run, ...Array.from(run.getElementsByTagName('*'))].some((el) =>
+          Array.from(el.attributes).some((attr) => /^rsid/i.test(attr.localName ?? attr.name)),
+        ),
+      ),
+    );
     const result = mergeRuns(this.documentXml, opts);
-    if (result.runsMerged > 0) {
-      this.dirty = true;
-      this.documentViewCache = null;
+    if (result.runsMerged > 0 || result.proofErrRemoved > 0 || stripsRsid) {
+      this.markMutated();
     }
     return result;
   }
@@ -1557,8 +1753,7 @@ export class DocxDocument {
       date: params.date,
     }, ctx);
 
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
@@ -1587,8 +1782,7 @@ export class DocxDocument {
       date: params.date,
     }, ctx);
 
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
@@ -1602,8 +1796,7 @@ export class DocxDocument {
 
   async deleteComment(params: { commentId: number }, ctx?: RevisionContext): Promise<void> {
     await deleteCommentImpl(this.documentXml, this.zip, params, ctx);
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
   }
 
   async updateCommentBody(params: {
@@ -1612,7 +1805,7 @@ export class DocxDocument {
     body?: import('./comments.js').CommentBodyParagraph[];
   }): Promise<void> {
     await updateCommentBodyImpl(this.zip, params);
-    this.dirty = true;
+    this.markMutated();
   }
 
   /**
@@ -1702,8 +1895,7 @@ export class DocxDocument {
       });
     }
     await this.refreshFootnotesXml();
-    this.dirty = converted.length > 0;
-    this.documentViewCache = null;
+    if (converted.length > 0) this.markMutated();
     return {
       selected: selected.length,
       converted,
@@ -1798,8 +1990,7 @@ export class DocxDocument {
     }, ctx);
 
     await this.refreshFootnotesXml();
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
     return result;
   }
 
@@ -1809,8 +2000,7 @@ export class DocxDocument {
   async updateFootnoteText(params: { noteId: number; newText: string }, ctx?: RevisionContext): Promise<void> {
     await updateFootnoteTextImpl(this.zip, params, ctx);
     await this.refreshFootnotesXml();
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
   }
 
   /**
@@ -1819,8 +2009,7 @@ export class DocxDocument {
   async deleteFootnote(params: { noteId: number }, ctx?: RevisionContext): Promise<void> {
     await deleteFootnoteImpl(this.documentXml, this.zip, params, ctx);
     await this.refreshFootnotesXml();
-    this.dirty = true;
-    this.documentViewCache = null;
+    this.markMutated();
   }
 
   /**
@@ -1830,6 +2019,16 @@ export class DocxDocument {
    */
   getDocumentXmlClone(): Document {
     return this.documentXml.cloneNode(true) as Document;
+  }
+
+  /** Snapshot supported current stories for managed revision ID seeding. */
+  async getRevisionSeedDocuments(): Promise<Document[]> {
+    const main = this.getDocumentXmlClone();
+    // Select header/footer bindings from this same current DOM, not the ZIP's
+    // last flushed document.xml. Never flush seed-only reads into the live ZIP.
+    const stories = this.zip.fork();
+    stories.writeText('word/document.xml', serializeXml(main));
+    return [main, ...await getSidePartRevisionSeedDocs(stories)];
   }
 
   /**
@@ -1867,24 +2066,49 @@ export class DocxDocument {
    * Falls back to full re-serialization (blocksRestored: 0) when no original
    * text was captured or reconciliation fails.
    *
+   * Each call captures an isolated archive snapshot before yielding. Bookmark
+   * cleanup and serialization failures leave the live document and ZIP intact.
+   *
    * With `fileDate`, every ZIP entry is written with that date instead of the
    * wall clock, so the bytes depend only on the document's content.
    *
    * @see https://github.com/UseJunior/safe-docx/issues/408
    * @see https://github.com/UseJunior/safe-docx/issues/1110
    */
+  /**
+   * Header/footer parts without safe-docx paragraph bookmarks: a part whose
+   * only change is the bookmarks gets its original bytes back, an edited part
+   * keeps its edits without the bookmarks (#1051).
+   */
+  private async cleanStoryBookmarkOverrides(): Promise<Record<string, string>> {
+    const overrides: Record<string, string> = {};
+    for (const [partPath, original] of this.storyOriginalTexts) {
+      const current = await this.zip.readTextOrNull(partPath);
+      if (current === null) continue;
+      const cleaned = parseXml(current);
+      cleanupInternalBookmarks(cleaned, { preserveBookmarkIds: collectNamedBookmarkIds(parseXml(original)) });
+      const cleanedXml = serializeXml(cleaned);
+      overrides[partPath] = cleanedXml === serializeXml(parseXml(original)) ? original : cleanedXml;
+    }
+    return overrides;
+  }
+
   async toBuffer(opts?: {
     cleanBookmarks?: boolean;
     minimalReserialization?: boolean;
     preserveOriginalBookmarks?: boolean;
     fileDate?: Date;
+    /**
+     * Without cleanBookmarks: still remove safe-docx paragraph ids from
+     * header/footer parts, whose comparison baseline never carries them.
+     */
+    cleanStoryBookmarks?: boolean;
   }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
     const zipOptions = opts?.fileDate ? { fileDate: opts.fileDate } : undefined;
-    // Always write the latest document.xml when saving.
-    // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
+    // Capture the latest DOM for this export without writing output-only XML
+    // into the live archive, including when ZIP generation rejects.
     const xmlWithBookmarks = serializeXml(this.documentXml);
     maybeCaptureEmittedDocumentXml(xmlWithBookmarks);
-    this.zip.writeText('word/document.xml', xmlWithBookmarks);
 
     if (opts?.cleanBookmarks) {
       const cloned = parseXml(xmlWithBookmarks);
@@ -1904,16 +2128,16 @@ export class DocxDocument {
         }
       }
       const cleanedXml = serializeXml(cloned);
+      const storyOverrides = await this.cleanStoryBookmarkOverrides();
 
-      // Temporarily swap document.xml in the zip for output, then restore.
+      // Apply output-only XML to an isolated archive snapshot.
       maybeCaptureEmittedDocumentXml(cleanedXml);
-      this.zip.writeText('word/document.xml', cleanedXml);
-      const buffer = await this.zip.toBuffer(zipOptions);
-      this.zip.writeText('word/document.xml', xmlWithBookmarks);
+      const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { ...storyOverrides, 'word/document.xml': cleanedXml } });
       return { buffer, bookmarksRemoved, blocksRestored };
     }
 
-    const buffer = await this.zip.toBuffer(zipOptions);
+    const storyOverrides = opts?.cleanStoryBookmarks ? await this.cleanStoryBookmarkOverrides() : {};
+    const buffer = await this.zip.toBuffer({ ...zipOptions, textOverrides: { ...storyOverrides, 'word/document.xml': xmlWithBookmarks } });
     return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
   }
 
@@ -1941,6 +2165,7 @@ export class DocxDocument {
     const cleanBookmarks = opts?.cleanBookmarks ?? true;
     const isolated = await DocxDocument.load((await this.toBuffer({ cleanBookmarks: false })).buffer);
     isolated.originalDocumentXmlText = this.originalDocumentXmlText;
+    isolated.storyOriginalTexts = new Map(this.storyOriginalTexts);
     await isolated.acceptAIEdits(selector);
     return isolated.toBuffer({ cleanBookmarks, minimalReserialization: cleanBookmarks });
   }

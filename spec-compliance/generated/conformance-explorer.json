@@ -405,6 +405,38 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-11-7",
+      "title": "w:endnoteReference identifier binding",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.11.7"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference",
+      "claimRationale": "Part 1 §17.11.7 defines `w:endnoteReference` as an automatically numbered\nrun that references one endnote, and its `w:id` attribute names \"the\nfootnote or endnote which is being referenced\"; an ID absent from the\nendnotes part makes the document non-conformant. Like\n`w:footnoteReference` (§17.11.14), the identifier binds an anchor to its\ndefinition and is not the displayed number. When a comparison edits an\nendnote body beside unchanged endnotes, docx-compare keeps one stable\nanchor per aligned position and tracks the definition change inside the\nendnote, so every surviving reference still names the endnote whose body\nbelongs to it after Accept and after Reject. A paragraph holding several\nanchors pairs them by position within the paragraph, whether the revised\nidentifiers were renumbered to avoid a collision or were already distinct.\nFootnote and endnote identifiers are separate spaces and are reconciled\nindependently.\n\nThis claim covers that comparison reconciliation; it is not a claim about\nendnote numbering formats, placement or `w:customMarkFollows` display.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/ancillaryNoteComparison.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/inlineFootnoteAnchorPair.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/noteReferenceIdentity.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-11-9",
       "title": "w:footnote special footnote list in document settings",
       "classification": "targeted",
@@ -573,6 +605,14 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts"
         }
       ]
     },
@@ -1212,7 +1252,7 @@
     {
       "id": "ECMA-PART1-17-13-5-33",
       "title": "Table-grid revisions (w:tblGridChange)",
-      "classification": "non-goal",
+      "classification": "targeted",
       "citation": {
         "standard": "ECMA-376",
         "edition": 5,
@@ -1221,8 +1261,29 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange",
-      "claimRationale": "safe-docx recognizes `w:tblGridChange` metadata and placement but does not emit,\naccept, or reject its grid semantics.",
-      "evidence": []
+      "claimRationale": "The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in\n`@usejunior/docx-compare`) resolves `w:tblGridChange`: accept keeps the live\ngrid, reject restores the snapshot's `w:gridCol` list. Comparison never\ndiffs `w:tblGrid` child by child: it keeps a pending `w:tblGridChange` that\nonly the original carries and drops one only the revised document carries.\nIt does not emit a new `w:tblGridChange` (grid changes are still refused),\nand docx-core's native accept/reject do not yet resolve it.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableTopologyFootprint.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableLevelProperties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-13-5-34",
@@ -1236,7 +1297,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange",
-      "claimRationale": "This claim is bounded to the runtime and test evidence listed above.",
+      "claimRationale": "Comparison emits `w:tblPrChange` for a changed `w:tblPr` (for example\n`w:tblStyle` or `w:tblBorders`), with the original properties as its\nsnapshot, and never places `w:ins`/`w:del` among the children of `w:tblPr`.\nThis claim is bounded to the runtime and test evidence listed above.",
       "evidence": [
         {
           "kind": "source",
@@ -1249,13 +1310,29 @@
         {
           "kind": "test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableLevelProperties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts"
         }
       ]
     },
     {
       "id": "ECMA-PART1-17-13-5-35",
       "title": "Table-property-exception revisions (w:tblPrExChange)",
-      "classification": "non-goal",
+      "classification": "targeted",
       "citation": {
         "standard": "ECMA-376",
         "edition": 5,
@@ -1264,8 +1341,25 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange",
-      "claimRationale": "safe-docx recognizes `w:tblPrExChange` metadata but does not emit, accept, or\nreject table-level property-exception semantics.\n\nAcross the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,\nsafe-docx validates its documented API-supported enum and safe-integer subset,\nduplicate declarations, table-grid arithmetic, and style/numbering references\nbefore emission, then preserves the authored parts through package load/save.\nThe XML Schema integer domains can exceed JavaScript's exact-number range;\nnumeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and\n`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated\nby this surface, the full lexical domain is pinned to the vendored transitional\nXSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,\n`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run\ncolor, and table/numbering style types, are reported as unsupported API\nfeatures rather than schema-invalid XML. Values absent from the applicable XSD\ndomain are reported as invalid. These\nclaims do not cover Word's\ntable layout algorithm or pagination, numbering rendering or complete\noverride/counter behavior, style cascade or latent-style semantics,\ntheme/font resolution, rendering, or tracked table-topology and\nproperty-revision records. Preservation does not imply semantic\ninterpretation of unknown third-party markup.",
-      "evidence": []
+      "claimRationale": "The comparison's projection acceptor (`acceptAllChanges`/`rejectAllChanges` in\n`@usejunior/docx-compare`) resolves `w:tblPrExChange`: accept keeps the live\nexceptions, reject restores the snapshot's `w:tblPrEx` content. Comparison\nemits `w:tblPrExChange` for a changed row `w:tblPrEx`, and on every row of a\ntable whose published `w:tblPr` gains a `w:tblPrChange` (Word shows a\ntable-property revision only through a row-level `w:tblPrExChange`).\ndocx-core's native accept/reject do not yet resolve it.\n\nAcross the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,\nsafe-docx validates its documented API-supported enum and safe-integer subset,\nduplicate declarations, table-grid arithmetic, and style/numbering references\nbefore emission, then preserves the authored parts through package load/save.\nThe XML Schema integer domains can exceed JavaScript's exact-number range;\nnumeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and\n`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated\nby this surface, the full lexical domain is pinned to the vendored transitional\nXSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,\n`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run\ncolor, and table/numbering style types, are reported as unsupported API\nfeatures rather than schema-invalid XML. Values absent from the applicable XSD\ndomain are reported as invalid. These\nclaims do not cover Word's\ntable layout algorithm or pagination, numbering rendering or complete\noverride/counter behavior, style cascade or latent-style semantics,\ntheme/font resolution, rendering, or tracked table-topology and\nproperty-revision records. Preservation does not imply semantic\ninterpretation of unknown third-party markup.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelRevisionAcceptor.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableLevelProperties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableLevelPropertyComparison.test.ts"
+        }
+      ]
     },
     {
       "id": "ECMA-PART1-17-13-5-36",
@@ -1612,6 +1706,34 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-15-3-5",
+      "title": "w:doNotExpandShiftReturn compatibility setting",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.15.3.5"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn",
+      "claimRationale": "When `w:doNotExpandShiftReturn` is on, a line of a fully justified paragraph\n(`w:jc` `both`) that ends in a soft line break is not justified. Generation\nwrites the empty element inside `w:compat`, before the `compatibilityMode`\ncustom setting as the `CT_Compat` sequence requires, only when\n`DocumentSpec.compatibility.doNotExpandShiftReturn` is true; `docx-markdoc\ncreate` sets it on every document it builds. This entry covers emission and\norder, not how a renderer lays out the line.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/settings-part.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-compatibility-settings.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/paragraph-layout.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-16-13",
       "title": "w:delInstrText containment in tracked deletions",
       "classification": "targeted",
@@ -1731,7 +1853,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink",
-      "claimRationale": "`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose\n`r:id` attribute carries the relationship reference to the link target.\nIts content model (EG_PContent) admits run-level revision wrappers, so\ntracked edits to link text nest as `<w:hyperlink><w:ins>…` /\n`<w:hyperlink><w:del>…`; the reverse nesting is invalid because\nCT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit\n`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and\nits attributes when serializing tagged paragraphs that contain hyperlinks,\nand never merges text atoms across a hyperlink boundary. The enforcement\nlives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`\n(`nearestHyperlinkAncestor`) and\n`packages/docx-compare/src/tagged/taggedTreeSerializer.ts`\n(tagged hyperlink wrapper emission).",
+      "claimRationale": "`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose\n`r:id` attribute carries the relationship reference to the link target.\nIts content model (EG_PContent) admits run-level revision wrappers, so\ntracked edits to link text nest as `<w:hyperlink><w:ins>…` /\n`<w:hyperlink><w:del>…`; the reverse nesting is invalid because\nCT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit\n`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and\nits attributes when serializing tagged paragraphs that contain hyperlinks,\nand never merges text atoms across a hyperlink boundary. A link that exists\non one side only — added, removed, or the old and new halves of a retargeted\nlink — keeps its `w:hyperlink` container in the paragraph and tracks the runs\ninside it, in body text and in text-box stories alike. The enforcement\nlives in `packages/docx-compare/src/tagged/taggedTreeConstruction.ts`\n(`nearestHyperlinkAncestor`) and\n`packages/docx-compare/src/tagged/taggedTreeSerializer.ts`\n(tagged hyperlink wrapper emission).",
       "evidence": [
         {
           "kind": "source",
@@ -1740,6 +1862,10 @@
         {
           "kind": "source",
           "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts"
         },
         {
           "kind": "source",
@@ -2008,6 +2134,78 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-16-5-63",
+      "title": "TC field emission for table-of-contents entries",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.16.5.63"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
+      "claimRationale": "A TC field \"defines the text and page number for a table of contents ... entry,\nwhich is used by a TOC field\"; its field value is none. Generation writes each\n`TableOfContentsEntrySpec` as a begin/instruction/end complex field with no\nseparator or result, `TC \"<text>\" \\l <level>`, without the `\\f` list-type\nswitch, so \"the entry is listed in a table of contents\". `\\l` sets the entry's\nlevel, whose built-in `TOC <level>` style Word applies to the entry. TC entries\ntrail every other run of their paragraph and are written after its bookmark, so\na text REF to the paragraph never copies them. Text with a double quote or a\nbackslash is refused rather than escaped.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/run.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-table-of-contents.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/create/readback.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/table-of-contents.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-16-5-68",
+      "title": "TOC field emission with a cached result",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.16.5.68"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText",
+      "claimRationale": "A TOC field \"builds a table of contents ... using the entries specified by TC\nfields\" and \"each table entry is a separate paragraph\". Generation writes\n`TOC \\f \\l \"1-N\" \\n`: TC entries of levels 1 to N, without page numbers. The\nfield opens (begin, instruction, separator) in the first paragraph of its\ncached result and closes (end) in the last, and the caller writes one paragraph\nper entry as that result, so a reader shows the entries before any field\nupdate. Omitting page numbers keeps the result independent of page layout.\n`\\f` is written without its identifier argument, so it selects the TC entries\nthat carry no `\\f` of their own; LibreOffice 26.2 lists exactly those entries when\nit updates the index (verified headless). Word's update was not checked here.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/run.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/paragraph.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/validate-spec.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-table-of-contents.test.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/create/readback.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/table-of-contents.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-18-59",
       "title": "ST_NumberFormat alphabetic list numbers",
       "classification": "targeted",
@@ -2052,6 +2250,106 @@
         {
           "kind": "test",
           "path": "packages/docx-markdoc/src/greenfield.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-12",
+      "title": "w:ind paragraph indentation",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.12"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind",
+      "claimRationale": "`w:ind` sets a paragraph's indentation. A `docx-markdoc create`\n`{% paragraph-layout %}` paragraph carries `w:left` and `w:hanging` in twips\n(`w:hanging` never larger than `w:left`, so the first line stays inside the\ntext area). The read-back reads every attribute of a body paragraph's direct\n`w:ind`, and the build compares it with the source. Style-level indents,\n`w:start`/`w:end`, the character-unit attributes and `w:firstLine` are not\nwritten by `create`.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/properties.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-markdoc/src/create/readback.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/paragraph-layout.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-13",
+      "title": "w:jc paragraph alignment",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.13"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc",
+      "claimRationale": "`w:jc` sets a paragraph's alignment. The `format_layout` tool writes the\ntransitional `ST_Jc` values `left`, `center`, `right` and `both` (the values\nWord writes) at the `w:jc` position in the `CT_PPrBase` sequence and records\nthe prior properties in a `w:pPrChange`. The bidi-relative `start`/`end` and\nthe distribution values, which the transitional schema also permits, are out\nof scope.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-14",
+      "title": "w:keepLines keep paragraph lines together",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.14"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines",
+      "claimRationale": "`w:keepLines` is a `CT_OnOff` property that keeps all lines of a paragraph on\none page. `format_layout` sets it as a bare element (on) or removes a direct\nelement that is on, so the style hierarchy decides the value again; a direct\nelement that is already explicitly off is left alone.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-15",
+      "title": "w:keepNext keep paragraph with next",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.15"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext",
+      "claimRationale": "`w:keepNext` is a `CT_OnOff` property that keeps a paragraph on the same page\nas the next paragraph. `format_layout` sets or removes the direct element with\nthe same on/off rules as `w:keepLines`.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
         }
       ]
     },
@@ -2108,6 +2406,30 @@
         {
           "kind": "test",
           "path": "packages/docx-core/test-primitives/heading_provenance.traceability.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-1-23",
+      "title": "w:pageBreakBefore start paragraph on next page",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.23"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore",
+      "claimRationale": "`w:pageBreakBefore` is a `CT_OnOff` property that starts the paragraph on a\nnew page. `format_layout` sets or removes the direct element, which lets a\ncaller drop a property made redundant by a preceding `nextPage` section break.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/layout.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/format_layout_paragraph_properties.test.ts"
         }
       ]
     },
@@ -2236,6 +2558,30 @@
         {
           "kind": "test",
           "path": "packages/docx-markdoc/src/create/footnotes.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-2-25",
+      "title": "w:r run content model excludes revision wrappers",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.25"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R",
+      "claimRationale": "Part 1 §17.3.2.25 defines `w:r` as a run of content with common properties.\nIts CT_R content model admits run properties and run content such as `w:t`\nand `w:fldChar`, but no `w:ins`, `w:del`, `w:moveFrom` or `w:moveTo`; those\nrevision particles wrap whole runs. When compared text shares a run with a\nfield character, safe-docx splits the run so each revision wraps a run\nfragment that repeats the source run properties.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts"
         }
       ]
     },
@@ -2428,6 +2774,102 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-3-3-1",
+      "title": "Break run content (w:br)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.3.1"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:br",
+      "claimRationale": "Part 1 §17.3.3.1 defines `w:br` as a break whose behaviour depends on its\n`@w:type`. The publication gate projects a text-wrapping break (the default\ntype) to U+000B, a page break to U+000C and a column break to U+000E, so a\ndropped or added break, or a line break turned into a page break, fails the\ntext checks. `@w:clear` only governs where text restarts around floating\nobjects and is outside the projected identity.\nThe claim is bounded to the comparison publication gate's text projection: it says a dropped or\nadded element changes the projection, not how the character is laid out or rendered.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-3-18",
+      "title": "Non-breaking hyphen run content (w:noBreakHyphen)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.3.18"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:noBreakHyphen",
+      "claimRationale": "Part 1 §17.3.3.18 defines `w:noBreakHyphen` as a hyphen that is not a line\nbreaking position. The publication gate projects it to U+2011 NON-BREAKING\nHYPHEN, so a dropped or added non-breaking hyphen fails the text checks and the\nliteral U+2011 spelling inside `w:t` compares equal to the element.\nThe claim is bounded to the comparison publication gate's text projection: it says a dropped or\nadded element changes the projection, not how the character is laid out or rendered.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-3-29",
+      "title": "Optional hyphen run content (w:softHyphen)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.3.29"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:softHyphen",
+      "claimRationale": "Part 1 §17.3.3.29 defines `w:softHyphen` as an optional hyphen that is shown\nonly when it breaks the line. The publication gate projects it to U+00AD SOFT\nHYPHEN, so a dropped or added optional hyphen fails the text checks and the\nliteral U+00AD spelling inside `w:t` compares equal to the element.\nThe claim is bounded to the comparison publication gate's text projection: it says a dropped or\nadded element changes the projection, not how the character is laid out or rendered.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-3-3-30",
       "title": "Symbol character run content (w:sym)",
       "classification": "targeted",
@@ -2460,6 +2902,74 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/symbolCharacterProjection.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-3-32",
+      "title": "Tab character run content (w:tab)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.3.32"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tab",
+      "claimRationale": "Part 1 §17.3.3.32 defines run-content `w:tab` as a tab character. The tagged\npublication gate projects it to U+0009, the character a literal tab inside\n`w:t` also projects to, and compares with a normalization that keeps tabs\nrather than folding them into spaces, so a comparison output that drops or adds\na tab fails `acceptText` and `rejectText`. `w:tab` inside `w:pPr/w:tabs` is a\ntab-stop definition, not a character, and projects nothing. When a run's text\nis unchanged and only its tabs differ, the serializer redlines each added or\nremoved tab at its own text offset rather than carrying the revised tabs into\nboth projections.\nThe claim is bounded to the comparison publication gate's text projection: it says a dropped or\nadded element changes the projection, not how the character is laid out or rendered.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/taggedTreeSerializer.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-3-3-4",
+      "title": "Carriage return run content (w:cr)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.3.4"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cr",
+      "claimRationale": "Part 1 §17.3.3.4 defines `w:cr` as behaving identically to a `w:br` with no\ntype and no clear attributes. The publication gate therefore projects it to the\nsame U+000B as a text-wrapping break: dropping or adding it fails the text\nchecks, and re-spelling it as `w:br` does not.\nThe claim is bounded to the comparison publication gate's text projection: it says a dropped or\nadded element changes the projection, not how the character is laid out or rendered.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/fieldComparisonSemantics.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/pipeline.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/publicationGateLayoutTopology.test.ts"
         }
       ]
     },
@@ -2908,6 +3418,30 @@
         {
           "kind": "source",
           "path": "packages/docx-core/src/generation/emit/table.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-5-2-18",
+      "title": "w:id structured document tag unique ID",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.5.2.18"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr",
+      "claimRationale": "`w:sdtPr/w:id` gives a structured document tag a numerical ID that shall\npersist across sessions. When several tags carry the same value, the first\nin the document keeps it and every later one is assigned a new identifier\nwhen the document is opened. A row replacement keeps the authored ID on both\ncopies of a cell-level control, so each projection holds its source ID.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/tableTopologyNormalization.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/tableTopologyCellContentControl.test.ts"
         }
       ]
     },
@@ -3916,6 +4450,66 @@
       ]
     },
     {
+      "id": "ECMA-PART1-20-4-2-38",
+      "title": "DrawingML rich text-box content (w:txbxContent)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "20.4.2.38"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent",
+      "claimRationale": "Part 1 §20.4.2.38 defines `w:txbxContent` inside a DrawingML text box\n(`wps:txbx`) and, like Part 4 §14.9.1.1 for VML, calls a story non-conformant\nwhen it holds references to the comment, footnote or endnote stories or another\n`w:txbxContent`. safe-docx compares the DrawingML copy of a Word text box under\nthe same rules as its VML twin: a picture in the story is an atomic leaf, a\nnested box in a main-document story is compared as its own story, and story\nreferences stay refused. A DrawingML box written with no VML fallback is\ncompared the same way, its `wps:wsp` host standing in for the VML scaffold, and\na box stored as DrawingML in one document and twinned in the other has its\ncompared text written into every stored copy (see ECMA-PART4-14-9-1-1).",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-22-2",
+      "title": "Extended File Properties part",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "22.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd#type:CT_Properties",
+      "claimRationale": "Extended properties are non-repeatable elements of the Extended File\nProperties part's `Properties` root. §22.2 lets each one be omitted, and lets\nit be empty only where its schema type admits an empty value: a string\nproperty such as `Company` can be empty, an integer statistic such as `Pages`\ncannot, and `AppVersion` has the form `XX.YYYY` (§22.2.2.2). safe-docx reads\nand writes `Application`, `AppVersion`, `Company`, `Manager` and `Template` in\nthe root's own namespace and prefix (transitional or strict), writes only\nnon-empty values and refuses an `AppVersion` of any other form, keeps every\nother element (statistics, heading pairs, titles of parts) untouched, creates\na missing part in the strict namespace when the main document relationship is\nstrict (§15.2.12.3), and lets generation omit `Application`.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/document_properties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/document_properties.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-document-properties.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART2-6-5-2-3",
       "title": "part Relationships part ownership and naming",
       "classification": "targeted",
@@ -3972,6 +4566,62 @@
       ]
     },
     {
+      "id": "ECMA-PART2-8-2",
+      "title": "Core Properties part location and media type",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 2,
+        "section": "8.2"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties",
+      "claimRationale": "A package contains at most one Core Properties part, referenced by a core\nproperties relationship from the package, with the Core Properties part media\ntype. Its root `coreProperties` holds non-repeatable core property elements\n(`CT_CoreProperties` is an `xsd:all`, so their order carries no meaning).\nsafe-docx locates the part through `_rels/.rels` by relationship type, never\nby a fixed path, and edits only the named elements, keeping every other\nelement and namespace declaration. When a write sets a value in a package\nwithout the part, safe-docx creates `docProps/core.xml` with one package\nrelationship and one `[Content_Types].xml` override of the core-properties\nmedia type.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/document_properties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/document_properties.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-mcp/src/tools/document_properties.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART2-8-3-4-3",
+      "title": "dcterms:created and dcterms:modified as W3CDTF dates",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 2,
+        "section": "8.3.4.3"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties",
+      "claimRationale": "The `created` and `modified` core property elements come from the DCMI terms\nnamespace, have no child elements or `xml:lang`, and carry\n`xsi:type=\"dcterms:W3CDTF\"`, with `dcterms` declared as the prefix of\n`http://purl.org/dc/terms/`. safe-docx accepts only W3CDTF values (`YYYY`,\n`YYYY-MM`, `YYYY-MM-DD`, or a date with a time and zone, every field in\nrange) for these elements, writes them with the `dcterms` prefix and the\n`xsi:type`, and refuses a part that binds `dcterms` to another namespace\nrather than rewriting the binding. Generation writes them from the spec and\nnever reads the clock.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/primitives/document_properties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/primitives/document_properties.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/generation/generation-document-properties.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART4-14-9-1-1",
       "title": "VML rich text-box content (w:txbxContent)",
       "classification": "targeted",
@@ -3983,7 +4633,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent",
-      "claimRationale": "Part 4 §14.9.1.1 defines `w:txbxContent` as the rich\nWordprocessingML-content container inside a drawing object. It prohibits\nreferences to comments, footnotes, and endnotes, as well as nested\n`w:txbxContent`. safe-docx compares a bounded subset of these stories\nindependently of the surrounding body, preserves the drawing scaffold around\neach one, and rejects the prohibited nested forms before comparison.\n\n**Text boxes authored in Microsoft Word are inside that subset.** Word stores\none modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`\nholding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`\nholding the VML spelling (`v:textbox`) — and renders exactly one of them.\nsafe-docx groups the two stored copies as the one visual box a reader sees,\nnumbers diagnostics by that visual ordinal, compares each stored copy as its own\nstory, and fails closed when the two sides' storage shapes do not correspond.\nAccepting every revision in the result reproduces the revised story text and\nrejecting every revision reproduces the original, in both stored branches.\n\nThe claim covers main-document stories and stories in relationship-selected\nheader and footer parts. It does not cover a **standalone** DrawingML text box —\na `wps:txbx` with no `mc:AlternateContent` twin, and therefore no VML host\nanywhere above it. Such a box has no drawing scaffold this implementation can\nfingerprint, so the comparison is refused with `UnsupportedTextBoxRevisionError`,\nwhich aborts the whole comparison rather than emitting a partial redline. The\nclaim likewise does not cover inserted or deleted text-box topology, nor a\nchange to the relationship closure of any text-box story — that check runs\nahead of the twin carve-out and applies to twinned and untwinned boxes alike —\nnor a change to the containing scaffold of an untwinned box.",
+      "claimRationale": "Part 4 §14.9.1.1 defines `w:txbxContent` as the rich\nWordprocessingML-content container inside a drawing object. It prohibits\nreferences to comments, footnotes, and endnotes, as well as nested\n`w:txbxContent`. safe-docx compares a bounded subset of these stories\nindependently of the surrounding body, preserves the drawing scaffold around\neach one, and rejects story references to comments, footnotes and endnotes\nbefore comparison.\n\n**Pictures, objects and nested boxes inside a story are inside the subset.** A\nVML picture (`w:pict`), a DrawingML picture (`w:drawing`) or an embedded object\n(`w:object`) in a changed story is carried as one atomic comparison leaf: an\nunchanged one passes through without revision markup, and one whose markup\nchanged is a tracked deletion of the old run plus a tracked insertion of the new\none. A change to the relationship closure the story reaches through `r:*` or\n`o:relid` attributes — a hyperlink added, removed or pointed at another target,\nor a picture that now names another image part — is compared like any other\nstory change: the old reference is a tracked deletion bound to the original\ntarget and the new one a tracked insertion bound to the revised target, and\nevery relationship either side needs is imported, under an id unique there,\ninto the relationship part of the part that owns the box (the footer's own\n`.rels` for a footer box), with an internal target's part copied in alongside\n(Part 2 §6.5.3.4). Identical box markup whose relationship ids now resolve\nelsewhere counts as a change. A part replaced under the same relationship is\ncarried by the story comparison and listed by the picture payload audit, so it\nis never carried silently. A main-document story holding a nested box —\nnon-conformant under this clause, but present in documents a comparison\nreceives — is compared too: the nested box is compared as a story of its own,\ncut before its enclosing story and spliced back after it, and a nested box whose\nanchor the enclosing story tracks as inserted or deleted has its own story\nmarked the same way. A header or footer story holding a nested box is still\nrefused.\n\n**Text boxes authored in Microsoft Word are inside that subset.** Word stores\none modern text box twice within a single `mc:AlternateContent` — an `mc:Choice`\nholding the DrawingML spelling (`a:graphic`, `wps:txbx`) and an `mc:Fallback`\nholding the VML spelling (`v:textbox`) — and renders exactly one of them.\nsafe-docx groups the two stored copies as the one visual box a reader sees,\nnumbers diagnostics by that visual ordinal, and compares each stored copy as its\nown story. Accepting every revision in the result reproduces the revised story\ntext and rejecting every revision reproduces the original, in both stored\nbranches.\n\n**A box stored differently in the two documents is inside the subset.** A box\nsaved VML-only by an older writer and twinned by a newer Word, a twinned box\nsaved back as VML only, or a standalone DrawingML box that gained a VML\nfallback is one box when the spelling both documents store keeps its identifier\n(the VML shape `id` or the DrawingML `wp:docPr/@id`). The original side takes\nthe revised storage around its own story, so every stored copy is compared with\nthe original text and carries identical tracked text: Word, which reads the\n`mc:Choice`, and an older reader, which reads the `mc:Fallback`, show the same\nredline. A box whose storage alone changed (a re-save) carries no text\nrevision; Reject All keeps the revised storage around the original text. The\nspelling only one document stores is listed with the `drawing` scope, below:\nnothing on the other side can be compared with it, and no rule maps every\nDrawingML property (`wp:simplePos`, `behindDoc`, rotation, fill) onto VML, so\nthe reader of that spelling may see a different drawing. In the main story, a\nbox whose storage cannot be carried (it stores more than the box, names\nrelationships that mean something else in the original, brings or takes away a\nVML template another box relies on, or holds copies that say different things),\nor whose shared spelling alone changed, is tracked as replaced instead; in a\nheader or footer it is refused.\n\nThe claim covers main-document stories and stories in relationship-selected\nheader and footer parts, including a **standalone** DrawingML text box — a\n`wps:txbx` with no `mc:AlternateContent` twin — whose `wps:wsp` host is\nfingerprinted as the scaffold. It does not cover a text-box story with a\nrelationship reference that resolves to nothing in its owning part; that check\napplies to twinned and untwinned boxes alike.\n\n**A changed drawing around a changed story is inside the subset, as a listed\nchange.** A box's size, position and wrap live in its drawing (the `w:drawing`,\n`w:pict` or `w:object` around the story: a DrawingML `wp:extent`,\n`wp:positionH`/`wp:positionV` or `wp:wrap*`, a VML `style` or `w10:wrap`), and\nPart 1 §17.13.5 defines no revision element for any of it. When the story text\nand the drawing both changed, safe-docx tracks the text inside the box, carries\nthe revised drawing, and lists the box once in `unrepresentedChanges` with the\n`drawing` scope: Accept All shows the revised text and drawing, Reject All the\noriginal text in the revised drawing. Every stored copy of a twinned box moves\ntogether. A drawing whose relationship ids mean something else in the original,\nor which hosts a different number of stories, is instead left to the main-story\ncomparison, which tracks the whole box as replaced; so is a main-story box whose\ndrawing alone changed. In a header or footer, where a replaced box cannot be\ntracked, a changed drawing is listed whether or not its text changed, and a\ndrawing that names another anchor identity there is still refused.\n\n**Inserted and deleted main-document text boxes are inside the subset.** Boxes\npair across the two documents by anchor identity — the VML shape `id` and the\nDrawingML `wp:docPr/@id`, combined for the two stored copies of one twinned box\n— and only boxes without a usable identity fall back to their position between\nidentified boxes. A box with no counterpart stays whole in the body comparison,\nwhich tracks its anchor run as inserted or deleted, and every paragraph and text\nrun of its story is marked with the same revision kind, in every stored copy.\nAn inserted or deleted box whose story holds a prohibited reference is\nrefused, as a changed one is; a picture, an object or a nested box in it is\ncarried and marked with the box. Anonymous boxes paired by position whose\nstorage shapes disagree are tracked as replaced; where their counts differ as\nwell, so that position cannot pair them, they are still refused.\n\n**Inserted and deleted header and footer text boxes are inside the subset\ntoo.** Boxes in a header or footer part pair by the same anchor identity. When\none has no counterpart — or a pair is stored differently with no identifier in\ncommon, or its drawing changed under the same identity — the whole part is\ncompared as one story: the box stays whole there, its anchor run is tracked as\ninserted or deleted, and every paragraph and text run of its story is marked\nwith the same revision kind, in every stored copy. A paired box whose text\nchanged is compared as its own story inside that part. The rest of the part\nmust differ only in plain paragraph text under the same relationships, and\nthe part's section topology and bindings must match; otherwise the comparison\nis refused.",
       "evidence": [
         {
           "kind": "source",
@@ -3996,6 +4646,54 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-header-footer-text-box-lifecycle.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART4-19-1-2-11",
+      "title": "VML image data relationship (v:imagedata)",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 4,
+        "section": "19.1.2.11"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata",
+      "claimRationale": "Part 4 §19.1.2.11 defines `v:imagedata`, the image of a VML picture, which names\nits image part by relationship id through either `r:id` or the\n`urn:schemas-microsoft-com:office:office` attribute `o:relid`; both are typed\n`ST_RelationshipId`. safe-docx reads both spellings as relationship references\nwhen it fingerprints the relationship closure of a text-box story, when it\nrebinds a compared story's relationship ids to the owning part, and when it\nrenumbers, imports and audits picture payloads, so a picture stays bound to its\nimage and a swapped image is redlined in the main story or listed in\n`unrepresentedChanges` elsewhere, never lost.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/textBoxRevisionSafety.ts"
+        },
+        {
+          "kind": "source",
+          "path": "packages/docx-compare/src/tagged/picturePayload.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts"
         }
       ]
     },
@@ -4011,7 +4709,7 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox",
-      "claimRationale": "Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. Throughout the\naccepted comparison subset, safe-docx places tracked changes only in the hosted\nWordprocessingML story, never around the drawing object.\n\nThe host element is derived from the schema rather than matched by name.\n`v:textbox` (`CT_Textbox`) is the only declared parent of `w:txbxContent`, and it\nbelongs to `EG_ShapeElements`, which `CT_Shape` shares with `CT_Rect`,\n`CT_RoundRect`, `CT_Oval` and others. safe-docx therefore treats the VML parent\nof the nearest `v:textbox` as the host, and accepts `v:shape`, `v:rect`,\n`v:roundrect` and `v:oval` alike.\n\nWhere a story's host is untwinned VML, safe-docx fingerprints that scaffold with\nthe story emptied out and refuses the comparison unless both sides present the\nsame scaffold. **That requirement is deliberately not enforced for a text box\nstored inside `mc:AlternateContent`.** The DrawingML copy of a Word twin has no\nVML host of its own, and failing closed on the missing fingerprint would refuse\nthe commonest text box Word produces. Which branch of a twin governs the scaffold\nis the `mc:AlternateContent`-aware story walk's question and is not settled here,\nso this claim asserts no stable-scaffold guarantee for a twinned box.",
+      "claimRationale": "Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. Throughout the\naccepted comparison subset, safe-docx places tracked changes only in the hosted\nWordprocessingML story, never around the drawing object.\n\nThe host element is derived from the schema rather than matched by name.\n`v:textbox` (`CT_Textbox`) is the only declared parent of `w:txbxContent`, and it\nbelongs to `EG_ShapeElements`, which `CT_Shape` shares with `CT_Rect`,\n`CT_RoundRect`, `CT_Oval` and others. safe-docx therefore treats the VML parent\nof the nearest `v:textbox` as the host, and accepts `v:shape`, `v:rect`,\n`v:roundrect` and `v:oval` alike.\n\nWhere a story's host is untwinned, safe-docx requires both sides to present a\nscaffold it can fingerprint — the VML host, or the DrawingML `wps:wsp` of a box\nwith no VML fallback — and refuses the comparison otherwise. **That requirement\nis deliberately not enforced for a text box stored inside\n`mc:AlternateContent`**, whose two copies are grouped as one box. A scaffold that differs between the two sides — a resized,\nmoved or rewrapped shape — is paired rather than refused: no revision element\ncan carry the shape's `style` or `w10:wrap`, so a changed story is tracked inside\nthe revised shape and the shape is listed in `unrepresentedChanges` with the\n`drawing` scope (see ECMA-PART4-14-9-1-1).",
       "evidence": [
         {
           "kind": "source",
@@ -4024,11 +4722,32 @@
         {
           "kind": "test",
           "path": "packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts"
         }
       ]
     }
   ],
   "schemaDeclarations": [
+    {
+      "id": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd#type:CT_CoreProperties",
+      "schemaPath": "spec-compliance/ecma-376/schemas/opc/opc-coreProperties.xsd",
+      "conformanceClass": "opc",
+      "targetNamespace": "http://schemas.openxmlformats.org/package/2006/metadata/core-properties",
+      "kind": "type",
+      "name": "CT_CoreProperties",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_CoreProperties"
+        }
+      ]
+    },
     {
       "id": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd#element:Relationships",
       "schemaPath": "spec-compliance/ecma-376/schemas/opc/opc-relationships.xsd",
@@ -4067,6 +4786,49 @@
         {
           "contextPath": "schema/element:document",
           "declaredType": "CT_Document"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+      "kind": "element",
+      "name": "txbxContent",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_TextboxInfo/sequence/element:txbxContent",
+          "declaredType": "CT_TxbxContent",
+          "minOccurs": "1",
+          "maxOccurs": "1"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd#type:CT_Properties",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/shared-documentPropertiesExtended.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties",
+      "kind": "type",
+      "name": "CT_Properties",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Properties"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/vml-main.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "urn:schemas-microsoft-com:vml",
+      "kind": "element",
+      "name": "imagedata",
+      "occurrences": [
+        {
+          "contextPath": "schema/element:imagedata",
+          "declaredType": "CT_ImageData"
         }
       ]
     },
@@ -4169,6 +4931,20 @@
         {
           "contextPath": "schema/group:EG_RangeMarkupElements/choice/element:bookmarkStart",
           "declaredType": "CT_Bookmark"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:br",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "br",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:br",
+          "declaredType": "CT_Br"
         }
       ]
     },
@@ -4315,6 +5091,21 @@
       "occurrences": [
         {
           "contextPath": "schema/group:EG_RunInnerContent/choice/element:continuationSeparator",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cr",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "cr",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:cr",
           "declaredType": "CT_Empty",
           "minOccurs": "0"
         }
@@ -4481,6 +5272,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:doNotExpandShiftReturn",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "doNotExpandShiftReturn",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_Compat/sequence/element:doNotExpandShiftReturn",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4492,6 +5298,20 @@
           "contextPath": "schema/type:CT_Styles/sequence/element:docDefaults",
           "declaredType": "CT_DocDefaults",
           "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "endnoteReference",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:endnoteReference",
+          "declaredType": "CT_FtnEdnRef"
         }
       ]
     },
@@ -4760,6 +5580,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ind",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "ind",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:ind",
+          "declaredType": "CT_Ind",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -4817,6 +5652,69 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_Lvl/sequence/element:isLgl",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:jc",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "jc",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:jc",
+          "declaredType": "CT_Jc",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_TblPrBase/sequence/element:jc",
+          "declaredType": "CT_JcTable",
+          "minOccurs": "0",
+          "maxOccurs": "1"
+        },
+        {
+          "contextPath": "schema/type:CT_TblPrExBase/sequence/element:jc",
+          "declaredType": "CT_JcTable",
+          "minOccurs": "0",
+          "maxOccurs": "1"
+        },
+        {
+          "contextPath": "schema/type:CT_TrPrBase/choice/element:jc",
+          "declaredType": "CT_JcTable",
+          "minOccurs": "0",
+          "maxOccurs": "1"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepLines",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "keepLines",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:keepLines",
+          "declaredType": "CT_OnOff",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:keepNext",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "keepNext",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:keepNext",
           "declaredType": "CT_OnOff",
           "minOccurs": "0"
         }
@@ -5015,6 +5913,20 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:noBreakHyphen",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "noBreakHyphen",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:noBreakHyphen",
+          "declaredType": "CT_Empty"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -5206,6 +6118,21 @@
         {
           "contextPath": "schema/type:CT_PPrBase/sequence/element:pStyle",
           "declaredType": "CT_String",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pageBreakBefore",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "pageBreakBefore",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_PPrBase/sequence/element:pageBreakBefore",
+          "declaredType": "CT_OnOff",
           "minOccurs": "0"
         }
       ]
@@ -5512,6 +6439,21 @@
       ]
     },
     {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:softHyphen",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "softHyphen",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:softHyphen",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
+        }
+      ]
+    },
+    {
       "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:start",
       "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
       "conformanceClass": "transitional",
@@ -5648,6 +6590,27 @@
         {
           "contextPath": "schema/group:EG_RPrBase/choice/element:szCs",
           "declaredType": "CT_HpsMeasure"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tab",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "tab",
+      "occurrences": [
+        {
+          "contextPath": "schema/group:EG_RunInnerContent/choice/element:tab",
+          "declaredType": "CT_Empty",
+          "minOccurs": "0"
+        },
+        {
+          "contextPath": "schema/type:CT_Tabs/sequence/element:tab",
+          "declaredType": "CT_TabStop",
+          "minOccurs": "1",
+          "maxOccurs": "unbounded"
         }
       ]
     },
@@ -6118,6 +7081,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_Fonts"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_R",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_R"
         }
       ]
     },

@@ -13,6 +13,59 @@ export type FieldStructureIssue = {
   element?: string;
 };
 
+/**
+ * Incremental complex-field traversal for one story, retained across paragraphs.
+ * Readers omit the issue callback to tolerate malformed markers; validators
+ * supply it to report the existing strict marker rules. Separators are optional.
+ * A result is visible only after every enclosing field has left its code region.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
+export class FieldTraversal {
+  private readonly separators: boolean[] = [];
+
+  constructor(
+    private readonly story = 'document',
+    private readonly onIssue?: (issue: FieldStructureIssue) => void,
+  ) {}
+
+  isInsideFieldCode(): boolean {
+    return this.separators.some((separated) => !separated);
+  }
+
+  advance(type: string | null): void {
+    if (type === 'begin') {
+      this.separators.push(false);
+    } else if (type === 'separate') {
+      if (this.separators.length === 0) {
+        this.report('FIELD_STRAY_SEPARATOR', `Field separator appears outside an open field in ${this.story}`);
+      } else if (this.separators[this.separators.length - 1]) {
+        this.report('FIELD_DUPLICATE_SEPARATOR', `Field at depth ${this.separators.length} has more than one separator in ${this.story}`);
+      } else {
+        this.separators[this.separators.length - 1] = true;
+      }
+    } else if (type === 'end') {
+      if (this.separators.length === 0) {
+        this.report('FIELD_STRAY_END', `Field end appears outside an open field in ${this.story}`);
+      } else {
+        this.separators.pop();
+      }
+    } else {
+      this.report('FIELD_UNKNOWN_CHAR_TYPE', `w:fldChar has missing or unknown w:fldCharType '${type ?? '(missing)'}' in ${this.story}`);
+    }
+  }
+
+  finish(): void {
+    if (this.separators.length > 0) {
+      this.report('FIELD_UNCLOSED_DEPTH', `Field story ${this.story} ends with ${this.separators.length} unclosed field level(s)`);
+    }
+  }
+
+  private report(code: string, message: string): void {
+    this.onIssue?.({ code, message, story: this.story, element: 'w:fldChar' });
+  }
+}
+
 function isW(el: Element, localName: string): boolean {
   return el.namespaceURI === OOXML.W_NS && el.localName === localName;
 }
@@ -101,11 +154,7 @@ export function validateFieldStructure(input: string | FieldStory[]): boolean {
 function collectStrictStackIssuesForStory(xml: string, story: string): FieldStructureIssue[] {
   const root = parseXml(xml).documentElement;
   const issues: FieldStructureIssue[] = [];
-  const separators: boolean[] = [];
-
-  function push(code: string, message: string): void {
-    issues.push({ code, message, story, element: 'w:fldChar' });
-  }
+  const traversal = new FieldTraversal(story, (issue) => issues.push(issue));
 
   function scan(node: Element): void {
     for (let child = node.firstChild; child; child = child.nextSibling) {
@@ -113,46 +162,14 @@ function collectStrictStackIssuesForStory(xml: string, story: string): FieldStru
       const element = child as Element;
       if (isW(element, 'fldChar')) {
         const type = getWAttr(element, 'fldCharType');
-        if (type === 'begin') {
-          separators.push(false);
-        } else if (type === 'separate') {
-          if (separators.length === 0) {
-            push('FIELD_STRAY_SEPARATOR', `Field separator appears outside an open field in ${story}`);
-          } else {
-            const depthIndex = separators.length - 1;
-            if (separators[depthIndex]) {
-              push(
-                'FIELD_DUPLICATE_SEPARATOR',
-                `Field at depth ${separators.length} has more than one separator in ${story}`,
-              );
-            } else {
-              separators[depthIndex] = true;
-            }
-          }
-        } else if (type === 'end') {
-          if (separators.length === 0) {
-            push('FIELD_STRAY_END', `Field end appears outside an open field in ${story}`);
-          } else {
-            separators.pop();
-          }
-        } else {
-          push(
-            'FIELD_UNKNOWN_CHAR_TYPE',
-            `w:fldChar has missing or unknown w:fldCharType '${type ?? '(missing)'}' in ${story}`,
-          );
-        }
+        traversal.advance(type);
       }
       scan(element);
     }
   }
 
   scan(root);
-  if (separators.length > 0) {
-    push(
-      'FIELD_UNCLOSED_DEPTH',
-      `Field story ${story} ends with ${separators.length} unclosed field level(s)`,
-    );
-  }
+  traversal.finish();
   return issues;
 }
 

@@ -145,7 +145,11 @@ describe('tagged-tree offline evaluation', () => {
         date: new Date('2026-09-20T00:00:00.000Z'),
       });
       const output = parseXml(publication.xml);
-      expect(output.getElementsByTagNameNS(W_NS, 'tr')).toHaveLength(3);
+      // Dissimilar rows are a whole-row deletion plus insertion (#1227); either
+      // representation is allowed so long as both projections keep three rows.
+      for (const projected of [acceptAllChanges(publication.xml), rejectAllChanges(publication.xml)]) {
+        expect(parseXml(projected).getElementsByTagNameNS(W_NS, 'tr')).toHaveLength(3);
+      }
       expect(output.getElementsByTagNameNS(W_NS, 'ins').length).toBeGreaterThan(0);
       expect(output.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
       expect(parseXml(acceptAllChanges(publication.xml)).documentElement.textContent).toContain('DuplicateNewDuplicate');
@@ -288,7 +292,7 @@ describe('tagged-tree offline evaluation', () => {
     },
   );
 
-  test('reports package-only changes and their source-projected formatting evidence', async () => {
+  test('represents a page-size-only section change and keeps its source-projected formatting evidence', async () => {
     const paragraph = '<w:p><w:r><w:t>Stable agreement.</w:t></w:r></w:p>';
     const withPageSize = async (width: string, height: string): Promise<Buffer> => {
       const archive = await DocxArchive.load(await buildDocxFromBodyXml(paragraph));
@@ -311,9 +315,12 @@ describe('tagged-tree offline evaluation', () => {
       numbering: DEFAULT_NUMBERING_OPTIONS,
     });
 
-    expect(standalone.unrepresentedChanges).toEqual([
-      expect.objectContaining({ scope: 'section', kind: 'changed' }),
-    ]);
+    // The page-size change is a w:sectPrChange whose snapshot names every
+    // live w:pgSz attribute, so Reject All (the appliers' and Word's, which
+    // restores the snapshot attribute by attribute) brings back the original
+    // size: the change is represented, not reported (#1181).
+    expect(standalone.documentXml).toContain('w:sectPrChange');
+    expect(standalone.unrepresentedChanges).toBeUndefined();
     expect(standalone.formattingFidelity.accept.score).toBe(1);
     expect(standalone.formattingFidelity.reject.score).toBe(1);
   });
@@ -459,6 +466,10 @@ describe('tagged-tree offline evaluation', () => {
           acceptBookmarks: true,
           rejectBookmarks: true,
           fieldStructure: true,
+          acceptParagraphTopology: true,
+          rejectParagraphTopology: true,
+          acceptParagraphProperties: true,
+          rejectParagraphProperties: true,
         },
         failedChecks: ['acceptText' as const],
         failureDetails: undefined,

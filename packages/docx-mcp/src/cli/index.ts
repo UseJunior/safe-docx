@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runServeCommand } from './commands/serve.js';
+import { parseCompareRevisionGrouping } from '@usejunior/docx-compare';
 import { runCompareCommand, type CompareCommandArgs, type CompareCommandResult } from './commands/compare.js';
 import { parseEditArgs, runEditCommand } from './commands/edit.js';
 import { parseGrepArgs, runGrepCommand } from './commands/grep.js';
@@ -66,6 +67,15 @@ function parseCompareArgs(args: string[]): CompareCommandArgs {
         break;
       case '--author':
         options.author = consumeValue(token);
+        break;
+      case '--grouping':
+        options.revisionGrouping = parseCompareRevisionGrouping(consumeValue(token), token);
+        break;
+      case '--no-moves':
+        options.detectMoves = false;
+        break;
+      case '--no-date':
+        options.omitDate = true;
         break;
       default:
         throw new Error(`Unknown option for compare command: ${token}`);
@@ -140,7 +150,14 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       }
 
       if (command === 'compare') {
-        const parsed = parseCompareArgs(rest);
+        let parsed: CompareCommandArgs;
+        try {
+          parsed = parseCompareArgs(rest);
+        } catch (e: unknown) {
+          // A bad flag or value is a usage error: report the message alone,
+          // without a stack trace (#1494).
+          throw new CliCommandFailure(e instanceof Error ? e.message : String(e));
+        }
         let result: CompareCommandResult;
         try {
           result = await handlers.compare(parsed);

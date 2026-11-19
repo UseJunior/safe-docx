@@ -6,7 +6,8 @@
  */
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
-import type { CompareOptions, CompareResult } from './compare-types.js';
+import { choosePlaceholderRevisionDate, omitPlaceholderRevisionDates } from './revisionDateOmission.js';
+import { COMPARE_REVISION_GROUPINGS, DEFAULT_COMPARE_REVISION_GROUPING, type CompareOptions, type CompareResult } from './compare-types.js';
 export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
 
 const REMOVED_COMPARISON_OPTIONS = [
@@ -17,8 +18,15 @@ const REMOVED_COMPARISON_OPTIONS = [
   'maxWordRefinementChangeRanges',
 ] as const;
 
+export {
+  COMPARE_REVISION_GROUPINGS,
+  DEFAULT_COMPARE_REVISION_GROUPING,
+  parseCompareRevisionGrouping,
+} from './compare-types.js';
+
 export type {
   CompareOptions,
+  CompareRevisionGrouping,
   CompareResult,
   CompareStats,
   AncillaryBindingLocator,
@@ -46,10 +54,15 @@ export type {
   ReconstructionIdDeltaSummary,
   ReconstructionInplaceSuccessDiagnostics,
   ReconstructionMode,
+  ParagraphTopologyMismatchDetails,
+  ParagraphPropertyMismatchDetails,
   UnrepresentedChange,
   UnrepresentedChangeKind,
   UnrepresentedChangeScope,
   UnrepresentedContentControlChange,
+  UnrepresentedDrawingChange,
+  UnrepresentedPictureChange,
+  UnrepresentedTableChange,
   ReconstructionRebuildSafetyDiagnostics,
   ReconstructionSafetyCheckName,
   ReconstructionSafetyChecks,
@@ -88,11 +101,26 @@ export async function compareDocuments(
     date,
     ignoreFormatting,
     detectMoves,
+    revisionGrouping = DEFAULT_COMPARE_REVISION_GROUPING,
   } = options;
+  if (!COMPARE_REVISION_GROUPINGS.includes(revisionGrouping)) {
+    throw new TypeError(
+      `Unsupported revisionGrouping: ${String(revisionGrouping)}. ` +
+      `Expected one of: ${COMPARE_REVISION_GROUPINGS.join(', ')}.`,
+    );
+  }
 
+  if (date !== undefined && date !== null && !(date instanceof Date && !Number.isNaN(date.getTime()))) {
+    throw new TypeError('Unsupported date: expected a valid Date, null (omit w:date) or undefined (now).');
+  }
+  // `null`: run with a placeholder timestamp absent from both inputs, then
+  // strip exactly that value, so pre-existing revisions keep their dates.
+  const placeholderDate = date === null
+    ? await choosePlaceholderRevisionDate([original, revised])
+    : undefined;
   const tagged = await compareDocumentsAtomizer(original, revised, {
     author,
-    date,
+    date: placeholderDate ?? date ?? undefined,
     formatDetection:
       ignoreFormatting === undefined
         ? undefined
@@ -101,10 +129,13 @@ export async function compareDocuments(
       detectMoves === undefined
         ? undefined
         : { detectMoves },
+    revisionGrouping,
   });
 
   return {
-    document: tagged.document,
+    document: placeholderDate === undefined
+      ? tagged.document
+      : await omitPlaceholderRevisionDates(tagged.document, placeholderDate),
     stats: tagged.stats,
     engine: tagged.engine,
     ...(tagged.unrepresentedChanges === undefined

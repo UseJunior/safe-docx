@@ -15,7 +15,7 @@ import { createWmlElement, createWmlTextElement } from '../../primitives/dom-hel
 import { buildFootnoteReferenceRun } from '../../primitives/footnote-shapes.js';
 import { W } from '../../primitives/namespaces.js';
 import { GenerationInternalError } from '../errors.js';
-import type { CrossReferenceSpec, FieldSpec, InlineSpec, RunProps } from '../types.js';
+import type { CrossReferenceSpec, FieldSpec, InlineSpec, RunProps, TableOfContentsEntrySpec, TableOfContentsFieldSpec } from '../types.js';
 import type { BlockEmitContext } from './emit-context.js';
 import { buildRunPropsElement } from './properties.js';
 
@@ -109,6 +109,68 @@ function buildCrossReferenceRuns(doc: Document, reference: CrossReferenceSpec, c
   ];
 }
 
+function instructionRun(doc: Document, text: string): Element {
+  const instr = createWmlElement(doc, W.instrText);
+  instr.setAttribute('xml:space', 'preserve');
+  instr.appendChild(doc.createTextNode(text));
+  return makeRun(doc, {}, undefined, instr);
+}
+
+/**
+ * The instruction of a table of contents built from TC entries of the given
+ * levels, without page numbers (`\n`), with canonical surrounding spaces.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.68
+ */
+export function tableOfContentsInstruction(field: TableOfContentsFieldSpec): string {
+  return ` TOC \\f \\l "${field.levels.from}-${field.levels.to}" \\n `;
+}
+
+/**
+ * The instruction of a TC entry, with canonical surrounding spaces.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.63
+ */
+export function tableOfContentsEntryInstruction(entry: Pick<TableOfContentsEntrySpec, 'text' | 'level'>): string {
+  return ` TC "${entry.text}" \\l ${entry.level} `;
+}
+
+/**
+ * The runs that open a table of contents: fldChar begin, the TOC
+ * instruction and fldChar separate. The cached result follows as the
+ * paragraphs' own runs, and {@link buildTableOfContentsEndRun} closes it in
+ * the last of them.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.68
+ */
+export function buildTableOfContentsBeginRuns(doc: Document, field: TableOfContentsFieldSpec): Element[] {
+  return [
+    makeRun(doc, {}, undefined, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'begin' })),
+    instructionRun(doc, tableOfContentsInstruction(field)),
+    makeRun(doc, {}, undefined, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'separate' })),
+  ];
+}
+
+/** The fldChar end that closes a table of contents. */
+export function buildTableOfContentsEndRun(doc: Document): Element {
+  return makeRun(doc, {}, undefined, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'end' }));
+}
+
+/**
+ * A TC entry: fldChar begin, the TC instruction, fldChar end. A TC field has
+ * no result, so it shows nothing.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.63
+ */
+function buildTableOfContentsEntryRuns(doc: Document, entry: TableOfContentsEntrySpec): Element[] {
+  return [
+    makeRun(doc, {}, undefined, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'begin' })),
+    instructionRun(doc, tableOfContentsEntryInstruction(entry)),
+    makeRun(doc, {}, undefined, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'end' })),
+  ];
+}
+
 /** Build the w:r element(s) for one inline spec node. */
 export function buildInlineRuns(doc: Document, inline: InlineSpec, ctx?: BlockEmitContext): Element[] {
   switch (inline.kind) {
@@ -123,6 +185,8 @@ export function buildInlineRuns(doc: Document, inline: InlineSpec, ctx?: BlockEm
       return buildFieldRuns(doc, inline, ctx);
     case 'crossReference':
       return buildCrossReferenceRuns(doc, inline, ctx);
+    case 'tableOfContentsEntry':
+      return buildTableOfContentsEntryRuns(doc, inline);
     case 'tab':
       return [makeRun(doc, {}, ctx, createWmlElement(doc, W.tab))];
     case 'break': {

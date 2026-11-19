@@ -18,6 +18,10 @@ type McpComment = {
   start_char_offset?: number;
   end_run_index?: number;
   end_char_offset?: number;
+  // Present only when commentsExtended.xml names a thread parent that cannot be
+  // followed (missing, self, or cyclic link); the comment is then listed at the
+  // top level instead of being dropped (#1353).
+  unresolved_thread_parent?: { para_id_parent: string; reason: string };
   replies: McpComment[];
 };
 
@@ -41,6 +45,9 @@ function mapComment(c: Comment, depth = 0): McpComment {
     start_char_offset: c.startCharOffset,
     end_run_index: c.endRunIndex,
     end_char_offset: c.endCharOffset,
+    unresolved_thread_parent: c.unresolvedThreadParent
+      ? { para_id_parent: c.unresolvedThreadParent.paraIdParent, reason: c.unresolvedThreadParent.reason }
+      : undefined,
     replies: depth < MAX_REPLY_DEPTH ? c.replies.map((r) => mapComment(r, depth + 1)) : [],
   };
 }

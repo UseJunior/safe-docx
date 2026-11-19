@@ -141,7 +141,25 @@ const deletedSectionParagraph =
   `</w:sectPr></w:pPr><w:r><w:t>Deleted section</w:t></w:r></w:p>`;
 
 const UNREP_05 =
-  '[SDX-CMP-UNREP-05] Story slot dropped from a surviving section is reported as unrepresented';
+  '[SDX-CMP-UNREP-05] Story slot dropped from a surviving section is tracked as deleted content';
+
+/**
+ * Text of each story a projection selects, as `<path>=<text>`. A slot the
+ * revision dropped from a surviving section keeps a reference to a part whose
+ * content is a tracked deletion (#1394), so Accept All selects it blank.
+ */
+async function selectedStoryTexts(
+  archive: DocxArchive,
+  documentXml: string,
+  project: (xml: string) => string,
+): Promise<string[]> {
+  const texts: string[] = [];
+  for (const path of await selectedTargets(archive, project(documentXml))) {
+    const xml = await archive.getFile(path);
+    texts.push(`${path}=${xml === null ? '<missing>' : extractRoundTripComparisonText(project(xml)).trim()}`);
+  }
+  return texts;
+}
 
 describe('relationship-selected story removed with its section (#754)', () => {
 
@@ -184,15 +202,16 @@ describe('relationship-selected story removed with its section (#754)', () => {
         expect(result.stats.deletions).toBeGreaterThanOrEqual(5);
       });
 
-      await then('the VML carrier is not wrapped in a revision element', () => {
+      await then('the VML carrier run is a tracked deletion, so Accept All removes the emptied shape', () => {
+        // Accept All carries the removed section's reference onto the final
+        // section (#1144), so an untracked carrier would still draw the
+        // emptied shape's outline there (#1394).
         const footer = parseXml(outputFooter);
-        for (const deletion of Array.from(footer.getElementsByTagNameNS(OOXML.W_NS, 'del'))) {
-          expect(deletion.getElementsByTagNameNS(OOXML.W_NS, 'pict')).toHaveLength(0);
-          expect(deletion.getElementsByTagNameNS(OOXML.W_NS, 'drawing')).toHaveLength(0);
-        }
         const pict = footer.getElementsByTagNameNS(OOXML.W_NS, 'pict').item(0);
         expect(pict).not.toBeNull();
-        expect((pict!.parentNode!.parentNode as Element).localName).toBe('p');
+        expect((pict!.parentNode!.parentNode as Element).localName).toBe('del');
+        expect(acceptAllChanges(outputFooter)).not.toContain('<w:pict');
+        expect(rejectAllChanges(outputFooter)).toContain('<w:pict');
       });
 
       await then('revision identifiers stay unique across the package', () => {
@@ -221,16 +240,17 @@ describe('relationship-selected story removed with its section (#754)', () => {
         for (const text of FOOTER_TEXTS) expect(rejectedFooter).toContain(text);
       });
 
-      await then('the footer is no longer reported as unrepresented; the section removal still is', () => {
-        expect(result.unrepresentedChanges).toEqual([
-          { scope: 'section', kind: 'removed', sectionIndex: 1 },
-        ]);
+      await then('neither the footer nor the section removal is reported as unrepresented', () => {
+        // The removed break rides on a tracked paragraph-mark deletion that
+        // carries its full w:sectPr: Reject All restores the section and
+        // Accept All removes it, so the removal is represented (#1181).
+        expect(result.unrepresentedChanges).toBeUndefined();
       });
     },
   );
 
   test.openspec(UNREP_05)(
-    'reports a first-page header dropped from a surviving section as unrepresented',
+    'tracks a first-page header dropped from a surviving section as deleted content',
     async () => {
       const storyXml =
         `<?xml version="1.0"?><w:hdr xmlns:w="${OOXML.W_NS}">` +
@@ -256,23 +276,25 @@ describe('relationship-selected story removed with its section (#754)', () => {
       const archive = await DocxArchive.load(result.document);
       const documentXml = await archive.getDocumentXml();
 
-      // CT_SectPrBase cannot carry the dropped reference, so no revision can
-      // restore it; the difference is reported instead of snapshotted (#944).
+      // CT_SectPrBase cannot carry the dropped reference (#944). The section
+      // keeps selecting a first-page header whose content is a tracked
+      // deletion, so Accept All shows a blank first-page header, as the
+      // revised section does, and Reject All the original one (#1394).
       expect(snapshotStoryReferences(documentXml)).toBe(0);
-      expect(await selectedTargets(archive, acceptAllChanges(documentXml))).toEqual([]);
-      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual([]);
-      expect(result.unrepresentedChanges).toEqual([
-        { scope: 'header', kind: 'removed', sectionIndex: 0, role: 'first' },
-      ]);
+      const [accepted] = await selectedStoryTexts(archive, documentXml, acceptAllChanges);
+      const [rejected] = await selectedStoryTexts(archive, documentXml, rejectAllChanges);
+      expect(accepted).toMatch(/^word\/header\d+\.xml=$/u);
+      expect(rejected).toBe(`${accepted}Cover page header`);
+      expect(result.unrepresentedChanges).toBeUndefined();
     },
   );
 
   test.openspec(UNREP_05)(
-    'reports a VML text-box footer dropped from a surviving section as unrepresented',
+    'tracks a VML text-box footer dropped from a surviving section as deleted content',
     async () => {
-      // The text-box lifecycle guard and the deleted classifier share one
-      // admissibility rule; this input must neither throw
-      // UnsupportedTextBoxRevisionError nor emit an invalid snapshot.
+      // The text-box lifecycle guard and the slot normalization share the
+      // footer: this input must neither throw UnsupportedTextBoxRevisionError
+      // nor emit an invalid snapshot.
       const original = await packageWithSelectedStory({
         bodyXml: paragraph('Body'),
         sectPrXml: `<w:sectPr><w:footerReference w:type="default" r:id="rIdStory"/></w:sectPr>`,
@@ -287,11 +309,11 @@ describe('relationship-selected story removed with its section (#754)', () => {
       const documentXml = await archive.getDocumentXml();
 
       expect(snapshotStoryReferences(documentXml)).toBe(0);
-      expect(await selectedTargets(archive, acceptAllChanges(documentXml))).toEqual([]);
-      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual([]);
-      expect(result.unrepresentedChanges).toEqual([
-        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-      ]);
+      const [accepted] = await selectedStoryTexts(archive, documentXml, acceptAllChanges);
+      const [rejected] = await selectedStoryTexts(archive, documentXml, rejectAllChanges);
+      expect(accepted).toMatch(/^word\/footer\d+\.xml=$/u);
+      for (const text of FOOTER_TEXTS) expect(rejected).toContain(text);
+      expect(result.unrepresentedChanges).toBeUndefined();
     },
   );
 
@@ -324,22 +346,21 @@ describe('relationship-selected story removed with its section (#754)', () => {
       // must not read as an empty comparison.
       expect(result.stats.deletions).toBeGreaterThanOrEqual(2);
       expect(result.stats.deletedRanges).toBeGreaterThanOrEqual(2);
-      expect(result.unrepresentedChanges).toEqual([
-        { scope: 'section', kind: 'removed', sectionIndex: 1 },
-      ]);
+      // The removed break is a tracked paragraph-mark deletion (#1181).
+      expect(result.unrepresentedChanges).toBeUndefined();
     },
   );
 
   test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
-    'tracks the footer of a deleted middle section while the positional detector still reports later slots',
+    'tracks the footer of a deleted middle section and reports none of the index-shifted slots',
     async () => {
       // Sections A/B/C each select their own footer; the revision removes B.
       // The planner identifies B's footer by pairing, not position, so the
       // redline deletes it and leaves A and C untouched.
-      // detectUnrepresentedChanges is positional over section index
-      // (pre-existing, shared with the insertion side), so it also reports
-      // the shift of C into B's position; those entries stay listed rather
-      // than being claimed as represented by B's deletion.
+      // detectUnrepresentedChanges pairs sections by index, so it sees C
+      // shifted into B's position. Reject All of the redline shows A, B, C
+      // and Accept All shows A, C, each section with its own footer, so those
+      // index-shifted entries are represented and dropped (#1427).
       const sectionParagraph = (id: string, text: string): string =>
         `<w:p><w:pPr><w:sectPr><w:footerReference w:type="default" r:id="${id}"/></w:sectPr></w:pPr>` +
         `<w:r><w:t>${text}</w:t></w:r></w:p>`;
@@ -379,22 +400,20 @@ describe('relationship-selected story removed with its section (#754)', () => {
         .toEqual(['word/footer-A.xml', 'word/footer-C.xml']);
       expect(await selectedTargets(archive, rejectAllChanges(documentXml)))
         .toEqual(['word/footer-A.xml', 'word/footer-B.xml', 'word/footer-C.xml']);
-      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-        { scope: 'footer', kind: 'changed', sectionIndex: 1, role: 'default' },
-        { scope: 'footer', kind: 'removed', sectionIndex: 2, role: 'default' },
-        { scope: 'section', kind: 'removed', sectionIndex: 3 },
-      ]));
+      expect(result.unrepresentedChanges).toBeUndefined();
     },
   );
 
   test.openspec('[SDX-CMP-UNREP-04] Story selected only by a removed section slot is a tracked deletion')(
-    'does not track-delete a footer whose slot the revision rebinds to a different part',
+    'redlines a footer whose slot the revision rebinds to a different part as one story, not a one-sided deletion',
     async () => {
-      // The section survives and still selects a default footer, but through a
-      // different, unpaired part. The slot was rebound, not removed, so showing
-      // the old footer as deleted with no matching insertion would misstate
-      // the revision; the pair stays in unrepresentedChanges instead. The
-      // checked-in ILPA pair exercises the same shape across many sections.
+      // The section survives and still shows a default footer, but through a
+      // different part. The slot was rebound, not removed, so the old footer
+      // is not a tracked deletion with no matching insertion. Since #1390 the
+      // effective slot, not the part name, is the story's identity: the new
+      // part receives the redline of the old footer's text, so Accept All
+      // shows the new footer and Reject All the old one. (Before #1390 the
+      // page-width change kept the pair in unrepresentedChanges.)
       const withFooter = async (
         pageWidth: number,
         target: string,
@@ -416,12 +435,15 @@ describe('relationship-selected story removed with its section (#754)', () => {
 
       const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
       const archive = await DocxArchive.load(result.document);
-      for (const path of archive.listFiles().filter((name) => /^word\/footer/u.test(name))) {
-        expect(await archive.getFile(path), path).not.toContain('<w:del');
-      }
-      expect(result.stats.deletions).toBe(0);
-      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-        { scope: 'footer', kind: 'changed', sectionIndex: 0, role: 'default' },
+      expect(archive.listFiles().filter((name) => /^word\/footer/u.test(name))).toEqual(['word/footer2.xml']);
+      const footer = (await archive.getFile('word/footer2.xml'))!;
+      const footerDocument = parseXml(footer);
+      expect(footerDocument.getElementsByTagNameNS(OOXML.W_NS, 'del').length).toBeGreaterThan(0);
+      expect(footerDocument.getElementsByTagNameNS(OOXML.W_NS, 'ins').length).toBeGreaterThan(0);
+      expect(extractRoundTripComparisonText(acceptAllChanges(footer))).toBe('New line one\nNew line two');
+      expect(extractRoundTripComparisonText(rejectAllChanges(footer))).toBe('Old footer');
+      expect(result.unrepresentedChanges ?? []).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'footer' }),
       ]));
     },
   );
@@ -453,7 +475,7 @@ describe('relationship-selected story removed with its section (#754)', () => {
   );
 
   test.openspec(UNREP_05)(
-    'reports the CC BY footer dropped from the real OpenAgreements Mutual NDA as unrepresented',
+    'tracks the CC BY footer dropped from the real OpenAgreements Mutual NDA as deleted content',
     async () => {
       const original = await readFile(new URL(
         '../../../../tests/test_documents/open-agreements/mutual-nda.docx',
@@ -472,19 +494,23 @@ describe('relationship-selected story removed with its section (#754)', () => {
       bodyText.textContent = 'Mutual Confidentiality Agreement';
       revisedArchive.setDocumentXml(new XMLSerializer().serializeToString(document));
 
+      const originalFooter = extractRoundTripComparisonText(
+        (await (await DocxArchive.load(original)).getFile('word/footer1.xml'))!,
+      ).trim();
       const result = await compareDocumentsAtomizer(original, await revisedArchive.save(), COMPARE_OPTIONS);
       const archive = await DocxArchive.load(result.document);
-      const footer = await archive.getFile('word/footer1.xml');
-      // The revised package still carries the unselected part; it is not
-      // redlined because no schema-valid revision can reselect it.
-      expect(footer ?? '').not.toContain('<w:del');
       const documentXml = await archive.getDocumentXml();
       expect(snapshotStoryReferences(documentXml)).toBe(0);
-      expect(await selectedTargets(archive, acceptAllChanges(documentXml))).toEqual(['word/header1.xml']);
-      expect(await selectedTargets(archive, rejectAllChanges(documentXml))).toEqual(['word/header1.xml']);
-      expect(result.unrepresentedChanges).toEqual([
-        { scope: 'footer', kind: 'removed', sectionIndex: 0, role: 'default' },
-      ]);
+      const accepted = await selectedStoryTexts(archive, documentXml, acceptAllChanges);
+      const rejected = await selectedStoryTexts(archive, documentXml, rejectAllChanges);
+      // The header is unchanged; the footer slot shows a blank story after
+      // Accept All and the CC BY footer after Reject All (#1394).
+      expect(accepted).toContainEqual(expect.stringMatching(/^word\/header1\.xml=/u));
+      const acceptedFooter = accepted.find((entry) => /^word\/footer/u.test(entry));
+      expect(acceptedFooter).toMatch(/^word\/footer\d+\.xml=$/u);
+      expect(rejected).toContain(`${acceptedFooter}${originalFooter}`);
+      expect(originalFooter).not.toBe('');
+      expect(result.unrepresentedChanges).toBeUndefined();
     },
     30_000,
   );

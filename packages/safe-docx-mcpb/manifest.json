@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "safe-docx",
   "display_name": "Safe Docx",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "AI-native Word (.docx) and OpenDocument (.odt) editing with stable paragraph anchors and deterministic document operations.",
   "long_description": "Safe Docx lets Claude work directly with .docx files on your local filesystem. It provides stable paragraph IDs (_bk_*) for precise editing while preserving formatting and structure.\n\nCore capabilities include reading/searching content, formatting-preserving edits and inserts, deterministic layout controls, tracked-changes output, comments, footnote tools, document comparison, and revision extraction.",
   "author": {
@@ -35,6 +35,14 @@
     {
       "name": "get_sections",
       "description": "Inspect DOCX sections, page setup, header/footer references, and page-number settings."
+    },
+    {
+      "name": "get_document_properties",
+      "description": "Read DOCX core and extended document properties (title, author, dates, application, company)."
+    },
+    {
+      "name": "get_headers_footers",
+      "description": "Read DOCX headers and footers per section (default/first/even, inherited parts) with paragraph ids for editing."
     },
     {
       "name": "batch_edit",
@@ -71,6 +79,14 @@
     {
       "name": "insert_section_break",
       "description": "Insert a tracked DOCX section break after a stable main-body paragraph."
+    },
+    {
+      "name": "set_document_properties",
+      "description": "Set or remove DOCX core and extended document properties from a closed set (untracked package mutation)."
+    },
+    {
+      "name": "set_header_footer",
+      "description": "Create or reuse a DOCX header/footer part (text, PAGE/NUMPAGES fields) and attach it to one section, keeping other sections unchanged."
     },
     {
       "name": "format_numbering",

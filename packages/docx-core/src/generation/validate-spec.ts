@@ -28,6 +28,7 @@ import { isWordBookmarkName } from './bookmark-names.js';
 import { GenerationSpecError } from './errors.js';
 import { WML_SCHEMA_ENUM_SETS, type WmlSchemaEnumType } from './schema-enum-domains.js';
 import { FOOTNOTE_REFERENCE_STYLE_ID, FOOTNOTE_TEXT_STYLE_ID } from '../primitives/footnote-shapes.js';
+import { DocumentPropertiesError, validateDocumentPropertyValue } from '../primitives/document_properties.js';
 import type {
   BlockSpec,
   BorderSpec,
@@ -134,7 +135,9 @@ export function validateSpec(spec: DocumentSpec): void {
     throw new GenerationSpecError('empty_sections', '/sections', 'DocumentSpec.sections must contain at least one section');
   }
 
+  validateMeta(spec);
   validateTheme(spec);
+  validateCompatibility(spec);
   if (spec.defaults?.run) validateRunProps(spec.defaults.run, '/defaults/run');
   if (spec.defaults?.paragraph) validateParagraphProps(spec.defaults.paragraph, '/defaults/paragraph');
   const declaredStyleIds = validateStyles(spec.styles ?? []);
@@ -337,7 +340,8 @@ function numberingDefinitions(spec: DocumentSpec): { of(paragraph: ParagraphSpec
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
  */
 function validateTextReferenceTarget(bookmark: string, target: ParagraphSpec, path: string): void {
-  const unsupportedRun = target.runs.find((inline) => inline.kind !== 'text' && inline.kind !== 'footnote');
+  // TC entries trail the paragraph and are written after its bookmark, so the reference does not copy them.
+  const unsupportedRun = target.runs.find((inline) => inline.kind !== 'text' && inline.kind !== 'footnote' && inline.kind !== 'tableOfContentsEntry');
   if (unsupportedRun) {
     throw new GenerationSpecError(
       'invalid_value',
@@ -348,6 +352,62 @@ function validateTextReferenceTarget(bookmark: string, target: ParagraphSpec, pa
   const shown = target.runs.map((inline) => (inline.kind === 'text' ? inline.text : '')).join('');
   if (shown.trim().length === 0) {
     throw new GenerationSpecError('invalid_value', path, `A text cross-reference to bookmark '${bookmark}' would show empty text`);
+  }
+}
+
+/** The opt-in compatibility settings generation can write, each a boolean. */
+const COMPATIBILITY_SETTINGS: ReadonlySet<string> = new Set(['doNotExpandShiftReturn']);
+
+/** The docProps fields each meta key is written as, so one validator checks both generation and editing. */
+const META_PROPERTIES = {
+  title: ['core', 'title'],
+  author: ['core', 'creator'],
+  createdIso: ['core', 'created'],
+  modifiedIso: ['core', 'modified'],
+  lastModifiedBy: ['core', 'lastModifiedBy'],
+  application: ['app', 'application'],
+} as const;
+
+/**
+ * Document-property values: strings XML can carry, W3CDTF dates for
+ * `createdIso` and `modifiedIso`, and `application` a string or null (null
+ * leaves the element out). An empty string writes nothing, as it always did,
+ * except for `application`, where it is refused: pass null to leave it out.
+ */
+function validateMeta(spec: DocumentSpec): void {
+  const meta = spec.meta;
+  if (meta === undefined) return;
+  if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) {
+    throw new GenerationSpecError('invalid_value', '/meta', 'meta must be an object');
+  }
+  for (const [key, value] of Object.entries(meta)) {
+    const property = META_PROPERTIES[key as keyof typeof META_PROPERTIES];
+    if (!property) throw new GenerationSpecError('invalid_value', `/meta/${key}`, `Unsupported meta field '${key}'`);
+    if (value === undefined || (value === '' && key !== 'application')) continue;
+    if (value === null && key !== 'application') {
+      throw new GenerationSpecError('invalid_value', `/meta/${key}`, `${key} must be a string; leave it out for none`);
+    }
+    try {
+      validateDocumentPropertyValue(property[0], property[1], value);
+    } catch (error) {
+      if (!(error instanceof DocumentPropertiesError)) throw error;
+      throw new GenerationSpecError('invalid_value', `/meta/${key}`, error.message.replace(`${property[0]}.${property[1]}`, key));
+    }
+  }
+}
+
+function validateCompatibility(spec: DocumentSpec): void {
+  if (spec.compatibility === undefined) return;
+  if (spec.compatibility === null || typeof spec.compatibility !== 'object' || Array.isArray(spec.compatibility)) {
+    throw new GenerationSpecError('invalid_value', '/compatibility', 'compatibility must be an object of boolean settings');
+  }
+  for (const [key, value] of Object.entries(spec.compatibility)) {
+    if (!COMPATIBILITY_SETTINGS.has(key)) {
+      throw new GenerationSpecError('invalid_value', `/compatibility/${key}`, `Unsupported compatibility setting '${key}'`);
+    }
+    if (value !== undefined && typeof value !== 'boolean') {
+      throw new GenerationSpecError('invalid_value', `/compatibility/${key}`, `${key} must be a boolean`);
+    }
   }
 }
 
@@ -650,6 +710,59 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
   section.blocks.forEach((block, blockIndex) => {
     validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds, numbering, 'body');
   });
+  validateTablesOfContents(section, path);
+}
+
+/**
+ * A table of contents spans consecutive top-level body paragraphs of one
+ * section, from the paragraph that opens it to the one that closes it, and
+ * tables of contents do not nest. Its paragraphs are its cached result, as
+ * Word writes it: text runs and tabs only, with no bookmark, list or note,
+ * so the result holds nothing Word would not regenerate.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.68
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
+function validateTablesOfContents(section: SectionSpec, path: string): void {
+  let open: string | null = null;
+  section.blocks.forEach((block, blockIndex) => {
+    const blockPath = `${path}/blocks/${blockIndex}`;
+    if (block.kind === 'table') {
+      if (open !== null) throw new GenerationSpecError('invalid_value', blockPath, `The table of contents opened at ${open} must close before a table`);
+      walkParagraphs([block], `${path}/blocks`, 'body', (paragraph, paragraphPath) => {
+        if (paragraph.tableOfContents !== undefined) throw new GenerationSpecError('invalid_value', `${paragraphPath}/tableOfContents`, 'A table of contents sits in top-level body paragraphs, not in a table cell');
+      });
+      return;
+    }
+    const marks = block.tableOfContents;
+    if (marks === undefined && open === null) return;
+    if (marks !== undefined && (typeof marks !== 'object' || marks === null)) {
+      throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents`, 'tableOfContents must be an object');
+    }
+    if (marks?.opens !== undefined) {
+      if (open !== null) throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents/opens`, `Tables of contents do not nest; the one opened at ${open} is still open`);
+      const levels = (marks.opens as { levels?: { from?: unknown; to?: unknown } }).levels;
+      requireInteger(levels?.from, `${blockPath}/tableOfContents/opens/levels/from`, 'A table of contents level is an integer from 1 to 9', 1, 9);
+      requireInteger(levels?.to, `${blockPath}/tableOfContents/opens/levels/to`, 'A table of contents level is an integer from 1 to 9', 1, 9);
+      if ((levels!.from as number) > (levels!.to as number)) {
+        throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents/opens/levels`, 'A table of contents level range runs from its lower level to its higher one');
+      }
+      open = blockPath;
+    }
+    if (open === null) throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents`, 'A table of contents paragraph must follow the paragraph that opens it');
+    if (block.bookmark !== undefined || block.list !== undefined || block.note !== undefined) {
+      throw new GenerationSpecError('invalid_value', blockPath, 'A table of contents paragraph carries no bookmark, list or drafting note');
+    }
+    const other = block.runs.findIndex((inline) => inline.kind !== 'text' && inline.kind !== 'tab');
+    if (other >= 0) {
+      throw new GenerationSpecError('invalid_value', `${blockPath}/runs/${other}`, `A table of contents paragraph holds text and tabs only, not a ${block.runs[other]!.kind}`);
+    }
+    if (marks?.closes !== undefined) {
+      if (marks.closes !== true) throw new GenerationSpecError('invalid_value', `${blockPath}/tableOfContents/closes`, 'closes must be true');
+      open = null;
+    }
+  });
+  if (open !== null) throw new GenerationSpecError('invalid_value', open, 'A table of contents must close in the section that opens it');
 }
 
 /**
@@ -982,6 +1095,13 @@ function validateParagraph(
   paragraph.runs.forEach((run, runIndex) => {
     validateInline(run, `${path}/runs/${runIndex}`, styleIds, numbering, story);
   });
+  if (paragraph.tableOfContents !== undefined && story !== 'body') {
+    throw new GenerationSpecError('invalid_value', `${path}/tableOfContents`, 'A table of contents sits in top-level body paragraphs, not in a header, footer or footnote');
+  }
+  const firstEntry = paragraph.runs.findIndex((run) => run.kind === 'tableOfContentsEntry');
+  if (firstEntry >= 0 && paragraph.runs.slice(firstEntry).some((run) => run.kind !== 'tableOfContentsEntry')) {
+    throw new GenerationSpecError('invalid_value', `${path}/runs/${firstEntry}`, 'Table of contents entries follow every other inline of their paragraph');
+  }
 }
 
 type ParagraphProperties = NonNullable<StyleSpec['paragraph']>;
@@ -1040,8 +1160,18 @@ function validateInline(
   numbering: Map<string, Set<number>>,
   story: StoryContext,
 ): void {
-  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote' && run.kind !== 'crossReference') {
+  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text' && run.kind !== 'footnote' && run.kind !== 'crossReference' && run.kind !== 'tableOfContentsEntry') {
     unsupported(path, `inline kind '${(run as { kind: string }).kind}'`);
+  }
+  if (run.kind === 'tableOfContentsEntry') {
+    if (story !== 'body') {
+      throw new GenerationSpecError('invalid_value', path, 'Table of contents entries may sit only in body paragraphs, not in footnotes, headers or footers');
+    }
+    if (typeof run.text !== 'string' || run.text.trim().length === 0 || /["\\\u0000-\u001f]/u.test(run.text)) {
+      throw new GenerationSpecError('invalid_value', `${path}/text`, 'A table of contents entry has non-blank one-line text without a double quote or backslash');
+    }
+    requireInteger(run.level, `${path}/level`, 'A table of contents entry level is an integer from 1 to 9', 1, 9);
+    return;
   }
   if (run.kind === 'crossReference') {
     if (typeof run.bookmark !== 'string' || run.bookmark.length === 0) {

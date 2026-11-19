@@ -3,13 +3,57 @@ export interface CompareOptions {
   author?: string;
   /**
    * Revision timestamp used for generated track changes (`w:date`).
-   * Default: current time.
+   * Default (`undefined`): current time. `null` omits `w:date` from every
+   * revision this comparison creates (the attribute is optional in
+   * ECMA-376); revisions already present in an input keep their own dates.
    */
-  date?: Date;
+  date?: Date | null;
   /** Ignore formatting differences. Default: false */
   ignoreFormatting?: boolean;
   /** Detect content moved within the document. Default: true */
   detectMoves?: boolean;
+  /**
+   * How generated run revisions are grouped. `'readable-semantic'` (the
+   * default, {@link DEFAULT_COMPARE_REVISION_GROUPING}) regroups each change
+   * cluster as one deletion followed by one insertion, absorbing short
+   * unchanged stretches between changes. `'token-minimal'` emits the smallest
+   * deletion/insertion set, which alternates word by word in a heavily
+   * rewritten paragraph. Accept All and Reject All projections are the same
+   * under both.
+   */
+  revisionGrouping?: CompareRevisionGrouping;
+}
+
+/** Public revision-grouping presentation policies accepted by `compareDocuments`. */
+export type CompareRevisionGrouping = 'token-minimal' | 'readable-semantic';
+
+/** The public revision-grouping values, in documentation order. */
+export const COMPARE_REVISION_GROUPINGS: readonly CompareRevisionGrouping[] = [
+  'token-minimal',
+  'readable-semantic',
+];
+
+/**
+ * The one revision-grouping default shared by the library, both compare CLIs
+ * and the MCP `compare_documents` tool, so the same pair yields the same
+ * redline on every surface (#1494). Pass `revisionGrouping: 'token-minimal'`
+ * for the previous library behaviour.
+ */
+export const DEFAULT_COMPARE_REVISION_GROUPING: CompareRevisionGrouping = 'readable-semantic';
+
+/**
+ * Validates a revision-grouping value supplied as text (a CLI flag value),
+ * throwing a message that names the accepted values.
+ */
+export function parseCompareRevisionGrouping(value: string, flagName = '--grouping'): CompareRevisionGrouping {
+  const match = COMPARE_REVISION_GROUPINGS.find((grouping) => grouping === value);
+  if (match === undefined) {
+    throw new Error(
+      `Invalid value for ${flagName}: ${JSON.stringify(value)}. ` +
+      `Expected one of: ${COMPARE_REVISION_GROUPINGS.join(', ')} (default: ${DEFAULT_COMPARE_REVISION_GROUPING}).`,
+    );
+  }
+  return match;
 }
 
 /** @internal A source-side range whose generated revision must remain attributable. */
@@ -22,8 +66,11 @@ export interface RevisionAttributionRange {
   end: number;
 }
 
-/** @internal Bounded presentation policy used by the Markdoc compiler. */
-export type RevisionGroupingPolicy = 'token-minimal' | 'readable-whitespace';
+/**
+ * @internal Presentation policy for generated run revisions. Markdoc selects
+ * `readable-whitespace`; `readable-semantic` is the public readable policy.
+ */
+export type RevisionGroupingPolicy = 'token-minimal' | 'readable-whitespace' | 'readable-semantic';
 
 /** @internal The exact generated revision interval for one attributed operation. */
 export interface RevisionAttribution {
@@ -105,19 +152,139 @@ export type ComparisonStrategy = 'tagged-tree' | 'legacy';
 export type ComparisonStrategyFallbackReason =
   | 'tagged_tree_publication_safety_check_failed';
 
-export type UnrepresentedChangeScope = 'section' | 'header' | 'footer' | 'contentControl';
+export type UnrepresentedChangeScope =
+  | 'section'
+  | 'header'
+  | 'footer'
+  | 'contentControl'
+  | 'picture'
+  | 'drawing'
+  | 'table';
 export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
 
-/** Identity of the content control whose properties differ (`contentControl` scope). */
+/**
+ * Identity of the content control whose properties differ, or of a whole block
+ * container inserted or deleted (`contentControl` scope).
+ */
 export interface UnrepresentedContentControlChange {
-  /** Zero-based document-order ordinal among the revised document's content controls. */
+  /**
+   * Zero-based document-order ordinal among the revised document's content
+   * controls. For a whole container (`element` `sdt` or `customXml`), its
+   * ordinal among the comparison output's elements of that name. For a
+   * custom XML element's properties (`customXmlPr`), the ordinal of the
+   * enclosing `w:customXml` among the comparison output's `w:customXml`
+   * elements.
+   */
   index: number;
-  /** The property element that differs. */
-  element: 'sdtPr' | 'sdtEndPr';
+  /**
+   * The property element that differs, or, for a whole block container present
+   * in one document only, the container (`sdt` or `customXml`). The redline
+   * tracks that container's paragraphs, runs and table rows, but no revision
+   * can wrap the container itself, so Reject All of an added one (Accept All
+   * of a removed one) leaves it empty, holding one empty paragraph.
+   */
+  element: 'sdtPr' | 'sdtEndPr' | 'customXmlPr' | 'sdt' | 'customXml';
   /** `w:id`, `w:tag` and `w:alias` from the control's `w:sdtPr` (revised side first), when present. */
   id?: string;
   tag?: string;
   alias?: string;
+  /**
+   * For a whole `w:customXml` container or its `w:customXmlPr`, the
+   * container's `w:element` and `w:uri` (revised side for properties), which
+   * name it: a container renamed between the documents is reported as the
+   * original element removed and the revised element added.
+   */
+  customXmlElement?: string;
+  customXmlUri?: string;
+  /**
+   * For a control inside a footnote or endnote definition, the note story,
+   * its part and the note's `w:id` in the output; `index` then counts the
+   * controls of that definition only, and the entry's `sectionIndex` names
+   * the section holding the note reference. Absent for the main story.
+   */
+  story?: 'footnote' | 'endnote';
+  partPath?: string;
+  noteId?: string;
+}
+
+/**
+ * A picture or embedded object whose payload (image bytes, OLE binary, chart
+ * part, or relationship target) changed in a way the redline does not show
+ * (`picture` scope). The picture is named as the redline holds it: Reject All
+ * (or Accept All) of the output resolves it to a different payload than the
+ * original (or revised) document does.
+ */
+export interface UnrepresentedPictureChange {
+  /** The story holding the picture. */
+  story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote';
+  /** The output package part holding the picture, e.g. `word/footer1.xml`. */
+  partPath: string;
+  /** The projection in which the payload differs from its source document. */
+  projection: 'accept' | 'reject';
+  /**
+   * Zero-based reading-order ordinal, in that projection, of the outermost
+   * picture, object or text box holding the picture among those of its story.
+   */
+  index: number;
+  /** The picture's own WordprocessingML container: `w:drawing`, `w:pict` or `w:object`. */
+  element: 'drawing' | 'pict' | 'object';
+  /** The relationship id the picture names its payload by. */
+  relationshipId: string;
+  /** The relationship target in the output part, when it resolves. */
+  target?: string;
+  /** `wp:docPr/@name`, the OLE ProgID or the VML shape id, when present. */
+  name?: string;
+}
+
+/**
+ * A text box whose drawing shape (size, position, wrap or other geometry of
+ * its `w:drawing`, `w:pict` or `w:object` container) changed while the text
+ * inside it also changed, or, in a header or footer, a shape change alone
+ * (`drawing` scope). WordprocessingML has no revision markup for drawing
+ * geometry, so the redline tracks the text inside the box and carries the
+ * revised shape: Accept All shows the revised shape, and Reject All shows the
+ * original text in the revised shape.
+ */
+export interface UnrepresentedDrawingChange {
+  /** The story holding the drawing. */
+  story: 'body' | 'header' | 'footer';
+  /** The output package part holding the drawing, e.g. `word/document.xml`. */
+  partPath: string;
+  /**
+   * Zero-based ordinal of the text box among the text boxes a reader sees in
+   * that part, counting one `mc:AlternateContent` twin as one box.
+   */
+  index: number;
+  /** The drawing's WordprocessingML container in the revised document. */
+  element: 'drawing' | 'pict' | 'object';
+  /** `wp:docPr/@name` or the VML shape id, when present. */
+  name?: string;
+}
+
+/**
+ * A table with no rows (a `w:tbl` holding no `w:tr`) present in one document
+ * only (`table` scope). A table is inserted or deleted only through the
+ * revision markers of its rows (ECMA-376 Part 1 §17.13.5.17, §17.13.5.12), so
+ * a table with no rows has nothing to carry one, and the comparison leaves it
+ * out of the redline: Accept All of an added one, or Reject All of a removed
+ * one, lacks it. Only a table holding nothing but its properties and grid
+ * is left out; one that holds a bookmark, comment or move range boundary is
+ * refused (`emptyTable`) rather than have that range unbalanced.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.12
+ * @see https://github.com/UseJunior/safe-docx/issues/1400
+ */
+export interface UnrepresentedTableChange {
+  /** The story holding the table. */
+  story: 'body';
+  /**
+   * Zero-based document-order ordinal of the table among the `w:tbl`
+   * elements of the document that holds it, nested tables included: the
+   * revised document for an added table, the original for a removed one.
+   * The entry's `sectionIndex` names the section of that same document.
+   */
+  index: number;
 }
 
 /**
@@ -133,6 +300,12 @@ export interface UnrepresentedChange {
   role?: 'default' | 'first' | 'even';
   /** The affected control when scope is `contentControl` (a changed `w:sdtPr`/`w:sdtEndPr`). */
   contentControl?: UnrepresentedContentControlChange;
+  /** The affected picture or object when scope is `picture`. */
+  picture?: UnrepresentedPictureChange;
+  /** The affected drawing when scope is `drawing`. */
+  drawing?: UnrepresentedDrawingChange;
+  /** The table left out of the redline when scope is `table`. */
+  table?: UnrepresentedTableChange;
 }
 
 /** @deprecated Tagged publication throws instead of falling back to reconstruction. */
@@ -192,12 +365,57 @@ export interface ReconstructionBookmarkMismatchDetails {
   actualUnmatchedEndIds: string[];
 }
 
+/**
+ * Where a projection's paragraph topology departs from the source projection
+ * it must reproduce. A paragraph is empty when it projects no character other
+ * than spaces (layout characters such as a tab or a page break count).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1027
+ */
+export interface ParagraphTopologyMismatchDetails {
+  expectedParagraphCount: number;
+  actualParagraphCount: number;
+  expectedEmptyParagraphCount: number;
+  actualEmptyParagraphCount: number;
+  /** First paragraph index whose presence or emptiness differs. */
+  firstDifferingParagraphIndex: number;
+  /** Emptiness of the expected paragraph at that index; `null` past its end. */
+  expectedParagraphEmpty: boolean | null;
+  /** Emptiness of the actual paragraph at that index; `null` past its end. */
+  actualParagraphEmpty: boolean | null;
+  /** The last non-empty expected paragraph before that index, to locate it. */
+  precedingExpectedParagraph: string;
+}
+
 /** @deprecated Retained for one-release compatibility with historical diagnostic types. */
 export interface ReconstructionSafetyFailureDetails {
   acceptText?: ReconstructionTextMismatchDetails;
   rejectText?: ReconstructionTextMismatchDetails;
   acceptBookmarks?: ReconstructionBookmarkMismatchDetails;
   rejectBookmarks?: ReconstructionBookmarkMismatchDetails;
+  /** Set by tagged publication when `acceptParagraphTopology` fails. */
+  acceptParagraphTopology?: ParagraphTopologyMismatchDetails;
+  /** Set by tagged publication when `rejectParagraphTopology` fails. */
+  rejectParagraphTopology?: ParagraphTopologyMismatchDetails;
+  /** Set by tagged publication when `acceptParagraphProperties` fails. */
+  acceptParagraphProperties?: ParagraphPropertyMismatchDetails;
+  /** Set by tagged publication when `rejectParagraphProperties` fails. */
+  rejectParagraphProperties?: ParagraphPropertyMismatchDetails;
+}
+
+/**
+ * Where a projection's paragraph properties first depart from the source
+ * projection's, as canonical `w:pPr` signatures (see
+ * {@link TaggedPublicationSafetyChecks.acceptParagraphProperties}).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/1493
+ */
+export interface ParagraphPropertyMismatchDetails {
+  paragraphIndex: number;
+  paragraphText: string;
+  expectedProperties: string;
+  actualProperties: string;
+  mismatchedParagraphCount: number;
 }
 
 /** @deprecated Retained for one-release compatibility with historical diagnostic types. */
@@ -235,6 +453,10 @@ export interface ReconstructionSafetyFailureSummary {
   rejectText?: ReconstructionTextMismatchSummary;
   acceptBookmarks?: ReconstructionBookmarkMismatchSummary;
   rejectBookmarks?: ReconstructionBookmarkMismatchSummary;
+  acceptParagraphTopology?: ParagraphTopologyMismatchDetails;
+  rejectParagraphTopology?: ParagraphTopologyMismatchDetails;
+  acceptParagraphProperties?: ParagraphPropertyMismatchDetails;
+  rejectParagraphProperties?: ParagraphPropertyMismatchDetails;
 }
 
 /** @deprecated The tagged publisher does not make reconstruction attempts. */
@@ -270,9 +492,57 @@ export interface TaggedTreeFallbackDiagnostics {
 
 export type TaggedPublicationSafetyCheckName =
   | ReconstructionSafetyCheckName
+  | 'acceptParagraphTopology'
+  | 'rejectParagraphTopology'
+  | 'acceptParagraphProperties'
+  | 'rejectParagraphProperties'
   | 'formattingFidelity';
 
+/**
+ * The final gates a tagged publication must pass. Each is `true` when the
+ * check passed; the failing names are listed in
+ * {@link TaggedPublicationSafetyError.failedChecks}.
+ */
 export interface TaggedPublicationSafetyChecks extends ReconstructionSafetyChecks {
+  /**
+   * The Accept All projection reproduces the revised document's text. The
+   * projected characters are those of `w:t`, `w:delText` and `w:sym`, plus the
+   * run-content layout characters `w:tab`, `w:br` (line, page and column
+   * breaks project differently), `w:cr`, `w:noBreakHyphen` and
+   * `w:softHyphen`, so dropping or adding any of these fails the check.
+   * Whitespace runs collapse and repeated paragraph breaks are not counted
+   * (see {@link acceptParagraphTopology}). Drawings, pictures, embedded
+   * objects, `w:ptab` and `w:pgNum` are outside the check.
+   */
+  acceptText: boolean;
+  /** As {@link acceptText}, for the Reject All projection against the original. */
+  rejectText: boolean;
+  /**
+   * The Accept All projection has the revised document's paragraph topology:
+   * the same number of paragraphs, and the same paragraphs empty. Text box
+   * paragraphs are outside the check, and so is one empty final paragraph
+   * when the output's final body paragraph carries a mark revision this
+   * projection resolves: the residue a resolved final paragraph mark leaves
+   * (#891).
+   */
+  acceptParagraphTopology: boolean;
+  /** As {@link acceptParagraphTopology}, for Reject All against the original. */
+  rejectParagraphTopology: boolean;
+  /**
+   * Every paragraph of the Accept All projection has the revised document's
+   * paragraph properties at the same index, so a merge kept the properties of
+   * the mark that should survive. Properties compare as a canonical `w:pPr`
+   * signature without the paragraph mark's `w:rPr` (and its revision
+   * markers), `w:pPrChange`, `w:sectPr` and `w:rsid*` attributes, ignoring
+   * child order. Paragraphs past the shorter projection are the topology
+   * check's concern (#1493).
+   */
+  acceptParagraphProperties: boolean;
+  /**
+   * As {@link acceptParagraphProperties}, for Reject All against the original:
+   * Reject All restores each `w:pPrChange` snapshot before the comparison.
+   */
+  rejectParagraphProperties: boolean;
   formattingFidelity: boolean;
 }
 

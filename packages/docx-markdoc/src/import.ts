@@ -318,6 +318,65 @@ function assertOnlyReferenceFields(container: Element, annotationId: string): vo
   if (field !== null) throw unsupported('w:fldChar', 'a field without an end');
 }
 
+const ADMITTED_PARAGRAPH_PROPERTIES: ReadonlySet<string> = new Set([
+  'keepNext',
+  'keepLines',
+  'pageBreakBefore',
+  'widowControl',
+  'suppressLineNumbers',
+  'pBdr',
+  'shd',
+  'tabs',
+  'suppressAutoHyphens',
+  'kinsoku',
+  'wordWrap',
+  'overflowPunct',
+  'topLinePunct',
+  'autoSpaceDE',
+  'autoSpaceDN',
+  'bidi',
+  'adjustRightInd',
+  'snapToGrid',
+  'spacing',
+  'ind',
+  'contextualSpacing',
+  'mirrorIndents',
+  'suppressOverlap',
+  'jc',
+  'textDirection',
+  'textAlignment',
+  'textboxTightWrap',
+  'outlineLvl',
+]);
+
+const PARAGRAPH_BORDER_SIDES: ReadonlySet<string> = new Set([
+  'top',
+  'left',
+  'bottom',
+  'right',
+  'between',
+  'bar',
+]);
+
+function isAdmittedParagraphProperty(element: Element): boolean {
+  const parent = element.parentNode as Element | null;
+  if (!parent || parent.namespaceURI !== OOXML.W_NS) return false;
+  if (parent.localName === W.pPr) {
+    return ADMITTED_PARAGRAPH_PROPERTIES.has(element.localName);
+  }
+  const grandParent = parent.parentNode as Element | null;
+  if (!grandParent || grandParent.namespaceURI !== OOXML.W_NS || grandParent.localName !== W.pPr) {
+    return false;
+  }
+  if (parent.localName === 'pBdr') {
+    return PARAGRAPH_BORDER_SIDES.has(element.localName);
+  }
+  if (parent.localName === 'tabs') {
+    return element.localName === 'tab';
+  }
+  return false;
+}
+
 /**
  * Validate the admitted annotation-body subset and resolve each external link
  * against the relationship part owned by the annotation source part.
@@ -347,7 +406,7 @@ function assertAdmittedAnnotationElement(
     const harmlessComplexScriptFallback = COMPLEX_SCRIPT_TWINS.has(element.localName)
       && (formattingOwner?.localName === W.r || formattingOwner?.localName === W.p)
       && !COMPLEX_SCRIPT_TEXT.test(formattingOwner.textContent ?? '');
-    if (!admitted.has(element.localName) && !harmlessComplexScriptFallback) {
+    if (!admitted.has(element.localName) && !harmlessComplexScriptFallback && !isAdmittedParagraphProperty(element)) {
       throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Annotation ${annotationId} contains unsupported w:${element.localName}.`, { annotationId, element: `w:${element.localName}` });
     }
     if (element.localName === W.hyperlink) {
@@ -530,6 +589,15 @@ export async function importDocxToMarkdoc(source: Buffer): Promise<ImportResult>
       throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} appears more than once in reply topology.`, { annotationId: id, topology: 'duplicate-or-cycle' });
     }
     importedCommentIds.add(comment.id);
+    // docx-core lists a comment whose reply link cannot be followed at the top
+    // level so readers do not lose it (#1353); import still refuses to guess
+    // the intended thread and fails closed rather than inventing a new root.
+    if (comment.unresolvedThreadParent) {
+      throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment reply topology is orphaned or cyclic at comment ${comment.id}.`, {
+        annotationId: id,
+        topology: 'orphan-or-cycle',
+      });
+    }
     const commentElement = elementByWordId(commentsXml, W.comment, comment.id);
     if (!commentElement) throw new DocxMarkdocError('ANNOTATION_IMPORT_UNSUPPORTED', `Comment ${comment.id} has no definition.`, { annotationId: id });
     const hyperlinks = assertAdmittedAnnotationElement(commentElement, id, 'annotationRef', styles, commentsRelationships);

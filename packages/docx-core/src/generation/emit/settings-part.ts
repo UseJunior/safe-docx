@@ -7,12 +7,17 @@
  * settings are folded in when the document needs them: `w:evenAndOddHeaders`
  * for any section declaring an even-page header or footer, and
  * `w:clrSchemeMapping` when theme-relative authoring or a custom theme is used.
+ * Opt-in compatibility settings (`DocumentSpec.compatibility`) precede the
+ * custom setting inside `w:compat`, in the `CT_Compat` sequence:
+ * `w:doNotExpandShiftReturn` keeps a fully justified line that ends in a
+ * manual line break from being stretched.
  *
  * The `w:compat` block is static (no clock/random), preserving the compiler's
  * byte-for-byte determinism guarantee.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 11.3.3
  * @conformance ECMA-376 edition 5, Part 1 § 17.15.3.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.15.3.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
  * @see MS-DOCX §2.3.5 compatibilityMode
  */
@@ -62,6 +67,10 @@ export function emitSettingsPart(spec: DocumentSpec, ctx: CompileContext, opts: 
     doc.documentElement!.appendChild(buildFootnoteProperties(doc));
   }
   const compat = createWmlElement(doc, W.compat);
+  // CT_Compat sequence: the on/off settings precede compatSetting.
+  if (spec.compatibility?.doNotExpandShiftReturn === true) {
+    compat.appendChild(createWmlElement(doc, W.doNotExpandShiftReturn));
+  }
   compat.appendChild(
     createWmlElement(doc, W.compatSetting, {
       'w:name': 'compatibilityMode',

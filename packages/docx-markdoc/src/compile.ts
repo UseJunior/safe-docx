@@ -13,6 +13,7 @@ import {
   getParagraphRuns,
   parseXml,
   relationshipPartPath,
+  runContentVisibleText,
   serializeXml,
   collectRunInHeadingIds,
   validateStructuralInsertions,
@@ -370,16 +371,18 @@ function trackedCharacters(paragraph: Element, projection: 'accept' | 'reject'):
     const excluded = projection === 'accept'
       ? nextWrappers.has('del') || nextWrappers.has('moveFrom')
       : nextWrappers.has('ins') || nextWrappers.has('moveTo');
-    if (element.localName === 't' || element.localName === 'delText') {
+    // Deleted text is w:delText; every other character comes from the shared
+    // run-content definition (w:t, w:tab, w:br, w:sym), so these offsets stay
+    // in the coordinate space of getParagraphRuns that the spans use.
+    const contribution = element.localName === 'delText'
+      ? element.textContent ?? ''
+      : runContentVisibleText(element);
+    if (contribution !== null) {
       if (!excluded) {
-        for (const character of element.textContent ?? '') {
+        for (const character of contribution) {
           characters.push({ text: character, revisionWrapped: nextWrappers.size > 0, run: nextRun });
         }
       }
-      return;
-    }
-    if ((element.localName === 'tab' || element.localName === 'br') && !excluded) {
-      characters.push({ text: element.localName === 'tab' ? '\t' : '\n', revisionWrapped: nextWrappers.size > 0, run: nextRun });
       return;
     }
     for (const child of Array.from(element.childNodes)) visit(child, nextWrappers, nextRun);
@@ -411,6 +414,14 @@ function runMatchesRetainedFormat(run: Element | undefined, format: RetainedForm
     ? highlight.length === 0
     : highlight.length === 1 && highlight[0]!.getAttribute('w:val') === format.highlight);
   return underlineMatches && highlightMatches;
+}
+
+function retainedFormattingDiagnosticPassed(diagnostic: RetainedFormattingReport['diagnostics'][number]): boolean {
+  return diagnostic.textRevisionOverlaps === 0
+    && diagnostic.emittedPropertyRanges > 0
+    && diagnostic.propertyCoverageComplete
+    && diagnostic.textMatches
+    && diagnostic.propertyStateMatches;
 }
 
 /**
@@ -477,11 +488,7 @@ export function certifyRetainedFormatting(document: DocxDocument, spans: Resolve
     diagnostics,
     passed: true,
   };
-  report.passed = report.textRevisionOverlaps === 0
-    && diagnostics.every((diagnostic) => diagnostic.emittedPropertyRanges > 0
-      && diagnostic.propertyCoverageComplete
-      && diagnostic.textMatches
-      && diagnostic.propertyStateMatches);
+  report.passed = diagnostics.every(retainedFormattingDiagnosticPassed);
   return report;
 }
 
@@ -2531,10 +2538,13 @@ export async function compileMarkdoc(
   certificate.projectionPassed = projectionChecksPassed(certificate);
   certificate.deliveryReady = certificate.projectionPassed && certificate.draftCompletenessPassed;
   certificate.passed = certificate.deliveryReady;
+  const failedRetainedOperationIds = [...new Set(retainedFormatting.diagnostics
+    .filter((diagnostic) => !retainedFormattingDiagnosticPassed(diagnostic))
+    .map((diagnostic) => diagnostic.operationId))];
   if (!certificate.projectionPassed) throw new DocxMarkdocError(
     retainedSpans.length > 0 && !retainedFormatting.passed ? 'NON_COMMON_RETAINED_SCOPE' : 'VERIFICATION_FAILED',
     retainedSpans.length > 0 && !retainedFormatting.passed
-      ? 'Retained formatting could not be certified over comparator-common text.'
+      ? `Retained formatting could not be certified over comparator-common text for edits: ${failedRetainedOperationIds.join(', ')}.`
       : 'Strict replay verification failed.', {
     certificate,
     sourceText,

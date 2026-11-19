@@ -1,6 +1,7 @@
 export type Verdict = 'pass' | 'fail' | 'not_run';
 
-export type ToolResult = { code: number; stdout: string; stderr: string };
+/** `signal` is set when the process was killed by a signal (for example the timeout's SIGKILL). */
+export type ToolResult = { code: number; stdout: string; stderr: string; signal?: string };
 
 export type RendererTools = {
   resolve(name: 'soffice' | 'pdftotext' | 'pdftoppm' | 'magick'): string | null;

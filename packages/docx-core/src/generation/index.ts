@@ -18,6 +18,7 @@ export {
   type BookmarkNameErrorCode,
 } from './bookmark-names.js';
 export { CROSS_REFERENCE_NUMBERS, CROSS_REFERENCE_SHOWS } from './types.js';
+export { tableOfContentsEntryInstruction, tableOfContentsInstruction } from './emit/run.js';
 export type {
   BlockSpec,
   BorderSpec,
@@ -25,6 +26,7 @@ export type {
   CrossReferenceNumber,
   CrossReferenceShow,
   CrossReferenceSpec,
+  DocumentCompatibilitySpec,
   DocumentDefaultsSpec,
   DocumentMetaSpec,
   DocumentSpec,
@@ -47,6 +49,8 @@ export type {
   StyleSpec,
   TableBorders,
   TableCellSpec,
+  TableOfContentsEntrySpec,
+  TableOfContentsFieldSpec,
   TableRowSpec,
   TableSpec,
   TabSpec,

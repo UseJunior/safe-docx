@@ -106,14 +106,21 @@ export const CREATION_STYLE = {
   list: 'ListParagraph',
   table: 'TableText',
   footer: 'Footer',
+  header: 'Header',
+  toc1: 'TOC1',
+  toc2: 'TOC2',
+  toc3: 'TOC3',
 } as const;
+
+/** The paragraph style of each table-of-contents level, 1 to 3: Word's built-in "toc 1" to "toc 3". */
+export const TOC_STYLES = [CREATION_STYLE.toc1, CREATION_STYLE.toc2, CREATION_STYLE.toc3] as const;
 
 /**
  * Named paragraph styles over the document defaults. Built-in Word names
  * ("heading 1", "Title", "Quote", "footer") let Word and LibreOffice map
  * them to their own heading and quote semantics.
  */
-export function creationStyles(profile: CreationProfile): StyleSpec[] {
+export function creationStyles(profile: CreationProfile, options: { header?: boolean; tableOfContents?: boolean } = {}): StyleSpec[] {
   const prose = profile.justify ? 'justify' : 'left';
   const style = (styleId: string, name: string, extra: Partial<StyleSpec>): StyleSpec => ({
     styleId,
@@ -158,5 +165,14 @@ export function creationStyles(profile: CreationProfile): StyleSpec[] {
     style(CREATION_STYLE.list, 'List Paragraph', { paragraph: { alignment: prose } }),
     style(CREATION_STYLE.table, 'Table Text', { paragraph: { alignment: 'left', spacing: { afterTwips: 0 } } }),
     style(CREATION_STYLE.footer, 'footer', { paragraph: { alignment: 'center', spacing: { afterTwips: 0 } } }),
+    // Declared only when a section has a header, so a document without one keeps its styles part unchanged.
+    ...(options.header ? [style(CREATION_STYLE.header, 'header', { paragraph: { alignment: 'center', spacing: { afterTwips: 0 } } })] : []),
+    // Declared only with a {% toc /%}: one entry per line, each level indented a further quarter inch.
+    ...(options.tableOfContents
+      ? TOC_STYLES.map((styleId, level) => style(styleId, `toc ${level + 1}`, {
+        next: CREATION_STYLE.body,
+        paragraph: { alignment: 'left', spacing: { afterTwips: 0 }, indent: { leftTwips: 360 * level } },
+      }))
+      : []),
   ];
 }

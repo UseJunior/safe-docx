@@ -6,7 +6,7 @@ import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { extractParaIdsFromToon, makeMinimalDocx } from '../testing/docx_test_utils.js';
-import { testAllure } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   openSession,
   assertSuccess,
@@ -127,4 +127,53 @@ describe('Traceability: Persisted Intrinsic Node IDs (under document-paragraph-i
       expect(idsB).toEqual(idsA);
     },
   );
+});
+
+/**
+ * A `w:sym` glyph (a Wingdings checkbox) is one character of the paragraph
+ * text since issue #1046, and that text seeds the `_bk_*` anchor of a
+ * paragraph without `w14:paraId`, together with its neighbours' text. These
+ * tests pin both halves of that contract: the anchor is stable across reopen,
+ * and it is seeded from text that includes the glyph, so it differs from the
+ * anchor the same paragraph had while the glyph was invisible.
+ */
+describe('Paragraph IDs for symbol-bearing paragraphs (under document-paragraph-id-stability-and-fingerprint)', () => {
+  const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
+
+  registerCleanup();
+
+  const SYMBOL_RUN = '<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr><w:sym w:font="Wingdings" w:char="F0A8"/></w:r>';
+  const documentXml = (symbolRun: string): string =>
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    '<w:p><w:r><w:t>Please indicate your election:</w:t></w:r></w:p>' +
+    `<w:p><w:r><w:t xml:space="preserve">Alpha </w:t></w:r>${symbolRun}<w:r><w:t xml:space="preserve"> Bravo</w:t></w:r></w:p>` +
+    '<w:p><w:r><w:t>Middle paragraph.</w:t></w:r></w:p>' +
+    '<w:p><w:r><w:t>Closing paragraph.</w:t></w:r></w:p>' +
+    '</w:body></w:document>';
+
+  test('a symbol-bearing paragraph keeps the same ID across reopen', async ({ given, then }: AllureBddContext) => {
+    const [first, second] = await given('the same symbol-bearing document opened in two sessions', async () => [
+      await openSession([], { mgr: createTestSessionManager(), xml: documentXml(SYMBOL_RUN) }),
+      await openSession([], { mgr: createTestSessionManager(), xml: documentXml(SYMBOL_RUN) }),
+    ]);
+    await then('both sessions report identical paragraph IDs', () => {
+      expect(first.paraIds).toHaveLength(4);
+      expect(second.paraIds).toEqual(first.paraIds);
+    });
+  });
+
+  test('the ID is seeded from paragraph text that includes the glyph', async ({ given, then }: AllureBddContext) => {
+    const [withSymbol, withoutSymbol] = await given('the document, and its twin with the checkbox run left empty', async () => [
+      await openSession([], { mgr: createTestSessionManager(), xml: documentXml(SYMBOL_RUN) }),
+      await openSession([], { mgr: createTestSessionManager(), xml: documentXml('<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr></w:r>') }),
+    ]);
+    await then('the symbol paragraph and its two neighbours get different IDs; the paragraph two away does not', () => {
+      expect(withSymbol.content).toContain('Alpha \uF0A8 Bravo');
+      expect(withSymbol.paraIds[0]).not.toBe(withoutSymbol.paraIds[0]);
+      expect(withSymbol.paraIds[1]).not.toBe(withoutSymbol.paraIds[1]);
+      expect(withSymbol.paraIds[2]).not.toBe(withoutSymbol.paraIds[2]);
+      expect(withSymbol.paraIds[3]).toBe(withoutSymbol.paraIds[3]);
+    });
+  });
 });

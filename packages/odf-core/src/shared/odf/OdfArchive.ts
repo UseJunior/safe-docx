@@ -58,6 +58,19 @@ export class OdfArchive {
     this.zip = zip;
   }
 
+  /** Isolate archive writes without registering or reopening a session. */
+  fork(): OdfArchive {
+    const zip = new JSZip();
+    for (const file of Object.values(this.zip.files)) {
+      zip.files[file.name] = Object.assign(Object.create(Object.getPrototypeOf(file)), file, {
+        date: new Date(file.date.getTime()), options: { ...file.options },
+      });
+    }
+    const fork = new OdfArchive(zip);
+    fork.modified = new Set(this.modified);
+    return fork;
+  }
+
   /**
    * Load an ODF package from a Buffer. Rejects a buffer that is missing the
    * required `content.xml` or `META-INF/manifest.xml` parts.

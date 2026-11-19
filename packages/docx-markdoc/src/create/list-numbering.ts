@@ -93,6 +93,45 @@ function legalHeadingLevels(): NumberingLevelSpec[] {
 }
 
 /**
+ * `{% run-in-paragraph level="…" %}` values, outermost first: the level each
+ * takes in the run-in definition ({@link runInLevels}).
+ */
+export const RUN_IN_LEVELS = ['article', 'section', 'clause', 'subclause'] as const;
+export type RunInLevel = (typeof RUN_IN_LEVELS)[number];
+/** The handle prefix of the run-in definition's `numId`. */
+export const RUN_IN_NUM_ID_PREFIX = 'run-in-';
+
+/**
+ * The run-in definition (#1417): numbers that start their own paragraph,
+ * with the paragraph's heading run in after them ("2.01 Engagement. The
+ * Manager …"). An article is "2.", a section "2.01" (zero-padded, under its
+ * article), a clause "(a)" and a subclause "(i)", one level each, so Word
+ * restarts the sections under each article and the clauses under each
+ * section, and a full-context cross-reference reads "2.01(a)(i)". The levels
+ * link to no paragraph style: each paragraph carries its own `w:numPr`, so
+ * the heading stays inline formatting of a body paragraph. A level's number
+ * is followed by a space (`w:suff`), and the clause levels indent the first
+ * line by half an inch per level. Only the article's level text ends with a
+ * period, and only an article's own reference ends with it, where Word drops
+ * it (issue-1236 evidence).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.10
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.28
+ * @see https://github.com/UseJunior/safe-docx/issues/1417
+ */
+function runInLevels(): NumberingLevelSpec[] {
+  const formats = [['decimal', '%1.'], ['decimalZero', '%1.%2'], ['lowerLetter', '(%3)'], ['lowerRoman', '(%4)']] as const;
+  return formats.map(([numFmt, lvlText], ilvl): NumberingLevelSpec => ({
+    ilvl,
+    numFmt,
+    lvlText,
+    suff: 'space',
+    indentTwips: { left: 0, firstLine: ilvl < 2 ? 0 : 720 * (ilvl - 1) },
+  }));
+}
+
+/**
  * The one place `create` decides which Word list each top-level Markdoc list
  * belongs to. Every ordered list shares one abstract definition (legal
  * `1.`/`(a)`/`(i)`), so Word keeps a single running count across headings;
@@ -124,6 +163,21 @@ export class CreationListNumbering {
   private heading: NumberingSpec | null = null;
   /** The number the next clause under the current numbered heading would show, or null before the first heading. */
   private clauseNext: number | null = null;
+
+  /** The run-in definition, once the first run-in paragraph is placed. */
+  private runIn: NumberingSpec | null = null;
+
+  /**
+   * Place a `{% run-in-paragraph %}` at `level`: its paragraph takes that
+   * level of the run-in definition, declared at the first run-in paragraph.
+   */
+  placeRunIn(level: RunInLevel): { numId: string; ilvl: number } {
+    if (!this.runIn) {
+      this.runIn = { numId: `${RUN_IN_NUM_ID_PREFIX}${this.definitions.length + 1}`, levels: runInLevels() };
+      this.definitions.push(this.runIn);
+    }
+    return { numId: this.runIn.numId, ilvl: RUN_IN_LEVELS.indexOf(level) };
+  }
 
   /** @param headingNumbers the frontmatter `heading-numbers` scheme, or undefined when headings are not numbered. */
   constructor(private readonly headingNumbers?: HeadingNumberScheme) {}
