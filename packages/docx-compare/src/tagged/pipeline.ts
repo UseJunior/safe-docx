@@ -969,7 +969,7 @@ async function relationshipClosureDigest(
             if (semantics) attribute.value = semantics;
           }
         }
-        semanticBytes = new TextEncoder().encode(serializer.serializeToString(document)) as Buffer;
+        semanticBytes = new TextEncoder().encode(serializer.serializeToString(document));
       } catch {
         // An unused malformed auxiliary part is rejected only if publication
         // provenance selects it. Relationship identity must remain readable

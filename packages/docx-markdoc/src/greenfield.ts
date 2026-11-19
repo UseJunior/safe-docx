@@ -55,7 +55,7 @@ export type GreenfieldCompilation = {
   certificate: GreenfieldCertificate;
 };
 
-const sha256 = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
+const sha256 = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex');
 
 function fail(code: string, message: string, details?: unknown): never {
   throw new DocxMarkdocError(code, message, details);

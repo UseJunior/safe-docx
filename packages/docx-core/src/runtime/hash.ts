@@ -1,5 +1,14 @@
 /** Synchronous, runtime-independent digests. SHA-1 is retained only for stable legacy IDs. */
 export type HashAlgorithm = 'sha256' | 'sha1';
+type HashInput = string | Uint8Array | readonly (string | Uint8Array)[];
+type HashBackend = (input: HashInput, algorithm: HashAlgorithm) => string;
+let backend: HashBackend | undefined;
+/** @internal Install a host-native implementation without changing portable imports. */
+export function setHashBackend(value: HashBackend | undefined): void { backend = value; }
+/** Synchronous digest using the host backend when the Node entry installs one. @internal */
+export function hash(input: HashInput, algorithm: HashAlgorithm = 'sha256'): string {
+  return backend ? backend(input, algorithm) : hashPortable(input, algorithm);
+}
 const encoder = new TextEncoder();
 const K = new Uint32Array([
   0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
@@ -15,7 +24,7 @@ const rotr = (x: number, n: number): number => (x >>> n) | (x << (32 - n));
 const rotl = (x: number, n: number): number => (x << n) | (x >>> (32 - n));
 
 /** Hash the exact concatenation of UTF-8 strings and byte views (including subarray offsets). */
-export function hash(input: string | Uint8Array | readonly (string | Uint8Array)[], algorithm: HashAlgorithm = 'sha256'): string {
+export function hashPortable(input: HashInput, algorithm: HashAlgorithm = 'sha256'): string {
   const chunks = (Array.isArray(input) ? input : [input]).map((chunk: string | Uint8Array) =>
     typeof chunk === 'string' ? encoder.encode(chunk) : chunk);
   const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -59,7 +68,7 @@ export function hash(input: string | Uint8Array | readonly (string | Uint8Array)
   return Array.from(state, word => word.toString(16).padStart(8, '0')).join('');
 }
 
-/** Incremental compatibility adapter; all digests delegate to hash(). */
+/** @internal Incremental compatibility adapter; all digests delegate to hash(). */
 export function createHash(algorithm: HashAlgorithm) {
   const chunks: (string | Uint8Array)[] = [];
   return {

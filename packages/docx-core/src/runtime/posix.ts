@@ -23,7 +23,10 @@ function dirname(path: string): string {
   return path.slice(0, slash);
 }
 function basename(path: string): string {
-  return path.replace(/\/+$/u, '').split('/').at(-1) ?? '';
+  let end = path.length;
+  while (end > 0 && path[end - 1] === '/') end--;
+  if (end === 0) return '';
+  return path.slice(path.lastIndexOf('/', end - 1) + 1, end);
 }
 function extname(path: string): string {
   const base = basename(path), dot = base.lastIndexOf('.');
@@ -40,4 +43,5 @@ function relative(from: string, to: string): string {
   while (shared < a.length && shared < b.length && a[shared] === b[shared]) shared++;
   return [...a.slice(shared).map(() => '..'), ...b.slice(shared)].join('/');
 }
+/** @internal Package-part path operations; not a host filesystem API. */
 export const posix = { normalize, dirname, basename, extname, join, relative };

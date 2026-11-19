@@ -6,8 +6,10 @@ import { createHash as nodeHash } from 'node:crypto';
 import nodePath from 'node:path';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { hash, createHash } from '../packages/docx-core/dist/runtime/hash.js';
+import { hashPortable as hash, createHash } from '../packages/docx-core/dist/runtime/hash.js';
 import { posix } from '../packages/docx-core/dist/runtime/posix.js';
+import * as nodeCore from '@usejunior/docx-core';
+import { compareDocuments as nodeCompare } from '@usejunior/docx-compare';
 
 // Differential checks include both padding boundaries, multi-block data, UTF-8,
 // unpaired surrogates, binary subarrays and incremental updates.
@@ -47,7 +49,19 @@ const result = await build({
     });
   } }],
 });
-const context = createContext({ TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, DataView, setTimeout, clearTimeout, console });
+const browserErrors = [];
+const context = createContext({ TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, DataView, setTimeout, clearTimeout,
+  console: { ...console, error: (...args) => browserErrors.push(args.map(String).join(' ')) } });
+const pairPaths = ['tests/test_documents/text-box/source.docx', 'tests/test_documents/text-box/revised.docx'];
+const pair = await Promise.all(pairPaths.map(path => readFile(path)));
+const expected = await nodeCompare(pair[0], pair[1], { author: 'Differential', date: null });
+const expectedArchive = await nodeCore.DocxArchive.load(expected.document);
+context.differentialPair = pair.map(bytes => new Uint8Array(bytes));
+context.expectedParts = Object.fromEntries(await Promise.all(expectedArchive.listFiles().sort().map(async path =>
+  [path, Buffer.from(await expectedArchive.getFileBuffer(path)).toString('base64')])));
+context.expectedStats = JSON.stringify(expected.stats);
+context.expectedWarnings = JSON.stringify(expected.unrepresentedChanges);
+
 context.imageFixture = new Uint8Array(await readFile('tests/test_documents/open-agreements/mutual-nda.docx'));
 if (process.argv[2]) context.realFixture = new Uint8Array(await readFile(process.argv[2]));
 context.self = context;
@@ -72,6 +86,15 @@ await runInContext(`(async () => {
   if (!xml.includes('w:ins') || !xml.includes('w:del')) throw Error('Missing redline');
   if (!compare.acceptAllChanges(xml).includes('Revised')) throw Error('Accept failed');
   if (!compare.rejectAllChanges(xml).includes('Original')) throw Error('Reject failed');
+  const differential = await compare.compareDocuments(differentialPair[0], differentialPair[1], {author:'Differential', date:null});
+  const differentialArchive = await core.DocxArchive.load(differential.document);
+  const names = differentialArchive.listFiles().sort();
+  if (JSON.stringify(names) !== JSON.stringify(Object.keys(expectedParts))) throw Error('Browser/Node package parts differ');
+  for (const path of names) {
+    if (core.toBase64(await differentialArchive.getFileBuffer(path)) !== expectedParts[path]) throw Error('Browser/Node part bytes differ: ' + path);
+  }
+  if (JSON.stringify(differential.stats) !== expectedStats || JSON.stringify(differential.unrepresentedChanges) !== expectedWarnings) throw Error('Browser/Node comparison evidence differs');
+  console.log('PASS: browser and native Node comparison part bytes, stats and warnings are identical.');
   // Exercise binary relationship imports and auxiliary XML decoding with a real image-bearing DOCX.
   const mediaArchive = await core.DocxArchive.load(imageFixture);
   const mediaPath = mediaArchive.listFiles().find(path => path.startsWith('word/media/') && !path.endsWith('/'));
@@ -104,5 +127,6 @@ await runInContext(`(async () => {
   }
   return {original:original.length, edited:edited.length, compared:result.document.length};
 })()`, context);
+assert.deepEqual(browserErrors, [], 'Browser console errors must never be silently swallowed');
 console.log('PASS: browser bundle excludes Node built-ins; generation, edit/save/reopen and compare accept/reject execute without Node globals.');
 console.log('PASS: SHA-256/SHA-1 bytes match node:crypto; POSIX package paths match node:path.');

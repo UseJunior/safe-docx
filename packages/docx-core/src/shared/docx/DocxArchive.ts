@@ -134,10 +134,10 @@ export class DocxArchive {
   }
 
   /** Get an arbitrary archive entry without decoding binary payloads as text. */
-  async getFileBuffer(path: string): Promise<Buffer | null> {
+  async getFileBuffer(path: string): Promise<Uint8Array | null> {
     const file = this.zip.file(path);
     if (!file) return null;
-    return file.async(typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer') as Promise<Buffer>;
+    return file.async(typeof Buffer === 'undefined' ? 'uint8array' : 'nodebuffer');
   }
 
   /**
@@ -146,7 +146,7 @@ export class DocxArchive {
    * @param path - Path within the archive
    * @param content - File contents
    */
-  setFile(path: string, content: string | Buffer, options?: { date?: Date }): void {
+  setFile(path: string, content: string | Uint8Array, options?: { date?: Date }): void {
     this.zip.file(path, content, {
       createFolders: false,
       ...(options?.date ? { date: options.date } : {}),

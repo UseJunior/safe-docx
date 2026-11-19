@@ -82,13 +82,22 @@ The default entry bundles for browsers and Word add-ins without Node polyfills.
 `DocxDocument.load` accepts `Uint8Array` (including Node `Buffer`). Archive output
 is a `Buffer` in Node and a `Uint8Array` when `Buffer` is unavailable; use byte
 operations when writing portable code. Existing output declarations retain their
-Node `Buffer` type for compatibility.
+Node `Buffer` type for compatibility, except binary part reads, which are typed
+`Uint8Array` to prevent Buffer-only methods inside portable processing.
+
+**For base64 output, use `toBase64(bytes)` from the package root.** Calling
+`bytes.toString('base64')` in a browser produces a comma-separated list of byte
+values, even where the legacy return declaration says `Buffer`. For example,
+pass `toBase64(result.buffer)` to Office.js `insertFileFromBase64`.
 
 Node resolution retains the LibreOffice oracle and opt-in `SDX_SCHEMA_CORPUS_DIR`
 filesystem capture. These are also available explicitly from
 `@usejunior/docx-core/node`. The portable entry exposes
 `setEmittedDocumentXmlCapture` for a host-provided synchronous capture sink.
 
-`npm run check:browser-runtime` bundles both public entries with all reachable
+After `npm run build`, `npm run check:browser-runtime` bundles both public entries with all reachable
 imports checked for Node built-ins, then executes generation, editing and comparison
 in a browser-like context without Node globals. It also checks hash compatibility.
+
+The Node entry installs native crypto behind the same digest primitive to retain
+throughput on media-heavy documents. The portable graph uses synchronous JavaScript.
