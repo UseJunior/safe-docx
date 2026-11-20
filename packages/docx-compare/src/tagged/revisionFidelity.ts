@@ -1,4 +1,5 @@
 import { assertRevisionFidelity, readRevisionFidelityParts } from '@usejunior/docx-core';
+import { resolveEffectiveStoryBindings } from './effectiveStoryBindings.js';
 import { normalizeVolatilePagerefCachesForComparison } from '../fieldComparisonSemantics.js';
 import { acceptAllChanges, rejectAllChanges, normalizeLayoutPreservingText } from './trackChangesAcceptorAst.js';
 
@@ -11,6 +12,11 @@ export async function assertComparisonRevisionFidelity(source: Uint8Array, inten
     project:(xml,side) => side === 'accept' ? acceptAllChanges(xml) : rejectAllChanges(xml),
     normalizeXml:xml => /PAGEREF/iu.test(xml) ? normalizeVolatilePagerefCachesForComparison(xml) : xml,
     normalizeText:normalizeLayoutPreservingText,
-    checkFormatting:false,
+    checkFormatting: false,
+    resolveStoryBindings: (documentXml, parts) => resolveEffectiveStoryBindings({
+      documentXml,
+      relationshipsXml: parts['word/_rels/document.xml.rels'],
+      settingsXml: parts['word/settings.xml'],
+    }).slots.flatMap(slot => slot.targetPath ? [{ ...slot, targetPath: slot.targetPath }] : []),
   });
 }

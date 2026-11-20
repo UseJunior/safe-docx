@@ -1,7 +1,7 @@
 import { parseXml, serializeXml } from './xml.js';
 import { acceptChanges } from './accept_changes.js';
 import { rejectChanges } from './reject_changes.js';
-import { auditSectPr } from './sectPrAudit.js';
+import { auditSectPr, type SectPrBinding } from './sectPrAudit.js';
 import { hash } from '../runtime/hash.js';
 import { posix } from '../runtime/posix.js';
 import { normalizeOpcRelationshipTarget } from './opc-target.js';
@@ -27,6 +27,8 @@ export class RevisionFidelityViolation extends Error {
     this.name = 'RevisionFidelityViolation';
   }
 }
+type StoryBinding = Pick<SectPrBinding, 'sectionOrdinal' | 'kind' | 'role' | 'targetPath'>;
+
 export interface RevisionFidelityOptions {
   enabled?: boolean;
   /** Compare uses its established projection engine; editing uses the core DOM engine. */
@@ -38,6 +40,8 @@ export interface RevisionFidelityOptions {
   normalizeText?: (text: string) => string;
   /** Fixed existing stories for edits whose separately reported package lifecycle is untracked. */
   storyPaths?: readonly string[];
+  /** Comparison can resolve the effective slot through section inheritance. */
+  resolveStoryBindings?: (projectedMain: string, parts: RevisionFidelityParts) => readonly StoryBinding[];
 }
 
 class ProjectionError extends Error {
@@ -275,10 +279,21 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
     for (const path of options.storyPaths) { const story = read(path); result[path] = story ? emptyStory(blocks(story.documentElement,path)) : ['missing-story']; }
     return finish();
   }
-  const rels = parts['word/_rels/document.xml.rels'];
-  for (const binding of auditSectPr(serializeXml(main), rels).bindings) {
-    const story = read(binding.targetPath);
-    result[`section[${binding.sectionOrdinal}]/${binding.kind}/${binding.role}`] = story ? emptyStory(blocks(story.documentElement, binding.targetPath)) : ['missing-story'];
+  const mainXml = serializeXml(main);
+  const bindings = options.resolveStoryBindings?.(mainXml, parts)
+    ?? auditSectPr(mainXml, parts['word/_rels/document.xml.rels']).bindings;
+  const stories = new Map<string, unknown[]>();
+  for (const binding of bindings) {
+    const path = binding.targetPath;
+    let content = stories.get(path);
+    if (!content) {
+      const story = read(path);
+      content = story ? emptyStory(blocks(story.documentElement, path)) : ['missing-story'];
+      stories.set(path, content);
+    }
+    // Comparison may express deletion by leaving a bound, empty story.
+    if (content.length === 0 && options.resolveStoryBindings) continue;
+    result[`section[${binding.sectionOrdinal}]/${binding.kind}/${binding.role}`] = content;
   }
   return finish();
 }
