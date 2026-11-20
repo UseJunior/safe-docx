@@ -109,9 +109,11 @@ revision projections without modifying or publishing its XML-part inputs.
 Mismatches throw `RevisionFidelityViolation` with code
 `REVISION_FIDELITY_VIOLATION` and bounded diagnostics naming the side, part and
 location. Checks cover text, paragraph/table structure, declared run/paragraph
-formatting, selected stories, referenced notes, drawings and embedded payloads.
+formatting, selected stories, field boundaries and instructions, hyperlinks,
+inline controls, equations, referenced notes, and drawing and object payloads.
 The comparison adapter retains its existing effective-formatting and field checks.
 
 Existing revisions are resolved on both the baseline and output using the same
 side. Separately reported, untracked header lifecycle changes are outside the
-edit guard's membership check; existing selected story content remains checked.
+edit guard when changing header or footer bindings. Ordinary tracked edits
+still check selected story content.

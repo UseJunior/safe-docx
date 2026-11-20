@@ -160,7 +160,7 @@ describe('compareDocuments date: null', () => {
       }));
       const outputs = await when('both pairs are compared with date: null', async () => ({
         notes: (await compareDocuments(pairs.notes.original, pairs.notes.revised, { date: null })).document,
-        ilpa: (await compareDocuments(pairs.ilpa.original, pairs.ilpa.revised, { date: null, revisionFidelity: false })).document,
+        ilpa: (await compareDocuments(pairs.ilpa.original, pairs.ilpa.revised, { date: null })).document,
       }));
       for (const label of ['notes', 'ilpa'] as const) {
         await then(`${label}: every move-range start marker carries exactly the neutral date`, async () => {

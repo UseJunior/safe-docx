@@ -1,7 +1,6 @@
 import {
   DocxDocument,
   assertRevisionFidelity,
-  auditSectPr,
   RevisionFidelityViolation,
   type AiRevisionDiagnostic,
   type AiRevisionValidationTouchedContext,
@@ -174,6 +173,8 @@ export function getAiRevisionBaseline(session: DocxSession): Promise<Map<string,
  */
 export type AiRevisionPreflightAdvisories = {
   insertedText?: string;
+  /** A package operation explicitly reports its header/footer writes as untracked. */
+  untrackedStoryBindings?: boolean;
 };
 
 export async function preflightAiRevisionMutation(
@@ -183,31 +184,24 @@ export async function preflightAiRevisionMutation(
   touched?: AiRevisionValidationTouchedContext,
   advisories?: AiRevisionPreflightAdvisories,
 ): Promise<AiRevisionPreflightResult> {
-  const aiAuthor = session.aiAuthor ?? ctx?.author;
-  if (!aiAuthor) return PREFLIGHT_PROCEED;
+  const aiAuthor = session.aiAuthor;
+  const checkFidelity = Boolean(ctx) && process.env.SAFE_DOCX_REVISION_FIDELITY !== '0';
+  if (!aiAuthor && !checkFidelity) return PREFLIGHT_PROCEED;
 
-  const snapshot = await session.doc.toBuffer({ cleanBookmarks: false });
-  // Two loads of the same bytes: `previewDoc` is mutated below, `baselineDoc`
-  // stays as the document was before this mutation so the convention check can
-  // difference them. Loading it from the same snapshot (rather than reusing
-  // `session.doc`) keeps both sides on identical run boundaries, so the
-  // difference reflects the edit and not a serialization artefact. It is only
-  // paid for when a caller actually requests the advisory.
-  const previewDoc = await DocxDocument.load(snapshot.buffer);
-  const baselineDoc = advisories?.insertedText
-    ? await DocxDocument.load(snapshot.buffer)
-    : null;
+  // Preserve session-only state, including ownership of created header/footer
+  // relationships, so the preview takes the same mutation path as the edit.
+  const previewDoc = session.doc.fork();
+  const baselineDoc = advisories?.insertedText ? session.doc : null;
   await mutatePreview(previewDoc, cloneRevisionContext(ctx));
-  const validation = await previewDoc.validateAiRevisions(aiAuthor, touched);
   const complete = async (result: AiRevisionPreflightResult): Promise<AiRevisionPreflightResult> => {
-    if (!ctx || process.env.SAFE_DOCX_REVISION_FIDELITY === '0') return result;
+    if (!checkFidelity) return result;
     const intended = session.doc.fork();
     await mutatePreview(intended, undefined);
     try {
       const source = await session.doc.getRevisionFidelityParts();
-      // Header creation/retargeting is a separately reported package mutation;
-      // validate every existing selected story rather than treating that lifecycle as a revision.
-      const storyPaths = [...new Set(auditSectPr(source['word/document.xml']!, source['word/_rels/document.xml.rels']).bindings.map(b => b.targetPath))];
+      // set_header_footer reports story creation, retargeting and rewrites
+      // separately because those package mutations have no revision encoding.
+      const storyPaths = advisories?.untrackedStoryBindings ? [] : undefined;
       assertRevisionFidelity({
         source,
         intended: await intended.getRevisionFidelityParts(),
@@ -219,6 +213,9 @@ export async function preflightAiRevisionMutation(
       return { blocked: { ...err(error.code, error.message), diagnostics: error.failures }, warnings: [], conventionWarnings: [] };
     }
   };
+
+  if (!aiAuthor) return complete(PREFLIGHT_PROCEED);
+  const validation = await previewDoc.validateAiRevisions(aiAuthor, touched);
 
   // Advisory only, and never on the blocked path: a blocked mutation is not
   // applied, so its formatting is not a finding the caller can act on.

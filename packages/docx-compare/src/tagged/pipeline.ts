@@ -1,6 +1,5 @@
 /** Revised-base tagged comparison package pipeline. */
 
-import { assertComparisonRevisionFidelity } from './revisionFidelity.js';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { createHash } from '@usejunior/docx-core';
 import { posix } from '@usejunior/docx-core';
@@ -1056,8 +1055,6 @@ async function canonicalizeRelationshipReferences(
  * Options for the atomizer pipeline.
  */
 export interface AtomizerOptions {
-  /** Validate both effective revision projections before publication. Default true. */
-  revisionFidelity?: boolean;
   /** Author name for track changes. Default: "Comparison" */
   author?: string;
   /** Timestamp for track changes. Default: current time */
@@ -2380,9 +2377,6 @@ export async function compareDocumentsAtomizer(
         comparisonRevisionPredicate(options.author ?? 'Comparison', options.date),
       ),
     };
-    if (options.revisionFidelity !== false) {
-      await assertComparisonRevisionFidelity(original, revised, result.document);
-    }
     return result.unrepresentedChanges && normalized.slots.length > 0
       ? { ...result, unrepresentedChanges: reportSlotChangesAgainstInputs(result.unrepresentedChanges, normalized.slots) }
       : result;

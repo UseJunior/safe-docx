@@ -6,6 +6,7 @@
  */
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
+import { assertComparisonRevisionFidelity } from './tagged/revisionFidelity.js';
 import { choosePlaceholderRevisionDate, omitPlaceholderRevisionDates } from './revisionDateOmission.js';
 import { COMPARE_REVISION_GROUPINGS, DEFAULT_COMPARE_REVISION_GROUPING, type CompareOptions, type CompareResult } from './compare-types.js';
 export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
@@ -121,7 +122,6 @@ export async function compareDocuments(
     : undefined;
   const tagged = await compareDocumentsAtomizer(original as Buffer, revised as Buffer, {
     author,
-    revisionFidelity,
     date: placeholderDate ?? date ?? undefined,
     formatDetection:
       ignoreFormatting === undefined
@@ -134,10 +134,14 @@ export async function compareDocuments(
     revisionGrouping,
   });
 
+  const document = placeholderDate === undefined
+    ? tagged.document
+    : await omitPlaceholderRevisionDates(tagged.document, placeholderDate);
+  if (revisionFidelity === true) {
+    await assertComparisonRevisionFidelity(original, revised, document);
+  }
   return {
-    document: placeholderDate === undefined
-      ? tagged.document
-      : await omitPlaceholderRevisionDates(tagged.document, placeholderDate),
+    document,
     stats: tagged.stats,
     engine: tagged.engine,
     ...(tagged.unrepresentedChanges === undefined

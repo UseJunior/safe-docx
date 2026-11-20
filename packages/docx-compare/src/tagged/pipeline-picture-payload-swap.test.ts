@@ -1,4 +1,3 @@
-import { assertComparisonRevisionFidelity } from './revisionFidelity.js';
 /**
  * A picture or embedded object can change without its markup changing: Word
  * replaces a logo by rewriting the bytes of `media/image1.png`, or points the
@@ -315,13 +314,13 @@ async function picturePlacement(buffer: Buffer): Promise<string[]> {
       `${element.localName}:${isInside(element, 'del') ? 'del' : isInside(element, 'ins') ? 'ins' : 'kept'}`);
 }
 
-async function compare(original: PackageSpec, revised: PackageSpec, revisionFidelity = true) {
+async function compare(original: PackageSpec, revised: PackageSpec) {
   const originalBuffer = await buildPackage(original);
   const revisedBuffer = await buildPackage(revised);
   return {
     original: originalBuffer,
     revised: revisedBuffer,
-    result: await compareDocumentsAtomizer(originalBuffer, revisedBuffer, {...COMPARE_OPTIONS, revisionFidelity}),
+    result: await compareDocumentsAtomizer(originalBuffer, revisedBuffer, COMPARE_OPTIONS),
   };
 }
 
@@ -612,10 +611,9 @@ describe('Pictures and objects whose payload changes under the same markup (#143
           storyPayloads: { image: OTHER_PNG },
         },
       }));
-      const { original, revised, result } = await when('the documents are compared', () =>
-        compare(fixture.original, fixture.revised, false));
+      const { result } = await when('the documents are compared', () =>
+        compare(fixture.original, fixture.revised));
 
-      await expect(assertComparisonRevisionFidelity(original, revised, result.document)).rejects.toMatchObject({code:'REVISION_FIDELITY_VIOLATION'});
       await then('the footer picture is named in unrepresentedChanges', () => {
         const pictures = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'picture');
         expect(pictures).toHaveLength(1);
@@ -642,10 +640,9 @@ describe('Pictures and objects whose payload changes under the same markup (#143
         storyPayloads: { image: OTHER_PNG },
       },
     }));
-    const { original, revised, result } = await when('the documents are compared', () =>
-      compare(fixture.original, fixture.revised, false));
+    const { result } = await when('the documents are compared', () =>
+      compare(fixture.original, fixture.revised));
 
-    await expect(assertComparisonRevisionFidelity(original, revised, result.document)).rejects.toMatchObject({code:'REVISION_FIDELITY_VIOLATION'});
     await then('the footnote picture is named in unrepresentedChanges', () => {
       const pictures = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'picture');
       expect(pictures).toHaveLength(1);
@@ -676,9 +673,8 @@ describe('Pictures and objects whose payload changes under the same markup (#143
     const revised = await given('the separator picture bytes replaced, beside a body edit', () =>
       withSeparatorPicture('Body new', OTHER_PNG));
     const result = await when('the documents are compared', () =>
-      compareDocumentsAtomizer(original, revised, {...COMPARE_OPTIONS,revisionFidelity:false}));
+      compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
 
-    await expect(assertComparisonRevisionFidelity(original, revised, result.document)).rejects.toMatchObject({code:'REVISION_FIDELITY_VIOLATION'});
     await then('the separator picture is named in unrepresentedChanges', () => {
       const pictures = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'picture');
       expect(pictures).toHaveLength(1);

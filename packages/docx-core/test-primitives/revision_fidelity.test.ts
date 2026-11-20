@@ -68,3 +68,17 @@ test('resolves note references whose decimal IDs use different legal lexical for
   const wrong = {...output,'word/footnotes.xml':source['word/footnotes.xml'].replace('Note','Lost')};
   expect(() => assertRevisionFidelity({source,intended:source,output:wrong})).toThrow(RevisionFidelityViolation);
 });
+
+test('detects loss of field instructions, hyperlinks, and inline controls with unchanged text', () => {
+  const text = '<w:r><w:t>Kept</w:t></w:r>';
+  const plain = parts('<w:p>' + text + '</w:p>');
+  for (const markup of [
+    '<w:fldSimple w:instr=" PAGE ">' + text + '</w:fldSimple>',
+    '<w:hyperlink w:anchor="destination">' + text + '</w:hyperlink>',
+    '<w:sdt><w:sdtPr/><w:sdtContent>' + text + '</w:sdtContent></w:sdt>',
+  ]) {
+    const original = parts('<w:p>' + markup + '</w:p>');
+    expect(() => assertRevisionFidelity({ source: original, intended: original, output: plain }))
+      .toThrow(RevisionFidelityViolation);
+  }
+});

@@ -195,7 +195,12 @@ export async function compareDocuments_tool(
     }
     return ok(response);
   } catch (e: unknown) {
-    if (e instanceof RevisionFidelityViolation) return { ...err(e.code, e.message), diagnostics: e.failures };
+    if (e instanceof RevisionFidelityViolation) {
+      return {
+        ...err(e.code, e.message, 'Review the projection diagnostics before retrying. SAFE_DOCX_REVISION_FIDELITY=0 disables this check.'),
+        diagnostics: e.failures,
+      };
+    }
     const refusal = conformanceRefusalResponse(e);
     if (refusal) return refusal;
     const msg = errorMessage(e);

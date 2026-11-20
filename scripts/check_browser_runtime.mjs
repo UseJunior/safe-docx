@@ -80,7 +80,7 @@ await runInContext(`(async () => {
   const reopened = await core.DocxDocument.load(edited);
   if (!reopened.readParagraphs().paragraphs[0].text.includes('Revised')) throw Error('Edit lost');
   const revised = await core.generateDocx(spec('Revised contract text.'));
-  const result = await compare.compareDocuments(original, revised, {author:'Browser', date:null});
+  const result = await compare.compareDocuments(original, revised, {author:'Browser', date:null, revisionFidelity:true});
   const zip = await core.DocxArchive.load(result.document);
   const xml = await zip.getDocumentXml();
   if (!xml.includes('w:ins') || !xml.includes('w:del')) throw Error('Missing redline');
@@ -104,7 +104,7 @@ await runInContext(`(async () => {
   changedMedia[media.length] = 1;
   mediaArchive.setFile(mediaPath, changedMedia);
   let assetRefusal;
-  try { await compare.compareDocuments(imageFixture, await mediaArchive.save(), {author:'Browser image'}); } catch (error) { assetRefusal = error; }
+  try { await compare.compareDocuments(imageFixture, await mediaArchive.save(), {author:'Browser image', revisionFidelity:true}); } catch (error) { assetRefusal = error; }
   if (assetRefusal?.code !== 'REVISION_FIDELITY_VIOLATION') throw Error('Unreversible side-story asset swap was not refused');
   await compare.compareDocuments(imageFixture, await mediaArchive.save(), {author:'Browser image', revisionFidelity:false});
   const importedTarget = await runtime.importRelationshipTarget(
@@ -122,7 +122,7 @@ await runInContext(`(async () => {
     const paragraph = real.readParagraphs().paragraphs[0];
     real.replaceText({targetParagraphId:paragraph.id, findText:paragraph.text, replaceText:paragraph.text + ' Runtime smoke.'});
     const changed = (await real.toBuffer()).buffer;
-    const comparison = await compare.compareDocuments(realFixture, changed, {author:'Runtime smoke', date:null});
+    const comparison = await compare.compareDocuments(realFixture, changed, {author:'Runtime smoke', date:null, revisionFidelity:true});
     const realXml = await (await core.DocxArchive.load(comparison.document)).getDocumentXml();
     if (!realXml.includes('w:ins') || !compare.acceptAllChanges(realXml).includes('Runtime smoke.')) throw Error('Real DOCX comparison lost edit');
     if (compare.rejectAllChanges(realXml).includes('Runtime smoke.')) throw Error('Real DOCX reject retained edit');

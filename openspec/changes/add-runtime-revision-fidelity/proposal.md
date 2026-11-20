@@ -6,8 +6,8 @@ Tracked edits must not publish a candidate whose Accept All or Reject All projec
 ## What Changes
 - Add a portable core guard comparing effective text, paragraph/table structure, formatting, selected stories, note content, drawings and object payload identities.
 - Preview the intended untracked mutation independently before publishing an editing candidate.
-- Validate final comparison output before returning bytes; carry structured side/part/location diagnostics.
-- Default on, with library `revisionFidelity: false` and MCP `SAFE_DOCX_REVISION_FIDELITY=0` performance opt-outs.
+- Validate final comparison output before the MCP tool writes it; carry structured side/part/location diagnostics.
+- Default on for MCP tools, with a `SAFE_DOCX_REVISION_FIDELITY=0` opt-out. Library callers can opt in with `revisionFidelity: true`.
 
 ## Impact
 - Affected capabilities: docx-primitives, mcp-server; comparison publication uses the shared core primitive.

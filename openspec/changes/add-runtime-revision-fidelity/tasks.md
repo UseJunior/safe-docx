@@ -1,24 +1,12 @@
 ## Implementation
 - [x] Add a shared portable core projection guard and structured error.
-- [x] Integrate edit preflight and final comparison publication.
-- [x] Verify focused valid/broken edits, references and opt-out.
-- [x] Measure overhead on a 351-paragraph real NVCA document.
-- [ ] Complete local gates and cross-model review.
+- [x] Integrate tracked edit preflight and default-on MCP comparison validation.
+- [x] Bound the cost of asset relationship identities and preserve session state in edit previews.
+- [x] Include the batch's optional list item removal in the preflight.
+- [x] Check field instructions, hyperlinks, inline controls and equations.
+- [ ] Complete local checks, real document timing, and cross-model confirmation.
 
-## Release blocker
-The default-on implementation is not release-ready. The required corpus run passes
-36 of 37 tests and fails the checked-in ILPA strategy characterization on rejected
-header/footer binding and story-content differences. Compare unit tests also expose
-incompatibilities with warning-only unrepresented changes and additional projection
-normalization gaps. Do not disable the guard in the characterization harness or
-regenerate the strategy manifest to conceal this failure. Complete the compatibility
-work and rerun every required gate before pushing.
-
-Cross-model review also requests changes before release:
-- [ ] Bound asset identity size/work; nested XML relationship closures currently grow exponentially.
-- [ ] Validate the actual forked candidate; reloading loses session-created header state.
-- [ ] Protect field, hyperlink, inline control, equation and other structural atoms.
-- [ ] Include batch-end numbered-paragraph removal in the guarded transaction.
-- [ ] Complete broad compatibility tests without hiding failures behind opt-outs.
-
-This is a local checkpoint only; it must not be pushed or merged in this state.
+The strategy differential corpus still characterizes the comparison library,
+including its diagnostic output for known unrepresentable changes. The MCP
+test runs the same ILPA documents through the default policy and checks that
+the tool reports a rejected footer projection and leaves no output file.

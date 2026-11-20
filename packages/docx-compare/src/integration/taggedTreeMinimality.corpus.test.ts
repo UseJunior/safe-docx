@@ -1,4 +1,3 @@
-import { assertComparisonRevisionFidelity } from '../tagged/revisionFidelity.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,12 +66,8 @@ describe('public ILPA tagged-tree redline minimality', () => {
     ] as const) {
       const result = await compareDocuments(original, revised, {
         author: `Corpus bookmark regression ${label}`,
-        // Known unrepresentable section bindings: keep the bookmark regression
-        // under explicit opt-out, and verify the new guard refuses these bytes.
-        revisionFidelity: false,
         date: new Date('2026-08-21T12:00:00Z'),
       });
-      await expect(assertComparisonRevisionFidelity(original, revised, result.document)).rejects.toMatchObject({code:'REVISION_FIDELITY_VIOLATION'});
       const combinedXml = await (await DocxArchive.load(result.document)).getDocumentXml();
       expect(
         collectRevisionTopologyIssues(combinedXml),

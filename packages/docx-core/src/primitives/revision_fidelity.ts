@@ -8,6 +8,8 @@ import { normalizeOpcRelationshipTarget } from './opc-target.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const M = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
+const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 export type RevisionFidelityParts = Readonly<Record<string, string>>;
 export type RevisionFidelitySide = 'accept' | 'reject';
@@ -103,31 +105,38 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
   const noteStack = new Set<string>();
   const noteCache = new Map<string, string>();
   const usedNoteKinds = new Set<string>();
-  const assetCache = new Map<string, unknown>();
-  const relationships = (owner: string): Map<string, { target: string; external: boolean; type: string }> => {
+  const assetCache = new Map<string, string>();
+  const activeAssets = new Set<string>();
+  type Relationship = { target: string; external: boolean; type: string };
+  const relationshipCache = new Map<string, Map<string, Relationship>>();
+  const relationships = (owner: string): Map<string, Relationship> => {
+    const cached = relationshipCache.get(owner);
+    if (cached) return cached;
     const path = posix.join(posix.dirname(owner), '_rels', posix.basename(owner) + '.rels');
     const xml = parts[path];
-    if (!xml) return new Map();
-    return new Map(Array.from(parseXml(xml).getElementsByTagNameNS('http://schemas.openxmlformats.org/package/2006/relationships','Relationship'))
+    const result = !xml ? new Map<string, Relationship>() : new Map(Array.from(parseXml(xml).getElementsByTagNameNS('http://schemas.openxmlformats.org/package/2006/relationships','Relationship'))
       .map(el => [el.getAttribute('Id')!, { target: el.getAttribute('Target') ?? '', external: el.getAttribute('TargetMode') === 'External', type: el.getAttribute('Type') ?? '' }]));
+    relationshipCache.set(owner, result);
+    return result;
   };
   let assetVisits = 0;
-  const asset = (path: string, seen = new Set<string>()): unknown => {
-    if (seen.has(path)) return ['cycle'];
+  const asset = (path: string): unknown => {
+    if (activeAssets.has(path)) throw new ProjectionError(path, 'cyclic asset relationships');
     if (parts['@binary:' + path]) return ['binary', parts['@binary:' + path]];
     if (!parts[path]) return ['missing-asset'];
-    const cacheKey = JSON.stringify([path, [...seen].sort()]);
-    if (assetCache.has(cacheKey)) return assetCache.get(cacheKey);
-    if (seen.size > 128 || ++assetVisits > 10000) throw new ProjectionError(path, 'asset graph exceeds validation budget');
-    const next = new Set(seen).add(path), rels = relationships(path);
-    const identity = (rel: {target:string;external:boolean;type:string}): unknown => [rel.type, rel.external ? rel.target
-      : asset(normalizeOpcRelationshipTarget({ownerPart:path,target:rel.target}).target,next)];
+    const cached = assetCache.get(path);
+    if (cached !== undefined) return cached;
+    if (activeAssets.size >= 128 || ++assetVisits > 10000) throw new ProjectionError(path, 'asset graph exceeds validation budget');
+    activeAssets.add(path);
+    const rels = relationships(path);
+    const identity = (rel: Relationship): unknown => [rel.type, rel.external ? rel.target
+      : asset(normalizeOpcRelationshipTarget({ownerPart:path,target:rel.target}).target)];
     const canonical = (node: Node): unknown => {
       if (node.nodeType === 3 || node.nodeType === 4) return node.nodeValue;
       if (node.nodeType !== 1) return null;
       const el = node as Element;
       const attrs = Array.from(el.attributes).filter(a => a.namespaceURI !== 'http://www.w3.org/2000/xmlns/').map(a => {
-        const reference = a.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' ||
+        const reference = a.namespaceURI === R ||
           (a.namespaceURI === 'urn:schemas-microsoft-com:office:office' && a.localName === 'relid');
         const value = reference ? (rels.has(a.value) ? identity(rels.get(a.value)!) : ['missing-relationship']) : a.value;
         return [`${a.namespaceURI ?? ''}:${a.localName}`, value];
@@ -136,15 +145,19 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
       const content = Array.from(el.childNodes).filter(n => !(hasElements && n.nodeType === 3 && !n.nodeValue?.trim())).map(canonical);
       return [el.namespaceURI,el.localName,attrs,content];
     };
-    const value = ['xml-asset',hash(JSON.stringify(canonical(parseXml(parts[path]!).documentElement))),
-      [...rels.values()].map(identity).map(v => JSON.stringify(v)).sort()];
-    assetCache.set(cacheKey, value); return value;
+    const value = hash(JSON.stringify([
+      canonical(parseXml(parts[path]!).documentElement),
+      [...rels.values()].map(identity).map(v => JSON.stringify(v)).sort(),
+    ]));
+    activeAssets.delete(path);
+    assetCache.set(path, value);
+    return value;
   };
   const assetsOf = (root: Element, owner: string): unknown[] => {
     const rels = relationships(owner);
     const nodes = [root, ...descendants(root)];
     const values = nodes.flatMap(el => Array.from(el.attributes)
-      .filter(a => a.namespaceURI === 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' ||
+      .filter(a => a.namespaceURI === R ||
         (a.namespaceURI === 'urn:schemas-microsoft-com:office:office' && a.localName === 'relid'))
       .map(a => {
         const rel = rels.get(a.value);
@@ -169,6 +182,31 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
             if (text.length) tokens.push(child.localName === 't' || child.localName === 'sym' ? text : ['layout', child.localName, child.getAttributeNS(W, 'type')]);
             const last = spans.at(-1);
             if (format && text.length) { if (last?.format === runFormat) last.text += text; else spans.push({ text, format: runFormat }); }
+          } else if (child.namespaceURI === W && child.localName === 'instrText') {
+            const instruction = child.textContent ?? '';
+            const previous = tokens.at(-1);
+            if (Array.isArray(previous) && previous[0] === 'instruction') previous[1] += instruction;
+            else tokens.push(['instruction', instruction]);
+          } else if (child.namespaceURI === W && child.localName === 'fldChar') {
+            tokens.push(['field-boundary', child.getAttributeNS(W, 'fldCharType')]);
+          } else if (child.namespaceURI === W && ['hyperlink', 'fldSimple', 'sdt'].includes(child.localName)) {
+            const kind = child.localName;
+            const metadata = kind === 'hyperlink'
+              ? [child.getAttributeNS(W, 'anchor'), child.getAttributeNS(W, 'docLocation'), assetsOf(child.cloneNode(false) as Element, owner)]
+              : kind === 'fldSimple' ? child.getAttributeNS(W, 'instr')
+                : property(elements(child).find(e => e.namespaceURI === W && e.localName === 'sdtPr'));
+            tokens.push([kind, metadata]);
+            const content = kind === 'sdt'
+              ? elements(child).find(e => e.namespaceURI === W && e.localName === 'sdtContent')
+              : child;
+            if (content) inline(content, runFormat);
+            tokens.push(['end', kind]);
+          } else if (child.namespaceURI === M && ['oMath', 'oMathPara'].includes(child.localName)) {
+            const math = (node: Element): unknown => [
+              property(node.cloneNode(false) as Element),
+              elements(node).length ? elements(node).map(math) : node.textContent,
+            ];
+            tokens.push(['math', math(child)]);
           } else if (child.namespaceURI === W && ['footnoteReference','endnoteReference'].includes(child.localName)) {
             const kind = child.localName === 'footnoteReference' ? 'footnote' : 'endnote';
             usedNoteKinds.add(kind);
@@ -207,7 +245,11 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
       const cellProperty = (name: string): Element | undefined => cellProps && elements(cellProps).find(c => c.localName === name && c.namespaceURI === W);
       const mergeValue = (name: string): string => { const el = cellProperty(name); return el ? el.getAttributeNS(W,'val') || 'continue' : 'none'; };
       const occupancy = el.localName === 'tc' ? [cellProperty('gridSpan')?.getAttributeNS(W,'val') || '1', mergeValue('vMerge'), mergeValue('hMerge')] : [];
-      return [[el.localName, occupancy, blocks(el, owner)]];
+      const properties = format
+        ? elements(el).filter(child => child.namespaceURI === W &&
+          ['tblPr', 'tblPrEx', 'tblGrid', 'trPr', 'tcPr'].includes(child.localName)).map(property)
+        : [];
+      return [[el.localName, occupancy, properties, blocks(el, owner)]];
     }
     // Properties, markers and note separators carry no independent story block.
     if (el.localName.endsWith('Pr') || el.localName === 'tblGrid') return [];
@@ -241,12 +283,13 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
   return finish();
 }
 function firstDifference(expected: unknown, actual: unknown, path = '$'): { location: string; expected: unknown; actual: unknown } | undefined {
-  if (JSON.stringify(expected) === JSON.stringify(actual)) return undefined;
+  if (expected === actual) return undefined;
   if (Array.isArray(expected) && Array.isArray(actual)) {
     for (let i=0; i<Math.max(expected.length,actual.length); i++) {
       const mismatch = firstDifference(expected[i], actual[i], `${path}[${i}]`);
       if (mismatch) return mismatch;
     }
+    return undefined;
   }
   const bounded = (value: unknown): unknown => {
     if (value === undefined) return { missing: true };

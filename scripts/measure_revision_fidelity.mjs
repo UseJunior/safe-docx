@@ -26,7 +26,9 @@ for (let i=-1;i<iterations;i++) {
     const start=performance.now();
     const result=await compareDocuments(source,intended,{author:'Fidelity benchmark',date:new Date('2026-01-01T00:00:00Z'),revisionFidelity:enabled});
     const elapsed=performance.now()-start;
-    const identity=hash(await (await DocxArchive.load(result.document)).getDocumentXml());
+    const archive = await DocxArchive.load(result.document);
+    const identity = JSON.stringify(await Promise.all(archive.listFiles().filter(path => !path.endsWith('/')).sort()
+      .map(async path => [path, hash(await archive.getFileBuffer(path))])));
     outputIdentity ??= identity;
     if(identity!==outputIdentity) throw Error('Guard setting changed comparison output');
     if(i>=0) compareSamples[enabled?'on':'off'].push(elapsed);
