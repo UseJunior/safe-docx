@@ -210,6 +210,29 @@ describe('local mutation boundary', () => {
     expect(order).toEqual(['inner', 'held-done', 'outside']);
   });
 
+  test('a mutation started inside a finished hold queues behind a later hold (#1549)', async () => {
+    const { manager, session } = await setup();
+    const fire = barrier();
+    const order: string[] = [];
+    let escaped!: Promise<unknown>;
+    await manager.holdSession(session, async () => {
+      escaped = fire.promise.then(() => manager.mutateSession(session, async () => { order.push('escaped'); return ok(); }));
+    });
+    const later = barrier();
+    const laterHold = manager.holdSession(session, async () => {
+      order.push('later-enter');
+      fire.release();
+      await later.promise;
+      order.push('later-end');
+    });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+    later.release();
+    await laterHold;
+    await escaped;
+    expect(order).toEqual(['later-enter', 'later-end', 'escaped']);
+  });
+
   test.openspec('Precommit candidate remains invisible')('reads see the old document until atomic publication; queued writes see the committed predecessor', async () => {
     const { manager, session, file, ids } = await setup();
     const metadata = seedMetadata(session);

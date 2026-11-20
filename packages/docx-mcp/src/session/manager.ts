@@ -251,7 +251,7 @@ export class SessionClosedDuringOpenError extends Error {
 export class SessionManager {
   private mutationQueues = new WeakMap<Session, Promise<void>>();
   /** Sessions held by the current async call chain (see `holdSession`). */
-  private heldSessions = new AsyncLocalStorage<ReadonlySet<Session>>();
+  private heldSessions = new AsyncLocalStorage<ReadonlyArray<{ session: Session; active: boolean }>>();
 
   /**
    * Run `execute` with exclusive use of the session: mutations from other
@@ -261,10 +261,15 @@ export class SessionManager {
    * document it judged (#1549).
    */
   async holdSession<T>(session: Session, execute: () => Promise<T>): Promise<T> {
-    return this.serializeMutation(session, () => {
-      const held = new Set(this.heldSessions.getStore() ?? []);
-      held.add(session);
-      return this.heldSessions.run(held, execute);
+    return this.serializeMutation(session, async () => {
+      // Async work started inside the hold keeps this context after it ends,
+      // so the bypass lasts only while the hold is active.
+      const hold = { session, active: true };
+      try {
+        return await this.heldSessions.run([...(this.heldSessions.getStore() ?? []), hold], execute);
+      } finally {
+        hold.active = false;
+      }
     });
   }
 
@@ -344,7 +349,7 @@ export class SessionManager {
 
   private async serializeMutation<T>(session: Session, execute: () => Promise<T>): Promise<T> {
     // Already serialized by an enclosing holdSession on this call chain.
-    if (this.heldSessions.getStore()?.has(session)) return execute();
+    if (this.heldSessions.getStore()?.some(h => h.active && h.session === session)) return execute();
     const preceding = this.mutationQueues.get(session) ?? Promise.resolve();
     let release!: () => void;
     const tail = new Promise<void>(resolve => { release = resolve; });
