@@ -421,13 +421,14 @@ describe('batch_edit tool — edge cases', () => {
     });
   }
 
-  test('reports empty numbered paragraphs under "error" when a concurrent edit lands between the preview and the steps', async ({ given, when, then }: AllureBddContext) => {
+  test('refuses under "error" with the session unchanged when a concurrent edit is in flight as the batch starts', async ({ given, when, then }: AllureBddContext) => {
     const ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
     let opened: Awaited<ReturnType<typeof openSession>>;
     let result: Awaited<ReturnType<typeof batchEdit>>;
     let concurrent: Awaited<ReturnType<typeof replaceText>>;
+    let snapshotAfterConcurrent!: Buffer;
 
-    await given('a numbered item "cat dog" and a replace_text call that removes "dog" while the batch is between its preview and its steps', async () => {
+    await given('a numbered item "cat dog" and a replace_text call that removes "dog", still inside its mutation when the batch starts', async () => {
       opened = await openSession([], {
         mgr: new SessionManager({ defaultAiAuthor: null }),
         xml: `<w:document xmlns:w="${ns}"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>cat dog</w:t></w:r></w:p><w:p><w:r><w:t>Tail</w:t></w:r></w:p></w:body></w:document>`,
@@ -446,29 +447,36 @@ describe('batch_edit tool — edge cases', () => {
       const enteredPromise = new Promise<void>((r) => { entered = r; });
       const gate = new Promise<void>((r) => { release = r; });
       let calls = 0;
-      // Hold the concurrent replace inside its mutation until the batch's
-      // first step mutation is queued behind it, after the batch's preview.
+      // Hold the concurrent replace inside its mutation until the batch has
+      // started; before #1549 the batch previewed the pre-edit document here.
       mgr.mutateSession = (async (active: Parameters<typeof original>[0], execute: Parameters<typeof original>[1]) => {
         calls += 1;
         if (calls === 1) return original(active, async (candidate) => { entered(); await gate; return execute(candidate); });
-        release();
         return original(active, execute);
       }) as typeof mgr.mutateSession;
       const pending = replaceText(mgr, { file_path: opened.filePath, target_paragraph_id: id, old_string: 'dog', new_string: '', instruction: 'remove dog', on_empty_numbered_paragraph: 'ignore' });
       await enteredPromise;
-      result = await batchEdit(mgr, {
+      const batch = batchEdit(mgr, {
         file_path: opened.filePath,
         on_empty_numbered_paragraph: 'error',
         steps: [{ step_id: 'blank-cat', operation: 'replace_text', target_paragraph_id: id, old_string: 'cat', new_string: ' ', instruction: 'blank cat' }],
       });
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+      release();
       concurrent = await pending;
+      const session = (await mgr.getSessionByFilePath(opened.filePath))!;
+      snapshotAfterConcurrent = Buffer.from(await session.doc.getMutationSnapshot());
+      result = await batch;
     });
 
-    await then('the batch fails with EMPTY_NUMBERED_PARAGRAPH and says the step was applied', () => {
+    await then('the batch fails with EMPTY_NUMBERED_PARAGRAPH before any step and the document is exactly as the concurrent edit left it', async () => {
       assertSuccess(concurrent, 'concurrent replace_text');
       assertFailure(result, 'EMPTY_NUMBERED_PARAGRAPH');
-      expect((result as { error: { message: string } }).error.message).toContain('The steps were applied before this was detected.');
-      expect((result as { completed_step_ids?: string[] }).completed_step_ids).toEqual(['blank-cat']);
+      expect((result as { error: { message: string } }).error.message).toContain('No step was applied.');
+      const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
+      expect(session.editCount).toBe(1);
+      expect(session.doc.getParagraphTextById(opened.paraIds[0]!)).toBe('cat ');
+      expect(Buffer.from(await session.doc.getMutationSnapshot()).equals(snapshotAfterConcurrent)).toBe(true);
     });
   });
 });
