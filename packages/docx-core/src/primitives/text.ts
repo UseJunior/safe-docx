@@ -762,15 +762,41 @@ function hasDirectParagraphNumbering(p: Element): boolean {
 /**
  * True when `p` is a paragraph its table cell cannot lose: the cell's only
  * block-level content, or the paragraph that must close a cell ending in a
- * nested table.
+ * nested table. A paragraph wrapped in block-level w:sdt/w:sdtContent or
+ * w:customXml (possibly nested) counts as the cell's paragraph when the
+ * outermost wrapper holds no other paragraph or table; the wrapper then
+ * stands in for the paragraph among the cell's block-level children.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.66
  * @see https://github.com/UseJunior/safe-docx/issues/1524
+ * @see https://github.com/UseJunior/safe-docx/issues/1550
  */
 function isRequiredTableCellParagraph(p: Element): boolean {
-  const parent = p.parentNode;
+  let block: Element = p;
+  let parent = p.parentNode;
+  while (parent && parent.nodeType === 1) {
+    const el = parent as Element;
+    if (isW(el, 'tc')) break;
+    if (isW(el, 'sdtContent')) {
+      const sdt = el.parentNode;
+      if (!sdt || sdt.nodeType !== 1 || !isW(sdt as Element, 'sdt')) return false;
+      block = sdt as Element;
+    } else if (isW(el, 'customXml')) {
+      block = el;
+    } else {
+      return false;
+    }
+    parent = block.parentNode;
+  }
   if (!parent || parent.nodeType !== 1 || !isW(parent as Element, 'tc')) return false;
-  return !canSafelyRemoveEmptyParagraph(p);
+  if (block !== p) {
+    const others = [
+      ...Array.from(block.getElementsByTagNameNS(OOXML.W_NS, W.p)),
+      ...Array.from(block.getElementsByTagNameNS(OOXML.W_NS, 'tbl')),
+    ];
+    if (others.some((el) => el !== p)) return false;
+  }
+  return !canSafelyRemoveEmptyParagraph(block);
 }
 
 /**

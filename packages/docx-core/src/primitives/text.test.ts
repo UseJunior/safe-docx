@@ -3959,4 +3959,60 @@ describe('replaceParagraphTextRange: tracked blanking inside a table cell', () =
       expect(cellParagraphs(doc).map(getParagraphText)).toEqual(['Second']);
     });
   });
+
+  const cellAllParagraphs = (doc: Document) =>
+    Array.from(doc.getElementsByTagNameNS(W_NS, 'tc').item(0)!.getElementsByTagNameNS(W_NS, 'p'));
+  const wrappers: Array<[string, (inner: string) => string]> = [
+    ['a content control', (inner) => `<w:sdt><w:sdtPr/><w:sdtContent>${inner}</w:sdtContent></w:sdt>`],
+    ['customXml', (inner) => `<w:customXml w:element="field">${inner}</w:customXml>`],
+    ['customXml nested in a content control', (inner) => `<w:sdt><w:sdtPr/><w:sdtContent><w:customXml w:element="field">${inner}</w:customXml></w:sdtContent></w:sdt>`],
+  ];
+  for (const [name, wrap] of wrappers) {
+    cellTest(`blanking a cell's only paragraph wrapped in ${name} keeps its paragraph mark`, async ({ given, when, then }: AllureBddContext) => {
+      let doc!: Document;
+      let p!: Element;
+      await given(`a table cell whose only paragraph sits inside ${name}`, () => {
+        doc = makeDoc(cell(wrap('<w:p><w:r><w:t>Cell text</w:t></w:r></w:p>')));
+        p = firstParagraph(doc);
+      });
+      await when('the whole paragraph text is replaced with nothing under tracked changes', () => {
+        replaceParagraphTextRange(p, 0, 9, '', trackedCtx());
+      });
+      await then('the mark is live and accept-all keeps one paragraph in the cell', () => {
+        expect(paraMarkDel(p)).toBe(false);
+        acceptChanges(doc);
+        expect(cellAllParagraphs(doc).map(getParagraphText)).toEqual(['']);
+      });
+    });
+
+    cellTest(`blanking one of two paragraphs wrapped in ${name} still deletes that paragraph mark`, async ({ given, when, then }: AllureBddContext) => {
+      let doc!: Document;
+      let p!: Element;
+      await given(`a table cell whose ${name} holds "First" and "Second"`, () => {
+        doc = makeDoc(cell(wrap('<w:p><w:r><w:t>First</w:t></w:r></w:p><w:p><w:r><w:t>Second</w:t></w:r></w:p>')));
+        p = firstParagraph(doc);
+      });
+      await when('"First" is blanked under tracked changes', () => {
+        replaceParagraphTextRange(p, 0, 5, '', trackedCtx());
+      });
+      await then('its paragraph mark is deleted', () => {
+        expect(paraMarkDel(p)).toBe(true);
+      });
+    });
+
+    cellTest(`blanking a paragraph wrapped in ${name} beside a sibling cell paragraph still deletes its mark`, async ({ given, when, then }: AllureBddContext) => {
+      let doc!: Document;
+      let p!: Element;
+      await given(`a table cell with ${name} holding "First" followed by an unwrapped "Second"`, () => {
+        doc = makeDoc(cell(`${wrap('<w:p><w:r><w:t>First</w:t></w:r></w:p>')}<w:p><w:r><w:t>Second</w:t></w:r></w:p>`));
+        p = firstParagraph(doc);
+      });
+      await when('"First" is blanked under tracked changes', () => {
+        replaceParagraphTextRange(p, 0, 5, '', trackedCtx());
+      });
+      await then('its paragraph mark is deleted', () => {
+        expect(paraMarkDel(p)).toBe(true);
+      });
+    });
+  }
 });
