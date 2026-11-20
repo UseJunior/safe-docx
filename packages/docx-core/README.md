@@ -111,7 +111,9 @@ Mismatches throw `RevisionFidelityViolation` with code
 location. Checks cover text, paragraph/table structure, declared run/paragraph
 formatting, selected stories, field boundaries and instructions, hyperlinks,
 inline controls, equations, referenced notes, and drawing and object payloads.
-The comparison adapter retains its existing effective-formatting and field checks.
+A cyclic relationship graph reachable from an embedded asset causes the guard
+to refuse with a projection diagnostic. The comparison adapter retains its
+existing effective-formatting and field checks.
 
 Existing revisions are resolved on both the baseline and output using the same
 side. Separately reported, untracked header lifecycle changes are outside the

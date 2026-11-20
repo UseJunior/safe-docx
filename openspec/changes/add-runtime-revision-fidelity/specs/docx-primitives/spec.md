@@ -1,6 +1,6 @@
 ## ADDED Requirements
 ### Requirement: Runtime revision fidelity
-The engine SHALL reject tracked output whose Reject All projection differs from its source projection or whose Accept All projection differs from the independent intended result. The failure SHALL carry `REVISION_FIDELITY_VIOLATION`, the failed side, part and location. The guard SHALL be enabled by default and MAY be explicitly disabled for performance.
+The engine SHALL reject tracked output whose Reject All projection differs from its source projection or whose Accept All projection differs from the independent intended result. The failure SHALL carry `REVISION_FIDELITY_VIOLATION`, the failed side, part and location. Direct guard calls and MCP tools SHALL enable the check by default and MAY explicitly disable it for performance. The comparison library SHALL allow callers to opt into the check.
 
 #### Scenario: Valid tracked edits preserve both projections
 - **WHEN** a valid tracked insertion, deletion or formatting change is checked
