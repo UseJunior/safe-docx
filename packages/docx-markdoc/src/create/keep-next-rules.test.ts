@@ -1,5 +1,7 @@
 import { describe, expect } from 'vitest';
 import { testAllure } from '../../../docx-core/src/testing/allure-test.js';
+import { keptWithNextBeforeStyle } from './keep-next-rules.js';
+import { CREATION_STYLE } from './profile.js';
 import { lowerCreationMarkdoc } from './lower.js';
 import { projectSourceText } from './oracle.js';
 
@@ -43,5 +45,15 @@ describe('automatic keep-with-next', () => {
     }
     expect(created.length).toBe(covered.length);
     expect(oracle.length).toBe(covered.length);
+  });
+});
+
+describe('keptWithNextBeforeStyle', () => {
+  test('a paragraph before a legend or signature paragraph is kept with the next; before others it is not', () => {
+    expect(keptWithNextBeforeStyle(CREATION_STYLE.legend)).toBe(true);
+    expect(keptWithNextBeforeStyle(CREATION_STYLE.signature)).toBe(true);
+    expect(keptWithNextBeforeStyle(CREATION_STYLE.body)).toBe(false);
+    expect(keptWithNextBeforeStyle(CREATION_STYLE.quote)).toBe(false);
+    expect(keptWithNextBeforeStyle(undefined)).toBe(false);
   });
 });

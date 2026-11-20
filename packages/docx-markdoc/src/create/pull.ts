@@ -3,6 +3,7 @@ import { DocxMarkdocError } from '../errors.js';
 import { createDocumentFromMarkdoc, type CreatedDocument } from './create.js';
 import { lowerCreationMarkdoc, NUMPAGES_FIELD_TOKEN, PAGE_FIELD_TOKEN, type CreationProjection } from './lower.js';
 import { CREATION_STYLE } from './profile.js';
+import { keptWithNextBeforeStyle } from './keep-next-rules.js';
 import { readPullDocx, type PullDocx, type PullParagraph, type PullStory } from './pull-docx.js';
 import { buildSourceMap, lineStartsOf, type SourceHolder, type SourceMap, type SourceParagraph, type SourcePiece } from './pull-source.js';
 import { PARAGRAPH_LAYOUT_HANGING_INDENTS, PARAGRAPH_LAYOUT_LEFT_INDENTS, RUNNING_TEXT_KEYS } from './validate.js';
@@ -869,7 +870,7 @@ function addedBlock(paragraph: PullParagraph, notes: PullDiagnostic[], where: st
     case undefined:
     case CREATION_STYLE.body: {
       // A body paragraph with its own alignment or indent, as a retyped `{% paragraph-layout %}` paragraph keeps.
-      const layout = paragraphLayoutAttributes(paragraph, next?.style === CREATION_STYLE.legend || next?.style === CREATION_STYLE.signature);
+      const layout = paragraphLayoutAttributes(paragraph, keptWithNextBeforeStyle(next?.style));
       return { kind: 'plain', markdown: layout ? `{% paragraph-layout ${layout} %}${inline}{% /paragraph-layout %}` : inline };
     }
     default:
@@ -1688,7 +1689,7 @@ export async function pullCreationEdits(input: PullInput): Promise<PullResult> {
     const generatedSpacing = new Set(O.flatMap((paragraph, j) => (afterTable(O, j) ? paragraph.properties.split(';').filter((piece) => /^spacing\(before=\d+\)$/u.test(piece)) : [])));
     const without = (properties: string, part: string) => properties.split(';').filter((piece) => piece !== part).join(';');
     // So is the keep-with-next create sets on the paragraph before a legend or a first signer.
-    const keepsWithNext = (paragraphs: readonly PullParagraph[], k: number) => paragraphs[k + 1]?.style === CREATION_STYLE.legend || paragraphs[k + 1]?.style === CREATION_STYLE.signature;
+    const keepsWithNext = (paragraphs: readonly PullParagraph[], k: number) => keptWithNextBeforeStyle(paragraphs[k + 1]?.style);
     const keepOnly = (k: number) => {
       const part = 'keepNext=true';
       const built = builtOf.get(k);
