@@ -251,7 +251,7 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
       const occupancy = el.localName === 'tc' ? [cellProperty('gridSpan')?.getAttributeNS(W,'val') || '1', mergeValue('vMerge'), mergeValue('hMerge')] : [];
       const properties = format
         ? elements(el).filter(child => child.namespaceURI === W &&
-          ['tblPr', 'tblPrEx', 'tblGrid', 'trPr', 'tcPr'].includes(child.localName)).map(property)
+          ['tblPr', 'tblPrEx', 'tblGrid', 'trPr', 'tcPr'].includes(child.localName)).map(property).filter(value => value !== null)
         : [];
       return [[el.localName, occupancy, properties, blocks(el, owner)]];
     }

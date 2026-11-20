@@ -189,8 +189,10 @@ export async function preflightAiRevisionMutation(
   advisories?: AiRevisionPreflightAdvisories,
 ): Promise<AiRevisionPreflightResult> {
   const aiAuthor = session.aiAuthor;
+  // MCP supplies revision contexts through its attributed session. Explicit
+  // contexts supplied by the legacy TypeScript helper API retain their policy.
+  if (!aiAuthor) return PREFLIGHT_PROCEED;
   const checkFidelity = Boolean(ctx) && process.env.SAFE_DOCX_REVISION_FIDELITY !== '0';
-  if (!aiAuthor && !checkFidelity) return PREFLIGHT_PROCEED;
 
   // Preserve session-only state, including ownership of created header/footer
   // relationships, so the preview takes the same mutation path as the edit.
@@ -233,7 +235,6 @@ export async function preflightAiRevisionMutation(
     }
   };
 
-  if (!aiAuthor) return complete(PREFLIGHT_PROCEED);
   const validation = await previewDoc.validateAiRevisions(aiAuthor, touched);
 
   // Advisory only, and never on the blocked path: a blocked mutation is not
