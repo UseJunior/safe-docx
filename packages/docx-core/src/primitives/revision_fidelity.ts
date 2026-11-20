@@ -34,7 +34,7 @@ export interface RevisionFidelityOptions {
   /** Compare uses its established projection engine; editing uses the core DOM engine. */
   project?: (xml: string, side: RevisionFidelitySide) => string;
   /** Optional comparison-specific handling of volatile field caches. */
-  normalizeXml?: (xml: string) => string;
+  normalizeXml?: (xml: string, side: RevisionFidelitySide) => string;
   /** Compare already checks effective formatting independently. Default true. */
   checkFormatting?: boolean;
   normalizeText?: (text: string) => string;
@@ -87,12 +87,12 @@ function snapshot(parts: RevisionFidelityParts, side: RevisionFidelitySide, opti
       try {
         if (options.project) {
           let xml = options.project(parts[part]!, side);
-          if (options.normalizeXml) xml = options.normalizeXml(xml);
+          if (options.normalizeXml) xml = options.normalizeXml(xml, side);
           doc = parseXml(xml);
         } else {
           doc = parseXml(parts[part]!);
           if (side === 'accept') acceptChanges(doc); else rejectChanges(doc);
-          if (options.normalizeXml) doc = parseXml(options.normalizeXml(serializeXml(doc)));
+          if (options.normalizeXml) doc = parseXml(options.normalizeXml(serializeXml(doc), side));
         }
         projected.set(part, doc);
       } catch (error) { throw new ProjectionError(part, error instanceof Error ? error.name : 'projection failed'); }

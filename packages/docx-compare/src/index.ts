@@ -120,8 +120,12 @@ export async function compareDocuments(
   const placeholderDate = date === null
     ? await choosePlaceholderRevisionDate([original as Buffer, revised as Buffer])
     : undefined;
+  const originalBookmarkNames = revisionFidelity === true ? new Map<string, string>() : undefined;
   const tagged = await compareDocumentsAtomizer(original as Buffer, revised as Buffer, {
     author,
+    onOriginalBookmarkRenames: originalBookmarkNames && (renames => {
+      for (const [source, generated] of renames) originalBookmarkNames.set(generated, source);
+    }),
     date: placeholderDate ?? date ?? undefined,
     formatDetection:
       ignoreFormatting === undefined
@@ -137,8 +141,8 @@ export async function compareDocuments(
   const document = placeholderDate === undefined
     ? tagged.document
     : await omitPlaceholderRevisionDates(tagged.document, placeholderDate);
-  if (revisionFidelity === true) {
-    await assertComparisonRevisionFidelity(original, revised, document);
+  if (originalBookmarkNames) {
+    await assertComparisonRevisionFidelity(original, revised, document, originalBookmarkNames);
   }
   return {
     document,
