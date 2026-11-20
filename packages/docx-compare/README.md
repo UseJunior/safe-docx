@@ -85,3 +85,11 @@ optional own property instead of returning it with the value `undefined`.
 `AncillaryStorySafetyError` exposes its current `issues` only. Remove callers of
 the deleted `attempts` property and `AncillaryStorySafetyAttempt` type; the sole
 tagged publisher does not make reconstruction-mode attempts.
+
+### Revision-fidelity publication guard
+
+Pass `{ revisionFidelity: true }` to validate final Accept All and Reject All
+projections before returning bytes. A mismatch throws
+`REVISION_FIDELITY_VIOLATION` with side, part and location diagnostics. The
+MCP `compare_documents` tool enables this check by default. Library callers
+can continue to inspect `unrepresentedChanges` on the diagnostic redline.

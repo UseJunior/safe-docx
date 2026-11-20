@@ -318,6 +318,18 @@ describe('Header and footer tools', () => {
     assertFailure(result as any, 'CONFLICTING_SECTION_REVISION');
   });
 
+  test('rewrites a session-created footer under tracking and reports the package change', async () => {
+    const opened = await open(para('Body.') + '<w:sectPr/>', [], true);
+    const params = { file_path: opened.inputPath, kind: 'footer', section_index: 0 };
+    const first = await call(opened.mgr, 'set_header_footer', { ...params, paragraphs: [{ text: 'First' }] });
+    assertSuccess(first as { success: boolean }, 'set_header_footer');
+    const second = await call(opened.mgr, 'set_header_footer', { ...params, paragraphs: [{ text: 'Second' }] });
+    assertSuccess(second as { success: boolean }, 'set_header_footer');
+    expect(second.relationship_id).toBe(first.relationship_id);
+    const { result } = await saveAs(opened.mgr, opened.inputPath, 'tracked');
+    expect(JSON.stringify(result.non_revision_changes)).toContain('rewrote word/footer');
+  });
+
   test('a reference-only change is listed in the save manifest', async () => {
     const body = para('A.', '<w:sectPr><w:footerReference w:type="default" r:id="rIdF1"/></w:sectPr>') + para('B.') + '<w:sectPr><w:footerReference w:type="default" r:id="rIdF2"/></w:sectPr>';
     const opened = await open(body, ['One', 'Two']);

@@ -323,19 +323,23 @@ function mergeRootIgnorablePrefixes(
   return prefixes;
 }
 
+/** Raw minimal document XML shared by XML-only and packaged scenario fixtures. */
+export function documentXmlFromBodyXml(bodyXml: string, namespaceOptions: MinimalDocumentNamespaceOptions = {}): string {
+  const bindings = mergeRootNamespaceBindings(namespaceOptions.namespaces ?? {});
+  const ignorable = mergeRootIgnorablePrefixes(bindings, namespaceOptions.ignorablePrefixes ?? []);
+  const declarations = Array.from(bindings, ([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlAttr(uri)}"`).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document${declarations}` +
+    ` mc:Ignorable="${escapeXmlAttr(ignorable.join(' '))}">` +
+    `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
+}
+
 export async function buildDocxFromBodyXml(
   bodyXml: string,
   hyperlinkRels: HyperlinkRelFixture[] = [],
   namespaceOptions: MinimalDocumentNamespaceOptions = {},
 ): Promise<Buffer> {
-  const bindings = mergeRootNamespaceBindings(namespaceOptions.namespaces ?? {});
-  const ignorable = mergeRootIgnorablePrefixes(bindings, namespaceOptions.ignorablePrefixes ?? []);
-  const declarations = Array.from(bindings, ([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlAttr(uri)}"`).join('');
-  const documentXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document${declarations}` +
-    ` mc:Ignorable="${escapeXmlAttr(ignorable.join(' '))}">` +
-    `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
+  const documentXml = documentXmlFromBodyXml(bodyXml, namespaceOptions);
 
   const contentTypesXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +

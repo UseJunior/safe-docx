@@ -20,6 +20,7 @@ are declared in [`numberingIntegration.ts`](src/tagged/numberingIntegration.ts).
 | Setting | Surface | Tagged observable and evidence |
 | --- | --- | --- |
 | `author` | Public / low-level | Supplies `w:author` on generated revision and property-change markup; covered by `src/tagged/taggedTreeSerializer.test.ts`. |
+| `revisionFidelity` | Public | When true, refuses final bytes whose accept/reject projections diverge. Enabled by default in MCP. Covered by `../docx-core/test-primitives/revision_fidelity.test.ts` and `../docx-mcp/src/tools/revision_fidelity.test.ts`. |
 | `date` | Public / low-level | Supplies normalized `w:date` on generated revision and property-change markup; covered by `src/tagged/taggedTreeSerializer.test.ts`. |
 | `ignoreFormatting` | Public | Disables representation of authored property differences while still requiring fidelity to the revised/Accept formatting projection; covered by `src/compare-options.test.ts` and `src/tagged/taggedTreeShadow.test.ts`. |
 | `detectMoves` | Public | Controls tagged move classification; move and ordinary insertion/deletion serialization are covered by `src/tagged/taggedTreeConstruction.test.ts`. |
@@ -30,6 +31,7 @@ are declared in [`numberingIntegration.ts`](src/tagged/numberingIntegration.ts).
 | `moveDetection.moveMinimumWordCount` | Low-level | Excludes short residual candidates; covered by `src/tagged/taggedTreeConstruction.test.ts`. |
 | `moveDetection.caseInsensitiveMove` | Low-level | Controls case folding in both portable similarity measures; covered by `src/tagged/taggedTreeConstruction.test.ts`. |
 | `numbering.enabled` | Low-level | Controls virtual rendered list identities used by tagged alignment; identities are not serialized. Covered by `src/tagged/taggedTreeConstruction.test.ts`. |
+| `onOriginalBookmarkRenames` | Internal low-level | Reports generated original-side bookmark aliases so the reject projection can compare references by their source names. Covered by `src/tagged/consumerCompatibility-bookmark-ranges.test.ts`. |
 | `revisionAttributionRanges` | Internal low-level | Carries exact Markdoc operation provenance through tagged serialization and is stripped before publication; covered by `src/integration/tagged-rationale-attribution.test.ts` and `../docx-markdoc/src/rationale-comments.test.ts`. |
 | `taggedTreePublicationSafetyEvaluator` | Internal low-level test seam | Replaces only the final structural publication-safety evaluation so fail-closed diagnostics can be exercised; covered by `src/tagged/taggedTreeShadow.test.ts`. |
 | `taggedTreeFormattingFidelityEvaluator` | Internal low-level test seam | Replaces only the final source-projected formatting evaluation so fail-closed fidelity behavior can be exercised; covered by `src/tagged/taggedTreeShadow.test.ts`. |

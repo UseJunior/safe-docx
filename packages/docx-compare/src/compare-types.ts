@@ -1,4 +1,6 @@
 export interface CompareOptions {
+  /** Fail closed on accept/reject projection mismatch when enabled. Default false. */
+  revisionFidelity?: boolean;
   /** Author name for revision tracking. Default: "Comparison" */
   author?: string;
   /**

@@ -635,6 +635,29 @@ function previewEmptyNumberedParagraphs(
   return tracker.findings(doc);
 }
 
+function applyBatchEndRemovals(
+  doc: DocxDocument,
+  findings: EmptyNumberedFinding[],
+  ctx: RevisionContext | undefined,
+): Array<{ step_id: string; warning: string }> {
+  const messages: Array<{ step_id: string; warning: string }> = [];
+  for (const finding of findings) {
+    const paragraph = doc.getParagraphElementById(finding.paragraphId);
+    if (!paragraph) continue;
+    const outcome = applyEmptyNumberedParagraphPolicy({
+      doc: doc,
+      paragraphId: finding.paragraphId,
+      paragraph,
+      hadContentBefore: true,
+      beforeText: finding.beforeText,
+      policy: 'remove_paragraph',
+      ctx,
+    });
+    if (outcome.kind !== 'none') messages.push({ step_id: finding.stepId, warning: outcome.message });
+  }
+  return messages;
+}
+
 /**
  * Apply `remove_paragraph` to the batch's findings in one final mutation,
  * after every step has run. Removal is deferred to the end of the batch so
@@ -653,20 +676,7 @@ async function removeEmptyNumberedParagraphsAtBatchEnd(
   const messages: Array<{ step_id: string; warning: string }> = [];
   const response = await manager.mutateSession(session, async (candidate) => {
     const activeCtx = await getRevisionContextForSession(candidate, ctx);
-    for (const finding of findings) {
-      const paragraph = candidate.doc.getParagraphElementById(finding.paragraphId);
-      if (!paragraph) continue;
-      const outcome = applyEmptyNumberedParagraphPolicy({
-        doc: candidate.doc,
-        paragraphId: finding.paragraphId,
-        paragraph,
-        hadContentBefore: true,
-        beforeText: finding.beforeText,
-        policy: 'remove_paragraph',
-        ctx: activeCtx,
-      });
-      if (outcome.kind !== 'none') messages.push({ step_id: finding.stepId, warning: outcome.message });
-    }
+    messages.push(...applyBatchEndRemovals(candidate.doc, findings, activeCtx));
     if (messages.length > 0) manager.markEdited(candidate);
     return ok({});
   });
@@ -820,7 +830,14 @@ export async function batchEdit(
     const revisionPreflight = await preflightAiRevisionMutation(
       session,
       ctx,
-      (previewDoc, previewCtx) => executeStepsOnDoc(previewDoc, steps, previewCtx),
+      (previewDoc, previewCtx) => {
+        if (emptyNumberedPolicy === 'remove_paragraph') {
+          const findings = previewEmptyNumberedParagraphs(previewDoc, steps, previewCtx);
+          applyBatchEndRemovals(previewDoc, findings, previewCtx);
+        } else {
+          executeStepsOnDoc(previewDoc, steps, previewCtx);
+        }
+      },
       undefined,
       { insertedText: collectInsertedText(steps) },
     );

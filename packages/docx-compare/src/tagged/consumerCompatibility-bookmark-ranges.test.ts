@@ -32,7 +32,7 @@ import { describe, expect } from 'vitest';
 import { DocxArchive, childElements, parseXml } from '@usejunior/docx-core';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocumentsAtomizer } from './pipeline.js';
+import { compareDocuments } from '../index.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import { emptyRevisionWrapperIds } from '../testing/revisionWrapperShape.js';
@@ -73,13 +73,11 @@ function bookmarkedParagraph(id: string, name: string, text: string, pPr = ''): 
 async function compare(
   originalBody: string,
   revisedBody: string,
+  revisionFidelity = false,
 ): Promise<string> {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
-  const result = await compareDocumentsAtomizer(original, revised, {
-    author: AUTHOR,
-    date: DATE,
-  });
+  const result = await compareDocuments(original, revised, { author: AUTHOR, date: DATE, revisionFidelity });
   const documentXml = await (await DocxArchive.load(result.document)).getDocumentXml();
   // Every fixture in this file doubles as a no-empty-revision-wrapper check (#1281).
   expect(emptyRevisionWrapperIds(documentXml)).toEqual([]);
@@ -404,6 +402,7 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
           '<w:r><w:t xml:space="preserve">text </w:t></w:r>' +
           '<w:bookmarkEnd w:id="1"/><w:r><w:t>tail</w:t></w:r></w:p>' +
           revisedReference,
+        true,
       );
     });
 

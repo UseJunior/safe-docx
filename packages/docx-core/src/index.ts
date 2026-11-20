@@ -147,3 +147,5 @@ export type {
 export { hash, createHash } from './runtime/hash.js';
 export { posix } from './runtime/posix.js';
 export { toBase64 } from './runtime/bytes.js';
+
+export * from './primitives/revision_fidelity.js';

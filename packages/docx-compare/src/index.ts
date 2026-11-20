@@ -6,6 +6,7 @@
  */
 
 import { compareDocumentsAtomizer } from './tagged/pipeline.js';
+import { assertComparisonRevisionFidelity } from './tagged/revisionFidelity.js';
 import { choosePlaceholderRevisionDate, omitPlaceholderRevisionDates } from './revisionDateOmission.js';
 import { COMPARE_REVISION_GROUPINGS, DEFAULT_COMPARE_REVISION_GROUPING, type CompareOptions, type CompareResult } from './compare-types.js';
 export { UnsupportedTableTopologyComparisonError } from './tagged/tableTopologyGuard.js';
@@ -98,6 +99,7 @@ export async function compareDocuments(
   }
   const {
     author,
+    revisionFidelity,
     date,
     ignoreFormatting,
     detectMoves,
@@ -118,8 +120,12 @@ export async function compareDocuments(
   const placeholderDate = date === null
     ? await choosePlaceholderRevisionDate([original as Buffer, revised as Buffer])
     : undefined;
+  const originalBookmarkNames = revisionFidelity === true ? new Map<string, string>() : undefined;
   const tagged = await compareDocumentsAtomizer(original as Buffer, revised as Buffer, {
     author,
+    onOriginalBookmarkRenames: originalBookmarkNames && (renames => {
+      for (const [source, generated] of renames) originalBookmarkNames.set(generated, source);
+    }),
     date: placeholderDate ?? date ?? undefined,
     formatDetection:
       ignoreFormatting === undefined
@@ -132,10 +138,14 @@ export async function compareDocuments(
     revisionGrouping,
   });
 
+  const document = placeholderDate === undefined
+    ? tagged.document
+    : await omitPlaceholderRevisionDates(tagged.document, placeholderDate);
+  if (originalBookmarkNames) {
+    await assertComparisonRevisionFidelity(original, revised, document, originalBookmarkNames);
+  }
   return {
-    document: placeholderDate === undefined
-      ? tagged.document
-      : await omitPlaceholderRevisionDates(tagged.document, placeholderDate),
+    document,
     stats: tagged.stats,
     engine: tagged.engine,
     ...(tagged.unrepresentedChanges === undefined
