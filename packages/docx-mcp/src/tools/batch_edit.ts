@@ -727,6 +727,150 @@ function attributeConventionWarnings(
   });
 }
 
+async function applyBatch(
+  manager: SessionManager,
+  session: DocxSession,
+  steps: NormalizedStep[],
+  emptyNumberedPolicy: EmptyNumberedParagraphPolicy,
+): Promise<ToolResponse> {
+  const validations = validateSteps(steps, session.doc);
+  const overallValid = validations.every((v) => v.valid);
+  if (!overallValid) {
+    return {
+      success: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: `Batch validation failed: ${validations.filter((v) => !v.valid).length} of ${steps.length} step(s) have errors.`,
+        hint: 'Fix the reported errors and resubmit.',
+      },
+      overall_valid: false,
+      steps: validations,
+    };
+  }
+
+  const allWarnings: Array<{ step_id: string; warning: string }> = validations.flatMap((v) =>
+    v.warnings.map((w) => ({ step_id: v.step_id, warning: w })),
+  );
+  const conflictSteps = buildConflictView(steps);
+  const conflicts = [
+    ...detectDuplicateStepIdConflicts(conflictSteps),
+    ...detectReplaceConflicts(conflictSteps),
+    ...detectInsertSlotCollisions(conflictSteps, recognizedBondedSlots(conflictSteps, session.doc)),
+  ];
+  if (conflicts.length > 0) {
+    return {
+      success: false,
+      error: {
+        code: 'BATCH_CONFLICT',
+        message: `Detected ${conflicts.length} hard conflict(s) in batch_edit steps.`,
+        hint: 'Resolve reported conflicts and resubmit the batch.',
+      },
+      has_conflicts: true,
+      conflict_count: conflicts.length,
+      conflicts,
+    };
+  }
+
+  const ctx = await getRevisionContextForSession({
+    ...session,
+    doc: session.doc.fork(),
+    revisionIdState: session.revisionIdState ? structuredClone(session.revisionIdState) : null,
+  });
+  const revisionPreflight = await preflightAiRevisionMutation(
+    session,
+    ctx,
+    (previewDoc, previewCtx) => executeStepsOnDoc(previewDoc, steps, previewCtx),
+    undefined,
+    { insertedText: collectInsertedText(steps) },
+  );
+  if (revisionPreflight.blocked) return revisionPreflight.blocked;
+  // Structured form only — `revisionPreflight.warnings` carries the same
+  // convention findings as flat strings, and reading both would report each
+  // finding twice.
+  allWarnings.push(...attributeConventionWarnings(steps, revisionPreflight.conventionWarnings));
+
+  // Under "error", run the whole batch on a copy first and refuse it before
+  // any step touches the session document (issue #1047). batchEdit holds the
+  // session under "error", so the steps then run on the document this preview
+  // judged and no end-of-batch re-check is needed (#1525, #1549).
+  if (emptyNumberedPolicy === 'error') {
+    const previewDoc = session.doc.fork();
+    const previewFindings = previewEmptyNumberedParagraphs(previewDoc, steps, cloneRevisionContext(ctx));
+    if (previewFindings.length > 0) {
+      const refusal = emptyNumberedBatchError(previewDoc, previewFindings);
+      return {
+        success: false,
+        error: {
+          code: EMPTY_NUMBERED_PARAGRAPH_ERROR_CODE,
+          message: `${refusal.message} No step was applied.`,
+          hint: 'Delete each whole list item (its complete text with an empty new_string), keep some text in it, or choose another on_empty_numbered_paragraph policy.',
+        },
+        empty_numbered_paragraphs: refusal.findings,
+      };
+    }
+  }
+
+  const tracker = new EmptyNumberedParagraphTracker();
+  const result = await executeSteps(manager, session, manager.normalizePath(session.originalPath), steps, tracker, ctx);
+  for (const stepResult of result.step_results) {
+    const stepWarnings = stepResult.result?.warnings;
+    if (Array.isArray(stepWarnings)) {
+      for (const w of stepWarnings) {
+        if (typeof w === 'string') {
+          allWarnings.push({ step_id: stepResult.step_id, warning: w });
+        }
+      }
+    }
+  }
+  const emptyNumberedFindings = emptyNumberedPolicy === 'ignore' ? [] : tracker.findings(session.doc);
+  if (result.failed_step_id !== undefined) {
+    // The batch did not finish, so nothing is removed or refused at its
+    // end; the caller is told which completed step left what behind.
+    allWarnings.push(...emptyNumberedWarnings(session.doc, emptyNumberedFindings));
+    const failedStepResult = result.step_results.find(
+      (stepResult) => stepResult.step_id === result.failed_step_id && !stepResult.success,
+    )?.result as { error?: { code?: string; message?: string; hint?: string } } | undefined;
+    const nestedError = failedStepResult?.error;
+    const preserveStructuralError =
+      nestedError?.code === 'UNSAFE_CONTAINER_BOUNDARY' ||
+      nestedError?.code === 'UNSUPPORTED_EDIT';
+    return {
+      success: false,
+      error: {
+        code: preserveStructuralError ? nestedError.code! : 'BATCH_PARTIAL_FAILURE',
+        message: preserveStructuralError && nestedError.message
+          ? `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}): ${nestedError.message}`
+          : `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}).`,
+        hint: (preserveStructuralError ? nestedError.hint : undefined) ??
+          'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
+      },
+      file_path: manager.normalizePath(session.originalPath),
+      completed_count: result.completed_step_ids.length,
+      completed_step_ids: result.completed_step_ids,
+      failed_step_id: result.failed_step_id,
+      failed_step_index: result.failed_step_index,
+      failed_step_error: result.failed_step_error,
+      step_results: result.step_results,
+      ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
+    };
+  }
+
+  if (emptyNumberedPolicy === 'warn') {
+    allWarnings.push(...emptyNumberedWarnings(session.doc, emptyNumberedFindings));
+  } else if (emptyNumberedPolicy === 'remove_paragraph' && emptyNumberedFindings.length > 0) {
+    allWarnings.push(...await removeEmptyNumberedParagraphsAtBatchEnd(manager, session, emptyNumberedFindings, ctx));
+  }
+
+  return ok({
+    file_path: manager.normalizePath(session.originalPath),
+    edit_count: session.editCount,
+    completed_count: result.completed_step_ids.length,
+    completed_step_ids: result.completed_step_ids,
+    step_results: result.step_results,
+    ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
+  });
+}
+
 export async function batchEdit(
   manager: SessionManager,
   params: {
@@ -774,160 +918,11 @@ export async function batchEdit(
     if (!resolved.ok) return resolved.response;
     const { session } = resolved;
 
-    const validations = validateSteps(steps, session.doc);
-    const overallValid = validations.every((v) => v.valid);
-    if (!overallValid) {
-      return {
-        success: false,
-        error: {
-          code: 'VALIDATION_FAILED',
-          message: `Batch validation failed: ${validations.filter((v) => !v.valid).length} of ${steps.length} step(s) have errors.`,
-          hint: 'Fix the reported errors and resubmit.',
-        },
-        overall_valid: false,
-        steps: validations,
-      };
-    }
-
-    const allWarnings: Array<{ step_id: string; warning: string }> = validations.flatMap((v) =>
-      v.warnings.map((w) => ({ step_id: v.step_id, warning: w })),
-    );
-    const conflictSteps = buildConflictView(steps);
-    const conflicts = [
-      ...detectDuplicateStepIdConflicts(conflictSteps),
-      ...detectReplaceConflicts(conflictSteps),
-      ...detectInsertSlotCollisions(conflictSteps, recognizedBondedSlots(conflictSteps, session.doc)),
-    ];
-    if (conflicts.length > 0) {
-      return {
-        success: false,
-        error: {
-          code: 'BATCH_CONFLICT',
-          message: `Detected ${conflicts.length} hard conflict(s) in batch_edit steps.`,
-          hint: 'Resolve reported conflicts and resubmit the batch.',
-        },
-        has_conflicts: true,
-        conflict_count: conflicts.length,
-        conflicts,
-      };
-    }
-
-    const ctx = await getRevisionContextForSession({
-      ...session,
-      doc: session.doc.fork(),
-      revisionIdState: session.revisionIdState ? structuredClone(session.revisionIdState) : null,
-    });
-    const revisionPreflight = await preflightAiRevisionMutation(
-      session,
-      ctx,
-      (previewDoc, previewCtx) => executeStepsOnDoc(previewDoc, steps, previewCtx),
-      undefined,
-      { insertedText: collectInsertedText(steps) },
-    );
-    if (revisionPreflight.blocked) return revisionPreflight.blocked;
-    // Structured form only — `revisionPreflight.warnings` carries the same
-    // convention findings as flat strings, and reading both would report each
-    // finding twice.
-    allWarnings.push(...attributeConventionWarnings(steps, revisionPreflight.conventionWarnings));
-
-    // Under "error", run the whole batch on a copy first and refuse it before
-    // any step touches the session document (issue #1047).
-    if (emptyNumberedPolicy === 'error') {
-      const previewDoc = session.doc.fork();
-      const previewFindings = previewEmptyNumberedParagraphs(previewDoc, steps, cloneRevisionContext(ctx));
-      if (previewFindings.length > 0) {
-        const refusal = emptyNumberedBatchError(previewDoc, previewFindings);
-        return {
-          success: false,
-          error: {
-            code: EMPTY_NUMBERED_PARAGRAPH_ERROR_CODE,
-            message: `${refusal.message} No step was applied.`,
-            hint: 'Delete each whole list item (its complete text with an empty new_string), keep some text in it, or choose another on_empty_numbered_paragraph policy.',
-          },
-          empty_numbered_paragraphs: refusal.findings,
-        };
-      }
-    }
-
-    const tracker = new EmptyNumberedParagraphTracker();
-    const result = await executeSteps(manager, session, manager.normalizePath(session.originalPath), steps, tracker, ctx);
-    for (const stepResult of result.step_results) {
-      const stepWarnings = stepResult.result?.warnings;
-      if (Array.isArray(stepWarnings)) {
-        for (const w of stepWarnings) {
-          if (typeof w === 'string') {
-            allWarnings.push({ step_id: stepResult.step_id, warning: w });
-          }
-        }
-      }
-    }
-    const emptyNumberedFindings = emptyNumberedPolicy === 'ignore' ? [] : tracker.findings(session.doc);
-    if (result.failed_step_id !== undefined) {
-      // The batch did not finish, so nothing is removed or refused at its
-      // end; the caller is told which completed step left what behind.
-      allWarnings.push(...emptyNumberedWarnings(session.doc, emptyNumberedFindings));
-      const failedStepResult = result.step_results.find(
-        (stepResult) => stepResult.step_id === result.failed_step_id && !stepResult.success,
-      )?.result as { error?: { code?: string; message?: string; hint?: string } } | undefined;
-      const nestedError = failedStepResult?.error;
-      const preserveStructuralError =
-        nestedError?.code === 'UNSAFE_CONTAINER_BOUNDARY' ||
-        nestedError?.code === 'UNSUPPORTED_EDIT';
-      return {
-        success: false,
-        error: {
-          code: preserveStructuralError ? nestedError.code! : 'BATCH_PARTIAL_FAILURE',
-          message: preserveStructuralError && nestedError.message
-            ? `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}): ${nestedError.message}`
-            : `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}).`,
-          hint: (preserveStructuralError ? nestedError.hint : undefined) ??
-            'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
-        },
-        file_path: manager.normalizePath(session.originalPath),
-        completed_count: result.completed_step_ids.length,
-        completed_step_ids: result.completed_step_ids,
-        failed_step_id: result.failed_step_id,
-        failed_step_index: result.failed_step_index,
-        failed_step_error: result.failed_step_error,
-        step_results: result.step_results,
-        ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
-      };
-    }
-
-    if (emptyNumberedFindings.length > 0 && emptyNumberedPolicy === 'error') {
-      // Reached when another edit to the session lands between the preview
-      // and the steps (each step is its own session mutation), so the
-      // preview judged a different document (#1525).
-      const refusal = emptyNumberedBatchError(session.doc, emptyNumberedFindings);
-      return {
-        success: false,
-        error: {
-          code: EMPTY_NUMBERED_PARAGRAPH_ERROR_CODE,
-          message: `${refusal.message} The steps were applied before this was detected.`,
-          hint: 'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
-        },
-        file_path: manager.normalizePath(session.originalPath),
-        completed_count: result.completed_step_ids.length,
-        completed_step_ids: result.completed_step_ids,
-        step_results: result.step_results,
-        empty_numbered_paragraphs: refusal.findings,
-        ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
-      };
-    }
-    if (emptyNumberedPolicy === 'warn') {
-      allWarnings.push(...emptyNumberedWarnings(session.doc, emptyNumberedFindings));
-    } else if (emptyNumberedPolicy === 'remove_paragraph' && emptyNumberedFindings.length > 0) {
-      allWarnings.push(...await removeEmptyNumberedParagraphsAtBatchEnd(manager, session, emptyNumberedFindings, ctx));
-    }
-
-    return ok({
-      file_path: manager.normalizePath(session.originalPath),
-      edit_count: session.editCount,
-      completed_count: result.completed_step_ids.length,
-      completed_step_ids: result.completed_step_ids,
-      step_results: result.step_results,
-      ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
-    });
+    // Under "error", hold the session for the whole batch: validation, the
+    // preview and every step see one document, so a refused batch leaves
+    // the session untouched even when other edits arrive meanwhile (#1549).
+    const apply = () => applyBatch(manager, session, steps, emptyNumberedPolicy);
+    return emptyNumberedPolicy === 'error' ? await manager.holdSession(session, apply) : await apply();
   } catch (e: unknown) {
     if (e instanceof SafeDocxError) {
       return err(e.code, e.message, e.hint);

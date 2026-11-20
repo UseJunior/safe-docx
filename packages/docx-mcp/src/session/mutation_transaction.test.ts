@@ -179,6 +179,37 @@ describe('local mutation boundary', () => {
     expect(await fs.readFile(path.join(dir, emitted[0]!), 'utf8')).toContain('First');
   });
 
+  test('holdSession runs its own mutations immediately and queues other callers until it finishes (#1549)', async () => {
+    const { manager, session, ids } = await setup();
+    const resume = barrier();
+    const order: string[] = [];
+    const entered = barrier();
+    const held = manager.holdSession(session, async () => {
+      const inner = await manager.mutateSession(session, async candidate => {
+        candidate.doc.replaceText({ targetParagraphId: ids[0]!, findText: 'First', replaceText: 'Held' });
+        manager.markEdited(candidate);
+        order.push('inner');
+        return ok();
+      });
+      expect(inner.success).toBe(true);
+      entered.release();
+      await resume.promise;
+      order.push('held-done');
+    });
+    await entered.promise;
+    // Issued from outside the held call chain, so it waits for the hold.
+    const outside = manager.mutateSession(session, async candidate => {
+      order.push('outside');
+      expect(candidate.doc.getParagraphTextById(ids[0]!)).toBe('Held');
+      return ok();
+    });
+    await Promise.resolve();
+    resume.release();
+    await held;
+    expect((await outside).success).toBe(true);
+    expect(order).toEqual(['inner', 'held-done', 'outside']);
+  });
+
   test.openspec('Precommit candidate remains invisible')('reads see the old document until atomic publication; queued writes see the committed predecessor', async () => {
     const { manager, session, file, ids } = await setup();
     const metadata = seedMetadata(session);

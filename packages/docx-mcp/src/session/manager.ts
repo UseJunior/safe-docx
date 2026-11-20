@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomInt } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
@@ -249,6 +250,23 @@ export class SessionClosedDuringOpenError extends Error {
 
 export class SessionManager {
   private mutationQueues = new WeakMap<Session, Promise<void>>();
+  /** Sessions held by the current async call chain (see `holdSession`). */
+  private heldSessions = new AsyncLocalStorage<ReadonlySet<Session>>();
+
+  /**
+   * Run `execute` with exclusive use of the session: mutations from other
+   * callers queue until it finishes, while mutations made from inside
+   * `execute` (its own async call chain) run without waiting. Lets a tool
+   * judge the document and then apply several mutations to exactly the
+   * document it judged (#1549).
+   */
+  async holdSession<T>(session: Session, execute: () => Promise<T>): Promise<T> {
+    return this.serializeMutation(session, () => {
+      const held = new Set(this.heldSessions.getStore() ?? []);
+      held.add(session);
+      return this.heldSessions.run(held, execute);
+    });
+  }
 
   /**
    * Serialize local mutations on unpublished candidates. No await separates
@@ -325,6 +343,8 @@ export class SessionManager {
   }
 
   private async serializeMutation<T>(session: Session, execute: () => Promise<T>): Promise<T> {
+    // Already serialized by an enclosing holdSession on this call chain.
+    if (this.heldSessions.getStore()?.has(session)) return execute();
     const preceding = this.mutationQueues.get(session) ?? Promise.resolve();
     let release!: () => void;
     const tail = new Promise<void>(resolve => { release = resolve; });
