@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-20T20:24:13.869Z",
+  "generated_at": "2026-11-20T20:55:01.898Z",
   "policy": {
     "ratchet_tolerance_percentage_points": 0.1,
     "max_positive_drift_percentage_points": {
@@ -33,10 +33,10 @@
       }
     },
     "docx-markdoc": {
-      "lines": 96.77,
-      "branches": 86.45,
-      "functions": 97.33,
-      "statements": 94.33,
+      "lines": 96.74,
+      "branches": 86.33,
+      "functions": 97.28,
+      "statements": 94.3,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -45,10 +45,10 @@
       }
     },
     "docx-mcp": {
-      "lines": 93.45,
-      "branches": 84.58,
-      "functions": 97.09,
-      "statements": 91.19,
+      "lines": 93.43,
+      "branches": 84.56,
+      "functions": 96.94,
+      "statements": 91.15,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -58,9 +58,9 @@
     }
   },
   "aggregate": {
-    "lines_mean": 94.38,
-    "branches_mean": 84.65,
-    "functions_mean": 95.97,
-    "statements_mean": 92.19
+    "lines_mean": 94.36,
+    "branches_mean": 84.61,
+    "functions_mean": 95.92,
+    "statements_mean": 92.18
   }
 }
