@@ -1,3 +1,5 @@
+import { CREATION_STYLE } from './profile.js';
+
 /**
  * Where create sets `w:keepNext` by its own rule rather than the source's
  * `keep-with-next` flag. The lowering (`lower.ts`, `theme.ts`) applies these
@@ -23,4 +25,14 @@ export function keepsPreviousWithNext(kind: KeepNextBlockKind, previousKind: Kee
 /** Whether create keeps a run-in paragraph at `level` with the next paragraph: an article does. */
 export function runInKeepsWithNext(level: string): boolean {
   return level === 'article';
+}
+
+/**
+ * Whether a pulled body paragraph followed by a paragraph of style `nextStyle`
+ * already carries create's automatic `w:keepNext`: a legend or signature
+ * paragraph follows it. Pull uses this so it does not restate the rule as an
+ * explicit keep-with-next tag.
+ */
+export function keptWithNextBeforeStyle(nextStyle: string | undefined): boolean {
+  return nextStyle === CREATION_STYLE.legend || nextStyle === CREATION_STYLE.signature;
 }
