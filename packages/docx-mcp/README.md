@@ -38,3 +38,7 @@ publishes no candidate state or file. The default is enabled. Set
 `SAFE_DOCX_REVISION_FIDELITY=0` in the server environment to explicitly disable
 this additional round-trip check for performance; existing AI-markup validation
 and comparison safety checks remain enabled.
+
+The default applies to tracked MCP sessions. Legacy TypeScript tool helpers
+that supply their own revision context without a session author retain their
+existing behavior.
