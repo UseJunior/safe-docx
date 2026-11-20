@@ -177,6 +177,10 @@ export type AiRevisionPreflightAdvisories = {
   untrackedStoryBindings?: boolean;
 };
 
+/**
+ * Preview callbacks may run with and without revision attribution. They must
+ * confine their changes to the supplied document and revision context.
+ */
 export async function preflightAiRevisionMutation(
   session: DocxSession,
   ctx: RevisionContext | undefined,
@@ -196,7 +200,22 @@ export async function preflightAiRevisionMutation(
   const complete = async (result: AiRevisionPreflightResult): Promise<AiRevisionPreflightResult> => {
     if (!checkFidelity) return result;
     const intended = session.doc.fork();
-    await mutatePreview(intended, undefined);
+    try {
+      await mutatePreview(intended, undefined);
+    } catch {
+      const failure = new RevisionFidelityViolation([{
+        side: 'accept',
+        part: 'package',
+        location: 'intended-projection',
+        expected: 'a valid untracked edit',
+        actual: 'could not apply the edit without tracking',
+      }]);
+      return {
+        blocked: { ...err(failure.code, failure.message), diagnostics: failure.failures },
+        warnings: [],
+        conventionWarnings: [],
+      };
+    }
     try {
       const source = await session.doc.getRevisionFidelityParts();
       // set_header_footer reports story creation, retargeting and rewrites

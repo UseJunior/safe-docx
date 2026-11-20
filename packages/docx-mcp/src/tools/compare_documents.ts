@@ -16,7 +16,6 @@ import {
   validateAndLoadDocxFromPath,
 } from './session_resolution.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
-import { RevisionFidelityViolation } from '@usejunior/docx-core';
 import { conformanceRefusalResponse } from './conformance_refusal.js';
 
 /**
@@ -195,9 +194,11 @@ export async function compareDocuments_tool(
     }
     return ok(response);
   } catch (e: unknown) {
-    if (e instanceof RevisionFidelityViolation) {
+    if (errorCode(e) === 'REVISION_FIDELITY_VIOLATION' &&
+        typeof e === 'object' && e !== null && 'failures' in e && Array.isArray(e.failures)) {
       return {
-        ...err(e.code, e.message, 'Review the projection diagnostics before retrying. SAFE_DOCX_REVISION_FIDELITY=0 disables this check.'),
+        ...err('REVISION_FIDELITY_VIOLATION', errorMessage(e),
+          'Review the projection diagnostics before retrying. SAFE_DOCX_REVISION_FIDELITY=0 disables this check.'),
         diagnostics: e.failures,
       };
     }
