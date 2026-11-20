@@ -28,3 +28,17 @@ See the [generated tool reference](docs/tool-reference.generated.md) for the com
 Concurrent file-first opens for the same canonical path (or Google Doc ID) share one provider operation. `close_file` invalidates pending opens even when no session has been published yet; interrupted calls return `SESSION_CLOSED`. A subsequent call starts fresh work. Late completion or failure of a cancelled open cannot replace that session or remove its pending work. Explicit local `open_document` calls also respect closure, while retaining their replacement and normalization behavior.
 
 See the [architecture](../../docs/architecture.md), [installation guide](../../docs/installation.md), and [generated tool reference](docs/tool-reference.generated.md).
+
+### Revision fidelity
+
+Tracked edit previews are validated before candidate session publication, and
+`compare_documents` validates before writing output. On a mismatch, the tool
+returns `REVISION_FIDELITY_VIOLATION` with side/part/location diagnostics and
+publishes no candidate state or file. The default is enabled. Set
+`SAFE_DOCX_REVISION_FIDELITY=0` in the server environment to explicitly disable
+this additional round-trip check for performance; existing AI-markup validation
+and comparison safety checks remain enabled.
+
+The default applies to tracked MCP sessions. Legacy TypeScript tool helpers
+that supply their own revision context without a session author retain their
+existing behavior.

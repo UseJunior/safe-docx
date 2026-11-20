@@ -23,6 +23,7 @@ import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
+import { compareDocuments } from '../index.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -497,7 +498,7 @@ describe('relationship-selected story removed with its section (#754)', () => {
       const originalFooter = extractRoundTripComparisonText(
         (await (await DocxArchive.load(original)).getFile('word/footer1.xml'))!,
       ).trim();
-      const result = await compareDocumentsAtomizer(original, await revisedArchive.save(), COMPARE_OPTIONS);
+      const result = await compareDocuments(original, await revisedArchive.save(), { ...COMPARE_OPTIONS, revisionFidelity: true });
       const archive = await DocxArchive.load(result.document);
       const documentXml = await archive.getDocumentXml();
       expect(snapshotStoryReferences(documentXml)).toBe(0);

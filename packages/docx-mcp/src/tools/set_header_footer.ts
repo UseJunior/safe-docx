@@ -113,7 +113,7 @@ export async function setHeaderFooterTool(
       const mutation = { kind, sectionIndex, type, source };
       const preflight = await preflightAiRevisionMutation(session, ctx, async (previewDoc, previewCtx) => {
         await previewDoc.setHeaderFooter(mutation, previewCtx);
-      });
+      }, undefined, { untrackedStoryBindings: true });
       if (preflight.blocked) return preflight.blocked;
       const result = await session.doc.setHeaderFooter(mutation, ctx);
       if (result.changed || result.partsCreated.length > 0) {

@@ -1,5 +1,7 @@
 import {
   DocxDocument,
+  assertRevisionFidelity,
+  RevisionFidelityViolation,
   type AiRevisionDiagnostic,
   type AiRevisionValidationTouchedContext,
   type RevisionContext,
@@ -171,8 +173,14 @@ export function getAiRevisionBaseline(session: DocxSession): Promise<Map<string,
  */
 export type AiRevisionPreflightAdvisories = {
   insertedText?: string;
+  /** A package operation explicitly reports its header/footer writes as untracked. */
+  untrackedStoryBindings?: boolean;
 };
 
+/**
+ * Preview callbacks may run with and without revision attribution. They must
+ * confine their changes to the supplied document and revision context.
+ */
 export async function preflightAiRevisionMutation(
   session: DocxSession,
   ctx: RevisionContext | undefined,
@@ -180,50 +188,84 @@ export async function preflightAiRevisionMutation(
   touched?: AiRevisionValidationTouchedContext,
   advisories?: AiRevisionPreflightAdvisories,
 ): Promise<AiRevisionPreflightResult> {
-  if (!session.aiAuthor) return PREFLIGHT_PROCEED;
+  const aiAuthor = session.aiAuthor;
+  // MCP supplies revision contexts through its attributed session. Explicit
+  // contexts supplied by the legacy TypeScript helper API retain their policy.
+  if (!aiAuthor) return PREFLIGHT_PROCEED;
+  const checkFidelity = Boolean(ctx) && process.env.SAFE_DOCX_REVISION_FIDELITY !== '0';
 
-  const snapshot = await session.doc.toBuffer({ cleanBookmarks: false });
-  // Two loads of the same bytes: `previewDoc` is mutated below, `baselineDoc`
-  // stays as the document was before this mutation so the convention check can
-  // difference them. Loading it from the same snapshot (rather than reusing
-  // `session.doc`) keeps both sides on identical run boundaries, so the
-  // difference reflects the edit and not a serialization artefact. It is only
-  // paid for when a caller actually requests the advisory.
-  const previewDoc = await DocxDocument.load(snapshot.buffer);
-  const baselineDoc = advisories?.insertedText
-    ? await DocxDocument.load(snapshot.buffer)
-    : null;
+  // Preserve session-only state, including ownership of created header/footer
+  // relationships, so the preview takes the same mutation path as the edit.
+  const previewDoc = session.doc.fork();
+  const baselineDoc = advisories?.insertedText ? session.doc : null;
   await mutatePreview(previewDoc, cloneRevisionContext(ctx));
-  const validation = await previewDoc.validateAiRevisions(session.aiAuthor, touched);
+  const complete = async (result: AiRevisionPreflightResult): Promise<AiRevisionPreflightResult> => {
+    if (!checkFidelity) return result;
+    const intended = session.doc.fork();
+    try {
+      await mutatePreview(intended, undefined);
+    } catch {
+      const failure = new RevisionFidelityViolation([{
+        side: 'accept',
+        part: 'package',
+        location: 'intended-projection',
+        expected: 'a valid untracked edit',
+        actual: 'could not apply the edit without tracking',
+      }]);
+      return {
+        blocked: { ...err(failure.code, failure.message), diagnostics: failure.failures },
+        warnings: [],
+        conventionWarnings: [],
+      };
+    }
+    try {
+      const source = await session.doc.getRevisionFidelityParts();
+      // set_header_footer reports story creation, retargeting and rewrites
+      // separately because those package mutations have no revision encoding.
+      const storyPaths = advisories?.untrackedStoryBindings ? [] : undefined;
+      assertRevisionFidelity({
+        source,
+        intended: await intended.getRevisionFidelityParts(),
+        output: await previewDoc.getRevisionFidelityParts(),
+      }, { storyPaths });
+      return result;
+    } catch (error) {
+      if (!(error instanceof RevisionFidelityViolation)) throw error;
+      return { blocked: { ...err(error.code, error.message), diagnostics: error.failures }, warnings: [], conventionWarnings: [] };
+    }
+  };
+
+  const validation = await previewDoc.validateAiRevisions(aiAuthor, touched);
+
   // Advisory only, and never on the blocked path: a blocked mutation is not
   // applied, so its formatting is not a finding the caller can act on.
   const conventionWarnings =
     advisories?.insertedText && baselineDoc
       ? checkFormattingConvention(previewDoc, {
           insertedText: advisories.insertedText,
-          aiAuthor: session.aiAuthor,
+          aiAuthor: aiAuthor,
           baselineDoc,
         })
       : [];
   const conventionMessages = conventionWarnings.map((w) => w.message);
   if (validation.errors.length === 0) {
-    return {
+    return complete({
       blocked: null,
       warnings: [...validation.warnings.map(formatAiRevisionWarning), ...conventionMessages],
       conventionWarnings,
-    };
+    });
   }
 
   // AI-attributed errors always fail. Unattributable errors (field structure,
   // package invariants — no w:author to classify by) fail only when this
   // mutation introduced them: documents arrive from the wild with anomalies
   // no AI operation created, and those must not brick every write.
-  const attributed = validation.errors.filter((e) => e.author === session.aiAuthor);
-  const unattributed = validation.errors.filter((e) => e.author !== session.aiAuthor);
+  const attributed = validation.errors.filter((e) => e.author === aiAuthor);
+  const unattributed = validation.errors.filter((e) => e.author !== aiAuthor);
   let introduced = unattributed;
   let demoted: AiRevisionDiagnostic[] = [];
   if (unattributed.length > 0) {
-    const preMutation = await session.doc.validateAiRevisions(session.aiAuthor, touched);
+    const preMutation = await session.doc.validateAiRevisions(aiAuthor, touched);
     ({ introduced, demoted } = splitIntroducedDiagnostics(
       unattributed,
       diagnosticCountMap(preMutation.errors),
@@ -234,14 +276,14 @@ export async function preflightAiRevisionMutation(
     // Demoted diagnostics are pre-existing anomalies this mutation did not
     // introduce; they must not block the write but they are still findings —
     // merge them into the surfaced warnings exactly as the failure path does.
-    return {
+    return complete({
       blocked: null,
       warnings: [
         ...[...validation.warnings, ...demoted].map(formatAiRevisionWarning),
         ...conventionMessages,
       ],
       conventionWarnings,
-    };
+    });
   }
 
   return {

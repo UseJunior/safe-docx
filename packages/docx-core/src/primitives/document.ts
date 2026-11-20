@@ -1,3 +1,4 @@
+import { collectRevisionFidelityParts } from './revision_fidelity.js';
 import { createHash } from '../runtime/hash.js';
 import { DocxZip, ZIP_EPOCH } from './zip.js';
 import {
@@ -519,6 +520,18 @@ export class DocxDocument {
       fileDate: ZIP_EPOCH,
       textOverrides: { 'word/document.xml': serializeXml(this.documentXml) },
     });
+  }
+
+  /** Current XML views for non-publishing revision-fidelity validation. */
+  async getRevisionFidelityParts(): Promise<Readonly<Record<string, string>>> {
+    const liveParts: Record<string, string> = { 'word/document.xml': serializeXml(this.documentXml),
+      ...(this.footnotesXml ? { 'word/footnotes.xml': serializeXml(this.footnotesXml) } : {}) };
+    const parts = await collectRevisionFidelityParts({
+      listFiles: () => [...new Set([...this.zip.listFiles(), ...Object.keys(liveParts)])],
+      getFile: path => Promise.resolve(liveParts[path] ?? this.zip.readTextOrNull(path)),
+      getFileBuffer: path => this.zip.readBytes(path),
+    });
+    return parts;
   }
 
   private static async loadUnattributed(buffer: Buffer): Promise<DocxDocument> {
