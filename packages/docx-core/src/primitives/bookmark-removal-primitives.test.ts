@@ -58,6 +58,8 @@ const protectedCases: Array<[string, string, boolean]> = [
   ['field content', `<w:p>${localBookmark}${completeField(' REF Elsewhere ', '3')}</w:p>`, true],
   ['comment anchor', `<w:p>${localBookmark}<w:commentRangeStart w:id="8"/></w:p>`, true],
   ['only cell paragraph', `<w:tbl><w:tr><w:tc>${emptyItem}</w:tc></w:tr></w:tbl>`, true],
+  ['only cell paragraph inside a content control', `<w:tbl><w:tr><w:tc><w:sdt><w:sdtPr/><w:sdtContent>${emptyItem}</w:sdtContent></w:sdt></w:tc></w:tr></w:tbl>`, true],
+  ['only cell paragraph inside nested customXml', `<w:tbl><w:tr><w:tc><w:customXml w:element="a"><w:customXml w:element="b">${emptyItem}</w:customXml></w:customXml></w:tc></w:tr></w:tbl>`, true],
 ];
 for (const [name, body, numbered] of protectedCases) {
   test(`deferred removal preserves ${name}`, async ({ given, when, then }: AllureBddContext) => {
