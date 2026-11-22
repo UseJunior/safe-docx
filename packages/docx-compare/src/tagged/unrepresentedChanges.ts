@@ -15,6 +15,7 @@ import { representative, subtreeSignature, type TaggedNode } from './taggedTree.
 import { isBlockContainer } from './blockContainer.js';
 import { UnsupportedBlockContainerRevisionError } from './taggedTreeSerializer.js';
 import { XMLSerializer } from '@xmldom/xmldom';
+import { extractRoundTripComparisonText } from '../fieldComparisonSemantics.js';
 import { acceptAllChanges, rejectAllChanges } from './trackChangesAcceptorAst.js';
 import {
   effectiveStorySlot,
@@ -597,6 +598,10 @@ interface PackageProjectionView {
   snapshotsWordSafe: boolean;
   bindings: EffectiveStoryBindings | undefined;
   storyIdentity: (path: string | undefined) => Promise<StoryIdentity>;
+  /** Whether a header/footer field may show content from another story (`storyFieldsReadOtherStories`). */
+  storyFieldsReadOtherStories: boolean;
+  /** The stories such a field can read, projected (`readableStoriesIdentity`). */
+  readableStories: () => Promise<string>;
 }
 
 async function packageProjectionView(
@@ -620,6 +625,7 @@ async function packageProjectionView(
   if (!bindings.ok) bindings = undefined;
   const formatting = await storyFormattingEnvironment(source.archive, project, rawDocument, documentRelationships, settingsPath);
   const identities = new Map<string, Promise<StoryIdentity>>();
+  let readable: Promise<string> | undefined;
   return {
     rawSectionCount: liveSectionProperties(rawDocument).length,
     sections: liveSectionProperties(projectedDocument).map(sectionPropertySignature),
@@ -642,7 +648,95 @@ async function packageProjectionView(
       }
       return identity;
     },
+    storyFieldsReadOtherStories: await storyFieldsReadOtherStories(source.archive, documentRelationships
+      .filter((relationship) => !relationship.external && STORY_RELATIONSHIP_TYPES.has(relationship.type))
+      .map((relationship) => relationship.path)),
+    readableStories: () => (readable ??= readableStoriesIdentity(source.archive, projectedXml, documentRelationships, project, label)),
   };
+}
+
+/**
+ * What a header/footer field can read from one story: the text a reader shows
+ * (`extractRoundTripComparisonText`: what NUMWORDS and NUMCHARS count), each
+ * bookmark with the text it encloses (what REF, PAGEREF and a bare bookmark
+ * name show), and each paragraph's style (what STYLEREF finds).
+ */
+function fieldReadableStory(xml: string): string {
+  const document = parseXml(xml);
+  const bookmarks = new Map<string, { name: string; text: string }>();
+  const open = new Set<{ name: string; text: string }>();
+  const byId = new Map<string, { name: string; text: string }>();
+  const styles: string[] = [];
+  for (const element of Array.from(document.getElementsByTagNameNS(W_NS, '*'))) {
+    const name = localName(element);
+    if (name === 'p') {
+      for (const bookmark of open) bookmark.text += '\n';
+      const style = Array.from(element.childNodes)
+        .find((child): child is Element => child.nodeType === 1 && (child as Element).namespaceURI === W_NS && localName(child as Element) === 'pPr');
+      const pStyle = style
+        ? Array.from(style.childNodes).find((child): child is Element => child.nodeType === 1 && (child as Element).namespaceURI === W_NS && localName(child as Element) === 'pStyle')
+        : undefined;
+      styles.push(pStyle?.getAttributeNS(W_NS, 'val') ?? '');
+    } else if (name === 'bookmarkStart') {
+      const bookmark = { name: element.getAttributeNS(W_NS, 'name') ?? '', text: '' };
+      byId.set(element.getAttributeNS(W_NS, 'id') ?? '', bookmark);
+      bookmarks.set(bookmark.name, bookmark);
+      open.add(bookmark);
+    } else if (name === 'bookmarkEnd') {
+      const bookmark = byId.get(element.getAttributeNS(W_NS, 'id') ?? '');
+      if (bookmark) open.delete(bookmark);
+    } else if (name === 't' || name === 'tab' || name === 'br' || name === 'cr') {
+      const text = name === 't' ? element.textContent ?? '' : name === 'tab' ? '\t' : '\n';
+      for (const bookmark of open) bookmark.text += text;
+    }
+  }
+  const bookmarkLines = Array.from(bookmarks.values())
+    .map((bookmark) => `${JSON.stringify(bookmark.name)}=${JSON.stringify(bookmark.text)}`)
+    .sort();
+  return `text:${JSON.stringify(extractRoundTripComparisonText(xml))}\n` +
+    `styles:${JSON.stringify(styles)}\nbookmarks:${bookmarkLines.join(',')}`;
+}
+
+/**
+ * The stories a header/footer field can read, as one comparable identity:
+ * the main story and the footnote and endnote stories (NOTEREF), each
+ * projected and read as `fieldReadableStory` shows it. When these match, a
+ * field reads the same content on both sides, so its result is the reader's
+ * to recompute and is not a header/footer difference (#1499). Page totals
+ * (NUMPAGES, SECTIONPAGES) also depend on layout: the main story's
+ * formatting is held to Accept/Reject All by the publication gate, a
+ * drawing or picture change the redline does not carry is listed in its own
+ * scope, and sections, styles and settings are compared by the slot check.
+ * A story that cannot be read makes the identity unique.
+ */
+async function readableStoriesIdentity(
+  archive: DocxArchive,
+  projectedDocumentXml: string,
+  documentRelationships: readonly PartRelationship[],
+  project: (xml: string) => string,
+  label: string,
+): Promise<string> {
+  const unique = (reason: string): string => `unreadable:${label}:${reason}:${Math.random()}`;
+  const lines: string[] = [];
+  try {
+    lines.push(`document\n${fieldReadableStory(projectedDocumentXml)}`);
+  } catch {
+    return unique('word/document.xml');
+  }
+  const notes = documentRelationships
+    .filter((relationship) => !relationship.external && NOTES_RELATIONSHIP_TYPES.has(relationship.type))
+    .map((relationship) => ({ type: relationship.type.replace(/^.*\//u, ''), path: relationship.path }))
+    .sort((left, right) => (left.type < right.type ? -1 : left.type > right.type ? 1 : 0));
+  for (const { type, path } of notes) {
+    const xml = await archive.getFile(path);
+    if (xml === null) return unique(path);
+    try {
+      lines.push(`${type}\n${fieldReadableStory(project(xml))}`);
+    } catch {
+      return unique(path);
+    }
+  }
+  return lines.join('\n');
 }
 
 const PACKAGE_RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
@@ -712,6 +806,8 @@ const OFFICE_RELATIONSHIP_BASES = [
 function officeRelationshipTypes(names: readonly string[], extensions: readonly string[] = []): ReadonlySet<string> {
   return new Set([...OFFICE_RELATIONSHIP_BASES.flatMap((base) => names.map((name) => `${base}${name}`)), ...extensions]);
 }
+/** Document relationship types of the footnote and endnote stories. */
+const NOTES_RELATIONSHIP_TYPES = officeRelationshipTypes(['footnotes', 'endnotes']);
 const STYLES_WITH_EFFECTS = 'http://schemas.microsoft.com/office/2007/relationships/stylesWithEffects';
 /**
  * Relationship types whose target is compared elsewhere (header/footer
@@ -764,11 +860,11 @@ const VOLATILE_PROPERTY_FIELDS = /(LASTSAVEDBY|REVNUM|SAVEDATE|PRINTDATE|EDITTIM
  * digest or the page check covers. Any other field (REF, PAGEREF, NOTEREF,
  * STYLEREF, SEQ, a formula, a bare bookmark name, ...) can show content from
  * another story, where an untracked change such as a moved bookmark would not
- * be compared (Codex round 14). Page totals (NUMPAGES, SECTIONPAGES) are
- * left out too: they depend on the layout of every page, including notes and
- * drawings this check does not compare, while PAGE shows each page's own
- * number (Codex round 21). Content statistics (NUMWORDS, NUMCHARS) are left
- * out for the same reason.
+ * be compared by the slot check (Codex round 14). Page totals (NUMPAGES,
+ * SECTIONPAGES) and content statistics (NUMWORDS, NUMCHARS) depend on the
+ * layout or content of every story, while PAGE shows each page's own number
+ * (Codex round 21). Such fields hold their entries to the stories they read
+ * (`readableStoriesIdentity`, #1499).
  */
 /** Document properties a DOCPROPERTY field can show that depend on layout, content statistics or the saved file. */
 const LAYOUT_OR_FILE_PROPERTIES = /^(bytes|pages|lines|paragraphs|characters|characterswithspaces|words|filesize|numpages|numwords|numchars|sectionpages)$/iu;
@@ -930,9 +1026,8 @@ async function storyFormattingEnvironment(
     .filter((relationship) => !relationship.external && STORY_RELATIONSHIP_TYPES.has(relationship.type))
     .map((relationship) => relationship.path));
   const keepVolatileProperties = await storyFieldsShowVolatileProperties(archive, storyParts);
-  // A header/footer field that reads another story makes this package's
-  // environment unique, so no header/footer entry is filtered.
-  if (await storyFieldsReadOtherStories(archive, storyParts)) return `cross-story-fields:${Math.random()}`;
+  // A header/footer field that reads another story is held to those stories
+  // in `subtractRepresentedPackageChanges` (#1499).
   const digest = createHash('sha256');
   // Which part plays which role (styles, theme, settings, ...) is itself part
   // of how a story looks: the document's implicit relationships (those its
@@ -1169,10 +1264,18 @@ async function storySlotMatches(
  * `w:sectPrChange` snapshot leaves live properties Word's Reject All would
  * keep.
  *
+ * A header/footer field that reads another story (REF, NOTEREF, NUMPAGES,
+ * SECTIONPAGES, ...) does not by itself keep its entries: its result is
+ * recomputed by the reader from those stories. Its header/footer entries are
+ * dropped only when Reject All and Accept All also reproduce the main and
+ * note stories (`readableStoriesIdentity`), so the field reads the same
+ * content on each side.
+ *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
  * @see https://github.com/UseJunior/safe-docx/issues/1427
+ * @see https://github.com/UseJunior/safe-docx/issues/1499
  * @see https://github.com/UseJunior/safe-docx/issues/1181
  * @see https://github.com/UseJunior/safe-docx/issues/1030
  */
@@ -1233,8 +1336,19 @@ export async function subtractRepresentedPackageChanges(input: {
     }
     return true;
   };
+  // A header/footer field that reads another story (REF, NOTEREF, NUMPAGES,
+  // SECTIONPAGES, ...) shows what the reader computes from those stories, not
+  // content of its own. Its header/footer entries can be dropped only when
+  // Reject All and Accept All reproduce those stories too, so the field reads
+  // the same content as in the original and the revised document (#1499).
+  const crossStoryFields = [original, revised, rejected, accepted].some((view) => view.storyFieldsReadOtherStories);
+  let readableStoriesMatch: Promise<boolean> | undefined;
+  const fieldSourcesMatch = (): Promise<boolean> => (readableStoriesMatch ??= (async () =>
+    await rejected.readableStories() === await original.readableStories() &&
+    await accepted.readableStories() === await revised.readableStories())());
   const represented = async (change: UnrepresentedChange): Promise<boolean> => {
     const k = change.sectionIndex;
+    if (change.scope !== 'section' && crossStoryFields && !(await fieldSourcesMatch())) return false;
     if (k < 0 || k >= Math.max(originalCount, revisedCount)) return false;
     if (change.scope !== 'section' && change.scope !== 'header' && change.scope !== 'footer') return false;
     if (change.scope === 'section' && !rejected.snapshotsWordSafe) return false;
