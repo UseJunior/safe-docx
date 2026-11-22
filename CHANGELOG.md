@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.26.0
 
 - `compareDocuments` accepts `date: null` to write no `w:date` on the
   revisions it creates, in the body, headers, footers, notes, comments and
