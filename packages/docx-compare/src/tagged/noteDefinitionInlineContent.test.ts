@@ -111,6 +111,14 @@ async function notedDocx(kind: NoteKind, spec: NoteSpec, closing = 'Notice terms
     .replace(`<w:${kind}s xmlns:w=`, `<w:${kind}s xmlns:r="${R}" xmlns:w=`)
     .replace(new RegExp(`(<w:${kind} w:id="1">)[\\s\\S]*?(</w:${kind}>)`), `$1${noteBody(kind, spec)}$2`);
   archive.setFile(part, notes);
+  // The fixture's comment paragraphs carry w14:paraId without declaring w14
+  // ignorable, which a strict reader rejects; declare it as Word does.
+  const commentsXml = await archive.getFile('word/comments.xml');
+  if (commentsXml !== null && !commentsXml.includes('mc:Ignorable')) {
+    archive.setFile('word/comments.xml', commentsXml.replace(
+      /<w:comments /,
+      '<w:comments xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14" '));
+  }
   if (spec.link !== undefined) {
     archive.setFile(`word/_rels/${kind}s.xml.rels`,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PR}">` +
@@ -229,7 +237,7 @@ async function expectProjections(kind: NoteKind, original: Buffer, revised: Buff
     .toEqual(await noteView(original, kind));
 }
 
-/** Tracked, native Accept and native Reject main and note parts validate against the vendored schema. */
+/** Tracked, native Accept and native Reject main, note and comment parts validate against the vendored schema. */
 async function expectSchemaValid(compared: Buffer, kind: NoteKind): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'sdx-1389-notes-'));
   try {
@@ -239,9 +247,11 @@ async function expectSchemaValid(compared: Buffer, kind: NoteKind): Promise<void
       ['accepted', await nativeProjection(compared, 'acceptChanges')],
       ['rejected', await nativeProjection(compared, 'rejectChanges')],
     ] as const) {
-      const { documentXml, notesXml } = await notePart(docx, kind);
+      const { archive, documentXml, notesXml } = await notePart(docx, kind);
       writeFileSync(join(dir, `${name}-document.xml`), documentXml); instances++;
       writeFileSync(join(dir, `${name}-${kind}s.xml`), notesXml); instances++;
+      const commentsXml = await archive.getFile('word/comments.xml');
+      if (commentsXml !== null) { writeFileSync(join(dir, `${name}-comments.xml`), commentsXml); instances++; }
     }
     const gate = spawnSync(process.execPath, [SCHEMA_GATE, dir], { encoding: 'utf8' });
     expect(gate.status, `${gate.stdout}\n${gate.stderr}`).toBe(0);
@@ -474,6 +484,130 @@ describe('a note holding a field, hyperlink or comment is compared in place', ()
       await expectSchemaValid(compared, 'footnote');
     },
   );
+});
+
+/** The comment text each surviving comment reference in the projected note binds to. */
+async function anchoredComments(docx: Buffer, kind: NoteKind, project: (xml: string) => string = xml => xml): Promise<string[]> {
+  const { archive, notesXml } = await notePart(docx, kind);
+  const commentsXml = await archive.getFile('word/comments.xml');
+  const comments = new Map(commentsXml === null ? [] : Array.from(parseXml(commentsXml).getElementsByTagNameNS(W, 'comment'))
+    .map(comment => [comment.getAttributeNS(W, 'id')!, textOf(comment, ['t'])]));
+  return Array.from(parseXml(project(notesXml)).getElementsByTagNameNS(W, 'commentReference'))
+    .map(reference => comments.get(reference.getAttributeNS(W, 'id')!) ?? '<unbound>');
+}
+
+/** Comment text bound under docx-core's native projection. */
+async function nativeAnchoredComments(docx: Buffer, kind: NoteKind, operation: 'acceptChanges' | 'rejectChanges'): Promise<string[]> {
+  return anchoredComments(await nativeProjection(docx, operation), kind);
+}
+
+/** The internal bookmark each `w:anchor` hyperlink in the projected note targets. */
+async function anchorTargets(docx: Buffer, kind: NoteKind, project: (xml: string) => string = xml => xml): Promise<string[]> {
+  const { notesXml } = await notePart(docx, kind);
+  return Array.from(parseXml(project(notesXml)).getElementsByTagNameNS(W, 'hyperlink'))
+    .filter(link => textOf(link, ['t', 'delText']) !== '')
+    .map(link => link.getAttributeNS(W, 'anchor') ?? '');
+}
+
+/**
+ * Renumber the fixture's linked note to id 2 and give id 1 to an unrelated
+ * note anchored ahead of it (Word numbers ids in document order), so the original linked note's id
+ * collides with a different revised note (#1579).
+ */
+async function withUnrelatedNoteAtIdOne(docx: Buffer, kind: NoteKind): Promise<Buffer> {
+  const archive = await DocxArchive.load(docx);
+  const part = `word/${kind}s.xml`;
+  const ref = kind === 'footnote' ? 'footnoteRef' : 'endnoteRef';
+  const unrelated = `<w:${kind} w:id="1"><w:p><w:r><w:${ref}/></w:r><w:r><w:t xml:space="preserve"> An unrelated note.</w:t></w:r></w:p></w:${kind}>`;
+  const notes = (await archive.getFile(part))!
+    .replace(`<w:${kind} w:id="1">`, `<w:${kind} w:id="2">`)
+    .replace(`</w:${kind}s>`, `${unrelated}</w:${kind}s>`);
+  archive.setFile(part, notes);
+  const body = parseXml(await archive.getDocumentXml());
+  const reference = body.getElementsByTagNameNS(W, `${kind}Reference`)[0]!;
+  reference.setAttributeNS(W, 'w:id', '2');
+  const paragraph = body.getElementsByTagNameNS(W, 'p')[0]!;
+  const run = body.createElementNS(W, 'w:r');
+  const first = body.createElementNS(W, `w:${kind}Reference`);
+  first.setAttributeNS(W, 'w:id', '1');
+  run.appendChild(first);
+  paragraph.insertBefore(run, paragraph.getElementsByTagNameNS(W, 'r')[0]!);
+  archive.setDocumentXml(body.toString());
+  return archive.save();
+}
+
+describe('a note whose only change is outside its own XML keeps both sides (#1452)', () => {
+  for (const kind of ['footnote', 'endnote'] as const) {
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' })(
+      `keeps both comments when only a ${kind} comment text changes`,
+      async () => {
+        const spec = { ...BASE, fieldResult: undefined, link: undefined };
+        const original = await notedDocx(kind, spec);
+        const revised = await notedDocx(kind, { ...spec, comment: 'Updated reviewer note.' });
+        const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+        expect(await anchoredComments(compared, kind, acceptAllChanges)).toEqual(['Updated reviewer note.']);
+        expect(await anchoredComments(compared, kind, rejectAllChanges)).toEqual(['Confirm the cross-reference.']);
+        expect(await nativeAnchoredComments(compared, kind, 'acceptChanges')).toEqual(['Updated reviewer note.']);
+        expect(await nativeAnchoredComments(compared, kind, 'rejectChanges')).toEqual(['Confirm the cross-reference.']);
+        await expectProjections(kind, original, revised, compared);
+        await expectSchemaValid(compared, kind);
+      },
+    );
+
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })(
+      `keeps both targets when only a ${kind} hyperlink relationship target changes`,
+      async () => {
+        const spec = { ...BASE, fieldResult: undefined, comment: undefined };
+        const original = await notedDocx(kind, spec);
+        const revised = await notedDocx(kind, { ...spec, link: { ...BASE.link!, target: 'https://example.com/amended' } });
+        const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+        expect((await noteView(compared, kind, acceptAllChanges)).hyperlinks).toEqual(['https://example.com/amended']);
+        expect((await noteView(compared, kind, rejectAllChanges)).hyperlinks).toEqual(['https://example.com/filing']);
+        await expectProjections(kind, original, revised, compared);
+        await expectSchemaValid(compared, kind);
+      },
+    );
+
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })(
+      `keeps the original target when a ${kind} hyperlink target changes and an unrelated note takes its id`,
+      async () => {
+        const spec = { ...BASE, fieldResult: undefined, comment: undefined };
+        const original = await notedDocx(kind, spec);
+        const revised = await withUnrelatedNoteAtIdOne(
+          await notedDocx(kind, { ...spec, link: { ...BASE.link!, target: 'https://example.com/amended' } }), kind);
+        const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+        // The unrelated note's definition survives Reject as an unreferenced,
+        // emptied entry, so compare what the references and links show.
+        const shown = (view: Awaited<ReturnType<typeof noteView>>) => ({ anchors: view.anchors, hyperlinks: view.hyperlinks });
+        const accepted = { anchors: 2, hyperlinks: ['https://example.com/amended'] };
+        const rejected = { anchors: 1, hyperlinks: ['https://example.com/filing'] };
+        expect(shown(await noteView(revised, kind))).toEqual(accepted);
+        expect(shown(await noteView(compared, kind, acceptAllChanges)), 'AST accept').toEqual(accepted);
+        expect(shown(await noteView(compared, kind, rejectAllChanges)), 'AST reject').toEqual(rejected);
+        expect(shown(await noteView(await nativeProjection(compared, 'acceptChanges'), kind)), 'docx-core accept').toEqual(accepted);
+        expect(shown(await noteView(await nativeProjection(compared, 'rejectChanges'), kind)), 'docx-core reject').toEqual(rejected);
+        await expectSchemaValid(compared, kind);
+      },
+    );
+
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' })(
+      `tracks a ${kind} whose only change is its internal bookmark hyperlink target`,
+      async () => {
+        const raw = (anchor: string) => '<w:r><w:t xml:space="preserve"> See </w:t></w:r>' +
+          `<w:hyperlink w:anchor="${anchor}"><w:r><w:t>Section 4.2</w:t></w:r></w:hyperlink><w:r><w:t>.</w:t></w:r>`;
+        const spec = { ...BASE, fieldResult: undefined, comment: undefined, link: undefined };
+        const original = await notedDocx(kind, { ...spec, raw: raw('_Ref1') });
+        const revised = await notedDocx(kind, { ...spec, raw: raw('_Ref2') });
+        const compared = (await compareDocuments(original, revised, { author: AUTHOR, date: DATE })).document;
+        expect(await anchorTargets(compared, kind, acceptAllChanges)).toEqual(['_Ref2']);
+        expect(await anchorTargets(compared, kind, rejectAllChanges)).toEqual(['_Ref1']);
+        expect(await anchorTargets(await nativeProjection(compared, 'acceptChanges'), kind)).toEqual(['_Ref2']);
+        expect(await anchorTargets(await nativeProjection(compared, 'rejectChanges'), kind)).toEqual(['_Ref1']);
+        await expectProjections(kind, original, revised, compared);
+        await expectSchemaValid(compared, kind);
+      },
+    );
+  }
 });
 
 function hasOdfNoteAncestor(element: Element, T: string): boolean {

@@ -132,6 +132,74 @@ function trackMaxNumericId(value: string | null, current: number): number {
   return Math.max(current, parsed);
 }
 
+const RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE_RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const COMMENT_ID_TAGS = ['w:commentReference', 'w:commentRangeStart', 'w:commentRangeEnd'];
+
+/**
+ * Each relationship of a part, keyed by `Id`, as its type, target and target
+ * mode. An unreadable or missing `.rels` part resolves nothing.
+ */
+async function readPartRelationships(archive: DocxArchive, partPath: string): Promise<Map<string, string>> {
+  const slash = partPath.lastIndexOf('/');
+  const relsPath = `${partPath.slice(0, slash)}/_rels/${partPath.slice(slash + 1)}.rels`;
+  const relationships = new Map<string, string>();
+  const xml = await archive.getFile(relsPath);
+  if (!xml) return relationships;
+  let doc: Document;
+  try {
+    doc = parseXml(xml);
+  } catch {
+    return relationships;
+  }
+  const elements = doc.getElementsByTagNameNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship');
+  for (let i = 0; i < elements.length; i++) {
+    const rel = elements[i] as Element;
+    const id = rel.getAttribute('Id');
+    if (id) {
+      relationships.set(id, JSON.stringify([
+        rel.getAttribute('Type'), rel.getAttribute('Target'), rel.getAttribute('TargetMode') ?? 'Internal',
+      ]));
+    }
+  }
+  return relationships;
+}
+
+/**
+ * What every relationship-id attribute inside a note resolves to, in document
+ * order. A note's XML holds only the `r:id`; the target (for example a
+ * hyperlink's URL) lives in the note part's relationships, so two
+ * byte-identical notes can still point at different targets (#1452).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ */
+function resolvedRelationshipTargets(entry: Element, relationships: Map<string, string>): string {
+  const resolved: string[] = [];
+  const elements = entry.getElementsByTagName('*');
+  for (let i = 0; i < elements.length; i++) {
+    const attributes = (elements[i] as Element).attributes;
+    for (let j = 0; j < attributes.length; j++) {
+      const attribute = attributes[j]!;
+      if (attribute.namespaceURI !== RELATIONSHIPS_NS) continue;
+      resolved.push(relationships.get(attribute.value) ?? `<unresolved ${attribute.value}>`);
+    }
+  }
+  return JSON.stringify(resolved);
+}
+
+/** Whether a note anchors any comment whose definition differs between the sides. */
+function bindsAnyComment(entry: Element, commentIds: Set<string>): boolean {
+  if (commentIds.size === 0) return false;
+  for (const tag of COMMENT_ID_TAGS) {
+    const elements = entry.getElementsByTagName(tag);
+    for (let i = 0; i < elements.length; i++) {
+      const id = (elements[i] as Element).getAttribute('w:id');
+      if (id !== null && commentIds.has(id)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Lazily parsed archive part. Only attribute rewrites can dirty the private DOM;
  * reads return detached values. A successful flush marks it clean, while a
@@ -227,7 +295,14 @@ export async function renumberCollidingAuxiliaryIds(
   // Phase 1: detect collisions per descriptor (read-only).
   const plans: Array<{ descriptor: AuxiliaryPartDescriptor; collidingIds: string[] }> = [];
   const originalEntryIds = new Map<string, Set<string>>();
-  for (const descriptor of AUXILIARY_PARTS) {
+  // Comments are detected first: a note whose own XML is byte-identical can
+  // still bind a comment whose text changed, and that note must then count as
+  // changed too (#1452).
+  const collidingCommentIds = new Set<string>();
+  const detectionOrder = [...AUXILIARY_PARTS].sort(
+    (a, b) => Number(b.label === 'comment') - Number(a.label === 'comment'),
+  );
+  for (const descriptor of detectionOrder) {
     const [originalPartXml, revisedPartXml] = await Promise.all([
       originalArchive.getFile(descriptor.partPath),
       revisedArchive.getFile(descriptor.partPath),
@@ -249,6 +324,13 @@ export async function renumberCollidingAuxiliaryIds(
       throw error;
     }
     originalEntryIds.set(descriptor.label, new Set(originalParsed.entries.keys()));
+    const isNote = descriptor.label === 'footnote' || descriptor.label === 'endnote';
+    const [originalRels, revisedRels] = isNote
+      ? await Promise.all([
+          readPartRelationships(originalArchive, descriptor.partPath),
+          readPartRelationships(revisedArchive, descriptor.partPath),
+        ])
+      : [new Map<string, string>(), new Map<string, string>()];
 
     const collidingIds: string[] = [];
     for (const [id, revisedEntry] of revisedParsed.entries) {
@@ -261,11 +343,19 @@ export async function renumberCollidingAuxiliaryIds(
       // mismatch — intentionally accepted: a false mismatch only costs an
       // unnecessary renumber (both definitions ship as a delete/insert
       // anchor pair), never a wrong binding.
-      if (serializer.serializeToString(originalEntry) === serializer.serializeToString(revisedEntry)) {
+      if (
+        serializer.serializeToString(originalEntry) === serializer.serializeToString(revisedEntry) &&
+        !(isNote && (
+          bindsAnyComment(originalEntry, collidingCommentIds) ||
+          resolvedRelationshipTargets(originalEntry, originalRels) !==
+            resolvedRelationshipTargets(revisedEntry, revisedRels)
+        ))
+      ) {
         continue;
       }
       collidingIds.push(id);
     }
+    if (descriptor.label === 'comment') for (const id of collidingIds) collidingCommentIds.add(id);
     if (collidingIds.length > 0) plans.push({ descriptor, collidingIds });
   }
   if (plans.length === 0) return [];
