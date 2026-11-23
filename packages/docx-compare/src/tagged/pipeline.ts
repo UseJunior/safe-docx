@@ -1908,6 +1908,7 @@ async function compareDocumentsTagged(
   const sectionAlignedStories = new Set<TextBoxStoryInput>();
   const representedPartPaths = new Set<string>();
   const displacedCopyPartPaths = new Set<string>();
+  const allocatedDrawingIds = new Set<number>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   // A header or footer part whose story comparison is refused is left out of
   // the redline whole: none of its stories is spliced, so the output carries
@@ -1955,9 +1956,32 @@ async function compareDocumentsTagged(
   };
   const compareStory = async (story: TextBoxStoryInput): Promise<void> => {
     if (sharesRevisedPart(story) && refusedPartPaths.has(story.partPath)) return;
+    // Word's unlink-from-previous shape beside an added break (#1500): the
+    // final section, which Reject All keeps, points at a new part holding an
+    // edited copy of the story it showed. The new part stays selected after
+    // Reject All, so it cannot be a plain tracked insertion; where it holds a
+    // text box (the plain-story section-aligned pairing below declines one),
+    // the story it displaces is copied in and tracked the other way, as for
+    // a carried reference (#1454).
+    let rejectKeptDisplacedStoryXml: string | undefined;
     if (
       story.ancillaryMode === 'inserted' &&
       !story.slotLifecycle &&
+      !rejectedSelectedStoryPaths.has(story.partPath) &&
+      rejectedComparedStoryPaths.has(story.partPath) &&
+      await storyHoldsTextBox(story.revised)
+    ) {
+      rejectKeptDisplacedStoryXml = await displacedLifecycleStoryXml(
+        outerResult.document,
+        textBoxPlan.outerOriginal,
+        story.partPath,
+        'inserted',
+      );
+    }
+    if (
+      story.ancillaryMode === 'inserted' &&
+      !story.slotLifecycle &&
+      rejectKeptDisplacedStoryXml === undefined &&
       (rejectedSelectedStoryPaths.has(story.partPath) ||
         rejectedComparedStoryPaths.has(story.partPath))
     ) {
@@ -2038,7 +2062,7 @@ async function compareDocumentsTagged(
       // tracked the other way (#1454).
       const displacedStoryXml = story.slotLifecycle
         ? undefined
-        : await displacedLifecycleStoryXml(
+        : rejectKeptDisplacedStoryXml ?? await displacedLifecycleStoryXml(
           outerResult.document,
           inserted ? textBoxPlan.outerOriginal : textBoxPlan.outerRevised,
           deletedStoryOutputPaths.get(story) ?? story.partPath,
@@ -2050,7 +2074,7 @@ async function compareDocumentsTagged(
         options.author ?? 'Comparison',
         options.date ?? new Date(),
         nextPackageRevisionId,
-        { blankFinalParagraph: story.slotLifecycle, displacedStoryXml },
+        { blankFinalParagraph: story.slotLifecycle, displacedStoryXml, allocatedDrawingIds },
       );
       const ranges = marked.markedParagraphs;
       const displaced = marked.displacedParagraphs;
@@ -2346,6 +2370,12 @@ async function withPicturePayloadAudit(
   const pictures = await auditPicturePayloads(originalArchive, revisedArchive, outputArchive, reported);
   if (pictures.length === 0) return result;
   return { ...result, unrepresentedChanges: [...reported, ...pictures] };
+}
+
+/** Whether a nested story package's body holds a text box (`w:txbxContent`). */
+async function storyHoldsTextBox(storyPackage: Buffer): Promise<boolean> {
+  const documentXml = await (await DocxArchive.load(storyPackage)).getDocumentXml();
+  return parseXml(documentXml).getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length > 0;
 }
 
 /** Publish through the sole revised-base tagged assembler. */

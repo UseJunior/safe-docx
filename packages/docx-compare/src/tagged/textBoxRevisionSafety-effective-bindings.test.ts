@@ -588,16 +588,15 @@ describe('a displaced story copied into the carried part (#1454)', () => {
     }
   }
 
-  test('a displaced footer holding a drawing still fails closed', async ({ given, when }: AllureBddContext) => {
-    // Copying a drawing would duplicate its shape into a second part; the
-    // copy is limited to text, fields and tables.
+  test('a displaced footer holding a text box is copied and tracked like a text-only one', async ({ given, when, then }: AllureBddContext) => {
+    // A text box with no relationship reference is self-contained, so the
+    // displaced story is copied into the carried part with it (#1500).
     const footer0: Part = { id: 'rIdFooter0', kind: 'footer', target: 'footer0.xml', xml: story('footer', 'Base footer', paragraph('Base box')) };
     const [original, revised] = await given('a removed section whose footer displaces an inherited footer with a text box', () =>
       carriedFooterPair('removed', footer0));
-    await when('the pair is compared, the comparison refuses instead of publishing', async () => {
-      await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
-        /accept\/reject package projection validation/u,
-      );
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+      await expectDisplayedParity(original, revised, result.document);
     });
   });
 });
