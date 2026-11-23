@@ -57,10 +57,22 @@ function revisionChains(xml: string): string[] {
   return [...chains].sort();
 }
 
-/** Visible text of each body paragraph. */
+/** Visible text of each body paragraph, as `[b,i]text` segments of equal direct run formatting. */
 function paragraphTexts(xml: string): string[] {
   return Array.from(parseXml(xml).getElementsByTagNameNS(W, 'p')).map(paragraph =>
-    Array.from(paragraph.getElementsByTagNameNS(W, 't')).map(node => node.textContent ?? '').join(''));
+    Array.from(paragraph.getElementsByTagNameNS(W, 't')).map(node => {
+      const rPr = Array.from((node.parentNode as Element).childNodes)
+        .find((child): child is Element => child.nodeType === 1 && (child as Element).localName === 'rPr');
+      const format = rPr
+        ? Array.from(rPr.childNodes).filter((child): child is Element => child.nodeType === 1 && (child as Element).localName !== 'rPrChange').map(child => child.localName)
+        : [];
+      return { format: format.join(','), text: node.textContent ?? '' };
+    }).reduce<{ format: string; text: string }[]>((segments, run) => {
+      const last = segments[segments.length - 1];
+      if (last && last.format === run.format) last.text += run.text;
+      else if (run.text) segments.push({ ...run });
+      return segments;
+    }, []).map(segment => `[${segment.format}]${segment.text}`).join(''));
 }
 
 async function nativeDocumentXml(docx: Buffer, operation: 'acceptChanges' | 'rejectChanges'): Promise<string> {
@@ -157,6 +169,11 @@ describe('tracked-input nested revision shapes are schema-valid and keep PRESERV
       [priorFormat, p('<w:r><w:rPr><w:i/></w:rPr><w:t>Bold now</w:t></w:r>')],
     ]) {
       const { xml } = await compareAndCheck(original, revised);
+      const changes = Array.from(parseXml(xml).getElementsByTagNameNS(W, 'rPrChange'));
+      expect(changes.map(change => change.getAttributeNS(W, 'author'))).toEqual(['Reviewer']);
+      const priorRun = changes[0]!.parentNode!.parentNode as Element;
+      expect(priorRun.parentNode && (priorRun.parentNode as Element).localName).toBe(original === priorFormat ? 'del' : 'ins');
+      expect((changes[0]!.parentNode as Element).getElementsByTagNameNS(W, 'b')).toHaveLength(1);
       for (const rPr of Array.from(parseXml(xml).getElementsByTagNameNS(W, 'rPr'))) {
         const direct = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && (node as Element).localName === 'rPrChange');
         expect(direct.length).toBeLessThanOrEqual(1);
