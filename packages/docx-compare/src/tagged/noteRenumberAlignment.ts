@@ -21,42 +21,59 @@ const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PACKAGE_RELATIONSHIPS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
 /**
- * A definition's identity apart from its own `w:id`. Relationship references
- * (a hyperlink's `r:id`, an image's `r:embed`) resolve through each package's
- * own note relationships, so the key carries what each one resolves to: the
- * same raw XML pointing at a different target is a changed note.
+ * Elements whose meaning lives in another part (a comment's body, a nested
+ * note's definition). Identical markup there proves nothing, so a definition
+ * holding one is never aligned and keeps the collision-safe path.
  */
-let unresolvedSerial = 0;
+const CROSS_PART_ELEMENTS = new Set([
+  'commentRangeStart', 'commentRangeEnd', 'commentReference', 'footnoteReference', 'endnoteReference',
+]);
 
-function definitionKey(entry: Element, relationships: Map<string, string>): string {
+let neverMatchingSerial = 0;
+
+/**
+ * A definition's identity apart from its own `w:id`, or a key that matches
+ * nothing when identity cannot be shown from the note alone. External
+ * relationship references (a hyperlink's `r:id`) resolve through each
+ * package's own note relationships, so the key carries what each one resolves
+ * to: the same raw XML pointing at a different URL is a changed note. An
+ * internal relationship (an image or embedded payload) names a part whose
+ * bytes may differ under the same name, so it declines alignment, as do an
+ * unresolved reference and any cross-part element.
+ */
+function definitionKey(entry: Element, relationships: Map<string, { key: string; external: boolean }>): string {
   const copy = entry.cloneNode(true) as Element;
   copy.removeAttributeNS(W, 'id');
   const resolved: string[] = [];
+  let comparable = true;
   const visit = (element: Element): void => {
+    if (element.namespaceURI === W && CROSS_PART_ELEMENTS.has(element.localName)) comparable = false;
     for (const attribute of Array.from(element.attributes)) {
       if (attribute.namespaceURI !== R) continue;
       const target = relationships.get(attribute.value);
-      // An unresolved reference cannot be shown identical; never align it.
-      resolved.push(target ?? `<unresolved ${unresolvedSerial++}>`);
+      if (!target?.external) comparable = false;
+      else resolved.push(target.key);
     }
     for (let child = element.firstChild; child; child = child.nextSibling) {
       if (child.nodeType === 1) visit(child as Element);
     }
   };
   visit(copy);
+  if (!comparable) return `<never matching ${neverMatchingSerial++}>`;
   return JSON.stringify([serializer.serializeToString(copy), resolved]);
 }
 
-async function readRelationships(archive: DocxArchive, kind: NoteKind): Promise<Map<string, string> | undefined> {
+async function readRelationships(archive: DocxArchive, kind: NoteKind): Promise<Map<string, { key: string; external: boolean }> | undefined> {
   const xml = await archive.getFile(`word/_rels/${kind}s.xml.rels`);
-  const relationships = new Map<string, string>();
+  const relationships = new Map<string, { key: string; external: boolean }>();
   if (!xml) return relationships;
   let document: Document;
   try { document = parseXml(xml); } catch { return; }
   for (const relationship of Array.from(document.getElementsByTagNameNS(PACKAGE_RELATIONSHIPS, 'Relationship'))) {
-    relationships.set(relationship.getAttribute('Id') ?? '', JSON.stringify([
-      relationship.getAttribute('Type'), relationship.getAttribute('Target'), relationship.getAttribute('TargetMode'),
-    ]));
+    relationships.set(relationship.getAttribute('Id') ?? '', {
+      key: JSON.stringify([relationship.getAttribute('Type'), relationship.getAttribute('Target')]),
+      external: relationship.getAttribute('TargetMode') === 'External',
+    });
   }
   return relationships;
 }

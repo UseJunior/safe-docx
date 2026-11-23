@@ -112,6 +112,44 @@ async function compareAndCheck(original: Para[], revised: Para[], kind: Kind) {
 }
 
 describe('renumbered but unchanged notes pair with their counterparts', () => {
+  for (const kind of ['footnote', 'endnote'] as const) {
+    test(`a renumbered ${kind} whose comment changed keeps the original comment on Reject`, async ({ given, when, then }: AllureBddContext) => {
+      const withComment = async (docx: Buffer, text: string): Promise<Buffer> => {
+        const zip = await JSZip.loadAsync(docx);
+        const path = `word/${kind}s.xml`;
+        const xml = await zip.file(path)!.async('string');
+        zip.file(path, xml.replace('<w:r><w:t>First note</w:t></w:r>',
+          '<w:commentRangeStart w:id="1"/><w:r><w:t>First note</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r>'));
+        zip.file('word/comments.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${W}"><w:comment w:id="1" w:author="Tester"><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:comment></w:comments>`);
+        const rels = 'word/_rels/document.xml.rels';
+        zip.file(rels, (await zip.file(rels)!.async('string')).replace('</Relationships>',
+          '<Relationship Id="rIdComment" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>'));
+        zip.file('[Content_Types].xml', (await zip.file('[Content_Types].xml')!.async('string')).replace('</Types>',
+          '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>'));
+        return zip.generateAsync({ type: 'nodebuffer' });
+      };
+      let original!: Buffer;
+      let revised!: Buffer;
+      let result!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+      await given('a note renumbered from 1 to 2 whose identical comment anchors name different comment text', async () => {
+        original = await withComment(await build([{ text: 'Alpha text.', notes: [{ kind, id: 1, text: 'First note' }] }]), 'Original comment');
+        revised = await withComment(await build([{ text: 'Alpha text.', notes: [{ kind, id: 2, text: 'First note' }] }]), 'Revised comment');
+      });
+      await when('the documents are compared', async () => {
+        result = await compareDocumentsAtomizer(original, revised, { moveDetection: { detectMoves: false } });
+      });
+      await then('Reject anchors the original comment text', async () => {
+        const zip = await JSZip.loadAsync(result.document);
+        const notes = parseXml(rejectAllChanges(await zip.file(`word/${kind}s.xml`)!.async('string')));
+        const comments = parseXml(await zip.file('word/comments.xml')!.async('string'));
+        const id = notes.getElementsByTagNameNS(W, 'commentReference')[0]?.getAttributeNS(W, 'id');
+        const text = Array.from(comments.getElementsByTagNameNS(W, 'comment')).find((c) => c.getAttributeNS(W, 'id') === id)?.textContent;
+        expect(text).toBe('Original comment');
+        await assertSchema(result.document);
+      });
+    });
+  }
+
   for (const [kind, prefix] of [['footnote', ''], ['endnote', ''], ['footnote', 'pr:']] as const) {
     test(`a renumbered ${kind} whose hyperlink target changed keeps both targets${prefix ? ' (prefixed relationships)' : ''}`, async ({ given, when, then }: AllureBddContext) => {
       const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
