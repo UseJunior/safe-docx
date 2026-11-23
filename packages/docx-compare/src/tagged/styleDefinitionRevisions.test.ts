@@ -27,6 +27,12 @@ async function assertSchema(buffer: Buffer): Promise<void> {
     await writeFile(path, buffer);
     const check = spawnSync(process.execPath, [schemaScript, path], { encoding: 'utf8' });
     expect(check.status, check.stdout + check.stderr).toBe(0);
+    // The script reads only word/document.xml from a package; the styles
+    // part, which this change edits, is validated as its own instance.
+    const stylesPath = join(directory, 'styles.xml');
+    await writeFile(stylesPath, await (await JSZip.loadAsync(buffer)).file('word/styles.xml')!.async('string'));
+    const stylesCheck = spawnSync(process.execPath, [schemaScript, stylesPath], { encoding: 'utf8' });
+    expect(stylesCheck.status, stylesCheck.stdout + stylesCheck.stderr).toBe(0);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -155,6 +161,26 @@ describe('style references that resolve to different definitions on each side (#
     const result = await compareDocumentsAtomizer(original, revised, { moveDetection: { detectMoves: false } });
     await expectProjections(result.document, original, revised);
   });
+
+  for (const spelling of [`w:id='5'`, 'w:id="+5"', 'w:id="005"']) {
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.31' })(`allocates an identifier above an existing ${spelling} record`, async () => {
+      const withRecord = async (docx: Buffer): Promise<Buffer> => {
+        const zip = await JSZip.loadAsync(docx);
+        const xml = await zip.file('word/styles.xml')!.async('string');
+        zip.file('word/styles.xml', xml.replace('<w:i/></w:rPr>',
+          `<w:i/><w:rPrChange ${spelling} w:author="Prior"><w:rPr/></w:rPrChange></w:rPr>`));
+        return zip.generateAsync({ type: 'nodebuffer' });
+      };
+      const original = await withRecord(await build({ ...ORIGINAL, fontSize: undefined }, 'footnote', 'same'));
+      const revised = await withRecord(await build({ ...ORIGINAL, fontSize: undefined, jc: 'right' }, 'footnote', 'same'));
+      const result = await compareDocumentsAtomizer(original, revised, { moveDetection: { detectMoves: false } });
+      const root = parseXml(await stylesOf(result.document));
+      const ids = ['pPrChange', 'rPrChange'].flatMap((name) =>
+        Array.from(root.getElementsByTagNameNS(W, name)).map((record) => Number(record.getAttributeNS(W, 'id'))));
+      expect(ids).toHaveLength(2);
+      expect(new Set(ids).size).toBe(2);
+    });
+  }
 
   test('records nothing when format detection is off', async () => {
     const original = await build(ORIGINAL, 'footnote', 'old');

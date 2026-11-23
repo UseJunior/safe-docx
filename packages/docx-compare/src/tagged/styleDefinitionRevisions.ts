@@ -194,11 +194,23 @@ export async function trackStyleDefinitionChanges(
   if (pending.length === 0) return compared;
 
   // Identifiers stay unique across the package's revisions.
+  // Read through the parser so any legal spelling of the attribute (quote
+  // style, prefix, a signed or zero-padded number) is counted by its value.
   let maximum = 0;
   for (const path of [...await revisionStoryPartPaths(comparedArchive), comparedPath]) {
-    const xml = path === comparedPath ? comparedXml : await comparedArchive.getFile(path);
-    if (xml === null) continue;
-    for (const match of xml.matchAll(/\bw:id="(\d+)"/gu)) maximum = Math.max(maximum, Number(match[1]));
+    const root = path === comparedPath
+      ? comparedRoot
+      : await (async () => {
+        const xml = await comparedArchive.getFile(path);
+        return xml === null ? null : parseXml(xml).documentElement;
+      })();
+    if (!root) continue;
+    for (const element of [root, ...Array.from(root.getElementsByTagName('*'))]) {
+      const value = element.getAttributeNS(W, 'id');
+      if (!value) continue;
+      const numeric = Number(value.trim());
+      if (Number.isSafeInteger(numeric)) maximum = Math.max(maximum, numeric);
+    }
   }
   for (const { host, slot, record } of pending) {
     const container = ensureContainer(host, slot);
