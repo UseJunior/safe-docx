@@ -52,12 +52,14 @@ function projection(xml: string): string[] {
   const document = parseXml(xml);
   const tables = Array.from(document.getElementsByTagNameNS(W, 'tbl')).map(tbl =>
     `tbl:${live(elements(tbl).find(child => child.localName === 'tblPr'))}`);
+  const rows = Array.from(document.getElementsByTagNameNS(W, 'tr')).map(tr =>
+    `tr:${live(elements(tr).find(child => child.localName === 'trPr'))}`);
   const cells = Array.from(document.getElementsByTagNameNS(W, 'tc')).map(tc =>
     `tc:${live(elements(tc).find(child => child.localName === 'tcPr'))}|${tc.textContent}`);
   const sections = Array.from(document.getElementsByTagNameNS(W, 'sectPr'))
     .filter(section => (section.parentNode as Element).localName !== 'sectPrChange')
     .map(section => `sect:${elements(section).filter(child => !RECORDS.has(child.localName) && !child.localName.endsWith('Reference')).map(serialize).join('')}`);
-  return [...tables, ...cells, ...sections];
+  return [...tables, ...rows, ...cells, ...sections];
 }
 
 function records(xml: string, localName: string): string[] {
@@ -175,5 +177,47 @@ describe('a prior section property record in a comparison input (#1572)', () => 
     const landscape = '<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>';
     const xml = await compareAndCheck(section(PORTRAIT), section(landscape, PORTRAIT));
     expect(records(xml, 'sectPrChange')).toEqual(cmpOnly);
+  });
+});
+
+describe('different prior row, cell and table records under unchanged live properties (#1574)', () => {
+  const trPrChange = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.37' });
+  const tcPrChange = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.36' });
+  const tblPrChange = test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.34' });
+  const HEIGHT = '<w:trHeight w:val="400"/>';
+  const rowTable = (trPr: string) =>
+    `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid><w:tr>${trPr}${cell('A')}${cell('B')}</w:tr></w:tbl><w:p/>`;
+  const trPr = (old?: string, author = 'Reviewer') =>
+    `<w:trPr>${HEIGHT}${old === undefined ? '' : `<w:trPrChange w:id="7" w:author="${author}" ${DATE}><w:trPr>${old}</w:trPr></w:trPrChange>`}</w:trPr>`;
+  const rowRecords = async (original: string, revised: string) => records(await compareAndCheck(original, revised), 'trPrChange');
+
+  trPrChange('completes with one trPrChange when the two inputs carry different prior row records', async () => {
+    const found = await rowRecords(rowTable(trPr('<w:cantSplit/>')), rowTable(trPr('<w:tblHeader/>')));
+    expect(found).toHaveLength(1);
+  });
+
+  trPrChange('completes when only the original or only the revised row has a prior record', async () => {
+    expect(await rowRecords(rowTable(trPr('<w:cantSplit/>')), rowTable(trPr()))).toHaveLength(1);
+    // The original's reject projection is its live row, which the revised row already equals.
+    expect(await rowRecords(rowTable(trPr()), rowTable(trPr('<w:cantSplit/>')))).toEqual([]);
+  });
+
+  trPrChange('keeps a single record when the prior row records differ only in author', async () => {
+    const found = await rowRecords(rowTable(trPr('<w:cantSplit/>')), rowTable(trPr('<w:cantSplit/>', 'Other')));
+    expect(found).toHaveLength(1);
+  });
+
+  tcPrChange('completes with one tcPrChange when the two inputs carry different prior cell records', async () => {
+    const original = table(cell('A', tcPr(SHADE, VALIGN)) + cell('B'));
+    const revised = table(cell('A', tcPr(SHADE, '')) + cell('B'));
+    expect(records(await compareAndCheck(original, revised), 'tcPrChange')).toHaveLength(1);
+  });
+
+  tblPrChange('completes with one tblPrChange when the two inputs carry different prior table records', async () => {
+    const tblPr = (old: string) =>
+      `<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="center"/><w:tblPrChange w:id="9" w:author="Reviewer" ${DATE}><w:tblPr><w:tblW w:w="0" w:type="auto"/>${old}</w:tblPr></w:tblPrChange></w:tblPr>`;
+    const original = table(cell('A') + cell('B'), tblPr('<w:jc w:val="right"/>'));
+    const revised = table(cell('A') + cell('B'), tblPr(''));
+    expect(records(await compareAndCheck(original, revised), 'tblPrChange')).toHaveLength(1);
   });
 });

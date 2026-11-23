@@ -287,7 +287,20 @@ function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta
     }
     return subtreeSignature(normalized);
   };
-  if (propertySignature(originalProperty) === propertySignature(revisedProperty)) return undefined;
+  // A row or cell record publishes one reject projection (§17.13.5.37,
+  // §17.13.5.36), so inputs whose live properties agree but whose prior
+  // records hold different old properties still differ: without a delta the
+  // revised record would be published and reject would not reproduce the
+  // original (#1574). Comparing the reject projections hands both cases to
+  // resolveSingleRowOrCellRecord, which keeps or re-authors one record.
+  const rejectSignature = (property: WmlElement | null): string => {
+    if (!property || (descriptor.scope !== 'tableRow' && descriptor.scope !== 'tableCell')) return '';
+    const record = childElements(property).find((child) => child.localName === `${descriptor.child}Change`);
+    const snapshot = record && childElements(record).find((child) => child.localName === descriptor.child);
+    return snapshot ? propertySignature(snapshot) : propertySignature(property);
+  };
+  if (propertySignature(originalProperty) === propertySignature(revisedProperty)
+    && rejectSignature(originalProperty) === rejectSignature(revisedProperty)) return undefined;
   return {
     scope: descriptor.scope,
     original: originalProperty,
