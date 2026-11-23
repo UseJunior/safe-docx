@@ -375,3 +375,51 @@ test('tracks a deleted text box that carries a comment', async ({
     await assertFaithfulRedline(original, revised, compared);
   });
 });
+
+test('keeps comment threading rows bound when comment paragraph ids collide across the sides', async ({
+  given,
+  when,
+  then,
+}: AllureBddContext) => {
+  const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
+  const W15 = 'http://schemas.microsoft.com/office/word/2012/wordml';
+  const fixture = async (term: string, note: string): Promise<Buffer> => {
+    const archive = await DocxArchive.load(await buildPackage(
+      `<w:p w14:paraId="00000001">${run('Body')}</w:p>` +
+        textBoxParagraph('Lead', `${run('Pay within ')}${commented(0, term)}`),
+      [[0, note]],
+    ));
+    archive.setFile('word/comments.xml', (await archive.getFile('word/comments.xml'))!
+      .replace('<w:comments ', `<w:comments xmlns:w14="${W14}" `)
+      .replace('<w:p>', '<w:p w14:paraId="00000009">'));
+    archive.setFile(
+      'word/commentsExtended.xml',
+      `<w15:commentsEx xmlns:w15="${W15}"><w15:commentEx w15:paraId="00000009" w15:done="0"/></w15:commentsEx>`,
+    );
+    return archive.save();
+  };
+  const { original, revised } = await given('two different comments that share id 0 and paragraph id 00000009', async () => ({
+    original: await fixture('30', 'Old term'),
+    revised: await fixture('45', 'New term'),
+  }));
+
+  const compared = await when('the documents are compared', async () =>
+    (await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).document);
+
+  await then('every threading row names a comment paragraph in the output', async () => {
+    const archive = await DocxArchive.load(compared);
+    const paragraphIds = new Set(
+      Array.from(parseXml((await archive.getFile('word/comments.xml'))!).getElementsByTagNameNS(W_NS, 'p'))
+        .map((paragraph) => paragraph.getAttributeNS(W14, 'paraId')),
+    );
+    const rows = Array.from(parseXml((await archive.getFile('word/commentsExtended.xml'))!)
+      .getElementsByTagNameNS(W15, 'commentEx'))
+      .map((row) => row.getAttributeNS(W15, 'paraId'));
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    for (const row of rows) expect(paragraphIds).toContain(row);
+    expect(new Set(rows).size).toBe(rows.length);
+    const bindings = await commentBindings(compared);
+    expect([...bindings.texts.values()].sort()).toEqual(['New term', 'Old term']);
+    await assertFaithfulRedline(original, revised, compared);
+  });
+});

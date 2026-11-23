@@ -1827,6 +1827,7 @@ async function compareDocumentsTagged(
   blankSlotParts?: BlankSlotParts,
 ): Promise<TaggedCompareResult> {
   await assertTransitionalComparisonInputs(original, revised);
+  revised = await withTextBoxCommentCollisionsResolved(original, revised);
   const preparedPlan = await prepareTextBoxStoryComparison(original, revised, blankSlotParts);
   const [originalArchive, revisedArchive] = await Promise.all([
     DocxArchive.load(original),
@@ -2761,6 +2762,44 @@ async function ensureOpcMetadata(
 // =============================================================================
 // Comment Ancillary Parts Merging
 // =============================================================================
+
+/**
+ * Resolve comment id and comment paragraph-id collisions once, on the whole
+ * revised package, when a body text box holds a comment anchor.
+ *
+ * Each text-box story is compared in a package of its own, and the
+ * collision pass picks fresh ids clear of the ids the main document part
+ * uses, which differ between the outer package and a story package. Run
+ * separately, the two passes could give one revised comment two different
+ * ids, leaving a merged definition or threading row bound to nothing. Run
+ * once here, every later pass finds no collision and leaves the ids alone.
+ * Packages without a commented text box keep the per-comparison pass.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @see https://github.com/UseJunior/safe-docx/issues/1385
+ */
+async function withTextBoxCommentCollisionsResolved(
+  original: Buffer,
+  revised: Buffer,
+): Promise<Buffer> {
+  const [originalArchive, revisedArchive] = await Promise.all([
+    DocxArchive.load(original),
+    DocxArchive.load(revised),
+  ]);
+  const holdsTextBoxComment = (documentXml: string): boolean =>
+    Array.from(parseXml(documentXml).getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')).some((textBox) =>
+      ['commentRangeStart', 'commentRangeEnd', 'commentReference'].some((localName) =>
+        textBox.getElementsByTagNameNS(OOXML.W_NS, localName).length > 0));
+  if (
+    !holdsTextBoxComment(await originalArchive.getDocumentXml()) &&
+    !holdsTextBoxComment(await revisedArchive.getDocumentXml())
+  ) {
+    return revised;
+  }
+  const renumbered = await renumberCollidingAuxiliaryIds(originalArchive, revisedArchive);
+  const restamped = await restampCollidingCommentParaIds(originalArchive, revisedArchive);
+  return renumbered.length === 0 && restamped.length === 0 ? revised : revisedArchive.save();
+}
 
 /**
  * Carry the comments anchored in compared body text-box stories into the
