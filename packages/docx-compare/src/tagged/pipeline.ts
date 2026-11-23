@@ -124,6 +124,7 @@ import { resolveTaggedRevisionAttributions } from './taggedTreeSerializer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { coalesceProjectionEquivalentBookmarkSplits } from './bookmarkSplitCoalescing.js';
 import { canonicalizeNoteArchiveIds, copiedParagraphNoteIds } from './noteReferenceIdentity.js';
+import { alignRenumberedNoteIds } from './noteRenumberAlignment.js';
 import { alignedInlineNoteAnchorPair } from './inlineFootnoteAnchorPair.js';
 import { markLifecycleNoteBodies, separateNoteReferencesInLifecycleOrder } from './noteLifecycleMarking.js';
 import {
@@ -511,6 +512,9 @@ export async function buildStandaloneTaggedPackage(
   const revisedArchive = await DocxArchive.load(revised);
   await canonicalizeNoteArchiveIds(originalArchive);
   await canonicalizeNoteArchiveIds(revisedArchive);
+  // An unchanged note renumbered by an earlier insertion or deletion keeps
+  // one live reference (#1387).
+  await alignRenumberedNoteIds(originalArchive, revisedArchive);
   const packageUnrepresentedChanges = await detectUnrepresentedChanges(
     originalArchive,
     revisedArchive,
