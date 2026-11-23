@@ -114,6 +114,8 @@ export interface TableLevelRecordFactory {
  *   published as the revised side has it;
  * - the original's own pending record is kept (with a fresh ID) when the two
  *   live states agree, so a prior reviewer's revision keeps its attribution;
+ * - without one, the revised input's own pending record is kept (with a fresh
+ *   ID) when its snapshot is the original's live state (#1572);
  * - otherwise a comparison record holds the original's reject projection,
  *   when `allowComparisonRecord` is set (the construction recorded a property
  *   delta, i.e. format detection is on); without it the revised live state is
@@ -166,6 +168,14 @@ export function resolveTableLevelProperty(
     // The only difference is the original's pending revision: keep it, with a
     // fresh ID, since revised content published beside it may use the same one.
     record = originalRecord.cloneNode(true) as WmlElement;
+    record.setAttributeNS(W_NS, 'w:id', String(records.freshId()));
+    kind = 'preserved';
+  } else if (!originalRecord && revisedRecord &&
+      signature(snapshotChildren(revisedRecord, localName) ?? []) === signature(prior)) {
+    // The revised input's own pending revision already turns the revised live
+    // state back into the original's: keep its author and date (as #1566 does
+    // for w:pPrChange) rather than re-author it, with a fresh ID (#1572).
+    record = revisedRecord.cloneNode(true) as WmlElement;
     record.setAttributeNS(W_NS, 'w:id', String(records.freshId()));
     kind = 'preserved';
   } else if (!allowComparisonRecord) {
