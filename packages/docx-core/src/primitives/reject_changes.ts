@@ -906,7 +906,7 @@ export function rejectChanges(
   // retain their live-DOM call order. The existing deleted-text/move-source order
   // is retained for compatibility; it leaves a pre-existing selective move-source
   // text projection gap and is not claimed as a resolved or protected policy.
-  const customXml = resolveCustomXmlRangeRevisions(root, 'reject', filter);
+  const customXml = resolveCustomXmlRangeRevisions(root, 'reject', selective);
   const rowRevisions = resolveTableRowRevisionsPass(root, filter);
   const { markInsertedParagraphs, removedMoveToBookmarkIds, resolvedMarkProperties } =
     identifyParagraphMarkRevisionsPass(root, filter);

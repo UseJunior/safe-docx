@@ -94,4 +94,21 @@ describe('custom XML markup revision ranges (#1485)', () => {
     expect(count(doc, 'customXml')).toBe(0);
     expect(count(doc, 'sdt')).toBe(2);
   });
+  test('a body range does not reach containers inside a text box story', () => {
+    const box = `<w:p><w:r><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml"><v:textbox><w:txbxContent>${sdt(para('boxed'))}</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`;
+    const doc = document(ranged('Del', customXml(box)));
+    acceptChanges(doc);
+    expect(markerCount(doc)).toBe(0);
+    expect(count(doc, 'customXml')).toBe(0);
+    expect(count(doc, 'sdt')).toBe(1);
+  });
+
+  test('selective accept and reject leave every range untouched', () => {
+    for (const op of [acceptChanges, rejectChanges]) {
+      const doc = document(ranged('Del', customXml(para('a'))) + ranged('Ins', sdt(para('b')), 4));
+      op(doc, { filter: () => true });
+      expect(markerCount(doc)).toBe(4);
+      expect(count(doc, 'customXml') + count(doc, 'sdt')).toBe(2);
+    }
+  });
 });

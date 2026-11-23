@@ -19,6 +19,8 @@
  * inside the range. A range that encloses no container, or that holds only one
  * tag of some container (the spec's "cross structure" case, where unwrapping
  * would need to split the container), is left untouched with its markers.
+ * Ranges are scoped per story: a range does not cross a `w:txbxContent`
+ * boundary. Selective (filtered) accept/reject leaves every range untouched.
  */
 
 import { OOXML } from './namespaces.js';
@@ -77,6 +79,17 @@ function collectRanges(root: Element): RangeRecord[] {
           break;
         }
       }
+      return;
+    }
+
+    if (el.namespaceURI === W_NS && el.localName === 'txbxContent') {
+      // A text box is its own story: an enclosing range does not reach into it,
+      // and a range inside it does not leak out.
+      const outer = open.splice(0, open.length);
+      for (let child = el.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType === 1) visit(child as Element);
+      }
+      open.splice(0, open.length, ...outer);
       return;
     }
 
@@ -145,15 +158,18 @@ function unwrapContainer(container: Element): void {
 export function resolveCustomXmlRangeRevisions(
   root: Element,
   mode: 'accept' | 'reject',
-  filter: (el: Element) => boolean,
+  selective: boolean,
 ): CustomXmlRangeResolution {
   const result: CustomXmlRangeResolution = { insertions: 0, deletions: 0, moves: 0 };
+  // Selective engines (acceptAIEdits/rejectAIEdits) neither select these
+  // ranges nor guard properties an unwrap would discard, so they leave the
+  // ranges untouched rather than risk dropping a foreign revision.
+  if (selective) return result;
   const unwrap = new Set<Element>();
   const markers: Element[] = [];
 
   for (const range of collectRanges(root)) {
     if (!range.end || range.partial || range.enclosed.length === 0) continue;
-    if (!filter(range.start)) continue;
     const removesMarkup = mode === 'accept'
       ? range.kind === 'Del' || range.kind === 'MoveFrom'
       : range.kind === 'Ins' || range.kind === 'MoveTo';

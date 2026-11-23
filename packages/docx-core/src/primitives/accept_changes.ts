@@ -721,7 +721,7 @@ export function acceptChanges(
   // Keep calls explicit and ordered. Capture marks/bookmarks before wrappers
   // disappear; settle properties before merging paragraphs. Do not precompute
   // filter results: selectors observe the established traversal of the live DOM.
-  const customXml = resolveCustomXmlRangeRevisions(root, 'accept', filter);
+  const customXml = resolveCustomXmlRangeRevisions(root, 'accept', selective);
   const rowRevisions = resolveTableRowRevisionsPass(root, filter);
   const { markDeletedParagraphs, resolvedMarkProperties } = identifyParagraphMarkRevisionsPass(root, filter);
   resolveDeletedBookmarkBoundariesPass(root, filter, markDeletedParagraphs);
