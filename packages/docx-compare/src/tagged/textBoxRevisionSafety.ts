@@ -145,6 +145,14 @@ export interface TextBoxStoryInput {
    */
   slotLifecycle?: boolean;
   /**
+   * Set on an `inserted` story that replaces, on the same pages, an original
+   * story whose scaffold differs from it (`sectionAlignedOrdinaryStoryInputs`,
+   * #1475): the original story, projected to Reject All. It is copied into
+   * the part ahead of the inserted content and tracked as deleted, so Reject
+   * All shows it and Accept All the revised story.
+   */
+  replacedStoryXml?: string;
+  /**
    * The placeholder token a header/footer box compared inside its whole part
    * is found by in the compared part (#1384). Absent for every other story.
    */
@@ -2255,6 +2263,7 @@ function alignedSectionOrdinals(
 function sectionAlignedTextBoxStoryPairs(
   originalState: SelectedAncillaryState,
   revisedState: SelectedAncillaryState,
+  blankSlotParts: BlankSlotParts = NO_BLANK_SLOT_PARTS,
 ): {
   pairs: Array<[SelectedAncillaryStory, SelectedAncillaryStory]>;
   fallback: SectionAlignedFallback;
@@ -2355,7 +2364,13 @@ function sectionAlignedTextBoxStoryPairs(
       if (targets?.size !== 1) continue;
       const right = revisedStories.get([...targets][0]!);
       if (!right || right.kind !== left.kind || taken.has(right)) continue;
-      if (left.textBoxes.length === 0 && right.textBoxes.length === 0) continue;
+      // A plain story pairs here only with a blank slot story
+      // `normalizeExplicitStorySlots` added across a changed section count:
+      // the pair is the story's whole insertion or deletion
+      // (`slotLifecycleStoryInput`, #1475). Other plain stories are left to
+      // `sectionAlignedOrdinaryStoryInputs`.
+      const slotLifecycle = blankSlotParts.original.has(left.targetPath) !== blankSlotParts.revised.has(right.targetPath);
+      if (left.textBoxes.length === 0 && right.textBoxes.length === 0 && !slotLifecycle) continue;
       if (!admits(left, right)) continue;
       const sources = map.backward.get(right.targetPath);
       if (sources?.size === 1 && sources.has(left.targetPath)) found.push([left, right]);
@@ -3112,7 +3127,9 @@ async function slotLifecycleStoryInput(
   const originalBlank = blankSlotParts.original.has(pair.original.targetPath);
   const revisedBlank = blankSlotParts.revised.has(pair.revised.targetPath);
   if (originalBlank === revisedBlank) return undefined;
-  if (pair.original.bindingClosure !== pair.revised.bindingClosure) return undefined;
+  // Section ordinals name the same pages only in a matched topology; a pair
+  // of a changed one is shown on the aligned pages instead (#1475).
+  if (!pair.sectionAligned && pair.original.bindingClosure !== pair.revised.bindingClosure) return undefined;
   // The story's paragraphs and rows are tracked and its last paragraph is made
   // to read as the blank story. Any other block is left to the ordinary
   // pairing and its checks, which report what they cannot carry.
@@ -3190,7 +3207,7 @@ async function ancillaryStoryInputs(
   const topologyMatches = ordinaryStoryTopologyMatches(originalState, revisedState);
   const sectionAligned = topologyMatches
     ? { pairs: [], fallback: undefined }
-    : sectionAlignedTextBoxStoryPairs(originalState, revisedState);
+    : sectionAlignedTextBoxStoryPairs(originalState, revisedState, blankSlotParts);
   const paired = pairSelectedAncillaryStories(
     originalState.stories,
     revisedState.stories,
@@ -3650,6 +3667,17 @@ async function ancillaryStoryInputs(
   };
 }
 
+const TRACKED_REVISION_ELEMENTS = [
+  'ins', 'del', 'moveFrom', 'moveTo', 'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange',
+  'tblGridChange', 'tblPrExChange', 'numberingChange', 'cellIns', 'cellDel', 'cellMerge',
+];
+
+/** Whether a story part already carries tracked-change markup (§17.13.5). */
+function holdsTrackedRevision(partXml: string): boolean {
+  const document = parseXml(partXml);
+  return TRACKED_REVISION_ELEMENTS.some((name) => document.getElementsByTagNameNS(OOXML.W_NS, name).length > 0);
+}
+
 /**
  * Ordinary header/footer stories paired through the section alignment the
  * outer comparison emitted (`sectionAlignedStoryPairing.ts`), for every part
@@ -3665,7 +3693,10 @@ async function ancillaryStoryInputs(
  * Only plain stories qualify: neither side may hold a text box (those keep the
  * #1204 checks), the compared part must still be the revised part as the outer
  * comparison left it, and the two stories must share the admitted scaffold and
- * relationship closure, as for topology-matched stories. `handledOutputPaths`
+ * relationship closure, as for topology-matched stories. Across an added or
+ * removed section break, two shown stories whose scaffolds differ are
+ * compared whole instead (`TextBoxStoryInput.replacedStoryXml`, #1475).
+ * `handledOutputPaths`
  * names compared parts another story (text box, lifecycle, topology-matched)
  * already writes.
  *
@@ -3674,6 +3705,7 @@ async function ancillaryStoryInputs(
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
  * @see https://github.com/UseJunior/safe-docx/issues/1390
+ * @see https://github.com/UseJunior/safe-docx/issues/1475
  */
 export async function sectionAlignedOrdinaryStoryInputs(
   original: Buffer,
@@ -3783,6 +3815,15 @@ export async function sectionAlignedOrdinaryStoryInputs(
     referencesOf(revisedArchive, revisedStories),
   ]);
 
+  // Pairs `eligible` admitted as whole replacements, keyed compared/original.
+  const replacedPairs = new Set<string>();
+  const sectionCountChanged = originalBindings.sectionCount !== revisedBindings.sectionCount;
+  // Only stories some page shows are re-pointed; a story bound to a slot no
+  // page displays keeps the ordinary pairing.
+  const pageShown = (bindings: ReturnType<typeof resolveEffectiveStoryBindings>): Set<string | undefined> =>
+    new Set(pageStorySlots(bindings).map(({ slot }) => slot.targetPath));
+  const originalPageShown = pageShown(originalBindings);
+  const revisedPageShown = pageShown(revisedBindings);
   const eligible = (comparedPath: string, originalPath: string): boolean => {
     const originalStory = originalStories.get(originalPath);
     const revisedStory = revisedStories.get(comparedPath);
@@ -3793,6 +3834,27 @@ export async function sectionAlignedOrdinaryStoryInputs(
     if (comparedIdentity(comparedPath) !== revisedIdentity(comparedPath)) return false;
     if (originalStory.ordinaryContent === revisedStory.ordinaryContent) return false;
     if (!ordinaryStoryScaffoldsMatch(originalStory.xml, revisedStory.xml)) {
+      // Across an added or removed section break, a page can be re-pointed
+      // between stories whose scaffolds differ (NVCA's signature-page footer
+      // beside its page-number footer, #1475). Such a pair is compared whole:
+      // the revised story is marked inserted and the original one copied in
+      // as deleted. The copy may not carry a relationship reference, both
+      // stories must hold only blocks lifecycle marking tracks, and neither
+      // may already hold tracked changes, which a whole replacement would
+      // not preserve.
+      if (
+        sectionCountChanged &&
+        !holdsTrackedRevision(originalStory.xml) &&
+        !holdsTrackedRevision(revisedStory.xml) &&
+        originalPageShown.has(originalPath) &&
+        revisedPageShown.has(comparedPath) &&
+        holdsLifecycleTrackableBlocks(revisedStory.xml) &&
+        holdsLifecycleTrackableBlocks(originalStory.xml) &&
+        copyableDisplacedBlocks(rejectAllChanges(originalStory.xml)) !== undefined
+      ) {
+        replacedPairs.add(`${comparedPath}\u0000${originalPath}`);
+        return true;
+      }
       return false;
     }
     // Both stories must reference the same resolved targets (internal
@@ -3832,11 +3894,16 @@ export async function sectionAlignedOrdinaryStoryInputs(
     const revisedStory = revisedStories.get(comparedPath)!;
     const storyOriginalArchive = await originalArchive.clone();
     const storyRevisedArchive = await revisedArchive.clone();
-    storyOriginalArchive.setDocumentXml(storyDocumentXmlFromPartRoot(originalDocumentXml, originalStory.xml));
+    const replaced = replacedPairs.has(`${comparedPath}\u0000${originalPath}`);
+    storyOriginalArchive.setDocumentXml(
+      storyDocumentXmlFromPartRoot(originalDocumentXml, replaced ? null : originalStory.xml),
+    );
     storyRevisedArchive.setDocumentXml(storyDocumentXmlFromPartRoot(revisedDocumentXml, revisedStory.xml));
     storyOriginalArchive.setFile(
       'word/_rels/document.xml.rels',
-      promotedStoryRelationshipsXml(originalStory.relationshipsXml, originalPath),
+      replaced
+        ? `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`
+        : promotedStoryRelationshipsXml(originalStory.relationshipsXml, originalPath),
     );
     storyRevisedArchive.setFile(
       'word/_rels/document.xml.rels',
@@ -3847,7 +3914,9 @@ export async function sectionAlignedOrdinaryStoryInputs(
       visualIndex: 0,
       partPath: comparedPath,
       container: 'ancillaryPart',
-      ancillaryMode: 'ordinary',
+      ...(replaced
+        ? { ancillaryMode: 'inserted' as const, replacedStoryXml: rejectAllChanges(originalStory.xml) }
+        : { ancillaryMode: 'ordinary' as const }),
       original: await storyOriginalArchive.save(),
       revised: await storyRevisedArchive.save(),
     });

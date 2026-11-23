@@ -323,6 +323,8 @@ describe('changes the redline still does not carry stay listed', () => {
     // represented, and the surviving first section drops its header, which
     // no CT_SectPrBase snapshot can restore (#944). (When the removed section
     // owns stories, the package projection check refuses this pair outright.)
+    // The dropped header is also the one the final section shows, so slot
+    // normalization leaves it alone (#1475).
     const parts = [THREE_SECTION_PARTS[0]!, THREE_SECTION_PARTS[1]!, THREE_SECTION_PARTS[5]!];
     const body = (firstRefs: string, keepB: boolean): string =>
       sectionEnd('Section A.', firstRefs + LAYOUT) +
@@ -473,11 +475,12 @@ describe('changes the redline still does not carry stay listed', () => {
 
   for (const [label, contentXml] of TALL_EMPTY_HEADERS) {
     for (const kind of ['removed', 'added'] as const) {
-      test(`a first-page header with no text but ${label} stays listed when ${kind} with a section break and a default header edit`, async () => {
+      test(`a first-page header with no text but ${label} is tracked when ${kind} with a section break and a default header edit`, async () => {
         // The section-aligned story pairing reads a part with no text as no
         // part; its index-based drop used to hide this entry before the
-        // package check ran (Codex round 3). On the side without the extra
-        // section, the merged section must match in full.
+        // package check ran (Codex round 3). The sections are aligned across
+        // the break, so the first-page header is tracked as the merged
+        // section's slot content and every page matches in full (#1475).
         const withFirst = await packageWith(
           sectionEnd('Section one.', LAYOUT) + paragraph('Body.'),
           ref('header', 'rIdD') + ref('header', 'rIdFirst', 'first') + LAYOUT + '<w:titlePg/>',
@@ -493,9 +496,8 @@ describe('changes the redline still does not carry stay listed', () => {
 
         const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
 
-        expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-          { scope: 'header', kind, sectionIndex: 1, role: 'first' },
-        ]));
+        expect(result.unrepresentedChanges).toBeUndefined();
+        await expectFaithfulProjections(original, revised, result.document);
       });
     }
   }

@@ -1978,6 +1978,9 @@ async function compareDocumentsTagged(
         'inserted',
       );
     }
+    // A section-aligned whole replacement (#1475) brings the story it
+    // replaces with it; its part is selected on both projections.
+    if (story.replacedStoryXml !== undefined) rejectKeptDisplacedStoryXml = story.replacedStoryXml;
     if (
       story.ancillaryMode === 'inserted' &&
       !story.slotLifecycle &&

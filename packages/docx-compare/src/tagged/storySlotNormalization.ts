@@ -31,8 +31,12 @@
  * A story paired with an added blank story is tracked as a whole insertion
  * or deletion (`slotLifecycleStoryInput` in `textBoxRevisionSafety.ts`).
  *
- * Only documents with the same number of sections are normalized, so section
- * `k` is the same position in both. Sections whose `w:sectPr` rides on a
+ * Documents with the same number of sections pair section `k` with section
+ * `k`. When a section break was added or removed, sections pair where their
+ * boundaries do (`alignSections`): the last sections always, the others by
+ * the body text around their break. A section only one document has pairs
+ * with nothing; its pages exist on one side only (#1475). Sections whose
+ * `w:sectPr` rides on a
  * tracked paragraph mark, or carries a `w:sectPrChange`, are left alone: their
  * references are not the ones a reader shows on both projections. So are
  * slots that show the same part on both sides (a reference allocation) and
@@ -44,6 +48,7 @@
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
  * @see https://github.com/UseJunior/safe-docx/issues/1394
  * @see https://github.com/UseJunior/safe-docx/issues/944
+ * @see https://github.com/UseJunior/safe-docx/issues/1475
  */
 
 import { posix } from '@usejunior/docx-core';
@@ -297,6 +302,68 @@ export function reportSlotChangesAgainstInputs<T extends {
   });
 }
 
+/** Text of a block-level element, for section anchors. */
+function blockText(node: Node | null): string {
+  if (!node || node.nodeType !== 1) return '';
+  return Array.from((node as Element).getElementsByTagNameNS(OOXML.W_NS, 't'))
+    .map((element) => element.textContent ?? '').join('').replace(/\s+/gu, ' ').trim();
+}
+
+function nextElement(node: Node | null): Node | null {
+  let next = node?.nextSibling ?? null;
+  while (next && next.nodeType !== 1) next = next.nextSibling;
+  return next;
+}
+
+/**
+ * The body anchor around a section's boundary: the text of the paragraph
+ * whose mark carries the `w:sectPr` and of the block after it. The last
+ * section's `w:sectPr` (a child of `w:body`) is the same boundary, the end of
+ * the document, on both sides.
+ */
+function sectionAnchor(sectPr: Element): string {
+  const pPr = sectPr.parentNode;
+  if (!isW(pPr, 'pPr')) return '\u0000end';
+  const paragraph = pPr.parentNode;
+  return `${blockText(paragraph)}\u0000${blockText(nextElement(paragraph))}`;
+}
+
+/**
+ * Pair the sections of the two documents (original ordinal, revised
+ * ordinal). Documents with the same number of sections pair by position.
+ * Otherwise a section break was added or removed, and sections pair where
+ * their boundaries do: the longest common subsequence of the body anchors
+ * around each `w:sectPr` (`sectionAnchor`), so the last sections always pair
+ * and a section only one document has pairs with nothing. Its pages exist on
+ * one side only; the body redline adds or removes its break.
+ */
+function alignSections(original: SideState, revised: SideState): Array<[number, number]> {
+  const left = original.sections.map(sectionAnchor);
+  const right = revised.sections.map(sectionAnchor);
+  if (left.length === right.length) return left.map((_anchor, index) => [index, index]);
+  const lengths: number[][] = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
+  for (let i = left.length - 1; i >= 0; i -= 1) {
+    for (let j = right.length - 1; j >= 0; j -= 1) {
+      lengths[i]![j] = left[i] === right[j]
+        ? lengths[i + 1]![j + 1]! + 1
+        : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!);
+    }
+  }
+  const pairs: Array<[number, number]> = [];
+  for (let i = 0, j = 0; i < left.length && j < right.length;) {
+    if (left[i] === right[j]) {
+      pairs.push([i, j]);
+      i += 1;
+      j += 1;
+    } else if (lengths[i + 1]![j]! >= lengths[i]![j + 1]!) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+  return pairs;
+}
+
 async function normalizeReadableStorySlots(
   original: Buffer,
   revised: Buffer,
@@ -304,7 +371,7 @@ async function normalizeReadableStorySlots(
   const unchanged: StorySlotNormalization = { original, revised, slots: [] };
   const [originalState, revisedState] = await Promise.all([sideState(original), sideState(revised)]);
   if (!originalState || !revisedState) return unchanged;
-  if (originalState.bindings.sectionCount !== revisedState.bindings.sectionCount) return unchanged;
+  const alignedSections = alignSections(originalState, revisedState);
 
   const pending: Array<{
     side: 'original' | 'revised';
@@ -314,17 +381,37 @@ async function normalizeReadableStorySlots(
     source: string | undefined;
     counterpart: string | undefined;
   }> = [];
-  for (let sectionOrdinal = 0; sectionOrdinal < originalState.bindings.sectionCount; sectionOrdinal += 1) {
+  // Across an added or removed break, a part one document shows on two
+  // aligned sections cannot take the other document's story for one of them:
+  // the redline would change both. Such a slot is left alone. A part shared
+  // with a section only that document has is fine, since that section's
+  // pages exist on one side only.
+  const sectionCountChanged = originalState.sections.length !== revisedState.sections.length;
+  const alignedShowings = (state: SideState, aligned: ReadonlyArray<number>): Map<string, Set<number>> => {
+    const shown = new Map<string, Set<number>>();
+    for (const slot of state.bindings.slots) {
+      if (!slot.displayed || slot.targetPath === undefined || !aligned.includes(slot.sectionOrdinal)) continue;
+      const sections = shown.get(slot.targetPath) ?? new Set<number>();
+      sections.add(slot.sectionOrdinal);
+      shown.set(slot.targetPath, sections);
+    }
+    return shown;
+  };
+  const originalShowings = alignedShowings(originalState, alignedSections.map(([left]) => left));
+  const revisedShowings = alignedShowings(revisedState, alignedSections.map(([, right]) => right));
+  const sharedAcrossAlignedSections = (showings: Map<string, Set<number>>, path: string | undefined): boolean =>
+    sectionCountChanged && path !== undefined && (showings.get(path)?.size ?? 0) > 1;
+  for (const [originalOrdinal, revisedOrdinal] of alignedSections) {
     if (
-      hasTrackedSectionHistory(originalState.sections[sectionOrdinal]!) ||
-      hasTrackedSectionHistory(revisedState.sections[sectionOrdinal]!)
+      hasTrackedSectionHistory(originalState.sections[originalOrdinal]!) ||
+      hasTrackedSectionHistory(revisedState.sections[revisedOrdinal]!)
     ) {
       continue;
     }
     for (const kind of STORY_KINDS) {
       for (const role of STORY_ROLES) {
-        const left = effectiveStorySlot(originalState.bindings, { sectionOrdinal, kind, role })!;
-        const right = effectiveStorySlot(revisedState.bindings, { sectionOrdinal, kind, role })!;
+        const left = effectiveStorySlot(originalState.bindings, { sectionOrdinal: originalOrdinal, kind, role })!;
+        const right = effectiveStorySlot(revisedState.bindings, { sectionOrdinal: revisedOrdinal, kind, role })!;
         // The same part on both sides is a reference allocation, not a
         // change in what the slot shows; it is left to the story pairing.
         if (left.targetPath === right.targetPath) continue;
@@ -332,10 +419,16 @@ async function normalizeReadableStorySlots(
         // the slot's pages show another role's story on one side; the
         // section-aligned pairing redlines what those pages showed (#1390).
         if (left.displayed !== right.displayed) continue;
+        if (
+          sharedAcrossAlignedSections(originalShowings, left.targetPath) ||
+          sharedAcrossAlignedSections(revisedShowings, right.targetPath)
+        ) {
+          continue;
+        }
         if (left.explicit && !right.explicit) {
-          pending.push({ side: 'revised', sectionOrdinal, kind, role, source: right.targetPath, counterpart: left.targetPath });
+          pending.push({ side: 'revised', sectionOrdinal: revisedOrdinal, kind, role, source: right.targetPath, counterpart: left.targetPath });
         } else if (!left.explicit && right.explicit) {
-          pending.push({ side: 'original', sectionOrdinal, kind, role, source: left.targetPath, counterpart: right.targetPath });
+          pending.push({ side: 'original', sectionOrdinal: originalOrdinal, kind, role, source: left.targetPath, counterpart: right.targetPath });
         }
       }
     }

@@ -522,22 +522,24 @@ describe('a section break added beside a footer the final section gains (#1420)'
     original: () => Promise<Buffer>;
     revised: () => Promise<Buffer>;
     bindings: string[];
-    /** Whether the final section's footer is listed rather than compared as a story. */
-    footerListed: boolean;
+    /** What the final section's footer shows after Reject All (the original's final section). */
+    rejectedFinalFooter: string;
   }> = [
     {
       label: 'the new section and the final section each get their own footer',
       original: () => packageWithStories(body(), `<w:sectPr>${PAGE}</w:sectPr>`, []),
       revised: () => packageWithStories(body(section(FOOTER_ONE)), section(FOOTER_TWO), [FOOTER_ONE, FOOTER_TWO]),
       bindings: ['0:footer:default=word/footer1.xml', '1:footer:default=word/footer2.xml'],
-      footerListed: true,
+      // The final sections align across the added break, so the footer the
+      // final section gains is tracked as inserted slot content (#1475).
+      rejectedFinalFooter: '',
     },
     {
       label: 'the new section has no footer and the final section gains one',
       original: () => packageWithStories(body(), `<w:sectPr>${PAGE}</w:sectPr>`, []),
       revised: () => packageWithStories(body(section()), section(FOOTER_ONE), [FOOTER_ONE]),
       bindings: ['1:footer:default=word/footer1.xml'],
-      footerListed: true,
+      rejectedFinalFooter: '',
     },
     {
       // Word's unlink-from-previous shape (#1500): the first section keeps the
@@ -552,12 +554,12 @@ describe('a section break added beside a footer the final section gains (#1420)'
       bindings: ['0:footer:default=word/footer1.xml', '1:footer:default=word/footer2.xml'],
       // The copy is compared against the footer it displaces, so its edit is
       // tracked and Reject All shows the original footer text.
-      footerListed: false,
+      rejectedFinalFooter: 'Footer',
     },
   ];
 
-  for (const { label, original, revised, bindings, footerListed } of cases) {
-    test(`${label}: the comparison completes and lists the final section's footer`, async () => {
+  for (const { label, original, revised, bindings, rejectedFinalFooter } of cases) {
+    test(`${label}: the comparison completes and tracks the final section's footer`, async () => {
       const originalBuffer = await original();
       const revisedBuffer = await revised();
       // Neither input holds a text box, so no text-box error may be raised.
@@ -570,16 +572,18 @@ describe('a section break added beside a footer the final section gains (#1420)'
       expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
         { scope: 'section', kind: 'added', sectionIndex: 1 },
       ]));
-      const finalFooterEntry = { scope: 'footer', kind: 'added', sectionIndex: 1, role: 'default' };
-      if (footerListed) {
-        expect(result.unrepresentedChanges).toContainEqual(finalFooterEntry);
-      } else {
-        expect(result.unrepresentedChanges).not.toContainEqual(finalFooterEntry);
-        const copy = (await archive.getFile('word/footer2.xml'))!;
-        expect(rejectAllChanges(copy)).toContain('<w:t>Footer</w:t>');
-        expect(rejectAllChanges(copy)).not.toContain('edited');
-        expect(acceptAllChanges(copy)).toContain('edited');
-      }
+      expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'footer')).toEqual([]);
+      // The final section after Reject All shows what the original's did.
+      const rejectedXml = rejectAllChanges(documentXml);
+      const rejectedBindings = auditSectPr(rejectedXml, await archive.getFile('word/_rels/document.xml.rels')).bindings;
+      const finalOrdinal = liveSections(rejectedXml).length - 1;
+      const finalFooter = rejectedBindings.find((binding) =>
+        binding.sectionOrdinal === finalOrdinal && binding.kind === 'footer' && binding.role === 'default');
+      const shownText = finalFooter === undefined
+        ? ''
+        : Array.from(parseXml(rejectAllChanges((await archive.getFile(finalFooter.targetPath))!))
+          .getElementsByTagNameNS(OOXML.W_NS, 't')).map((element) => element.textContent).join('');
+      expect(shownText).toBe(rejectedFinalFooter);
       expect((await resolvedBindings(archive, acceptAllChanges(documentXml))).sort()).toEqual(bindings);
       expect((await resolvedBindings(archive, nativeProjection(documentXml, acceptChanges))).sort())
         .toEqual(bindings);
