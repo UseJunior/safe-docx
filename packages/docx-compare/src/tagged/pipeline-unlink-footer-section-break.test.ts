@@ -52,7 +52,8 @@ const STORY_NS =
   ' xmlns:w10="urn:schemas-microsoft-com:office:word"' +
   ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"' +
   ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
-  ' xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"';
+  ' xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"' +
+  ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"';
 const COMPARE_OPTIONS = { author: 'Comparison', date: new Date('2026-11-22T00:00:00.000Z') };
 const PAGE_SETUP =
   '<w:pgSz w:w="12240" w:h="15840"/>' +
@@ -74,8 +75,10 @@ function vmlBox(text: string): string {
     '<w10:wrap type="square"/></v:shape></w:pict></w:r></w:p>';
 }
 
+/** Word's DrawingML text box: the `wps` shape in `mc:Choice`, its VML twin in `mc:Fallback`. */
 function drawingMlBox(text: string, docPrId = 1): string {
-  return '<w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0"' +
+  return '<w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>' +
+    '<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0"' +
     ' relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
     '<wp:simplePos x="0" y="0"/>' +
     '<wp:positionH relativeFrom="column"><wp:posOffset>127000</wp:posOffset></wp:positionH>' +
@@ -87,7 +90,9 @@ function drawingMlBox(text: string, docPrId = 1): string {
     '<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2540000" cy="635000"/></a:xfrm>' +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>' +
     `<wps:txbx><w:txbxContent>${paragraph(text)}</w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>` +
-    '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>';
+    '</a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback>' +
+    vmlBox(text).slice('<w:p><w:r>'.length, -'</w:r></w:p>'.length) +
+    '</mc:Fallback></mc:AlternateContent></w:r></w:p>';
 }
 
 function footer(id: string, target: string, style: FooterStyle, suffix: string, docPrId = 1): Part {
@@ -182,12 +187,30 @@ const sectionCount = async (buffer: Buffer, project: Projection = (xml) => xml):
   parseXml(project(await (await DocxArchive.load(buffer)).getDocumentXml()))
     .getElementsByTagNameNS(W_NS, 'sectPr').length;
 
+/**
+ * Run the schema gate over `word/document.xml` and every footer part. The
+ * gate reads document instances, so each footer's block content (the same
+ * `EG_BlockLevelElts` a body holds) is validated inside a document skeleton
+ * carrying the footer root's namespace declarations.
+ */
 async function assertSchema(buffer: Buffer): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'sdx-1500-'));
   try {
     const path = join(directory, 'compared.docx');
     await writeFile(path, buffer);
-    const check = spawnSync(process.execPath, [schemaScript, path], { encoding: 'utf8' });
+    const archive = await DocxArchive.load(buffer);
+    const inputs = [path];
+    for (const part of archive.listFiles().filter((file) => /^word\/footer[^/]*\.xml$/u.test(file))) {
+      const xml = (await archive.getFile(part))!;
+      const asDocument = xml
+        .replace(/<w:ftr\b([^>]*)>/u, '<w:document$1><w:body>')
+        .replace(/<\/w:ftr>\s*$/u, '</w:body></w:document>');
+      const footerPath = join(directory, `${part.replace(/\W/gu, '_')}.xml`);
+      await writeFile(footerPath, asDocument);
+      inputs.push(footerPath);
+    }
+    expect(inputs.length).toBeGreaterThan(1);
+    const check = spawnSync(process.execPath, [schemaScript, ...inputs], { encoding: 'utf8' });
     expect(check.status, check.stdout + check.stderr).toBe(0);
   } finally {
     await rm(directory, { recursive: true, force: true });
