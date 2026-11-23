@@ -1680,6 +1680,32 @@ function carriesParagraphMarkRevisionMarker(mark: WmlElement | null | undefined)
     child.namespaceURI === W_NS && PARAGRAPH_MARK_REVISION_LOCALS.has(child.localName));
 }
 
+/**
+ * The revised input's own pending property record (`w:pPrChange` or a
+ * paragraph mark's `w:rPrChange`) when its old-value snapshot equals the
+ * original's current properties, so that keeping it as written already makes
+ * Reject All restore the original and Accept All give the revised
+ * properties. `signature` compares the snapshot and the original the same way
+ * the delta decision does.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @see https://github.com/UseJunior/safe-docx/issues/1566
+ */
+function revisedRecordRestoringOriginal(
+  revisedProperties: WmlElement | null | undefined,
+  originalProperties: WmlElement | null | undefined,
+  changeLocalName: 'pPrChange' | 'rPrChange',
+  snapshotLocalName: 'pPr' | 'rPr',
+  signature: (element: WmlElement | null | undefined) => string,
+): WmlElement | undefined {
+  if (!revisedProperties) return undefined;
+  const record = childElements(revisedProperties).find((child) => child.localName === changeLocalName);
+  if (!record) return undefined;
+  const snapshot = childElements(record).find((child) => child.localName === snapshotLocalName);
+  return signature(snapshot ?? null) === signature(originalProperties) ? record : undefined;
+}
+
 /** The `CT_PPrBase` children of a paragraph's properties, serialized for equality. */
 function paragraphBaseSignature(properties: WmlElement | null | undefined): string {
   if (!properties) return '';
@@ -1797,12 +1823,16 @@ function applyParagraphPropertyDelta(
   // One w:rPrChange per paragraph mark: the original's pending record, when
   // it has one, stays as written; the revised input's own record is dropped
   // (#1461).
-  const originalMarkRecord = (originalMark && childElements(originalMark).find((child) => child.localName === 'rPrChange')) ?? undefined;
+  const priorOriginalMarkRecord = (originalMark && childElements(originalMark).find((child) => child.localName === 'rPrChange')) ?? undefined;
   const markSignature = (element: WmlElement | null | undefined): string => element
     ? childElements(element).filter((child) => child.localName !== 'rPrChange')
       .map((child) => new XMLSerializer().serializeToString(child)).join('')
     : '';
   const markChanged = markSignature(liveMark) !== markSignature(originalMark);
+  // As for w:pPrChange below: a prior revised record whose snapshot is the
+  // original mark formatting is kept as written (#1566).
+  const originalMarkRecord = priorOriginalMarkRecord ??
+    revisedRecordRestoringOriginal(liveMark, originalMark ?? null, 'rPrChange', 'rPr', markSignature);
   if (markChanged || originalMarkRecord || (liveMark && childElements(liveMark).some((child) => child.localName === 'rPrChange'))) {
     placeSinglePropertyRevision(ensureMark(), 'rPrChange', originalMarkRecord, markChanged, () => {
       const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
@@ -1854,10 +1884,21 @@ function applyParagraphPropertyDelta(
   // here, not on the boundary paragraph, even when the base properties are
   // unchanged (#1465). Without one, a comparison record is needed only for a
   // real base change.
+  //
+  // Without an original record, the revised input's own prior w:pPrChange is
+  // kept as written (author, date, ID) when its old-value snapshot is exactly
+  // the original's base properties: it then already turns the revised
+  // properties back into the original ones, so re-authoring it as this
+  // comparison's record would only lose its provenance (#1566). When the
+  // snapshot differs, the comparison's record (old value = the original's
+  // properties) is the paragraph's one record, because CT_PPr admits a single
+  // w:pPrChange and Reject All must restore the original.
   const originalParagraphRecord = (original && childElements(original).find((child) => child.localName === 'pPrChange')) ?? undefined;
-  if (!splitsSectionBoundary || originalParagraphRecord ||
+  const preservedParagraphRecord = originalParagraphRecord ??
+    revisedRecordRestoringOriginal(revised, original, 'pPrChange', 'pPr', paragraphBaseSignature);
+  if (!splitsSectionBoundary || preservedParagraphRecord ||
     paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
-    placeSinglePropertyRevision(live, 'pPrChange', originalParagraphRecord, true, () => {
+    placeSinglePropertyRevision(live, 'pPrChange', preservedParagraphRecord, true, () => {
       const pPrChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPrChange') as WmlElement;
       appendChangeMetadata(pPrChange, revision);
       const snapshot = paragraph.ownerDocument!.createElementNS(W_NS, 'w:pPr') as WmlElement;
