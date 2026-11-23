@@ -932,8 +932,12 @@ function textBoxStorageAlignment(
  * abort. A header or footer story still refuses nesting, because its stories
  * are spliced back by raw position, which a nested box would shift.
  *
- * References to the comment, footnote and endnote stories stay refused here;
- * they are tracked separately (#1385).
+ * Footnote and endnote references stay refused here. A comment anchor is
+ * admitted where `allowCommentReferences` is set, which a body text box is:
+ * its range and reference stay in the compared story and the pipeline merges
+ * the comment's definition from that story's comparison
+ * (`mergeTextBoxStoryComments`, #1385). A header or footer story still
+ * refuses one; its comment merge is not wired.
  *
  * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
  * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
@@ -941,7 +945,10 @@ function textBoxStorageAlignment(
  */
 function unsupportedStoryReason(
   textBox: Element,
-  { allowNestedTextBoxes = false }: { allowNestedTextBoxes?: boolean } = {},
+  {
+    allowNestedTextBoxes = false,
+    allowCommentReferences = false,
+  }: { allowNestedTextBoxes?: boolean; allowCommentReferences?: boolean } = {},
 ): string | undefined {
   if (
     !allowNestedTextBoxes &&
@@ -951,7 +958,7 @@ function unsupportedStoryReason(
   }
 
   const unsupportedReferences = new Set([
-    'commentReference',
+    ...(allowCommentReferences ? [] : ['commentReference']),
     'endnoteReference',
     'footnoteReference',
   ]);
@@ -4255,8 +4262,9 @@ export async function prepareTextBoxStoryComparison(
     pairedCopies.length !== originalTextBoxes.length ||
     pairedCopies.length !== revisedTextBoxes.length;
   // A box with no counterpart is tracked whole, but its story must still be
-  // inside the supported subset: a note/comment reference in it would be
-  // carried into the redline without its own lifecycle (#1385). Pictures,
+  // inside the supported subset: a note reference in it would be carried
+  // into the redline without its own lifecycle. A comment anchor stays in
+  // the outer comparison, whose comment merge binds it (#1385). Pictures,
   // objects and nested boxes are marked with the box (#1380).
   const sides = [
     {
@@ -4278,7 +4286,7 @@ export async function prepareTextBoxStoryComparison(
     for (const [candidateIndex, candidate] of candidates.entries()) {
       if (paired.has(candidateIndex)) continue;
       for (const copy of candidate.copies) {
-        const reason = unsupportedStoryReason(copy, { allowNestedTextBoxes: true });
+        const reason = unsupportedStoryReason(copy, { allowNestedTextBoxes: true, allowCommentReferences: true });
         if (!reason) continue;
         const index = rawIndex.get(copy)!;
         const paragraphId = textBoxParagraphId(copy);
@@ -4332,8 +4340,8 @@ export async function prepareTextBoxStoryComparison(
     // imports what the owner lacks (#1381). A reference that resolves to
     // nothing cannot be rebound at all.
     const reason =
-      unsupportedStoryReason(originalTextBox, { allowNestedTextBoxes: true }) ??
-      unsupportedStoryReason(revisedTextBox, { allowNestedTextBoxes: true }) ??
+      unsupportedStoryReason(originalTextBox, { allowNestedTextBoxes: true, allowCommentReferences: true }) ??
+      unsupportedStoryReason(revisedTextBox, { allowNestedTextBoxes: true, allowCommentReferences: true }) ??
       (originalRelationshipClosure === undefined ||
       revisedRelationshipClosure === undefined
         ? 'the text-box relationship closure could not be resolved'
