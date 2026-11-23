@@ -316,6 +316,8 @@ describe('Traceability: independent round-trip oracle for created documents', ()
       const residual: SourceProjection = { body: [{ text: 'Put in to into place. Copy into into again.' }], footers: [null] };
       expect(comparePdfWords(residual, ['Put\nintointo\nplace. Copy into into again.\n'], ['Put into in to place. Copy in to into again.\n'])).toMatchObject({ passed: true, knownGenerated: { joinedLines: [{ page: 1, words: 'in to into' }] } });
     },
+    // The coverage-instrumented release run on CI takes over vitest's default 5s here (run 45085600193).
+    30_000,
   );
 
   test.openspec('[SDX-MDOC-CREATE-12] the first line of a justified paragraph that lost only some of its spaces still matches')(
