@@ -5545,7 +5545,12 @@ async function markLifecycleAncillaryStoryParagraphs(
       }
       return last;
     };
-    const storyClosing = closing(storyBlocks);
+    // A data-bound control shows text Word refreshes from a custom XML part,
+    // so the copy must not be joined into one: such a story keeps its
+    // container closed and the projection check refuses it, as before #1474.
+    const storyClosing = body.getElementsByTagNameNS(OOXML.W_NS, 'dataBinding').length > 0
+      ? storyBlocks.at(-1)
+      : closing(storyBlocks);
     // A deleted story whose last paragraph sits in a block content control
     // or custom XML element (Word's page-number footer) takes the copy inside
     // that container, after the paragraph: the joined final paragraph then

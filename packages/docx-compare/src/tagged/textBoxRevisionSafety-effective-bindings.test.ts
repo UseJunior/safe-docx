@@ -604,6 +604,19 @@ describe('a displaced story copied into the carried part (#1454)', () => {
     }
   }
 
+  for (const direction of ['removed', 'inserted'] as const) {
+    test(`a carried footer ending in a data-bound content control, across ${direction === 'removed' ? 'a removed' : 'an inserted'} boundary, still fails closed`, async ({ given, when }: AllureBddContext) => {
+      // Word refreshes a bound control's text from its custom XML part, so the
+      // displaced copy is never joined into one.
+      const wrap = (line: string) => '<w:sdt><w:sdtPr><w:dataBinding w:xpath="/root/title" w:storeItemID="{00000000-0000-0000-0000-000000000001}"/>' +
+        `</w:sdtPr><w:sdtContent>${line}</w:sdtContent></w:sdt>`;
+      const [original, revised] = await given('the pair', () => carriedFooterPair(direction, BASE_FOOTER, '', wrap));
+      await when('the pair is compared, the comparison refuses instead of publishing', async () => {
+        await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow();
+      });
+    });
+  }
+
   test('a displaced footer holding a text box is copied and tracked like a text-only one', async ({ given, when, then }: AllureBddContext) => {
     // A text box with no relationship reference is self-contained, so the
     // displaced story is copied into the carried part with it (#1500).
