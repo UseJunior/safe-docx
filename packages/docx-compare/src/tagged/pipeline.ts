@@ -62,6 +62,7 @@ import {
   type NumberingIntegrationOptions,
   DEFAULT_NUMBERING_OPTIONS,
 } from './numberingIntegration.js';
+import { trackStyleDefinitionChanges } from './styleDefinitionRevisions.js';
 export {
   validateFieldStructure,
   type FieldStory,
@@ -2427,6 +2428,15 @@ export async function compareDocumentsAtomizer(
         comparisonRevisionPredicate(options.author ?? 'Comparison', options.date),
       ),
     };
+    // A style reference both sides share resolves through the revised
+    // styles part; record the original definitions so Reject restores them
+    // in every story (#1578).
+    if (options.formatDetection?.detectFormatChanges !== false) {
+      result.document = await trackStyleDefinitionChanges(normalized.original, result.document, {
+        author: options.author ?? 'Comparison',
+        date: options.date ?? new Date(),
+      });
+    }
     return result.unrepresentedChanges && normalized.slots.length > 0
       ? { ...result, unrepresentedChanges: reportSlotChangesAgainstInputs(result.unrepresentedChanges, normalized.slots) }
       : result;
