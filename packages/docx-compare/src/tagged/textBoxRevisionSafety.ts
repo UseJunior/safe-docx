@@ -2369,7 +2369,10 @@ function sectionAlignedTextBoxStoryPairs(
       // the pair is the story's whole insertion or deletion
       // (`slotLifecycleStoryInput`, #1475). Other plain stories are left to
       // `sectionAlignedOrdinaryStoryInputs`.
-      const slotLifecycle = blankSlotParts.original.has(left.targetPath) !== blankSlotParts.revised.has(right.targetPath);
+      // A story already holding tracked changes is left out: lifecycle
+      // marking would restamp their author and date.
+      const slotLifecycle = blankSlotParts.original.has(left.targetPath) !== blankSlotParts.revised.has(right.targetPath) &&
+        !holdsTrackedRevision(left.xml) && !holdsTrackedRevision(right.xml);
       if (left.textBoxes.length === 0 && right.textBoxes.length === 0 && !slotLifecycle) continue;
       if (!admits(left, right)) continue;
       const sources = map.backward.get(right.targetPath);
