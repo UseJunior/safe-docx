@@ -779,6 +779,13 @@ function markParagraphMarkRevision(
     const boundary = childElements(pPr).find((child) => ['sectPr', 'pPrChange'].includes(child.localName));
     pPr.insertBefore(paraRPr, boundary ?? null);
   }
+  // A mark keeps at most one marker of each kind (CT_ParaRPr). A prior
+  // insertion (or move destination) already removes the mark on Reject All,
+  // as a prior deletion (or move source) does on Accept All, so the generated
+  // marker would add nothing; keep the prior author's marker (#1565).
+  const equivalentPrior = kind === 'ins' ? ['ins', 'moveTo'] : kind === 'del' ? ['del', 'moveFrom'] : [kind];
+  if (childElements(paraRPr).some((child) =>
+    child.namespaceURI === W_NS && equivalentPrior.includes(child.localName))) return;
   const marker = paragraph.ownerDocument!.createElementNS(W_NS, `w:${kind}`) as WmlElement;
   marker.setAttributeNS(W_NS, 'w:id', String(revision.id));
   marker.setAttributeNS(W_NS, 'w:author', revision.author);
