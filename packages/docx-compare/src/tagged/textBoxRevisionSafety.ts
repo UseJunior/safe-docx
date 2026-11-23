@@ -4913,6 +4913,13 @@ export async function markDeletedAncillaryStoryParagraphs(
 
 export interface LifecycleMarkingOptions {
   /**
+   * `wp:docPr` ids already given to displaced-story copies in this
+   * comparison. Every story is marked against the same outer package, so
+   * the copies of one story cannot see another's; allocated ids are added
+   * here (#1500).
+   */
+  allocatedDrawingIds?: Set<number>;
+  /**
    * The story's part stays selected on the side without the story (a slot
    * lifecycle, #1394), so its last paragraph, which neither Accept All nor
    * Reject All removes, must read as the blank story there: its paragraph
@@ -5139,8 +5146,12 @@ function stripDisplayNeutralMarkup(root: Element, options: { finalParagraphAfter
  * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
  * @see https://github.com/UseJunior/safe-docx/issues/1500
  */
-function renumberCopiedDrawings(copies: readonly Element[], packageRoots: readonly Element[]): void {
-  let nextDocPrId = 1;
+function renumberCopiedDrawings(
+  copies: readonly Element[],
+  packageRoots: readonly Element[],
+  allocated: Set<number> = new Set(),
+): void {
+  let nextDocPrId = Math.max(0, ...allocated) + 1;
   for (const root of packageRoots) {
     for (const docPr of Array.from(root.getElementsByTagNameNS(WORDPROCESSING_DRAWING_NS, 'docPr'))) {
       const id = Number.parseInt(docPr.getAttribute('id') ?? '', 10);
@@ -5151,6 +5162,7 @@ function renumberCopiedDrawings(copies: readonly Element[], packageRoots: readon
     for (const element of [copy, ...Array.from(copy.getElementsByTagName('*'))]) {
       if (element.namespaceURI === WORDPROCESSING_DRAWING_NS && element.localName === 'docPr') {
         element.setAttribute('id', String(nextDocPrId));
+        allocated.add(nextDocPrId);
         nextDocPrId += 1;
       }
     }
@@ -5476,7 +5488,7 @@ async function markLifecycleAncillaryStoryParagraphs(
     : copyableDisplacedBlocks(options.displacedStoryXml);
   if (displacedBlocks && displacedBlocks.length > 0) {
     const imported = displacedBlocks.map((block) => document.importNode(block, true) as Element);
-    renumberCopiedDrawings(imported, preservedRoots);
+    renumberCopiedDrawings(imported, preservedRoots, options.allocatedDrawingIds);
     const before = markerTag === 'w:del'
       ? directChildElements(body).find((element) =>
         element.namespaceURI === OOXML.W_NS && element.localName === 'sectPr') ?? null

@@ -1908,6 +1908,7 @@ async function compareDocumentsTagged(
   const sectionAlignedStories = new Set<TextBoxStoryInput>();
   const representedPartPaths = new Set<string>();
   const displacedCopyPartPaths = new Set<string>();
+  const allocatedDrawingIds = new Set<number>();
   let nextPackageRevisionId = await firstAvailablePackageRevisionId(outerResult.document);
   // A header or footer part whose story comparison is refused is left out of
   // the redline whole: none of its stories is spliced, so the output carries
@@ -2073,7 +2074,7 @@ async function compareDocumentsTagged(
         options.author ?? 'Comparison',
         options.date ?? new Date(),
         nextPackageRevisionId,
-        { blankFinalParagraph: story.slotLifecycle, displacedStoryXml },
+        { blankFinalParagraph: story.slotLifecycle, displacedStoryXml, allocatedDrawingIds },
       );
       const ranges = marked.markedParagraphs;
       const displaced = marked.displacedParagraphs;

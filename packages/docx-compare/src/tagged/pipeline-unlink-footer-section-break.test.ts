@@ -65,7 +65,7 @@ interface Part { id: string; target: string; xml: string }
 type FooterStyle = 'plain' | 'vml box' | 'drawingml box';
 
 const paragraph = (text: string): string => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
-const footerRef = (id: string): string => `<w:footerReference w:type="default" r:id="${id}"/>`;
+const footerRef = (id: string, role = 'default'): string => `<w:footerReference w:type="${role}" r:id="${id}"/>`;
 
 function vmlBox(text: string): string {
   return '<w:p><w:r><w:pict><v:shape id="box1" o:spid="_x0000_s1026" type="#_x0000_t202"' +
@@ -74,14 +74,15 @@ function vmlBox(text: string): string {
     '<w10:wrap type="square"/></v:shape></w:pict></w:r></w:p>';
 }
 
-function drawingMlBox(text: string): string {
+function drawingMlBox(text: string, docPrId = 1): string {
   return '<w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0"' +
     ' relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
     '<wp:simplePos x="0" y="0"/>' +
     '<wp:positionH relativeFrom="column"><wp:posOffset>127000</wp:posOffset></wp:positionH>' +
     '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
     '<wp:extent cx="2540000" cy="635000"/><wp:effectExtent l="0" t="0" r="0" b="0"/>' +
-    '<wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="Text Box 1"/><wp:cNvGraphicFramePr/>' +
+    `<wp:wrapSquare wrapText="bothSides"/><wp:docPr id="${docPrId}" name="Text Box ${docPrId}"/>` +
+    '<wp:cNvGraphicFramePr/>' +
     '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
     '<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2540000" cy="635000"/></a:xfrm>' +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>' +
@@ -89,8 +90,8 @@ function drawingMlBox(text: string): string {
     '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>';
 }
 
-function footer(id: string, target: string, style: FooterStyle, suffix: string): Part {
-  const box = style === 'vml box' ? vmlBox(`Box${suffix}`) : style === 'drawingml box' ? drawingMlBox(`Box${suffix}`) : '';
+function footer(id: string, target: string, style: FooterStyle, suffix: string, docPrId = 1): Part {
+  const box = style === 'vml box' ? vmlBox(`Box${suffix}`) : style === 'drawingml box' ? drawingMlBox(`Box${suffix}`, docPrId) : '';
   return {
     id,
     target,
@@ -99,10 +100,10 @@ function footer(id: string, target: string, style: FooterStyle, suffix: string):
   };
 }
 
-async function packageWith(body: string, finalReferences: string, parts: Part[]): Promise<Buffer> {
+async function packageWith(body: string, finalReferences: string, parts: Part[], tail = ''): Promise<Buffer> {
   const archive = await DocxArchive.load(await buildDocxFromBodyXml(body, [], { namespaces: { r: R_NS } }));
   archive.setDocumentXml((await archive.getDocumentXml())
-    .replace('<w:sectPr/>', `<w:sectPr>${finalReferences}${PAGE_SETUP}</w:sectPr>`));
+    .replace('<w:sectPr/>', `<w:sectPr>${finalReferences}${PAGE_SETUP}${tail}</w:sectPr>`));
   archive.setFile(
     'word/_rels/document.xml.rels',
     `<Relationships xmlns="${PKG_NS}">` +
@@ -233,4 +234,51 @@ describe("Word's unlink-from-previous footer beside a section break (#1500)", ()
       });
     }
   }
+
+  test('break added, first-page and default DrawingML footers both unlinked: every copied drawing gets its own id', async () => {
+    const body = (breakReferences?: string): string =>
+      paragraph('Alpha paragraph.') +
+      (breakReferences === undefined
+        ? paragraph('Beta paragraph.')
+        : `<w:p><w:pPr><w:sectPr>${breakReferences}<w:type w:val="nextPage"/>${PAGE_SETUP}<w:titlePg/></w:sectPr></w:pPr>` +
+          '<w:r><w:t>Beta paragraph.</w:t></w:r></w:p>') +
+      paragraph('Gamma paragraph.');
+    const originalParts = [
+      footer('rIdF1', 'footer1.xml', 'drawingml box', '', 1),
+      footer('rIdP1', 'footerFirst1.xml', 'drawingml box', ' first', 2),
+    ];
+    const original = await packageWith(body(), footerRef('rIdF1') + footerRef('rIdP1', 'first'), originalParts, '<w:titlePg/>');
+    const revised = await packageWith(
+      body(footerRef('rIdF1') + footerRef('rIdP1', 'first')),
+      footerRef('rIdF2') + footerRef('rIdP2', 'first'),
+      [
+        ...originalParts,
+        footer('rIdF2', 'footer2.xml', 'drawingml box', ' edited', 3),
+        footer('rIdP2', 'footerFirst2.xml', 'drawingml box', ' first edited', 4),
+      ],
+      '<w:titlePg/>',
+    );
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+    const compared = result.document;
+    expect(await shownPages(compared, acceptAllChanges)).toEqual(await shownPages(revised));
+    expect(await shownPages(compared, rejectAllChanges)).toEqual(await shownPages(original));
+    expect(await shownPages(await afterDocxCore(compared, 'accept'))).toEqual(await shownPages(revised));
+    expect(await shownPages(await afterDocxCore(compared, 'reject'))).toEqual(await shownPages(original));
+
+    const archive = await DocxArchive.load(compared);
+    const ids: string[] = [];
+    for (const path of archive.listFiles().filter((file) => /^word\/.*\.xml$/u.test(file))) {
+      const xml = await archive.getFile(path);
+      if (xml === null) continue;
+      for (const docPr of Array.from(parseXml(xml).getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing', 'docPr',
+      ))) {
+        ids.push(docPr.getAttribute('id') ?? '');
+      }
+    }
+    expect(ids.length).toBeGreaterThan(4);
+    expect(new Set(ids).size).toBe(ids.length);
+    await assertSchema(compared);
+  });
 });
