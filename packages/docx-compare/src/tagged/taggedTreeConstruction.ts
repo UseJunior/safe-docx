@@ -197,8 +197,35 @@ function runNonTextContentSignature(run: WmlElement): string {
  * @see https://github.com/UseJunior/safe-docx/issues/945
  */
 function canRecursivelyAlignContent(original: WmlElement, revised: WmlElement): boolean {
+  if (original.localName === 'p') {
+    return paragraphMarkIsInserted(original) === paragraphMarkIsInserted(revised);
+  }
   return original.localName !== 'r' ||
     runNonTextContentSignature(original) === runNonTextContentSignature(revised);
+}
+
+/**
+ * Whether a paragraph's mark carries a pending insertion (`w:ins` or
+ * `w:moveTo` in `w:pPr/w:rPr`), which Reject All removes, joining the
+ * paragraph to the next one.
+ *
+ * A matched paragraph publishes one mark: the revised one, with its prior
+ * revision. When only one input's mark is a pending insertion, that mark
+ * cannot reproduce the other input under Reject All (the original's live mark
+ * would vanish, or the original's inserted mark would survive). Such a pair
+ * is published as a deleted original paragraph beside an inserted revised
+ * one, so each mark keeps its own Reject All outcome and the prior author's
+ * insertion stays on the revised mark.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @see https://github.com/UseJunior/safe-docx/issues/1565
+ */
+function paragraphMarkIsInserted(paragraph: WmlElement): boolean {
+  const pPr = childElements(paragraph).find((child) => child.localName === 'pPr');
+  const rPr = pPr && childElements(pPr).find((child) => child.localName === 'rPr');
+  return !!rPr && childElements(rPr).some((child) =>
+    child.namespaceURI === paragraph.namespaceURI && (child.localName === 'ins' || child.localName === 'moveTo'));
 }
 
 function propertyDelta(original: WmlElement, revised: WmlElement): PropertyDelta | undefined {
@@ -949,6 +976,10 @@ function similarParagraphPairs(
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): Array<[number, number]> {
   const weights = original.map((left) => revised.map((right) => {
+    // A paragraph pair whose marks disagree on a pending insertion is never
+    // one edited paragraph (see `paragraphMarkIsInserted`, #1565).
+    if (left.localName === 'p' && right.localName === 'p' &&
+      paragraphMarkIsInserted(left) !== paragraphMarkIsInserted(right)) return -1;
     const similarity = paragraphSimilarity(left, right, originalNumberingIdentities, revisedNumberingIdentities);
     if (similarity < GAP_PAIRING_SIMILARITY) return -1;
     return isTableRow(left) && isTableRow(right) ? similarity * similarity : similarity;
