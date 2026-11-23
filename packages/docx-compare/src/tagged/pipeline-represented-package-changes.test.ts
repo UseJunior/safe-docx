@@ -1128,10 +1128,11 @@ describe('changes the redline still does not carry stay listed', () => {
   // INFO and DOCPROPERTY aliases of the same values are classified by their
   // argument (Codex round 22).
   for (const keyword of ['NUMPAGES', 'SECTIONPAGES', 'NUMWORDS', 'INFO FILESIZE', 'INFO NUMPAGES', 'DOCPROPERTY Bytes', 'DOCPROPERTY Pages']) {
-    test(`a header ${keyword} field keeps an allocation-only header entry listed`, async () => {
-      // A page total depends on the layout of every page, including notes and
-      // drawings this check does not compare (an untracked footnote shape
-      // resize changes it), so the entry is not filtered (Codex round 21).
+    test(`a header ${keyword} field does not keep an allocation-only header entry listed when the stories it reads match`, async () => {
+      // A page total, statistic or file property is what the reader computes
+      // from the other stories, not header content. Reject All and Accept All
+      // reproduce the main and note stories, so the entry is represented
+      // (#1499; this pinned the opposite after Codex round 21).
       const header: Part = {
         id: 'rIdH', kind: 'header', target: 'header1.xml',
         contentXml: `<w:p><w:r><w:t xml:space="preserve">of </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ${keyword} </w:instrText></w:r>` +
@@ -1143,9 +1144,7 @@ describe('changes the redline still does not carry stay listed', () => {
 
       const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
 
-      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-        { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
-      ]));
+      expect(result.unrepresentedChanges).toBeUndefined();
     });
   }
 
@@ -1155,11 +1154,11 @@ describe('changes the redline still does not carry stay listed', () => {
     ['simple', 'simple', 'B', 'ytes'],
     ['simple', 'simple', 'P', 'ages'],
   ] as const) {
-    test(`a header DOCPROPERTY field whose property name ${stem}${suffix} comes from a nested ${label} field keeps an allocation-only header entry listed`, async () => {
+    test(`a header DOCPROPERTY field whose property name ${stem}${suffix} comes from a nested ${label} field does not keep an allocation-only header entry listed when the stories it reads match`, async () => {
       // DOCPROPERTY "B{ DOCVARIABLE Suffix }" names Bytes once the nested
-      // field is evaluated; a field nested in an instruction, complex or
-      // simple, is not modeled, so the entry is not filtered (Codex rounds 23
-      // and 24).
+      // field is evaluated. A nested field is read as one that may show
+      // another story (Codex rounds 23 and 24), so the entry is dropped only
+      // because Reject All and Accept All reproduce those stories (#1499).
       const instr = (text: string): string => `<w:r><w:instrText xml:space="preserve">${text}</w:instrText></w:r>`;
       const char = (type: string): string => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
       const inner = nested === 'complex'
@@ -1176,9 +1175,7 @@ describe('changes the redline still does not carry stay listed', () => {
 
       const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
 
-      expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
-        { scope: 'header', kind: 'added', sectionIndex: 1, role: 'default' },
-      ]));
+      expect(result.unrepresentedChanges).toBeUndefined();
     });
   }
 
@@ -1315,5 +1312,137 @@ describe('changes the redline still does not carry stay listed', () => {
       name: 'TaggedPublicationSafetyError',
       failedChecks: ['formattingFidelity'],
     });
+  });
+});
+
+describe('header/footer fields that read other stories after a section-count change (#1499)', () => {
+  const complexField = (instruction: string, result: string): string =>
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    `<w:r><w:instrText xml:space="preserve"> ${instruction} </w:instrText></w:r>` +
+    `<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>${result}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+  /** A "Page X of Y" footer row, as NVCA and Common Paper forms carry. */
+  const pageOfFooter = (label: string, extra = ''): Part => ({
+    id: 'rIdF', kind: 'footer', target: 'footer1.xml',
+    contentXml: `<w:p><w:r><w:t xml:space="preserve">${label} Page </w:t></w:r>${complexField('PAGE', '1')}` +
+      `<w:r><w:t xml:space="preserve"> of </w:t></w:r>${complexField('NUMPAGES', '2')}${extra}</w:p>`,
+  });
+  const oneSection = paragraph('First part.') + paragraph('Second part.');
+  const twoSections = sectionEnd('First part.', ref('footer', 'rIdF') + LAYOUT) + paragraph('Second part.');
+
+  for (const direction of ['added', 'removed'] as const) {
+    test(`a section break ${direction} beside a NUMPAGES footer whose text is edited reports nothing`, async () => {
+      const original = await packageWith(direction === 'added' ? oneSection : twoSections, ref('footer', 'rIdF') + LAYOUT,
+        [pageOfFooter('Acme')]);
+      const revised = await packageWith(direction === 'added' ? twoSections : oneSection, ref('footer', 'rIdF') + LAYOUT,
+        [pageOfFooter('Acme Corp')]);
+
+      const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+      await expectFaithfulProjections(original, revised, result.document);
+      expect(result.unrepresentedChanges).toBeUndefined();
+    });
+  }
+
+  test('a NUMPAGES footer whose REF reads a bookmark moved without a tracked change stays listed after a section break is added', async () => {
+    // The footer reads the body, where a bookmark move is not a revision:
+    // Reject All of the redline does not reproduce the original's body, so
+    // the field-reading footer entries are not dropped.
+    const brand = (bookmarked: 'Alice' | 'Bob'): string => {
+      const mark = (text: string): string => (text === bookmarked
+        ? `<w:bookmarkStart w:id="7" w:name="Brand"/><w:r><w:t>${text}</w:t></w:r><w:bookmarkEnd w:id="7"/>`
+        : `<w:r><w:t>${text}</w:t></w:r>`);
+      return `<w:p>${mark('Alice')}<w:r><w:t xml:space="preserve"> </w:t></w:r>${mark('Bob')}</w:p>`;
+    };
+    const footer = pageOfFooter('Acme', `<w:r><w:t xml:space="preserve"> </w:t></w:r>${complexField('REF Brand', 'Alice')}`);
+    const original = await packageWith(brand('Alice') + oneSection, ref('footer', 'rIdF') + LAYOUT, [footer]);
+    const revised = await packageWith(brand('Bob') + twoSections, ref('footer', 'rIdF') + LAYOUT, [footer]);
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
+    ]));
+  });
+
+  const NUMPAGES_FOOTER: Part = {
+    id: 'rIdF', kind: 'footer', target: 'footer1.xml',
+    contentXml: '<w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>2</w:t></w:r></w:fldSimple></w:p>',
+  };
+  const noteReference = (id: number): string => `<w:r><w:footnoteReference w:id="${id}"/></w:r>`;
+  async function withFootnotes(body: string, notesXml: string): Promise<Buffer> {
+    const archive = await DocxArchive.load(await packageWith(body, ref('footer', 'rIdF') + LAYOUT, [NUMPAGES_FOOTER]));
+    archive.setFile('word/footnotes.xml', `<w:footnotes xmlns:w="${W_NS}">${notesXml}</w:footnotes>`);
+    archive.setFile('word/_rels/document.xml.rels', (await archive.getFile('word/_rels/document.xml.rels'))!
+      .replace('</Relationships>', `<Relationship Id="rIdNotes" Type="${R_NS}/footnotes" Target="footnotes.xml"/></Relationships>`));
+    archive.setFile('[Content_Types].xml', (await archive.getFile('[Content_Types].xml'))!.replace('</Types>',
+      '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>'));
+    return archive.save();
+  }
+  const breakBody = (added: boolean, secondNote: boolean): string =>
+    `<w:p><w:r><w:t>First.</w:t></w:r>${noteReference(1)}</w:p>` +
+    (added ? sectionEnd('Break.', ref('footer', 'rIdF') + LAYOUT) : paragraph('Break.')) +
+    `<w:p><w:r><w:t>Second.</w:t></w:r>${secondNote ? noteReference(2) : ''}</w:p>`;
+  const note = (id: number, text: string): string => `<w:footnote w:id="${id}">${paragraph(text)}</w:footnote>`;
+
+  test('a tracked footnote added beside a section break and a NUMPAGES footer reports nothing', async () => {
+    // Reject All leaves the added note definition behind with no reference
+    // reaching it; a reader does not lay it out.
+    const original = await withFootnotes(breakBody(false, false), note(1, 'First note.'));
+    const revised = await withFootnotes(breakBody(true, true), note(1, 'First note.') + note(2, 'Second note.'));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toBeUndefined();
+  });
+
+  test('an untracked footnote separator spacing change keeps the NUMPAGES footer listed after a section break is added', async () => {
+    // Separator spacing changes how much of each page the notes take, so
+    // the page total the footer shows; the redline does not track it.
+    const separator = (after: number): string =>
+      `<w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="${after}"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote>`;
+    const original = await withFootnotes(breakBody(false, false), separator(20) + note(1, 'First note.'));
+    const revised = await withFootnotes(breakBody(true, false), separator(10000) + note(1, 'First note.'));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
+    ]));
+  });
+
+  test('a footnote bookmark whose id alone is renumbered does not keep the NUMPAGES footer listed', async () => {
+    const bookmarked = (id: number): string =>
+      `<w:footnote w:id="1"><w:p><w:bookmarkStart w:id="${id}" w:name="Cite"/><w:r><w:t>First note.</w:t></w:r><w:bookmarkEnd w:id="${id}"/></w:p></w:footnote>`;
+    const original = await withFootnotes(breakBody(false, false), bookmarked(7));
+    const revised = await withFootnotes(breakBody(true, false), bookmarked(9));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toBeUndefined();
+  });
+
+  test('a footnote bookmark whose end moves without a tracked change keeps the NUMPAGES footer listed', async () => {
+    // Swapping only the end ids changes what REF A and REF B read; ids are
+    // allocation for the formatting comparison but pair starts with ends.
+    const footer: Part = {
+      id: 'rIdF', kind: 'footer', target: 'footer1.xml',
+      contentXml: '<w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>2</w:t></w:r></w:fldSimple><w:fldSimple w:instr=" REF A "><w:r><w:t>X</w:t></w:r></w:fldSimple></w:p>',
+    };
+    const notes = (firstEnd: number, secondEnd: number): string =>
+      '<w:footnote w:id="1"><w:p><w:bookmarkStart w:id="1" w:name="A"/><w:bookmarkStart w:id="2" w:name="B"/>' +
+      `<w:r><w:t>X</w:t></w:r><w:bookmarkEnd w:id="${firstEnd}"/><w:r><w:t>Y</w:t></w:r><w:bookmarkEnd w:id="${secondEnd}"/></w:p></w:footnote>`;
+    const build = async (added: boolean, firstEnd: number, secondEnd: number): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await withFootnotes(breakBody(added, false), notes(firstEnd, secondEnd)));
+      archive.setFile('word/footer1.xml', `<w:ftr xmlns:w="${W_NS}">${footer.contentXml}</w:ftr>`);
+      return archive.save();
+    };
+    const original = await build(false, 1, 2);
+    const revised = await build(true, 2, 1);
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
+    ]));
   });
 });
