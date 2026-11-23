@@ -976,6 +976,10 @@ function similarParagraphPairs(
   revisedNumberingIdentities: ReadonlyMap<WmlElement, string>,
 ): Array<[number, number]> {
   const weights = original.map((left) => revised.map((right) => {
+    // A paragraph pair whose marks disagree on a pending insertion is never
+    // one edited paragraph (see `paragraphMarkIsInserted`, #1565).
+    if (left.localName === 'p' && right.localName === 'p' &&
+      paragraphMarkIsInserted(left) !== paragraphMarkIsInserted(right)) return -1;
     const similarity = paragraphSimilarity(left, right, originalNumberingIdentities, revisedNumberingIdentities);
     if (similarity < GAP_PAIRING_SIMILARITY) return -1;
     return isTableRow(left) && isTableRow(right) ? similarity * similarity : similarity;

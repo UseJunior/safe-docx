@@ -144,4 +144,19 @@ describe('a prior inserted paragraph mark in a comparison input', () => {
     const { xml } = await compareAndCheck(original, revised);
     expect(markMarkers(xml).flat()).toContain('ins(Reviewer)');
   });
+  conformant('never pairs an edited paragraph by similarity across a mark-insertion difference, in body, table cell or content control', async () => {
+    const containers: Array<(xml: string) => string> = [
+      xml => xml,
+      xml => `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/>${xml}</w:tc></w:tr></w:tbl>`,
+      xml => `<w:sdt><w:sdtPr/><w:sdtContent>${xml}</w:sdtContent></w:sdt>`,
+    ];
+    for (const container of containers) {
+      for (const kind of ['ins', 'moveTo']) {
+        const clean = container(p(t('Alpha beta gamma delta')) + p(t('End')));
+        const prior = container(`<w:p><w:pPr><w:rPr><w:${kind} w:id="9" w:author="Reviewer" ${DATE}/></w:rPr></w:pPr>${t('Alpha beta gamma revised')}</w:p>` + p(t('End')));
+        await compareAndCheck(clean, prior);
+        await compareAndCheck(prior, clean);
+      }
+    }
+  });
 });
