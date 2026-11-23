@@ -2634,6 +2634,22 @@ async function mergeAuxiliaryPartDefinitions(
 
   if (missingElements.length === 0) return result;
 
+  // A note copied from the other package names its hyperlinks by that
+  // package's note-part relationship ids. The same id can resolve to a
+  // different target in the result's table, so re-express each copied note
+  // against the result's relationships: an identical relationship is reused
+  // and any other gets a fresh id (#1579).
+  if (resultPartXml && resultParsed && (descriptor.label === 'footnote' || descriptor.label === 'endnote')) {
+    for (let index = 0; index < missingElements.length; index++) {
+      const copy = missingElements[index]!.cloneNode(true) as Element;
+      const relationshipImport = await planStoryRelationshipImport(
+        copy, sourceArchive, descriptor.partPath, resultArchive, descriptor.partPath,
+      );
+      await relationshipImport.commit();
+      missingElements[index] = copy;
+    }
+  }
+
   if (resultPartXml && resultParsed) {
     // Insert missing entries into existing result part
     const rootEl = resultParsed.doc.getElementsByTagName(descriptor.rootTag)[0] as Element;
