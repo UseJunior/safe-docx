@@ -724,9 +724,16 @@ function reachableNotesIdentity(projectedDocumentXml: string, projectedNotesXml:
   return lines.join('\n');
 }
 
+const ALLOCATED_ID_MARKERS = new Set(['bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'commentReference']);
+
 function noteIdentity(note: Element): string {
   const copy = note.cloneNode(true) as Element;
   copy.removeAttributeNS(W_NS, 'id');
+  // Bookmark and comment-anchor ids are allocation; a bookmark's name and the
+  // text it encloses are compared through `fieldReadableStory`.
+  for (const marker of Array.from(copy.getElementsByTagNameNS(W_NS, '*'))) {
+    if (ALLOCATED_ID_MARKERS.has(localName(marker))) marker.removeAttributeNS(W_NS, 'id');
+  }
   // A run with only properties (or empty text) shows nothing.
   for (const run of Array.from(copy.getElementsByTagNameNS(W_NS, 'r'))) {
     const content = Array.from(run.childNodes).filter((child): child is Element =>

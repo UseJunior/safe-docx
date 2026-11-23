@@ -1409,4 +1409,15 @@ describe('header/footer fields that read other stories after a section-count cha
       expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
     ]));
   });
+
+  test('a footnote bookmark whose id alone is renumbered does not keep the NUMPAGES footer listed', async () => {
+    const bookmarked = (id: number): string =>
+      `<w:footnote w:id="1"><w:p><w:bookmarkStart w:id="${id}" w:name="Cite"/><w:r><w:t>First note.</w:t></w:r><w:bookmarkEnd w:id="${id}"/></w:p></w:footnote>`;
+    const original = await withFootnotes(breakBody(false, false), bookmarked(7));
+    const revised = await withFootnotes(breakBody(true, false), bookmarked(9));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toBeUndefined();
+  });
 });
