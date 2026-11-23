@@ -1174,8 +1174,15 @@ function restoreSectionPropertiesFromChanges(root: Element): void {
 }
 
 /**
+ * Elements whose `w:pPr` may carry a `w:pPrChange`: a paragraph, and (in a
+ * styles part) a style definition or the paragraph defaults (#1578).
+ */
+const PARAGRAPH_PROPERTY_HOSTS = new Set(['w:p', 'w:style', 'w:pPrDefault']);
+
+/**
  * Restore the original paragraph-property snapshot carried by `w:pPrChange`.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
  * @see https://github.com/UseJunior/safe-docx/issues/679
  */
@@ -1188,7 +1195,7 @@ function restoreParagraphPropertiesFromChanges(root: Element): void {
       !livePPr ||
       livePPr.tagName !== 'w:pPr' ||
       !paragraph ||
-      (paragraph as Element).tagName !== 'w:p'
+      !PARAGRAPH_PROPERTY_HOSTS.has((paragraph as Element).tagName)
     ) {
       continue;
     }
