@@ -29,6 +29,7 @@ fixes merged since:
 - Tests: nested revision shapes for tracked inputs are pinned (#1564), and
   the round-trip oracle timeout is raised so the release coverage run passes
   (#1582).
+- Site: an unlisted browser comparison prototype page. (#1583)
 
 ### Changes first tagged as 0.26.0 (unpublished)
 
