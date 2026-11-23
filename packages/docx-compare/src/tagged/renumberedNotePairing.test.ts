@@ -113,6 +113,45 @@ async function compareAndCheck(original: Para[], revised: Para[], kind: Kind) {
 
 describe('renumbered but unchanged notes pair with their counterparts', () => {
   for (const kind of ['footnote', 'endnote'] as const) {
+    test(`a renumbered ${kind} linking to a bookmark that moved keeps the original target on Reject`, async ({ given, when, then }: AllureBddContext) => {
+      const withBookmarkLink = async (docx: Buffer, text: string, first: boolean): Promise<Buffer> => {
+        const zip = await JSZip.loadAsync(docx);
+        const path = `word/${kind}s.xml`;
+        const xml = await zip.file(path)!.async('string');
+        zip.file(path, xml.replace('<w:r><w:t>First note</w:t></w:r>', '<w:hyperlink w:anchor="Target"><w:r><w:t>First note</w:t></w:r></w:hyperlink>'));
+        const documentXml = await zip.file('word/document.xml')!.async('string');
+        const target = `<w:p><w:bookmarkStart w:id="9" w:name="Target"/><w:r><w:t>${text}</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p>`;
+        zip.file('word/document.xml', first ? documentXml.replace('<w:body>', `<w:body>${target}`) : documentXml.replace('<w:sectPr/>', `${target}<w:sectPr/>`));
+        return zip.generateAsync({ type: 'nodebuffer' });
+      };
+      let original!: Buffer;
+      let revised!: Buffer;
+      let result!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+      await given('a note renumbered from 1 to 2 whose identical internal hyperlink names a bookmark that moved', async () => {
+        original = await withBookmarkLink(await build([{ text: 'Alpha text.', notes: [{ kind, id: 1, text: 'First note' }] }]), 'Old target paragraph', true);
+        revised = await withBookmarkLink(await build([{ text: 'Alpha text.', notes: [{ kind, id: 2, text: 'First note' }] }]), 'Replacement location', false);
+      });
+      await when('the documents are compared', async () => {
+        result = await compareDocumentsAtomizer(original, revised, { moveDetection: { detectMoves: false } });
+      });
+      await then('Reject links the note to the original bookmark paragraph', async () => {
+        const zip = await JSZip.loadAsync(result.document);
+        const documentXml = await zip.file('word/document.xml')!.async('string');
+        const notesXml = await zip.file(`word/${kind}s.xml`)!.async('string');
+        for (const [projectDocument, projectNotes] of [
+          [rejectAllChanges(documentXml), rejectAllChanges(notesXml)],
+          [coreProject(documentXml, rejectChanges), coreProject(notesXml, rejectChanges)],
+        ] as const) {
+          const anchor = parseXml(projectNotes).getElementsByTagNameNS(W, 'hyperlink')[0]?.getAttributeNS(W, 'anchor');
+          const bookmark = Array.from(parseXml(projectDocument).getElementsByTagNameNS(W, 'bookmarkStart')).find((b) => b.getAttributeNS(W, 'name') === anchor);
+          expect(bookmark?.parentNode?.textContent).toBe('Old target paragraph');
+        }
+        await assertSchema(result.document);
+      });
+    });
+  }
+
+  for (const kind of ['footnote', 'endnote'] as const) {
     test(`a renumbered ${kind} whose comment changed keeps the original comment on Reject`, async ({ given, when, then }: AllureBddContext) => {
       const withComment = async (docx: Buffer, text: string): Promise<Buffer> => {
         const zip = await JSZip.loadAsync(docx);

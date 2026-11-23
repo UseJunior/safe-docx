@@ -21,25 +21,28 @@ const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PACKAGE_RELATIONSHIPS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
 /**
- * Elements whose meaning lives in another part (a comment's body, a nested
- * note's definition). Identical markup there proves nothing, so a definition
- * holding one is never aligned and keeps the collision-safe path.
+ * The definition content whose meaning is fully carried by the note itself:
+ * paragraphs and runs with their properties, text and simple run atoms, and
+ * hyperlinks to an external target. Anything else (comment anchors, fields,
+ * bookmarks or internal hyperlink anchors, nested notes, drawings, content
+ * controls, extension markup) can depend on another part or on names that
+ * later collision handling rewrites, so a definition holding it is never
+ * aligned and keeps the collision-safe path.
  */
-const CROSS_PART_ELEMENTS = new Set([
-  'commentRangeStart', 'commentRangeEnd', 'commentReference', 'footnoteReference', 'endnoteReference',
+const SELF_CONTAINED_ELEMENTS = new Set([
+  'p', 'r', 't', 'tab', 'br', 'cr', 'sym', 'noBreakHyphen', 'softHyphen',
+  'footnoteRef', 'endnoteRef', 'lastRenderedPageBreak', 'proofErr', 'hyperlink',
 ]);
+const PROPERTY_ELEMENTS = new Set(['pPr', 'rPr']);
 
 let neverMatchingSerial = 0;
 
 /**
  * A definition's identity apart from its own `w:id`, or a key that matches
- * nothing when identity cannot be shown from the note alone. External
- * relationship references (a hyperlink's `r:id`) resolve through each
- * package's own note relationships, so the key carries what each one resolves
- * to: the same raw XML pointing at a different URL is a changed note. An
- * internal relationship (an image or embedded payload) names a part whose
- * bytes may differ under the same name, so it declines alignment, as do an
- * unresolved reference and any cross-part element.
+ * nothing when identity cannot be shown from the note alone. An external
+ * hyperlink's `r:id` resolves through each package's own note relationships,
+ * so the key carries the URL: the same raw XML pointing at a different URL is
+ * a changed note.
  */
 function definitionKey(entry: Element, relationships: Map<string, { key: string; external: boolean }>): string {
   const copy = entry.cloneNode(true) as Element;
@@ -47,15 +50,22 @@ function definitionKey(entry: Element, relationships: Map<string, { key: string;
   const resolved: string[] = [];
   let comparable = true;
   const visit = (element: Element): void => {
-    if (element.namespaceURI === W && CROSS_PART_ELEMENTS.has(element.localName)) comparable = false;
-    for (const attribute of Array.from(element.attributes)) {
-      if (attribute.namespaceURI !== R) continue;
-      const target = relationships.get(attribute.value);
-      if (!target?.external) comparable = false;
-      else resolved.push(target.key);
-    }
-    for (let child = element.firstChild; child; child = child.nextSibling) {
-      if (child.nodeType === 1) visit(child as Element);
+    for (let child = element.firstChild; child && comparable; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue;
+      const node = child as Element;
+      if (node.namespaceURI === W && PROPERTY_ELEMENTS.has(node.localName)) continue;
+      if (node.namespaceURI !== W || !SELF_CONTAINED_ELEMENTS.has(node.localName)) {
+        comparable = false;
+        return;
+      }
+      for (const attribute of Array.from(node.attributes)) {
+        if (attribute.namespaceURI === W && ['anchor', 'docLocation'].includes(attribute.localName)) comparable = false;
+        if (attribute.namespaceURI !== R) continue;
+        const target = relationships.get(attribute.value);
+        if (!target?.external) comparable = false;
+        else resolved.push(target.key);
+      }
+      visit(node);
     }
   };
   visit(copy);
