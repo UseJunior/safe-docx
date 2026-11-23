@@ -196,7 +196,8 @@ export async function trackStyleDefinitionChanges(
   // Identifiers stay unique across the package's revisions.
   // Read through the parser so any legal spelling of the attribute (quote
   // style, prefix, a signed or zero-padded number) is counted by its value.
-  let maximum = 0;
+  // Exact integers: ST_DecimalNumber is xsd:integer, past Number's safe range.
+  let maximum = 0n;
   for (const path of [...await revisionStoryPartPaths(comparedArchive), comparedPath]) {
     const root = path === comparedPath
       ? comparedRoot
@@ -208,15 +209,18 @@ export async function trackStyleDefinitionChanges(
     for (const element of [root, ...Array.from(root.getElementsByTagName('*'))]) {
       const value = element.getAttributeNS(W, 'id');
       if (!value) continue;
-      const numeric = Number(value.trim());
-      if (Number.isSafeInteger(numeric)) maximum = Math.max(maximum, numeric);
+      const digits = value.trim().replace(/^\+/u, '');
+      if (!/^-?\d+$/u.test(digits)) continue;
+      const numeric = BigInt(digits);
+      if (numeric > maximum) maximum = numeric;
     }
   }
   for (const { host, slot, record } of pending) {
     const container = ensureContainer(host, slot);
     const stale = wChild(container, slot.change);
     if (stale) container.removeChild(stale);
-    record.setAttributeNS(W, 'w:id', String(++maximum));
+    maximum += 1n;
+    record.setAttributeNS(W, 'w:id', maximum.toString());
     container.appendChild(record);
   }
   const serialized = serializeXml(comparedDocument);
