@@ -213,6 +213,8 @@ jobs:
         run: npm --prefix site ci
       - name: Build site and validate internal links
         run: npm run check:site
+      - name: Build the browser comparison prototype
+        run: npm --prefix site run build:prototype
 
   tool-docs-freshness:
     runs-on: ubuntu-latest

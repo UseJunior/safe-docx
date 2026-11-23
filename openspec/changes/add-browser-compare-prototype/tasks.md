@@ -1,0 +1,2 @@
+- [x] Bundle the portable comparison engine and build the unlisted page.
+- [x] Verify the browser flow and existing redirect behavior.

@@ -6,10 +6,14 @@
   "description": "Safe DOCX marketing and trust site (Eleventy)",
   "scripts": {
     "build": "eleventy",
-    "dev": "eleventy --serve"
+    "dev": "eleventy --serve",
+    "build:prototype": "node prototype/build.mjs"
   },
   "devDependencies": {
     "@11ty/eleventy": "^3.1.6",
+    "@xmldom/xmldom": "0.9.12",
+    "esbuild": "0.28.1",
+    "jszip": "3.10.1",
     "markdown-it": "^14.3.3"
   }
 }

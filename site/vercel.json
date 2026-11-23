@@ -1,7 +1,7 @@
 {
   "framework": null,
-  "installCommand": "npm install",
-  "buildCommand": "mkdir -p _site && echo 'redirect-only' > _site/.keep",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build:prototype",
   "outputDirectory": "_site",
   "cleanUrls": true,
   "trailingSlash": false,
@@ -10,7 +10,7 @@
     { "source": "/about", "destination": "https://usejunior.com/developer-tools/safe-docx", "statusCode": 301 },
     { "source": "/trust", "destination": "https://usejunior.com/developer-tools/safe-docx#trust", "statusCode": 301 },
     { "source": "/trust/:path*", "destination": "https://usejunior.com/developer-tools/safe-docx#trust", "statusCode": 301 },
-    { "source": "/:path*", "destination": "https://usejunior.com/developer-tools/safe-docx", "statusCode": 301 }
+    { "source": "/((?!labs/docx-compare(?:/|$)).*)", "destination": "https://usejunior.com/developer-tools/safe-docx", "statusCode": 301 }
   ],
   "headers": [
     {
@@ -20,6 +20,13 @@
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/labs/docx-compare/:path*",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "Content-Security-Policy", "value": "default-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'" }
       ]
     }
   ]
