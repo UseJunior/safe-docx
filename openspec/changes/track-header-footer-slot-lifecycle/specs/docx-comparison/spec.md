@@ -13,7 +13,13 @@ story in the first section (ECMA-376 Part 1 §17.10.5, §17.10.2). No
 (§17.13.5.32). A story compared with a blank story SHALL be tracked as a whole
 insertion or deletion, and its last paragraph's properties SHALL be tracked
 against none (§17.13.5.29, §17.13.5.30), so the side without the story shows
-one plain empty paragraph. A text box's carrier run in a story tracked as a
+one plain empty paragraph. The story MAY hold tables, whose rows SHALL be
+tracked as inserted or deleted (§17.13.5.17, §17.13.5.12), and block content
+controls or custom XML elements holding such content; neither container
+carries a revision marker, so on the side without the story each is left
+holding one empty paragraph, which shows nothing. A story holding a
+data-bound content control SHALL stay listed, since its shown text is
+refreshed from a custom XML part. A text box's carrier run in a story tracked as a
 whole insertion or deletion SHALL carry the same revision. Slots whose display
 switch (`w:titlePg`, `w:evenAndOddHeaders`) differs between the documents, and
 slots that resolve to the same part in both, SHALL be left to section-aligned
@@ -45,3 +51,11 @@ carried lifecycle story with visible non-text content.
 - **WHEN** the pair is compared
 - **THEN** the section's part SHALL carry the redline from the story the original shows there to the story the revised document shows there
 - **AND** every page SHALL show the revised story after Accept All and the original's after Reject All, with both appliers
+
+#### Scenario: [SDX-CMP-SLOTLIFE-04] A header or footer holding a block content control, custom XML or a table is tracked
+
+- **GIVEN** a header or footer, attached to or dropped from a surviving section, that holds a table, a block content control (such as Word's page-number building block) or a custom XML element
+- **WHEN** the pair is compared
+- **THEN** its paragraphs and table rows SHALL be tracked, the side with the story SHALL keep the content control
+- **AND** every page SHALL show the revised story after Accept All and the original's after Reject All, with both appliers
+- **AND** nothing SHALL be listed in `unrepresentedChanges`
