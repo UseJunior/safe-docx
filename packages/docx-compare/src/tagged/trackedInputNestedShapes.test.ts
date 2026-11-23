@@ -57,6 +57,12 @@ function revisionChains(xml: string): string[] {
   return [...chains].sort();
 }
 
+/** A run property with its attribute values, e.g. `b{val=0}`, so an explicit off value never projects like on. */
+function propertySignature(property: Element): string {
+  const attributes = Array.from(property.attributes).map(attribute => `${attribute.localName}=${attribute.value}`).sort();
+  return attributes.length ? `${property.localName}{${attributes.join(';')}}` : property.localName;
+}
+
 /** Visible text of each body paragraph, as `[b,i]text` segments of equal direct run formatting. */
 function paragraphTexts(xml: string): string[] {
   return Array.from(parseXml(xml).getElementsByTagNameNS(W, 'p')).map(paragraph =>
@@ -64,7 +70,7 @@ function paragraphTexts(xml: string): string[] {
       const rPr = Array.from((node.parentNode as Element).childNodes)
         .find((child): child is Element => child.nodeType === 1 && (child as Element).localName === 'rPr');
       const format = rPr
-        ? Array.from(rPr.childNodes).filter((child): child is Element => child.nodeType === 1 && (child as Element).localName !== 'rPrChange').map(child => child.localName)
+        ? Array.from(rPr.childNodes).filter((child): child is Element => child.nodeType === 1 && (child as Element).localName !== 'rPrChange').map(propertySignature)
         : [];
       return { format: format.join(','), text: node.textContent ?? '' };
     }).reduce<{ format: string; text: string }[]>((segments, run) => {
@@ -173,7 +179,8 @@ describe('tracked-input nested revision shapes are schema-valid and keep PRESERV
       expect(changes.map(change => change.getAttributeNS(W, 'author'))).toEqual(['Reviewer']);
       const priorRun = changes[0]!.parentNode!.parentNode as Element;
       expect(priorRun.parentNode && (priorRun.parentNode as Element).localName).toBe(original === priorFormat ? 'del' : 'ins');
-      expect((changes[0]!.parentNode as Element).getElementsByTagNameNS(W, 'b')).toHaveLength(1);
+      const bold = Array.from((changes[0]!.parentNode as Element).childNodes).filter((node): node is Element => node.nodeType === 1 && (node as Element).localName === 'b');
+      expect(bold.map(propertySignature)).toEqual(['b']);
       for (const rPr of Array.from(parseXml(xml).getElementsByTagNameNS(W, 'rPr'))) {
         const direct = Array.from(rPr.childNodes).filter(node => node.nodeType === 1 && (node as Element).localName === 'rPrChange');
         expect(direct.length).toBeLessThanOrEqual(1);
