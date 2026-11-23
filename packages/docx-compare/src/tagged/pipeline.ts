@@ -2157,10 +2157,16 @@ async function compareDocumentsTagged(
       placeholder: story.placeholder,
     })),
   );
+  const withStoryComments = await mergeTextBoxStoryComments(
+    assembled,
+    storyResults
+      .filter(({ partPath, container }) => container === 'textBox' && partPath === 'word/document.xml')
+      .map(({ result }) => result.document),
+  );
   // Unpaired body text boxes stay whole in the outer comparison, which tracks
   // their anchor runs; their stories are marked to match (#1031).
   const lifecycle = await markTrackedTextBoxLifecycles(
-    assembled,
+    withStoryComments,
     options.author ?? 'Comparison',
     options.date ?? new Date(),
     Math.max(nextPackageRevisionId, await firstAvailablePackageRevisionId(assembled)),
@@ -2755,6 +2761,44 @@ async function ensureOpcMetadata(
 // =============================================================================
 // Comment Ancillary Parts Merging
 // =============================================================================
+
+/**
+ * Carry the comments anchored in compared body text-box stories into the
+ * assembled package.
+ *
+ * A text-box story is compared in a package of its own, so the outer
+ * comparison's comment merge never sees the anchors the story holds: a
+ * comment present only in the original (its range now tracked as deleted)
+ * or renumbered away from a colliding revised id would be left without a
+ * definition. Each story comparison already merged the definitions its
+ * anchors need, under the same collision renumbering as the outer one, so
+ * they are copied from there, with their threading rows.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
+ * @see https://github.com/UseJunior/safe-docx/issues/1385
+ */
+async function mergeTextBoxStoryComments(
+  assembled: Buffer,
+  storyDocuments: readonly Buffer[],
+): Promise<Buffer> {
+  const commentDescriptor = AUXILIARY_PARTS.find((descriptor) => descriptor.label === 'comment')!;
+  let resultArchive: DocxArchive | undefined;
+  for (const storyDocument of storyDocuments) {
+    const storyArchive = await DocxArchive.load(storyDocument);
+    const storyIds = collectReferenceIds(await storyArchive.getDocumentXml(), 'w:commentReference');
+    if (storyIds.size === 0) continue;
+    resultArchive ??= await DocxArchive.load(assembled);
+    await mergeAuxiliaryPartDefinitions(
+      storyArchive,
+      resultArchive,
+      await resultArchive.getDocumentXml(),
+      commentDescriptor,
+    );
+    await mergeCommentAncillaryParts(storyArchive, resultArchive, storyIds);
+  }
+  return resultArchive ? resultArchive.save() : assembled;
+}
 
 /**
  * Walk the comment reply graph from each root referenced in the result
