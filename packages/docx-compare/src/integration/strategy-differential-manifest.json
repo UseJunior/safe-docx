@@ -541,8 +541,8 @@
           },
           {
             "path": "word/footer3.xml",
-            "bytes": 2905,
-            "sha256": "453e8aa918b405ff76ad2649d9258502ad228693e9b11db0ee217ff359ccb599",
+            "bytes": 3605,
+            "sha256": "06a68d7cee235633fdfb9813449075794dcbbe5a0d03b9bee49f46cc3a3c0ef1",
             "kind": "xml"
           },
           {
@@ -637,14 +637,14 @@
           },
           {
             "path": "word/header2.xml",
-            "bytes": 2439,
-            "sha256": "afde273fd27daa0bd7c15c55cf4dd35d57d49fb783f0dda55ca740976b28b0c3",
+            "bytes": 2659,
+            "sha256": "649df13c10f0ebaef2be4cb80c3c4aaedbbbf5e49dbdd9046c0b04cd7ac8c421",
             "kind": "xml"
           },
           {
             "path": "word/header3.xml",
-            "bytes": 2460,
-            "sha256": "b038b005f5066b37c66a6c1d2edfc26fc9ca40a7fc2596db2cb231a0b94245e9",
+            "bytes": 2680,
+            "sha256": "914d6c0d580d0b0d914f52f83de972c237a4c75a11d86260c34d8f002650062c",
             "kind": "xml"
           },
           {
@@ -722,12 +722,12 @@
         ],
         "stats": {
           "atomMetricVersion": "tagged-token-v1",
-          "insertions": 337,
+          "insertions": 340,
           "deletions": 295,
           "modifications": 528,
-          "insertedRanges": 337,
+          "insertedRanges": 340,
           "deletedRanges": 295,
-          "insertedAtoms": 3263,
+          "insertedAtoms": 3266,
           "deletedAtoms": 1440,
           "modifiedParagraphs": 528,
           "formatChanges": 16,
@@ -756,28 +756,10 @@
             "role": "even"
           },
           {
-            "scope": "footer",
-            "kind": "added",
-            "sectionIndex": 0,
-            "role": "first"
-          },
-          {
-            "scope": "header",
-            "kind": "added",
-            "sectionIndex": 0,
-            "role": "default"
-          },
-          {
             "scope": "header",
             "kind": "added",
             "sectionIndex": 0,
             "role": "even"
-          },
-          {
-            "scope": "header",
-            "kind": "added",
-            "sectionIndex": 0,
-            "role": "first"
           },
           {
             "scope": "footer",
