@@ -481,21 +481,73 @@ describe('header/footer attached to or dropped from a surviving section (#1394)'
   };
   for (const [shape, content] of Object.entries(blockContainerHeaders)) {
     for (const direction of ['attached', 'dropped'] as const) {
-      test(`reports, rather than tracks, a header ${direction} that ${shape}`, async ({ given, when, then }: AllureBddContext) => {
-        const header = story('rIdH', 'header', 'header1.xml', content);
-        const withHeader = await packageWith(paragraph('Body'), ref('header', 'rIdH'), [header]);
-        const withoutHeader = await packageWith(paragraph('Body'), '', []);
-        const [original, revised] = await given(`a header that ${shape}, ${direction}`, () =>
-          direction === 'attached' ? [withoutHeader, withHeader] : [withHeader, withoutHeader]);
-        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
-        await then('the header change is listed as unrepresented', () => {
-          expect(result.unrepresentedChanges).toEqual([
-            { scope: 'header', kind: direction === 'attached' ? 'added' : 'removed', sectionIndex: 0, role: 'default' },
-          ]);
-        });
-      });
+      test.openspec('[SDX-CMP-SLOTLIFE-04] A header or footer holding a block content control, custom XML or a table is tracked')(
+        `tracks a header ${direction} that ${shape}, leaving a plain blank story where there is none`,
+        async ({ given, when, then }: AllureBddContext) => {
+          const header = story('rIdH', 'header', 'header1.xml', content);
+          const withHeader = await packageWith(paragraph('Body'), ref('header', 'rIdH'), [header]);
+          const withoutHeader = await packageWith(paragraph('Body, revised'), '', []);
+          const [original, revised] = await given(`a header that ${shape}, ${direction}`, () =>
+            direction === 'attached' ? [withoutHeader, withHeader] : [withHeader, withoutHeader]);
+          const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+          await expectSlotRedline({ then }, original, revised, result);
+          if (shape === 'ends in a content control') {
+            await then('the side without the header shows a paragraph with no spacing, with both appliers', async () => {
+              const blankSide = direction === 'attached' ? 'reject' : 'accept';
+              expect(await headerSpacing(result.document, blankSide, 'ast')).toEqual([]);
+              expect(await headerSpacing(result.document, blankSide, 'core')).toEqual([]);
+            });
+          }
+        },
+      );
     }
   }
+
+  // Word's "Page Numbers (Bottom of Page)" building block: a docPartObj
+  // content control around a centred paragraph holding a PAGE field.
+  const pageNumberFooter = (id: string, target: string): Part => story(id, 'footer', target,
+    '<w:sdt><w:sdtPr><w:id w:val="-1769616900"/><w:docPartObj><w:docPartGallery w:val="Page Numbers (Bottom of Page)"/>' +
+    '<w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtEndPr><w:rPr><w:noProof/></w:rPr></w:sdtEndPr><w:sdtContent>' +
+    '<w:p><w:pPr><w:pStyle w:val="Footer"/><w:jc w:val="center"/></w:pPr>' +
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE   \\* MERGEFORMAT </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:noProof/></w:rPr><w:t>2</w:t></w:r>' +
+    '<w:r><w:rPr><w:noProof/></w:rPr><w:fldChar w:fldCharType="end"/></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pStyle w:val="Footer"/></w:pPr></w:p>');
+  for (const direction of ['attached', 'dropped'] as const) {
+    test.openspec('[SDX-CMP-SLOTLIFE-04] A header or footer holding a block content control, custom XML or a table is tracked')(
+      `tracks a page-number footer ${direction}`,
+      async ({ given, when, then }: AllureBddContext) => {
+        const withFooter = await packageWith(paragraph('Body'), ref('footer', 'rIdF'), [pageNumberFooter('rIdF', 'footer1.xml')]);
+        const withoutFooter = await packageWith(paragraph('Body, revised'), '', []);
+        const [original, revised] = await given(`a page-number footer, ${direction}`, () =>
+          direction === 'attached' ? [withoutFooter, withFooter] : [withFooter, withoutFooter]);
+        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+        await expectSlotRedline({ then }, original, revised, result);
+        await then('the content control is kept on the side with the footer', async () => {
+          const archive = await DocxArchive.load(result.document);
+          const footers = await Promise.all(archive.listFiles()
+            .filter((name) => /^word\/footer[^/]*\.xml$/u.test(name)).map(async (name) => (await archive.getFile(name))!));
+          const kept = footers.map((xml) => parseXml(direction === 'attached' ? acceptAllChanges(xml) : rejectAllChanges(xml)))
+            .filter((document) => document.getElementsByTagNameNS(W_NS, 'docPartGallery').length > 0);
+          expect(kept).toHaveLength(1);
+          expect(kept[0]!.getElementsByTagNameNS(W_NS, 'instrText').item(0)?.textContent).toContain('PAGE');
+        });
+      },
+    );
+  }
+
+  test('reports, rather than tracks, a header dropped that holds a data-bound content control', async ({ given, when, then }: AllureBddContext) => {
+    const header = story('rIdH', 'header', 'header1.xml',
+      '<w:sdt><w:sdtPr><w:dataBinding w:xpath="/root/title" w:storeItemID="{00000000-0000-0000-0000-000000000001}"/></w:sdtPr>' +
+      '<w:sdtContent><w:p><w:r><w:t>Bound</w:t></w:r></w:p></w:sdtContent></w:sdt>');
+    const [original, revised] = await given('a header holding a data-bound control; the revision drops it', () => Promise.all([
+      packageWith(paragraph('Body'), ref('header', 'rIdH'), [header]),
+      packageWith(paragraph('Body'), '', []),
+    ]));
+    const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+    await then('the header change is listed as unrepresented', () => {
+      expect(result.unrepresentedChanges).toEqual([{ scope: 'header', kind: 'removed', sectionIndex: 0, role: 'default' }]);
+    });
+  });
 
   test('a slot change the redline still cannot carry is reported against the documents as given', async ({
     given, when, then,

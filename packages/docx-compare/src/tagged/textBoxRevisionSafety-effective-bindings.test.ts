@@ -567,22 +567,38 @@ describe('a displaced story copied into the carried part (#1454)', () => {
     });
   });
 
-  // Review round 2: the carried story's last paragraph inside a block
-  // content control or custom XML element. Neither element carries a
-  // revision marker, so the projection that empties the carried story keeps
-  // an empty paragraph inside it, the gap #1455 reports for a slot
-  // lifecycle. The comparison refuses rather than publish that line.
+  // The carried story's last paragraph inside a block content control or
+  // custom XML element. Neither element carries a revision marker, so the
+  // replacement's final paragraph is kept inside it: Reject All keeps the
+  // original's container and Accept All leaves no emptied paragraph in it
+  // (#1474).
+  const containers = [
+    ['a content control', (line: string) => `<w:sdt><w:sdtPr><w:id w:val="300"/></w:sdtPr><w:sdtContent>${line}</w:sdtContent></w:sdt>`, 'sdt'],
+    ['custom XML', (line: string) => `<w:customXml w:element="footer">${line}</w:customXml>`, 'customXml'],
+    ['a page-number content control', (line: string) =>
+      '<w:sdt><w:sdtPr><w:id w:val="301"/><w:docPartObj><w:docPartGallery w:val="Page Numbers (Bottom of Page)"/>' +
+      '<w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>' +
+      line.replace('</w:p>', '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>') +
+      '</w:sdtContent></w:sdt>', 'sdt'],
+  ] as const;
   for (const direction of ['removed', 'inserted'] as const) {
-    for (const [container, wrap] of [
-      ['a content control', (line: string) => `<w:sdt><w:sdtPr><w:id w:val="300"/></w:sdtPr><w:sdtContent>${line}</w:sdtContent></w:sdt>`],
-      ['custom XML', (line: string) => `<w:customXml w:element="footer">${line}</w:customXml>`],
-    ] as const) {
-      test(`a carried footer ending in ${container}, across ${direction === 'removed' ? 'a removed' : 'an inserted'} boundary, still fails closed`, async ({ given, when }: AllureBddContext) => {
+    for (const [container, wrap, element] of containers) {
+      test(`a carried footer ending in ${container}, across ${direction === 'removed' ? 'a removed' : 'an inserted'} boundary, is tracked`, async ({ given, when, then }: AllureBddContext) => {
         const [original, revised] = await given('the pair', () => carriedFooterPair(direction, BASE_FOOTER, '', wrap));
-        await when('the pair is compared, the comparison refuses instead of publishing', async () => {
-          await expect(compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS)).rejects.toThrow(
-            /accept\/reject package projection validation/u,
-          );
+        const result = await when('the pair is compared', () => compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS));
+        await then('each section shows, under both appliers, the footer the revision or the original shows', async () => {
+          await expectDisplayedParity(original, revised, result.document);
+        });
+        await then('the side that shows the carried story keeps its container; the other shows no empty one', async () => {
+          const footer = (await (await DocxArchive.load(result.document)).getFile('word/footer1.xml'))!;
+          const [withStory, withoutStory] = direction === 'removed'
+            ? [rejectAllChanges(footer), acceptAllChanges(footer)]
+            : [acceptAllChanges(footer), rejectAllChanges(footer)];
+          expect(parseXml(withStory).getElementsByTagNameNS(W_NS, element)).toHaveLength(1);
+          const emptied = Array.from(parseXml(withoutStory).getElementsByTagNameNS(W_NS, 'p'))
+            .filter((p) => p.getElementsByTagNameNS(W_NS, 't').length === 0 && p.getElementsByTagNameNS(W_NS, 'txbxContent').length === 0);
+          expect(emptied).toHaveLength(0);
         });
       });
     }

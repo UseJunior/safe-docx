@@ -3053,19 +3053,40 @@ export interface BlankSlotParts {
 const NO_BLANK_SLOT_PARTS: BlankSlotParts = { original: new Set(), revised: new Set() };
 
 /**
- * Whether every block-level child of the story part is a paragraph. Lifecycle
- * marking tracks paragraphs and runs; a block container (`w:sdt`,
- * `w:customXml`) or a table (whose rows it does not track) would leave its
- * own empty paragraph or rows on the side without the story.
+ * Whether every block-level child of the story part is one lifecycle marking
+ * tracks: a paragraph, a table (each row is tracked inserted or deleted,
+ * `markLifecycleRow`), or a block content control or custom XML element
+ * holding such blocks. Neither container carries a revision marker, but on
+ * the side without the story it is left holding only paragraphs and rows
+ * marked away, so it shows nothing (`isBlankStoryPart`) and its last
+ * paragraph is made to read as the blank story. A data-bound control is
+ * refused: Word refreshes its shown text from a custom XML part, so the
+ * emptied control would not stay empty.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @see https://github.com/UseJunior/safe-docx/issues/1474
  */
-function holdsOnlyBodyParagraphs(partXml: string): boolean {
+function holdsLifecycleTrackableBlocks(partXml: string): boolean {
   const root = parseXml(partXml).documentElement;
   if (!root) return false;
-  const blocks = directChildElements(root).filter((element) =>
-    element.namespaceURI !== OOXML.W_NS ||
-    !['bookmarkStart', 'bookmarkEnd', 'permStart', 'permEnd', 'proofErr'].includes(element.localName));
-  return blocks.length > 0 &&
-    blocks.every((element) => element.namespaceURI === OOXML.W_NS && element.localName === 'p');
+  if (root.getElementsByTagNameNS(OOXML.W_NS, 'dataBinding').length > 0) return false;
+  const trackable = (container: Element): boolean => {
+    const blocks = directChildElements(container).filter((element) =>
+      element.namespaceURI !== OOXML.W_NS ||
+      !['bookmarkStart', 'bookmarkEnd', 'permStart', 'permEnd', 'proofErr', 'sdtPr', 'sdtEndPr', 'customXmlPr']
+        .includes(element.localName));
+    return blocks.every((element) => {
+      if (element.namespaceURI !== OOXML.W_NS) return false;
+      if (element.localName === 'p' || element.localName === 'tbl') return true;
+      if (element.localName === 'customXml') return trackable(element);
+      if (element.localName === 'sdt') {
+        const content = directChildElements(element).filter((child) => child.localName === 'sdtContent');
+        return content.length === 1 && trackable(content[0]!);
+      }
+      return false;
+    });
+  };
+  return directChildElements(root).length > 0 && trackable(root);
 }
 
 /**
@@ -3092,10 +3113,10 @@ async function slotLifecycleStoryInput(
   const revisedBlank = blankSlotParts.revised.has(pair.revised.targetPath);
   if (originalBlank === revisedBlank) return undefined;
   if (pair.original.bindingClosure !== pair.revised.bindingClosure) return undefined;
-  // The story's paragraphs are tracked and its last one is made to read as the
-  // blank story. A story with a table or a block container is left to the
-  // ordinary pairing and its checks, which report what they cannot carry.
-  if (!holdsOnlyBodyParagraphs(originalBlank ? pair.revised.xml : pair.original.xml)) return undefined;
+  // The story's paragraphs and rows are tracked and its last paragraph is made
+  // to read as the blank story. Any other block is left to the ordinary
+  // pairing and its checks, which report what they cannot carry.
+  if (!holdsLifecycleTrackableBlocks(originalBlank ? pair.revised.xml : pair.original.xml)) return undefined;
   const storyOriginalArchive = await originalArchive.clone();
   const storyRevisedArchive = await revisedArchive.clone();
   storyOriginalArchive.setDocumentXml(
@@ -4937,6 +4958,27 @@ export interface LifecycleMarkingOptions {
 }
 
 /**
+ * The story's last paragraph: the last block-level paragraph, looking through
+ * a block content control or custom XML element the story ends in (Word's
+ * page-number footer is a `w:docPartObj` control around its only paragraph),
+ * or `undefined` when the story ends in a table.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @see https://github.com/UseJunior/safe-docx/issues/1474
+ */
+function finalStoryParagraph(container: Element): Element | undefined {
+  const blocks = directChildElements(container).filter((element) =>
+    element.namespaceURI === OOXML.W_NS && ['p', 'tbl', 'sdt', 'customXml'].includes(element.localName));
+  const last = blocks.at(-1);
+  if (!last || last.localName === 'tbl') return undefined;
+  if (last.localName === 'p') return last;
+  const content = last.localName === 'sdt'
+    ? directChildElements(last).find((element) => element.namespaceURI === OOXML.W_NS && element.localName === 'sdtContent')
+    : last;
+  return content ? finalStoryParagraph(content) : undefined;
+}
+
+/**
  * Track the last paragraph's properties against an empty set, so the side
  * without the story keeps a plain empty paragraph: for an insertion the
  * prior properties are empty, for a deletion the current ones are.
@@ -4951,10 +4993,7 @@ function trackFinalParagraphPropertiesAgainstBlank(
   dateString: string,
   state: ReturnType<typeof createRevisionIdState>,
 ): void {
-  const paragraphs = directChildElements(body).filter(
-    (element) => element.namespaceURI === OOXML.W_NS && element.localName === 'p',
-  );
-  const paragraph = paragraphs[paragraphs.length - 1];
+  const paragraph = finalStoryParagraph(body);
   if (!paragraph) return;
   const properties = directChildElements(paragraph).find(
     (element) => element.namespaceURI === OOXML.W_NS && element.localName === 'pPr',
@@ -5265,10 +5304,9 @@ export async function displacedLifecycleStoryXml(
  * after it and keeps its deleted runs, with its properties tracked against
  * none; when the deleted half ends in one, the inserted half's last
  * paragraph keeps its inserted runs with prior properties of none. A half
- * that ends in a block content control or custom XML element is refused by
- * the projection check: neither carries a revision marker, so its emptied
- * paragraph survives the projection that removes the half (as for a slot
- * lifecycle, #1455). Either
+ * that ends in a block content control or custom XML element is passed in by
+ * its last paragraph, inside the container (#1474); the deleted story's copy
+ * is placed in that container, so the joined paragraph stays there. Either
  * projection then ends in a paragraph, which after a final table is the
  * empty paragraph mark Word keeps there. When both halves end in a table
  * (CT_HdrFtr allows it; Word itself always closes a story with a paragraph)
@@ -5298,7 +5336,12 @@ function finishReplacementFinalParagraph(
   if (isW(deleted, 'p') && isW(inserted, 'p')) {
     joinReplacementFinalParagraph(deleted, inserted, author, dateString, state);
   } else if (isW(deleted, 'p')) {
-    body.insertBefore(deleted, end);
+    // After the inserted half's closing table, in whatever holds it.
+    if (inserted?.parentNode && inserted.parentNode !== body) {
+      inserted.parentNode.insertBefore(deleted, inserted.nextSibling);
+    } else {
+      body.insertBefore(deleted, end);
+    }
     unmark(deleted, 'del');
     trackFinalParagraphPropertiesAgainstBlank(body, 'w:del', author, dateString, state);
   } else if (isW(inserted, 'p')) {
@@ -5489,14 +5532,38 @@ async function markLifecycleAncillaryStoryParagraphs(
   if (displacedBlocks && displacedBlocks.length > 0) {
     const imported = displacedBlocks.map((block) => document.importNode(block, true) as Element);
     renumberCopiedDrawings(imported, preservedRoots, options.allocatedDrawingIds);
-    const before = markerTag === 'w:del'
-      ? directChildElements(body).find((element) =>
-        element.namespaceURI === OOXML.W_NS && element.localName === 'sectPr') ?? null
-      : storyBlocks[0] ?? null;
-    for (const block of imported) body.insertBefore(block, before);
+    // A half's last block may be a container; its last paragraph is the one
+    // that closes the story.
+    const closing = (half: readonly Element[]): Element | undefined => {
+      let last = half.at(-1);
+      while (last && last.namespaceURI === OOXML.W_NS && (last.localName === 'sdt' || last.localName === 'customXml')) {
+        const content: Element | undefined = last.localName === 'sdt'
+          ? directChildElements(last).find((element) => element.namespaceURI === OOXML.W_NS && element.localName === 'sdtContent')
+          : last;
+        last = content && directChildElements(content).filter((element) =>
+          element.namespaceURI === OOXML.W_NS && ['p', 'tbl', 'sdt', 'customXml'].includes(element.localName)).at(-1);
+      }
+      return last;
+    };
+    const storyClosing = closing(storyBlocks);
+    // A deleted story whose last paragraph sits in a block content control
+    // or custom XML element (Word's page-number footer) takes the copy inside
+    // that container, after the paragraph: the joined final paragraph then
+    // stays in the container, so Reject All keeps the original's control and
+    // Accept All leaves no emptied paragraph in it (#1474).
+    const containedFinal = storyClosing?.localName === 'p' && storyClosing.parentNode !== body ? storyClosing : undefined;
+    const [parent, before] = markerTag === 'w:del'
+      ? containedFinal
+        ? [containedFinal.parentNode as Element, containedFinal.nextSibling]
+        : [body, directChildElements(body).find((element) =>
+          element.namespaceURI === OOXML.W_NS && element.localName === 'sectPr') ?? null]
+      : [body, storyBlocks[0] ?? null];
+    for (const block of imported) parent.insertBefore(block, before);
     displaced = markContent(imported, markerTag === 'w:del' ? 'w:ins' : 'w:del');
-    const [deletedHalf, insertedHalf] = markerTag === 'w:del' ? [storyBlocks, imported] : [imported, storyBlocks];
-    finishReplacementFinalParagraph(body, deletedHalf.at(-1), insertedHalf.at(-1), author, dateString, state);
+    const [deletedClosing, insertedClosing] = markerTag === 'w:del'
+      ? [storyClosing, closing(imported)]
+      : [closing(imported), storyClosing];
+    finishReplacementFinalParagraph(body, deletedClosing, insertedClosing, author, dateString, state);
   }
   if (options.blankFinalParagraph) {
     trackFinalParagraphPropertiesAgainstBlank(body, markerTag, author, dateString, state);
