@@ -20,6 +20,7 @@
 
 import { resolveTableCellRevisions } from './table_cell_revisions.js';
 import { OOXML } from './namespaces.js';
+import { resolveCustomXmlRangeRevisions } from './custom_xml_range_revisions.js';
 import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
 import { RANGE_MARKUP_BLOCK_SIBLING_LOCALS, canSafelyRemoveEmptyParagraph } from './paragraph_structure.js';
 import { carryHeaderFooterRefsFromRemovedBoundary } from './section_boundary_references.js';
@@ -905,6 +906,7 @@ export function rejectChanges(
   // retain their live-DOM call order. The existing deleted-text/move-source order
   // is retained for compatibility; it leaves a pre-existing selective move-source
   // text projection gap and is not claimed as a resolved or protected policy.
+  const customXml = resolveCustomXmlRangeRevisions(root, 'reject', selective);
   const rowRevisions = resolveTableRowRevisionsPass(root, filter);
   const { markInsertedParagraphs, removedMoveToBookmarkIds, resolvedMarkProperties } =
     identifyParagraphMarkRevisionsPass(root, filter);
@@ -918,9 +920,9 @@ export function rejectChanges(
   const cells = resolveTableCellRevisions(root, 'reject', filter);
   cleanupParagraphMarksAndRevisionsPass(root, filter, selective, markInsertedParagraphs, resolvedMarkProperties);
   return {
-    insertionsRemoved: insertionsRemoved + cells.insertions,
-    deletionsRestored: deletionsRestored + cells.deletions,
-    movesReverted: moveFromUnwrapped + moveToRemoved,
+    insertionsRemoved: insertionsRemoved + cells.insertions + customXml.insertions,
+    deletionsRestored: deletionsRestored + cells.deletions + customXml.deletions,
+    movesReverted: moveFromUnwrapped + moveToRemoved + customXml.moves,
     propertyChangesReverted: propertyChangesReverted + cells.merges,
     unresolvedRowRevisions: 0,
   };

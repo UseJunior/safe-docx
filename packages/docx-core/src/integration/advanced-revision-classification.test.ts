@@ -495,7 +495,7 @@ describe('ECMA-376 advanced revision records', () => {
     );
 
   test(
-      '[ADV-RANGE-PRESERVATION-01] preserves every custom XML, bookmark, comment, permission, and proofing marker',
+      '[ADV-RANGE-PRESERVATION-01] preserves container-free custom XML ranges and every bookmark, comment, permission, and proofing marker',
       async ({ given, when, then }: AllureBddContext) => {
         const markers =
           `<q:customXmlInsRangeStart ${metadata}/><q:customXmlInsRangeEnd q:id="7"/>` +

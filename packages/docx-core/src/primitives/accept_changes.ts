@@ -11,7 +11,8 @@
  *   mark was a tracked deletion into the following paragraph
  * - Cleaning up move range markers and rsidDel attributes
  *
- * Numbering, custom XML, and extension
+ * Custom XML markup revision ranges are resolved (see custom_xml_range_revisions).
+ * Numbering and extension
  * conflict records are not semantically resolved here; see the advanced
  * revision classification manifest.
  *
@@ -22,6 +23,7 @@
 
 import { resolveTableCellRevisions } from './table_cell_revisions.js';
 import { OOXML } from './namespaces.js';
+import { resolveCustomXmlRangeRevisions } from './custom_xml_range_revisions.js';
 import { carryHeaderFooterRefsFromRemovedBoundary } from './section_boundary_references.js';
 import { retainLeadingParagraphFormatting, isEmptyParagraphFormattingRun, removeEmptyParagraphMarkProperties } from './paragraph_merge_formatting.js';
 import { removeResolvedRowMarker, removeTableRowAndEmptyTable } from './table_rows.js';
@@ -719,6 +721,7 @@ export function acceptChanges(
   // Keep calls explicit and ordered. Capture marks/bookmarks before wrappers
   // disappear; settle properties before merging paragraphs. Do not precompute
   // filter results: selectors observe the established traversal of the live DOM.
+  const customXml = resolveCustomXmlRangeRevisions(root, 'accept', selective);
   const rowRevisions = resolveTableRowRevisionsPass(root, filter);
   const { markDeletedParagraphs, resolvedMarkProperties } = identifyParagraphMarkRevisionsPass(root, filter);
   resolveDeletedBookmarkBoundariesPass(root, filter, markDeletedParagraphs);
@@ -729,9 +732,9 @@ export function acceptChanges(
   cleanupParagraphMarksAndRevisionsPass(root, filter, selective, markDeletedParagraphs, resolvedMarkProperties);
 
   return {
-    insertionsAccepted: insertionsAccepted + cells.insertions,
-    deletionsAccepted: deletionsAccepted + cells.deletions,
-    movesResolved: moveFromRemoved + moveToUnwrapped,
+    insertionsAccepted: insertionsAccepted + cells.insertions + customXml.insertions,
+    deletionsAccepted: deletionsAccepted + cells.deletions + customXml.deletions,
+    movesResolved: moveFromRemoved + moveToUnwrapped + customXml.moves,
     propertyChangesResolved: propertyChangesResolved + cells.merges,
     unresolvedRowRevisions: 0,
   };

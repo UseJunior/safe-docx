@@ -664,11 +664,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd",
-      "claimRationale": "safe-docx validates balanced IDs and preserves the sampled marker outside\nrebuild mode; it does not interpret custom-XML move identity.",
+      "claimRationale": "`w:customXmlMoveToRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:\nreject unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, accept keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },
@@ -684,11 +684,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart",
-      "claimRationale": "This start marker has the same bounded validation and preservation posture as\nits §17.13.5.10 end marker.",
+      "claimRationale": "`w:customXmlMoveToRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:\nreject unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, accept keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },
@@ -1552,11 +1552,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd",
-      "claimRationale": "`w:customXmlDelRangeEnd` is retained by ordinary accept/reject and sampled\ntagged publication. Custom-XML revision semantics remain a gap.",
+      "claimRationale": "`w:customXmlDelRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:\naccept unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, reject keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },
@@ -1572,11 +1572,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart",
-      "claimRationale": "`w:customXmlDelRangeStart` has the same preservation-only boundary as its end\nmarker; balanced IDs are validated without interpreting deletion semantics.",
+      "claimRationale": "`w:customXmlDelRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:\naccept unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, reject keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },
@@ -1592,11 +1592,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd",
-      "claimRationale": "This entry records bounded preservation and pairing validation for\n`w:customXmlInsRangeEnd`, not custom-XML revision semantics.",
+      "claimRationale": "`w:customXmlInsRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:\nreject unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, accept keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },
@@ -1612,11 +1612,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeStart",
-      "claimRationale": "This entry records bounded preservation and pairing validation for\n`w:customXmlInsRangeStart`, not custom-XML revision semantics.",
+      "claimRationale": "`w:customXmlInsRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:\nreject unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, accept keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },
@@ -1632,11 +1632,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeEnd",
-      "claimRationale": "safe-docx validates balanced IDs and preserves the sampled marker outside\nrebuild mode; it does not interpret custom-XML move identity.",
+      "claimRationale": "`w:customXmlMoveFromRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:\naccept unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, reject keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },
@@ -1652,11 +1652,11 @@
       },
       "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
       "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart",
-      "claimRationale": "This start marker has the same bounded validation and preservation posture as\nits §17.13.5.8 end marker.",
+      "claimRationale": "`w:customXmlMoveFromRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:\naccept unwraps every `w:customXml` or `w:sdt` whose start and end tags both\nlie inside the range, reject keeps them, and both drop the markers. A range\nthat encloses no container, or only one tag of one (cross structure), is\npreserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).",
       "evidence": [
         {
           "kind": "test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          "path": "packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts"
         }
       ]
     },

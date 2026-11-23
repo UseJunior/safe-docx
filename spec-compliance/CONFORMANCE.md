@@ -147,14 +147,14 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-12` | Deleted table row (w:del under w:trPr) | 5 | 1 | 17.13.5.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts |
 | `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.ts; packages/docx-compare/src/tagged/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts |
 | `ECMA-PART1-17-13-5-17` | Inserted table row (w:ins under w:trPr) | 5 | 1 | 17.13.5.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-compare/src/tagged/taggedTreeShadow.ts; packages/docx-compare/src/tagged/taggedTreeShadow.test.ts |
-| `ECMA-PART1-17-13-5-4` | Custom XML deletion range end | 5 | 1 | 17.13.5.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-5` | Custom XML deletion range start | 5 | 1 | 17.13.5.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-6` | Custom XML insertion range end | 5 | 1 | 17.13.5.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-7` | Custom XML insertion range start | 5 | 1 | 17.13.5.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-8` | Custom XML move-source range end | 5 | 1 | 17.13.5.8 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-9` | Custom XML move-source range start | 5 | 1 | 17.13.5.9 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-10` | Custom XML move-destination range end | 5 | 1 | 17.13.5.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-11` | Custom XML move-destination range start | 5 | 1 | 17.13.5.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-4` | Custom XML deletion range end | 5 | 1 | 17.13.5.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
+| `ECMA-PART1-17-13-5-5` | Custom XML deletion range start | 5 | 1 | 17.13.5.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
+| `ECMA-PART1-17-13-5-6` | Custom XML insertion range end | 5 | 1 | 17.13.5.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
+| `ECMA-PART1-17-13-5-7` | Custom XML insertion range start | 5 | 1 | 17.13.5.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeStart` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
+| `ECMA-PART1-17-13-5-8` | Custom XML move-source range end | 5 | 1 | 17.13.5.8 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeEnd` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
+| `ECMA-PART1-17-13-5-9` | Custom XML move-source range start | 5 | 1 | 17.13.5.9 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
+| `ECMA-PART1-17-13-5-10` | Custom XML move-destination range end | 5 | 1 | 17.13.5.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
+| `ECMA-PART1-17-13-5-11` | Custom XML move-destination range start | 5 | 1 | 17.13.5.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart` | packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts |
 | `ECMA-PART1-17-13-5-21` | Move source paragraph (w:moveFrom) | 5 | 1 | 17.13.5.21 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-release-verifier/src/xml.ts; packages/docx-release-verifier/src/paragraph-mark-projection.test.ts; packages/docx-compare/src/tagged/paragraphMoveReview.test.ts |
 | `ECMA-PART1-17-13-5-22` | Move source run content (w:moveFrom) | 5 | 1 | 17.13.5.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/paragraphMoveReview.test.ts |
 | `ECMA-PART1-17-13-5-23` | Move source range end | 5 | 1 | 17.13.5.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/tagged/taggedTreeConstruction.test.ts |
@@ -2312,10 +2312,13 @@ require their own revision markup.
 - **Part / Section:** Part 1 § 17.13.5.4
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-`w:customXmlDelRangeEnd` is retained by ordinary accept/reject and sampled
-tagged publication. Custom-XML revision semantics remain a gap.
+`w:customXmlDelRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+accept unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, reject keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-5 — Custom XML deletion range start
 
@@ -2323,10 +2326,13 @@ tagged publication. Custom-XML revision semantics remain a gap.
 - **Part / Section:** Part 1 § 17.13.5.5
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-`w:customXmlDelRangeStart` has the same preservation-only boundary as its end
-marker; balanced IDs are validated without interpreting deletion semantics.
+`w:customXmlDelRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+accept unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, reject keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-6 — Custom XML insertion range end
 
@@ -2334,10 +2340,13 @@ marker; balanced IDs are validated without interpreting deletion semantics.
 - **Part / Section:** Part 1 § 17.13.5.6
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-This entry records bounded preservation and pairing validation for
-`w:customXmlInsRangeEnd`, not custom-XML revision semantics.
+`w:customXmlInsRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+reject unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, accept keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-7 — Custom XML insertion range start
 
@@ -2345,10 +2354,13 @@ This entry records bounded preservation and pairing validation for
 - **Part / Section:** Part 1 § 17.13.5.7
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeStart`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-This entry records bounded preservation and pairing validation for
-`w:customXmlInsRangeStart`, not custom-XML revision semantics.
+`w:customXmlInsRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+reject unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, accept keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-8 — Custom XML move-source range end
 
@@ -2356,10 +2368,13 @@ This entry records bounded preservation and pairing validation for
 - **Part / Section:** Part 1 § 17.13.5.8
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeEnd`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-safe-docx validates balanced IDs and preserves the sampled marker outside
-rebuild mode; it does not interpret custom-XML move identity.
+`w:customXmlMoveFromRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+accept unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, reject keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-9 — Custom XML move-source range start
 
@@ -2367,10 +2382,13 @@ rebuild mode; it does not interpret custom-XML move identity.
 - **Part / Section:** Part 1 § 17.13.5.9
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-This start marker has the same bounded validation and preservation posture as
-its §17.13.5.8 end marker.
+`w:customXmlMoveFromRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+accept unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, reject keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-10 — Custom XML move-destination range end
 
@@ -2378,10 +2396,13 @@ its §17.13.5.8 end marker.
 - **Part / Section:** Part 1 § 17.13.5.10
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-safe-docx validates balanced IDs and preserves the sampled marker outside
-rebuild mode; it does not interpret custom-XML move identity.
+`w:customXmlMoveToRangeEnd` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+reject unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, accept keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-11 — Custom XML move-destination range start
 
@@ -2389,10 +2410,13 @@ rebuild mode; it does not interpret custom-XML move identity.
 - **Part / Section:** Part 1 § 17.13.5.11
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/primitives/custom_xml_range_revisions.test.ts
 
-This start marker has the same bounded validation and preservation posture as
-its §17.13.5.10 end marker.
+`w:customXmlMoveToRangeStart` is resolved by docx-core `acceptChanges`/`rejectChanges`:
+reject unwraps every `w:customXml` or `w:sdt` whose start and end tags both
+lie inside the range, accept keeps them, and both drop the markers. A range
+that encloses no container, or only one tag of one (cross structure), is
+preserved unresolved. The docx-compare acceptor does not resolve it yet (#1471).
 
 ### ECMA-PART1-17-13-5-21 — Move source paragraph (w:moveFrom)
 
