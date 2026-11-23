@@ -71,3 +71,5 @@ export {
 export type { ParagraphBookmark } from './bookmarks.js';
 
 export { resolveTableCellRevisions } from './table_cell_revisions.js';
+export { resolveCustomXmlRangeRevisions } from './custom_xml_range_revisions.js';
+export type { CustomXmlRangeResolution } from './custom_xml_range_revisions.js';

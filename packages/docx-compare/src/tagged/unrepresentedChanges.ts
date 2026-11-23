@@ -60,9 +60,9 @@ function resolvedMarkupCompatibilityValue(element: Element, value: string): stri
  * the constructed tree is the only place it is disclosed. Side-only property
  * elements (a `w:sdtPr` present on one side) are reported the same way, as
  * are `w:customXmlPr` differences of a custom XML element (#1102).
- * So is a whole block `w:sdt` or `w:customXml` present on one side: its content
- * is tracked, but the container itself stays behind, emptied, in the Reject
- * All (or Accept All) projection.
+ * A whole block `w:sdt` or `w:customXml` present on one side is tracked by a
+ * custom XML markup revision range (#1471); only a data-bound one
+ * (`w:dataBinding`) is still listed here.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
@@ -125,10 +125,11 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
         if (revisedSide) controlIndex++;
         current = identity(node, Math.max(controlIndex, 0));
       }
-      if (node.tag !== 'both' && isBlockContainer(element)) {
-        // A whole inserted or deleted block container stays live while its
-        // content is tracked (#1386): no revision particle can wrap it, so
-        // Reject All (insertion) or Accept All (deletion) leaves it empty.
+      if (node.tag !== 'both' && isBlockContainer(element) && isDataBound(element)) {
+        // A whole inserted or deleted block container is bracketed by a custom
+        // XML markup revision range, which Accept/Reject resolve (#1471). A
+        // data-bound control is still listed: unwrapping it drops its binding
+        // to the custom XML data part, which no revision records.
         const container = name === 'sdt' ? 'sdt' : 'customXml';
         changes.push({
           scope: 'contentControl',
@@ -173,6 +174,11 @@ export function collectContentControlPropertyChanges(tree: TaggedNode): Unrepres
   };
   visit(tree, undefined, undefined);
   return changes;
+}
+
+/** Whether a block container, or a control inside it, binds to a custom XML data part. */
+function isDataBound(container: Element): boolean {
+  return container.getElementsByTagNameNS(W_NS, 'dataBinding').length > 0;
 }
 
 /** A whole block container present in one document only (see `collectContentControlPropertyChanges`). */
