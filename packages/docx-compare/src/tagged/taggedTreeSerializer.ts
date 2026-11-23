@@ -1611,9 +1611,22 @@ function applyPropertyDelta(
         if (child.localName !== 'sectPrChange') node.appendChild(cloneElement(child));
       }
     }
+    const snapshot = comparisonSectionSnapshot(original, revised, node.ownerDocument!);
+    // Without an original record, the revised input's own prior
+    // w:sectPrChange is kept as written when its snapshot is exactly the one
+    // the comparison would record (including the explicit old portrait
+    // orientation of #1480), so its author and date survive (#1572).
+    const priorRecord = revised && !(original && childElements(original).some((child) => child.localName === 'sectPrChange'))
+      ? childElements(revised).find((child) => child.namespaceURI === W_NS && child.localName === 'sectPrChange')
+      : undefined;
+    const priorSnapshot = priorRecord && childElements(priorRecord).find((child) => child.namespaceURI === W_NS && child.localName === 'sectPr');
+    if (priorRecord && priorSnapshot && canonicalElement(priorSnapshot) === canonicalElement(snapshot)) {
+      node.appendChild(cloneElement(priorRecord));
+      return;
+    }
     const change = node.ownerDocument!.createElementNS(W_NS, 'w:sectPrChange') as WmlElement;
     appendChangeMetadata(change, revision);
-    change.appendChild(comparisonSectionSnapshot(original, revised, node.ownerDocument!));
+    change.appendChild(snapshot);
     node.appendChild(change);
     return;
   }
@@ -1641,6 +1654,10 @@ function applyPropertyDelta(
   if (live) {
     while (live.firstChild) property.appendChild(live.firstChild);
   }
+  if (delta.scope === 'tableCell' || delta.scope === 'tableRow') {
+    resolveSingleRowOrCellRecord(property, original, CHANGE_ELEMENT_BY_SCOPE[delta.scope].slice(2) as 'tcPrChange' | 'trPrChange', revision);
+    return;
+  }
   const change = property.ownerDocument!.createElementNS(
     W_NS,
     CHANGE_ELEMENT_BY_SCOPE[delta.scope],
@@ -1656,6 +1673,58 @@ function applyPropertyDelta(
   change.appendChild(
     original ?? property.ownerDocument!.createElementNS(property.namespaceURI, property.tagName),
   );
+  property.appendChild(change);
+}
+
+/**
+ * Give a published `w:tcPr` or `w:trPr` exactly one change record, since
+ * CT_TcPr and CT_TrPr admit one each. The record must turn the published
+ * (revised) properties back into the original's reject projection: the
+ * original's own record snapshot when it has one, else its live properties.
+ *
+ * - When the published properties already equal that projection, no record.
+ * - When the revised input's prior record has exactly that snapshot, it is
+ *   kept as written (author, date, ID), as #1566 does for `w:pPrChange`.
+ * - Otherwise one comparison record holds the projection.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * @see https://github.com/UseJunior/safe-docx/issues/1572
+ */
+function resolveSingleRowOrCellRecord(
+  property: WmlElement,
+  original: WmlElement | undefined,
+  changeLocalName: 'tcPrChange' | 'trPrChange',
+  revision: ComparisonRevision,
+): void {
+  const isRecord = (child: Element): boolean => child.namespaceURI === W_NS && child.localName === changeLocalName;
+  const priorRecord = childElements(property).find(isRecord);
+  for (const record of childElements(property).filter(isRecord)) property.removeChild(record);
+  const originalRecord = original ? childElements(original).find(isRecord) : undefined;
+  const projectionSource = originalRecord
+    ? childElements(originalRecord).find((child) => child.namespaceURI === W_NS && child.localName === property.localName)
+    : original;
+  const signature = (element: Element | null | undefined): string => element
+    ? childElements(element as WmlElement).filter((child) => !isRecord(child)).map(canonicalElement).join('')
+    : '';
+  const projection = signature(projectionSource);
+  if (signature(property) === projection) return;
+  const priorSnapshot = priorRecord && childElements(priorRecord)
+    .find((child) => child.namespaceURI === W_NS && child.localName === property.localName);
+  if (priorRecord && signature(priorSnapshot) === projection) {
+    property.appendChild(priorRecord);
+    return;
+  }
+  const document = property.ownerDocument!;
+  const change = document.createElementNS(W_NS, `w:${changeLocalName}`) as WmlElement;
+  appendChangeMetadata(change, revision);
+  const snapshot = document.createElementNS(property.namespaceURI, property.tagName) as WmlElement;
+  if (projectionSource) {
+    for (const child of childElements(projectionSource as WmlElement)) {
+      if (!isRecord(child)) snapshot.appendChild(child.cloneNode(true));
+    }
+  }
+  change.appendChild(snapshot);
   property.appendChild(change);
 }
 
