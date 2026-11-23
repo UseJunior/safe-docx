@@ -20,6 +20,7 @@ import {
   acceptedSectionBreakRemovalContainer,
   carryHeaderFooterRefsFromRemovedBoundary,
   NODE_TYPE,
+  resolveCustomXmlRangeRevisions,
   resolveTableCellRevisions,
 } from '@usejunior/docx-core';
 
@@ -737,6 +738,10 @@ function preserveCrossParagraphBookmarksForReject(
 export function acceptAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
+  // Custom XML markup revision ranges first, as docx-core does: unwrapping a
+  // deleted container lets its deleted paragraphs merge like any other (#1471).
+  resolveCustomXmlRangeRevisions(root, 'accept', false);
+
   // Row revisions are empty markers under w:trPr, not content wrappers.
   // Accepting a deleted row removes the row itself before the generic w:del
   // sweep removes ordinary deleted content.
@@ -869,6 +874,9 @@ export function acceptAllChanges(documentXml: string): string {
  */
 export function rejectAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
+
+  // Custom XML markup revision ranges first, as docx-core does (#1471).
+  resolveCustomXmlRangeRevisions(root, 'reject', false);
 
   // Rejecting an inserted row removes the row itself before the generic w:ins
   // sweep removes ordinary inserted content.

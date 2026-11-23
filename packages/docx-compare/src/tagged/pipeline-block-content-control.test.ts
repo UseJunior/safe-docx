@@ -139,25 +139,27 @@ async function assertTrackedContainer(original: Buffer, revised: Buffer, kind: '
     ['accept', acceptAllChanges, acceptChanges, revisedXml],
     ['reject', rejectAllChanges, rejectChanges, originalXml],
   ] as const) {
-    // The projection that removes the container's content keeps one emptied
-    // shell: no revision particle can wrap w:sdt or w:customXml.
-    const shells = (kind === 'ins') === (projection === 'reject') ? 1 : 0;
-    const want = { shape: blockStructure(expected).shape, emptied: shells };
-    expect(blockStructure(astProject(xml), true), `${projection} comparison acceptor`).toEqual(want);
+    // The custom XML markup revision range around the container is resolved
+    // too, so no emptied shell is left (#1471).
+    const want = { shape: blockStructure(expected).shape, emptied: 0 };
+    expect(blockStructure(astProject(xml)), `${projection} comparison acceptor`).toEqual(want);
     const native = parseXml(xml);
     nativeProject(native);
-    expect(blockStructure(serializeXml(native), true), `${projection} docx-core acceptor`).toEqual(want);
+    expect(blockStructure(serializeXml(native)), `${projection} docx-core acceptor`).toEqual(want);
   }
+  // The outermost container is bracketed by one range of the matching kind.
+  const range = kind === 'ins' ? 'Ins' : 'Del';
+  const starts = Array.from(document.getElementsByTagNameNS(W_MAIN, `customXml${range}RangeStart`));
+  const ends = Array.from(document.getElementsByTagNameNS(W_MAIN, `customXml${range}RangeEnd`));
+  expect(starts).toHaveLength(1);
+  expect(ends).toHaveLength(1);
+  const bracketed = starts[0]!.nextSibling as Element;
+  expect(['sdt', 'customXml']).toContain(bracketed.localName);
+  expect(bracketed.nextSibling).toBe(ends[0]);
+  expect(starts[0]!.getAttributeNS(W_MAIN, 'id')).toBe(ends[0]!.getAttributeNS(W_MAIN, 'id'));
   const containerChanges = (result.unrepresentedChanges ?? []).filter((change) =>
     change.scope === 'contentControl' && ['sdt', 'customXml'].includes(change.contentControl?.element ?? ''));
-  expect(containerChanges).toHaveLength(1);
-  expect(containerChanges[0]).toMatchObject({ kind: kind === 'ins' ? 'added' : 'removed' });
-  const outer = [...Array.from(document.getElementsByTagNameNS(W_MAIN, 'sdt')),
-    ...Array.from(document.getElementsByTagNameNS(W_MAIN, 'customXml'))]
-    .find((container) => !['sdtContent', 'customXml'].includes((container.parentNode as Element).localName))!;
-  expect(containerChanges[0]!.contentControl!.element).toBe(outer.localName);
-  expect(formatUnrepresentedChangeWarnings(containerChanges)[0])
-    .toContain(kind === 'ins' ? 'Reject All leaves it empty' : 'Accept All leaves it empty');
+  expect(containerChanges).toEqual([]);
 }
 
 describe('block content-control revision publication', () => {
@@ -192,27 +194,49 @@ describe('block content-control revision publication', () => {
       [acceptAllChanges, acceptChanges, revisedXml],
       [rejectAllChanges, rejectChanges, originalXml],
     ] as const) {
-      const want = { shape: blockStructure(expected).shape, emptied: 1 };
-      expect(blockStructure(astProject(xml), true)).toEqual(want);
+      const want = { shape: blockStructure(expected).shape, emptied: 0 };
+      expect(blockStructure(astProject(xml))).toEqual(want);
       const native = parseXml(xml);
       nativeProject(native);
-      expect(blockStructure(serializeXml(native), true)).toEqual(want);
+      expect(blockStructure(serializeXml(native))).toEqual(want);
     }
-    expect((result.unrepresentedChanges ?? []).map((change) => [change.kind, change.contentControl?.element]))
-      .toEqual([['removed', 'sdt'], ['added', 'sdt']]);
+    expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl')).toEqual([]);
   });
 
-  test('still refuses a whole block container in a text box, whose emptied container cannot be reported', async () => {
+  test('tracks a whole block container in a text box through its custom XML markup range', async () => {
     const textBox = (inner: string) => buildDocxFromBodyXml('<w:p><w:r><w:pict>'
       + '<v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="box1"><v:textbox><w:txbxContent>'
       + inner + '</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>');
     const plain = await textBox(paragraph('Keep'));
     const withBlock = await textBox(paragraph('Keep') + blockControl);
-    for (const [original, revised, change] of [[plain, withBlock, 'insert'], [withBlock, plain, 'delete']] as const) {
-      await expect(compareDocuments(original, revised)).rejects.toMatchObject({
-        name: 'UnsupportedBlockContainerRevisionError', change, container: 'sdt', partPath: 'word/document.xml',
-      });
+    for (const [original, revised] of [[plain, withBlock], [withBlock, plain]] as const) {
+      const result = await compareDocuments(original, revised);
+      await assertSchema(result.document);
+      const xml = await (await DocxArchive.load(result.document)).getDocumentXml();
+      const boxShape = (source: string) => Array.from(parseXml(source).getElementsByTagNameNS(W_MAIN, 'txbxContent'))
+        .map((box) => Array.from(box.getElementsByTagNameNS(W_MAIN, 'sdt')).length + ':'
+          + Array.from(box.getElementsByTagNameNS(W_MAIN, 't')).map((t) => t.textContent).join('|'));
+      for (const [astProject, nativeProject, expected] of [
+        [acceptAllChanges, acceptChanges, revised],
+        [rejectAllChanges, rejectChanges, original],
+      ] as const) {
+        const want = boxShape(await (await DocxArchive.load(expected)).getDocumentXml());
+        expect(boxShape(astProject(xml))).toEqual(want);
+        const native = parseXml(xml);
+        nativeProject(native);
+        expect(boxShape(serializeXml(native))).toEqual(want);
+      }
     }
+  });
+
+  test('still lists a whole data-bound content control, whose binding no revision records', async () => {
+    const bound = '<w:sdt><w:sdtPr><w:dataBinding w:xpath="/root/a" w:storeItemID="{11111111-2222-3333-4444-555555555555}"/>'
+      + '</w:sdtPr><w:sdtContent>' + paragraph('Bound') + '</w:sdtContent></w:sdt>';
+    const plain = await buildDocxFromBodyXml(paragraph('Outside'));
+    const withBlock = await buildDocxFromBodyXml(paragraph('Outside') + bound);
+    const result = await compareDocuments(plain, withBlock);
+    expect((result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl')
+      .map((change) => [change.kind, change.contentControl?.element])).toEqual([['added', 'sdt']]);
   });
 
   test('keeps run-level content controls comparable in both directions', async () => {
@@ -531,20 +555,15 @@ describe('block customXml boundary moves (#1102)', () => {
       const { result, document, projections } = await compareAndProject(originalBody, revisedBody, false);
       expect(document.getElementsByTagNameNS(W, container)).toHaveLength(2);
       const changes = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl');
-      expect(changes.map((change) => [change.kind, change.contentControl?.element])).toEqual([
-        ['removed', container], ['added', container],
-      ]);
-      const warnings = formatUnrepresentedChangeWarnings(changes);
-      expect(warnings[0]).toContain(removedName);
-      expect(warnings[0]).toContain('Accept All leaves it empty');
-      expect(warnings[1]).toContain(addedName);
-      expect(warnings[1]).toContain('Reject All leaves it empty');
+      // Custom XML markup ranges record both containers, so nothing is listed
+      // and no emptied container survives either projection (#1471).
+      expect(changes).toEqual([]);
+      void removedName; void addedName;
       for (const projection of projections) {
-        // The projection keeps the other side's container, emptied, as one empty paragraph.
         const shell = projection.label === 'accept' ? removedShell : addedShell;
         for (const actual of [projection.ast, projection.native]) {
-          expect(actual.filter((entry) => entry === shell), `${projection.label} emptied container`).toHaveLength(1);
-          expect(actual.filter((entry) => entry !== shell), `${projection.label} projection`).toEqual(projection.expected);
+          expect(actual.filter((entry) => entry === shell), `${projection.label} emptied container`).toHaveLength(0);
+          expect(actual, `${projection.label} projection`).toEqual(projection.expected);
         }
       }
     });
@@ -739,9 +758,11 @@ describe('block customXml boundary moves (#1102)', () => {
       expect(sourceStrict(revisedBody)).toEqual([]);
       const { result, projections, xml } = await compareAndProject(originalBody, revisedBody, detectMoves, fieldShape);
       const containerChanges = (result.unrepresentedChanges ?? []).filter((change) => change.scope === 'contentControl');
-      expect(containerChanges.map((change) => change.kind).sort()).toEqual([...listed].sort());
-      const shellsAllowed = { accept: listed.filter((kind) => kind === 'removed').length,
-        reject: listed.filter((kind) => kind === 'added').length };
+      // Whole containers are tracked by custom XML markup ranges (#1471): only
+      // changed control properties are still listed, and no shell survives.
+      expect(containerChanges.map((change) => change.kind).sort())
+        .toEqual(listed.filter((kind) => kind === 'changed'));
+      const shellsAllowed = { accept: 0, reject: 0 };
       // An emptied container keeps one empty paragraph: containers, no tokens.
       const isShell = (row: string) => row.endsWith(':') && !/["{(]/u.test(row);
       // Changed control properties publish the revised ones whole (#1095).

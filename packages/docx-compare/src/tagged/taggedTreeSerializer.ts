@@ -1506,9 +1506,10 @@ function markWholeTable(
  * Neither container may be a child of `w:ins`/`w:del`, so, as Word does for an
  * inserted content control, the container stays live and its content carries
  * the revision: every paragraph's mark and runs, and every row of a contained
- * table. Nested block containers are walked the same way. Accept/Reject then
- * remove the content; an emptied container is a reader concern (see the
- * `contentControl` unrepresented change).
+ * table. Nested block containers are walked the same way. The outermost
+ * container is stamped so `emitContainerRangeMarkers` brackets it with a custom
+ * XML markup insertion or deletion range, which Accept/Reject resolve by
+ * keeping or unwrapping the container, so no emptied shell is left (#1471).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
@@ -1524,7 +1525,11 @@ function markWholeBlockContainer(
   kind: 'ins' | 'del',
   allocateRevision: () => ComparisonRevision,
   operationIds: readonly string[],
+  outermost = true,
 ): WmlElement {
+  if (outermost) {
+    container.setAttribute(CONTAINER_RANGE_ATTRIBUTE, `${kind}:${allocateRevision().id}`);
+  }
   const content = container.localName === 'sdt'
     ? childElements(container)
       .filter((child) => child.namespaceURI === W_NS && child.localName === 'sdtContent')
@@ -1537,10 +1542,49 @@ function markWholeBlockContainer(
     } else if (child.localName === 'tbl') {
       markWholeTable(child, kind, allocateRevision(), allocateRevision, operationIds);
     } else if (isBlockContainer(child)) {
-      markWholeBlockContainer(child, kind, allocateRevision, operationIds);
+      markWholeBlockContainer(child, kind, allocateRevision, operationIds, false);
     }
   }
   return container;
+}
+
+/** Private stamp `markWholeBlockContainer` leaves on a whole inserted or deleted container. */
+const CONTAINER_RANGE_ATTRIBUTE = 'data-sdx-container-range';
+
+/**
+ * Bracket every stamped whole inserted or deleted block container with
+ * `w:customXmlInsRangeStart`/`End` or `w:customXmlDelRangeStart`/`End`: the
+ * start and end tags of the container were inserted or deleted with revisions
+ * enabled. [MS-OE376] (notes on Part 4 §2.13.5.5(a) and §2.13.5.7(b)) records
+ * that Word uses these ranges for content controls as well as custom XML. Word
+ * places them inside `w:sdt` ([MS-OE376] §2.5.2.30(a)), which `CT_SdtBlock`
+ * does not admit, so they go as block-level siblings, where `EG_RangeMarkupElements`
+ * is allowed and both acceptors resolve them.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.7
+ * @see https://github.com/UseJunior/safe-docx/issues/1471
+ */
+function emitContainerRangeMarkers(root: WmlElement, attribution: Omit<ComparisonRevision, 'id'>): void {
+  const stamped = [root, ...Array.from(root.getElementsByTagName('*'))]
+    .filter((element) => element.hasAttribute(CONTAINER_RANGE_ATTRIBUTE)) as WmlElement[];
+  for (const container of stamped) {
+    const [kind, id] = container.getAttribute(CONTAINER_RANGE_ATTRIBUTE)!.split(':') as ['ins' | 'del', string];
+    container.removeAttribute(CONTAINER_RANGE_ATTRIBUTE);
+    const parent = container.parentNode;
+    if (!parent || container === root) continue;
+    const name = kind === 'ins' ? 'Ins' : 'Del';
+    const start = container.ownerDocument!.createElementNS(W_NS, `w:customXml${name}RangeStart`);
+    start.setAttributeNS(W_NS, 'w:id', id);
+    start.setAttributeNS(W_NS, 'w:author', attribution.author);
+    start.setAttributeNS(W_NS, 'w:date', attribution.date);
+    const end = container.ownerDocument!.createElementNS(W_NS, `w:customXml${name}RangeEnd`);
+    end.setAttributeNS(W_NS, 'w:id', id);
+    parent.insertBefore(start, container);
+    parent.insertBefore(end, container.nextSibling);
+  }
 }
 
 const CHANGE_ELEMENT_BY_SCOPE = {
@@ -3342,6 +3386,7 @@ export function serializeTaggedTree(
     splitBookmarkIds,
     revisionGrouping,
   );
+  emitContainerRangeMarkers(emitted, plan.comparison);
   splitRunsAroundRevisionWrappers(emitted, allocateRevision);
   splitLayeredRunFormatting(emitted, {
     isComparisonRecord: (record) => record.hasAttribute(COMPARISON_REVISION_ATTRIBUTE),
