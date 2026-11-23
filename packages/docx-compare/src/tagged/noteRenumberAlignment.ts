@@ -17,11 +17,42 @@ interface NoteSide {
   entries: Map<string, Element>;
 }
 
-/** A definition's identity apart from its own `w:id`. */
-function definitionKey(entry: Element): string {
+const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+/**
+ * A definition's identity apart from its own `w:id`. Relationship references
+ * (a hyperlink's `r:id`, an image's `r:embed`) resolve through each package's
+ * own note relationships, so the key carries what each one resolves to: the
+ * same raw XML pointing at a different target is a changed note.
+ */
+function definitionKey(entry: Element, relationships: Map<string, string>): string {
   const copy = entry.cloneNode(true) as Element;
   copy.removeAttributeNS(W, 'id');
-  return serializer.serializeToString(copy);
+  const resolved: string[] = [];
+  const visit = (element: Element): void => {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.namespaceURI === R) resolved.push(relationships.get(attribute.value) ?? '<unresolved>');
+    }
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1) visit(child as Element);
+    }
+  };
+  visit(copy);
+  return JSON.stringify([serializer.serializeToString(copy), resolved]);
+}
+
+async function readRelationships(archive: DocxArchive, kind: NoteKind): Promise<Map<string, string> | undefined> {
+  const xml = await archive.getFile(`word/_rels/${kind}s.xml.rels`);
+  const relationships = new Map<string, string>();
+  if (!xml) return relationships;
+  let document: Document;
+  try { document = parseXml(xml); } catch { return; }
+  for (const relationship of Array.from(document.getElementsByTagName('Relationship'))) {
+    relationships.set(relationship.getAttribute('Id') ?? '', JSON.stringify([
+      relationship.getAttribute('Type'), relationship.getAttribute('Target'), relationship.getAttribute('TargetMode'),
+    ]));
+  }
+  return relationships;
 }
 
 function isSeparator(entry: Element): boolean {
@@ -115,10 +146,12 @@ export async function alignRenumberedNoteIds(
   for (const kind of ['footnote', 'endnote'] as const) {
     const original = await readSide(originalArchive, kind);
     const revised = await readSide(revisedArchive, kind);
-    if (!original || !revised) continue;
+    const originalRelationships = await readRelationships(originalArchive, kind);
+    const revisedRelationships = await readRelationships(revisedArchive, kind);
+    if (!original || !revised || !originalRelationships || !revisedRelationships) continue;
     const pairs = alignByKey(
-      original.sequence.map((id) => definitionKey(original.entries.get(id)!)),
-      revised.sequence.map((id) => definitionKey(revised.entries.get(id)!)),
+      original.sequence.map((id) => definitionKey(original.entries.get(id)!, originalRelationships)),
+      revised.sequence.map((id) => definitionKey(revised.entries.get(id)!, revisedRelationships)),
     );
     const mapping = new Map<string, string>();
     for (const [i, j] of pairs) mapping.set(original.sequence[i]!, revised.sequence[j]!);

@@ -112,6 +112,45 @@ async function compareAndCheck(original: Para[], revised: Para[], kind: Kind) {
 }
 
 describe('renumbered but unchanged notes pair with their counterparts', () => {
+  for (const kind of ['footnote', 'endnote'] as const) {
+    test(`a renumbered ${kind} whose hyperlink target changed keeps both targets`, async ({ given, when, then }: AllureBddContext) => {
+      const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+      const withLink = async (docx: Buffer, url: string): Promise<Buffer> => {
+        const zip = await JSZip.loadAsync(docx);
+        const path = `word/${kind}s.xml`;
+        const xml = await zip.file(path)!.async('string');
+        zip.file(path, xml.replace('<w:r><w:t>First note</w:t></w:r>',
+          `<w:hyperlink xmlns:r="${R}" r:id="rIdLink"><w:r><w:t>First note</w:t></w:r></w:hyperlink>`));
+        zip.file(`word/_rels/${kind}s.xml.rels`, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+          `<Relationship Id="rIdLink" Type="${R}/hyperlink" Target="${url}" TargetMode="External"/></Relationships>`);
+        return zip.generateAsync({ type: 'nodebuffer' });
+      };
+      let original!: Buffer;
+      let revised!: Buffer;
+      let result!: Awaited<ReturnType<typeof compareDocumentsAtomizer>>;
+      await given('a note renumbered from 1 to 2 whose identical hyperlink XML resolves to a different URL on each side', async () => {
+        original = await withLink(await build([{ text: 'Alpha text.', notes: [{ kind, id: 1, text: 'First note' }] }]), 'https://original.example/');
+        revised = await withLink(await build([{ text: 'Alpha text.', notes: [{ kind, id: 2, text: 'First note' }] }]), 'https://revised.example/');
+      });
+      await when('the documents are compared', async () => {
+        result = await compareDocumentsAtomizer(original, revised, { moveDetection: { detectMoves: false } });
+      });
+      await then('Reject resolves the link to the original URL and Accept to the revised URL', async () => {
+        const zip = await JSZip.loadAsync(result.document);
+        const notesXml = await zip.file(`word/${kind}s.xml`)!.async('string');
+        const rels = parseXml(await zip.file(`word/_rels/${kind}s.xml.rels`)!.async('string'));
+        const target = (projected: string): string | null | undefined => {
+          const id = parseXml(projected).getElementsByTagNameNS(W, 'hyperlink')[0]?.getAttributeNS(R, 'id');
+          return Array.from(rels.getElementsByTagName('Relationship')).find((r) => r.getAttribute('Id') === id)?.getAttribute('Target');
+        };
+        expect(target(rejectAllChanges(notesXml))).toBe('https://original.example/');
+        expect(target(acceptAllChanges(notesXml))).toBe('https://revised.example/');
+        await assertSchema(result.document);
+      });
+    });
+  }
+
   test('footnotes and endnotes renumber independently in one document', async ({ given, when, then }: AllureBddContext) => {
     let original: Para[] = [];
     let revised: Para[] = [];
