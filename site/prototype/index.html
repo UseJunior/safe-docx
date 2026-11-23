@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Compare Word documents | Safe DOCX</title>
+  <link rel="stylesheet" href="/labs/docx-compare/demo.css">
+  <script type="module" src="/labs/docx-compare/demo.js"></script>
+</head>
+<body>
+  <main>
+    <header><a href="/">Safe DOCX</a><span>Prototype</span></header>
+    <h1>Compare Word documents</h1>
+    <p class="intro">Choose an original and a revised Word document to create a redline. Both files stay in this browser.</p>
+    <section aria-label="Compare documents">
+      <div class="files">
+        <label for="original">Original document
+          <input id="original" type="file" accept=".docx">
+        </label>
+        <label for="revised">Revised document
+          <input id="revised" type="file" accept=".docx">
+        </label>
+      </div>
+      <p class="hint">Choose two .docx files, up to 10 MB each.</p>
+      <button id="compare" type="button" disabled>Compare documents</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <a id="download" download="safe-docx-redline.docx" hidden>Download redline</a>
+      <noscript><p>Enable JavaScript to compare documents in your browser.</p></noscript>
+    </section>
+  </main>
+</body>
+</html>
