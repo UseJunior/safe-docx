@@ -1480,7 +1480,7 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
   }: AllureBddContext) => {
     // #803 separated the storage address from the ordinal a reader can act on.
     // Strip the twin from the *second* authored box only, leaving the first as
-    // Word wrote it, and give the revised second box a comment reference a
+    // Word wrote it, and give the revised second box a footnote reference a
     // text-box story may not hold. The refusal must name box `[1]` — the
     // second visual box — where a walk counting stored copies would say `[2]`,
     // the second copy of the *first* box, and send a reader somewhere that
@@ -1494,7 +1494,7 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
         let seen = -1;
         return secondOnly(xml).replace(/<\/w:p><\/w:txbxContent>/g, (whole: string): string => {
           seen += 1;
-          return seen === 2 ? `<w:r><w:commentReference w:id="9"/></w:r>${whole}` : whole;
+          return seen === 2 ? `<w:r><w:footnoteReference w:id="9"/></w:r>${whole}` : whole;
         });
       };
       const source = await rewriteDocumentXml(SOURCE, secondOnly);
@@ -1526,7 +1526,7 @@ describe('Word-authored text-box corpus (#795)', { timeout: LOAD_SENSITIVE_TIMEO
         expect.objectContaining({
           index: 1,
           partPath: 'word/document.xml',
-          reason: 'nested w:commentReference is not supported in this story slice',
+          reason: 'nested w:footnoteReference is not supported in this story slice',
         }),
       ]);
       expect((failure as Error).message).toContain('#w:txbxContent[1]');
