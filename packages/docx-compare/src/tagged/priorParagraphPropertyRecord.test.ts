@@ -15,7 +15,6 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { XMLSerializer } from '@xmldom/xmldom';
 import { describe, expect } from 'vitest';
 import { DocxArchive, DocxDocument, parseXml } from '@usejunior/docx-core';
 import { testAllure } from '../testing/allure-test.js';
@@ -35,7 +34,12 @@ const priorPPr = (base: string, old = '') =>
 
 const elements = (node: Node): Element[] =>
   Array.from(node.childNodes).filter((child): child is Element => child.nodeType === 1);
-const serialize = (node: Node) => new XMLSerializer().serializeToString(node);
+/** Namespace-aware form of a property, independent of attribute order and prefixes. */
+const serialize = (element: Element): string => {
+  const attributes = Array.from(element.attributes).filter(attribute => !attribute.name.startsWith('xmlns'))
+    .map(attribute => `${attribute.namespaceURI}:${attribute.localName}=${attribute.value}`).sort();
+  return `${element.namespaceURI}:${element.localName}{${attributes.join(';')}}`;
+};
 
 /** Per paragraph: text, base paragraph properties and paragraph-mark formatting, records excluded. */
 function paragraphProjection(xml: string): string[] {
@@ -128,5 +132,18 @@ describe('a prior paragraph property record in a comparison input', () => {
     const revised = p(t('Para text'), `<w:pPr><w:rPr><w:b/><w:rPrChange w:id="7" w:author="Reviewer" ${DATE}><w:rPr/></w:rPrChange></w:rPr></w:pPr>`);
     const xml = await compareAndCheck(CLEAN, revised);
     expect(records(xml, 'rPrChange')).toEqual(['Reviewer#7']);
+  });
+  pPrChange('matches the prior snapshot regardless of attribute order and namespace prefix', async () => {
+    const original = p(t('Para text'), '<w:pPr><w:ind w:left="720" w:right="360"/></w:pPr>');
+    const reordered = p(t('Para text'), priorPPr('<w:ind w:left="720" w:right="360"/><w:jc w:val="center"/>', '<w:ind w:right="360" w:left="720"/>'));
+    expect(records(await compareAndCheck(original, reordered), 'pPrChange')).toEqual(['Reviewer#8']);
+    const prefixed = p(t('Para text'), priorPPr('<w:jc w:val="center"/>', `<x:jc xmlns:x="${W}" x:val="left"/>`));
+    expect(records(await compareAndCheck(p(t('Para text'), '<w:pPr><w:jc w:val="left"/></w:pPr>'), prefixed), 'pPrChange')).toEqual(['Reviewer#8']);
+  });
+
+  markRPrChange('matches a prior mark snapshot regardless of attribute order', async () => {
+    const original = p(t('Para text'), '<w:pPr><w:rPr><w:lang w:val="en-US" w:eastAsia="ja-JP"/></w:rPr></w:pPr>');
+    const revised = p(t('Para text'), `<w:pPr><w:rPr><w:b/><w:lang w:val="en-US" w:eastAsia="ja-JP"/><w:rPrChange w:id="7" w:author="Reviewer" ${DATE}><w:rPr><w:lang w:eastAsia="ja-JP" w:val="en-US"/></w:rPr></w:rPrChange></w:rPr></w:pPr>`);
+    expect(records(await compareAndCheck(original, revised), 'rPrChange')).toEqual(['Reviewer#7']);
   });
 });

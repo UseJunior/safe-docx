@@ -1685,8 +1685,9 @@ function carriesParagraphMarkRevisionMarker(mark: WmlElement | null | undefined)
  * paragraph mark's `w:rPrChange`) when its old-value snapshot equals the
  * original's current properties, so that keeping it as written already makes
  * Reject All restore the original and Accept All give the revised
- * properties. `signature` compares the snapshot and the original the same way
- * the delta decision does.
+ * properties. Children named in `excluded` (nested records, the mark, the
+ * section) are not part of the comparison. Equality is structural and
+ * namespace-aware: attribute order and prefix spelling do not matter.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
@@ -1697,13 +1698,28 @@ function revisedRecordRestoringOriginal(
   originalProperties: WmlElement | null | undefined,
   changeLocalName: 'pPrChange' | 'rPrChange',
   snapshotLocalName: 'pPr' | 'rPr',
-  signature: (element: WmlElement | null | undefined) => string,
+  excluded: ReadonlySet<string>,
 ): WmlElement | undefined {
   if (!revisedProperties) return undefined;
   const record = childElements(revisedProperties).find((child) => child.localName === changeLocalName);
   if (!record) return undefined;
   const snapshot = childElements(record).find((child) => child.localName === snapshotLocalName);
-  return signature(snapshot ?? null) === signature(originalProperties) ? record : undefined;
+  const signature = (element: Element | null | undefined): string => element
+    ? childElements(element as WmlElement).filter((child) => !excluded.has(child.localName)).map(canonicalElement).join('')
+    : '';
+  return signature(snapshot) === signature(originalProperties) ? record : undefined;
+}
+
+/** A namespace-aware canonical form of an element, independent of attribute order and prefixes. */
+function canonicalElement(element: Element): string {
+  const attributes = Array.from(element.attributes)
+    .filter((attribute) => attribute.namespaceURI !== 'http://www.w3.org/2000/xmlns/' && attribute.name !== 'xmlns' && !attribute.name.startsWith('xmlns:'))
+    .map((attribute) => `{${attribute.namespaceURI ?? ''}}${attribute.localName}=${JSON.stringify(attribute.value)}`)
+    .sort();
+  const children = Array.from(element.childNodes).map((child) =>
+    child.nodeType === 1 ? canonicalElement(child as Element)
+      : child.nodeType === 3 || child.nodeType === 4 ? JSON.stringify(child.nodeValue ?? '') : '').join('');
+  return `<{${element.namespaceURI ?? ''}}${element.localName} ${attributes.join(' ')}>${children}</>`;
 }
 
 /** The `CT_PPrBase` children of a paragraph's properties, serialized for equality. */
@@ -1832,7 +1848,7 @@ function applyParagraphPropertyDelta(
   // As for w:pPrChange below: a prior revised record whose snapshot is the
   // original mark formatting is kept as written (#1566).
   const originalMarkRecord = priorOriginalMarkRecord ??
-    revisedRecordRestoringOriginal(liveMark, originalMark ?? null, 'rPrChange', 'rPr', markSignature);
+    revisedRecordRestoringOriginal(liveMark, originalMark ?? null, 'rPrChange', 'rPr', new Set(['rPrChange']));
   if (markChanged || originalMarkRecord || (liveMark && childElements(liveMark).some((child) => child.localName === 'rPrChange'))) {
     placeSinglePropertyRevision(ensureMark(), 'rPrChange', originalMarkRecord, markChanged, () => {
       const markChange = paragraph.ownerDocument!.createElementNS(W_NS, 'w:rPrChange') as WmlElement;
@@ -1895,7 +1911,7 @@ function applyParagraphPropertyDelta(
   // w:pPrChange and Reject All must restore the original.
   const originalParagraphRecord = (original && childElements(original).find((child) => child.localName === 'pPrChange')) ?? undefined;
   const preservedParagraphRecord = originalParagraphRecord ??
-    revisedRecordRestoringOriginal(revised, original, 'pPrChange', 'pPr', paragraphBaseSignature);
+    revisedRecordRestoringOriginal(revised, original, 'pPrChange', 'pPr', new Set(['rPr', 'sectPr', 'pPrChange']));
   if (!splitsSectionBoundary || preservedParagraphRecord ||
     paragraphBaseSignature(live) !== paragraphBaseSignature(original)) {
     placeSinglePropertyRevision(live, 'pPrChange', preservedParagraphRecord, true, () => {
