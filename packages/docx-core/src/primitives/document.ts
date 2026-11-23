@@ -267,8 +267,10 @@ function collectLiveFootnoteRefIds(doc: Document): Set<number> {
 // Side-effect of accept/reject on document.xml: a body w:footnoteReference that
 // lived inside a removed w:del (accept) or w:ins (reject) is gone afterwards.
 // The corresponding <w:footnote w:id=N> in footnotes.xml is then unreachable —
-// remove it so the side part matches the post-sweep body. Reserved separator /
-// continuationSeparator entries are preserved unconditionally.
+// remove it so the side part matches the post-sweep body. Special notes (any
+// w:type other than "normal": separator, continuationSeparator,
+// continuationNotice) are preserved unconditionally — settings w:footnotePr
+// references them, not a body w:footnoteReference.
 /**
  * True iff a footnote entry contains a tracked-change element whose id is not in
  * `selectedIds` — a foreign revision that a selective sweep must not delete.
@@ -284,6 +286,15 @@ function footnoteHasForeignRevision(fn: Element, selectedIds: Set<string>): bool
   return false;
 }
 
+/**
+ * Removes footnotes left unreferenced by an accept/reject body sweep.
+ *
+ * Special footnotes (separator, continuation separator, continuation notice)
+ * are referenced from settings `w:footnotePr`, so they are never orphans.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.9
+ * @see #1489
+ */
 function pruneOrphanedFootnotes(
   footnotesDoc: Document,
   liveRefIds: Set<number>,
@@ -293,7 +304,7 @@ function pruneOrphanedFootnotes(
   let pruned = 0;
   for (const fn of entries) {
     const typ = fn.getAttributeNS(OOXML.W_NS, 'type') ?? fn.getAttribute('w:type');
-    if (typ === W.separator || typ === W.continuationSeparator) continue;
+    if (typ && typ !== 'normal') continue;
     const id = parseWId(fn);
     if (id === null) continue;
     if (liveRefIds.has(id)) continue;
