@@ -112,8 +112,8 @@ async function compareAndCheck(original: Para[], revised: Para[], kind: Kind) {
 }
 
 describe('renumbered but unchanged notes pair with their counterparts', () => {
-  for (const kind of ['footnote', 'endnote'] as const) {
-    test(`a renumbered ${kind} whose hyperlink target changed keeps both targets`, async ({ given, when, then }: AllureBddContext) => {
+  for (const [kind, prefix] of [['footnote', ''], ['endnote', ''], ['footnote', 'pr:']] as const) {
+    test(`a renumbered ${kind} whose hyperlink target changed keeps both targets${prefix ? ' (prefixed relationships)' : ''}`, async ({ given, when, then }: AllureBddContext) => {
       const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
       const withLink = async (docx: Buffer, url: string): Promise<Buffer> => {
         const zip = await JSZip.loadAsync(docx);
@@ -122,8 +122,8 @@ describe('renumbered but unchanged notes pair with their counterparts', () => {
         zip.file(path, xml.replace('<w:r><w:t>First note</w:t></w:r>',
           `<w:hyperlink xmlns:r="${R}" r:id="rIdLink"><w:r><w:t>First note</w:t></w:r></w:hyperlink>`));
         zip.file(`word/_rels/${kind}s.xml.rels`, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-          `<Relationship Id="rIdLink" Type="${R}/hyperlink" Target="${url}" TargetMode="External"/></Relationships>`);
+          `<${prefix}Relationships xmlns${prefix ? ':' + prefix.slice(0, -1) : ''}="http://schemas.openxmlformats.org/package/2006/relationships">` +
+          `<${prefix}Relationship Id="rIdLink" Type="${R}/hyperlink" Target="${url}" TargetMode="External"/></${prefix}Relationships>`);
         return zip.generateAsync({ type: 'nodebuffer' });
       };
       let original!: Buffer;
@@ -140,9 +140,10 @@ describe('renumbered but unchanged notes pair with their counterparts', () => {
         const zip = await JSZip.loadAsync(result.document);
         const notesXml = await zip.file(`word/${kind}s.xml`)!.async('string');
         const rels = parseXml(await zip.file(`word/_rels/${kind}s.xml.rels`)!.async('string'));
+        const relationships = rels.getElementsByTagNameNS('http://schemas.openxmlformats.org/package/2006/relationships', 'Relationship');
         const target = (projected: string): string | null | undefined => {
           const id = parseXml(projected).getElementsByTagNameNS(W, 'hyperlink')[0]?.getAttributeNS(R, 'id');
-          return Array.from(rels.getElementsByTagName('Relationship')).find((r) => r.getAttribute('Id') === id)?.getAttribute('Target');
+          return Array.from(relationships).find((r) => r.getAttribute('Id') === id)?.getAttribute('Target');
         };
         expect(target(rejectAllChanges(notesXml))).toBe('https://original.example/');
         expect(target(acceptAllChanges(notesXml))).toBe('https://revised.example/');

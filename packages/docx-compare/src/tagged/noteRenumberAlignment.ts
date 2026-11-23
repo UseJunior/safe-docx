@@ -18,6 +18,7 @@ interface NoteSide {
 }
 
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE_RELATIONSHIPS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
 /**
  * A definition's identity apart from its own `w:id`. Relationship references
@@ -25,13 +26,18 @@ const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
  * own note relationships, so the key carries what each one resolves to: the
  * same raw XML pointing at a different target is a changed note.
  */
+let unresolvedSerial = 0;
+
 function definitionKey(entry: Element, relationships: Map<string, string>): string {
   const copy = entry.cloneNode(true) as Element;
   copy.removeAttributeNS(W, 'id');
   const resolved: string[] = [];
   const visit = (element: Element): void => {
     for (const attribute of Array.from(element.attributes)) {
-      if (attribute.namespaceURI === R) resolved.push(relationships.get(attribute.value) ?? '<unresolved>');
+      if (attribute.namespaceURI !== R) continue;
+      const target = relationships.get(attribute.value);
+      // An unresolved reference cannot be shown identical; never align it.
+      resolved.push(target ?? `<unresolved ${unresolvedSerial++}>`);
     }
     for (let child = element.firstChild; child; child = child.nextSibling) {
       if (child.nodeType === 1) visit(child as Element);
@@ -47,7 +53,7 @@ async function readRelationships(archive: DocxArchive, kind: NoteKind): Promise<
   if (!xml) return relationships;
   let document: Document;
   try { document = parseXml(xml); } catch { return; }
-  for (const relationship of Array.from(document.getElementsByTagName('Relationship'))) {
+  for (const relationship of Array.from(document.getElementsByTagNameNS(PACKAGE_RELATIONSHIPS, 'Relationship'))) {
     relationships.set(relationship.getAttribute('Id') ?? '', JSON.stringify([
       relationship.getAttribute('Type'), relationship.getAttribute('Target'), relationship.getAttribute('TargetMode'),
     ]));
