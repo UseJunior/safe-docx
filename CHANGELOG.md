@@ -1,6 +1,37 @@
 # Changelog
 
-## 0.26.0
+## 0.26.1
+
+0.26.0 was tagged (`v0.26.0`) but never published to npm: the release
+coverage run timed out on a round-trip oracle test. 0.26.1 is the first
+published release that carries the 0.26.0 changes listed below, plus these
+fixes merged since:
+
+- Comparison now tracks changes to style definitions, so Reject All restores
+  the original formatting. (#1581)
+- A footnote or endnote whose only change is its comment text or hyperlink
+  target keeps both sides, and an unchanged renumbered note stays live.
+  (#1577, #1580)
+- Table rows and cells: a row or cell whose prior revision records differ
+  under unchanged properties is recorded; a revised cell with a prior record
+  keeps a single `w:tcPrChange`; a prior `w:pPrChange` keeps its author when
+  the comparison matches it. (#1571, #1573, #1576)
+- A whole inserted or deleted block container that carries custom XML markup
+  ranges is tracked, and accept/reject resolve `customXml` insertion and
+  deletion ranges. (#1569, #1575)
+- A comparison whose input has a prior inserted paragraph mark now completes;
+  a text box that holds a comment anchor is compared; `continuationNotice`
+  notes survive accept and reject. (#1567, #1568, #1570)
+- Headers and footers: changes beside an added or removed section break are
+  tracked (including Word's unlinked text-box footer), lifecycle stories that
+  hold a content control or table are tracked, and represented entries are
+  dropped when fields read other stories. (#1560, #1561, #1562, #1563)
+- Tests: nested revision shapes for tracked inputs are pinned (#1564), and
+  the round-trip oracle timeout is raised so the release coverage run passes
+  (#1582).
+
+### Changes first tagged as 0.26.0 (unpublished)
+
 
 - `compareDocuments` accepts `date: null` to write no `w:date` on the
   revisions it creates, in the body, headers, footers, notes, comments and
