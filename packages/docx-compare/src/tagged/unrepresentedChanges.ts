@@ -24,6 +24,7 @@ import {
   type EffectiveStoryBindings,
 } from './effectiveStoryBindings.js';
 import { createResolvedStoryReader, type ResolvedStoryReader } from './storyRelationshipIdentity.js';
+import { canonicalNode } from './opaquePassthrough.js';
 
 const REVISION_TAGS = new Set(['sectPrChange']);
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -698,9 +699,50 @@ function fieldReadableStory(xml: string): string {
 }
 
 /**
+ * The notes a reader lays out, as comparable text: the separator notes by
+ * type, then every note the main story references, in reference order (the
+ * redline may number notes differently). Each note keeps its formatting
+ * (`normalizedStoryXml`, runs that show nothing left out) and what a field
+ * reads from it, so an untracked layout change in a note, such as separator
+ * spacing, still tells two packages apart. A definition no reference reaches
+ * (one Reject All leaves behind after removing its reference) is not laid out
+ * and is left out.
+ */
+function reachableNotesIdentity(projectedDocumentXml: string, projectedNotesXml: string, element: 'footnote' | 'endnote'): string {
+  const notesDocument = parseXml(normalizedStoryXml(projectedNotesXml));
+  const notesById = new Map<string, Element>();
+  const lines: string[] = [];
+  for (const note of Array.from(notesDocument.getElementsByTagNameNS(W_NS, element))) {
+    const type = note.getAttributeNS(W_NS, 'type') ?? '';
+    if (type !== '' && type !== 'normal') lines.push(`${type}:${noteIdentity(note)}`);
+    else notesById.set(note.getAttributeNS(W_NS, 'id') ?? '', note);
+  }
+  for (const reference of Array.from(parseXml(projectedDocumentXml).getElementsByTagNameNS(W_NS, `${element}Reference`))) {
+    const note = notesById.get(reference.getAttributeNS(W_NS, 'id') ?? '');
+    lines.push(note ? `note:${noteIdentity(note)}` : 'note:missing');
+  }
+  return lines.join('\n');
+}
+
+function noteIdentity(note: Element): string {
+  const copy = note.cloneNode(true) as Element;
+  copy.removeAttributeNS(W_NS, 'id');
+  // A run with only properties (or empty text) shows nothing.
+  for (const run of Array.from(copy.getElementsByTagNameNS(W_NS, 'r'))) {
+    const content = Array.from(run.childNodes).filter((child): child is Element =>
+      child.nodeType === 1 && !((child as Element).namespaceURI === W_NS && localName(child as Element) === 'rPr'));
+    if (content.every((child) => child.namespaceURI === W_NS && localName(child) === 't' && (child.textContent ?? '') === '')) {
+      run.parentNode?.removeChild(run);
+    }
+  }
+  return `${canonicalNode(copy)}|${fieldReadableStory(new XMLSerializer().serializeToString(copy))}`;
+}
+
+/**
  * The stories a header/footer field can read, as one comparable identity:
- * the main story and the footnote and endnote stories (NOTEREF), each
- * projected and read as `fieldReadableStory` shows it. When these match, a
+ * the main story, read as `fieldReadableStory` shows it, and the footnote
+ * and endnote stories a reader lays out (`reachableNotesIdentity`), each
+ * projected. When these match, a
  * field reads the same content on both sides, so its result is the reader's
  * to recompute and is not a header/footer difference (#1499). Page totals
  * (NUMPAGES, SECTIONPAGES) also depend on layout: the main story's
@@ -731,7 +773,7 @@ async function readableStoriesIdentity(
     const xml = await archive.getFile(path);
     if (xml === null) return unique(path);
     try {
-      lines.push(`${type}\n${fieldReadableStory(project(xml))}`);
+      lines.push(`${type}\n${reachableNotesIdentity(projectedDocumentXml, project(xml), type === 'endnotes' ? 'endnote' : 'footnote')}`);
     } catch {
       return unique(path);
     }

@@ -1363,4 +1363,50 @@ describe('header/footer fields that read other stories after a section-count cha
       expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
     ]));
   });
+
+  const NUMPAGES_FOOTER: Part = {
+    id: 'rIdF', kind: 'footer', target: 'footer1.xml',
+    contentXml: '<w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>2</w:t></w:r></w:fldSimple></w:p>',
+  };
+  const noteReference = (id: number): string => `<w:r><w:footnoteReference w:id="${id}"/></w:r>`;
+  async function withFootnotes(body: string, notesXml: string): Promise<Buffer> {
+    const archive = await DocxArchive.load(await packageWith(body, ref('footer', 'rIdF') + LAYOUT, [NUMPAGES_FOOTER]));
+    archive.setFile('word/footnotes.xml', `<w:footnotes xmlns:w="${W_NS}">${notesXml}</w:footnotes>`);
+    archive.setFile('word/_rels/document.xml.rels', (await archive.getFile('word/_rels/document.xml.rels'))!
+      .replace('</Relationships>', `<Relationship Id="rIdNotes" Type="${R_NS}/footnotes" Target="footnotes.xml"/></Relationships>`));
+    archive.setFile('[Content_Types].xml', (await archive.getFile('[Content_Types].xml'))!.replace('</Types>',
+      '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>'));
+    return archive.save();
+  }
+  const breakBody = (added: boolean, secondNote: boolean): string =>
+    `<w:p><w:r><w:t>First.</w:t></w:r>${noteReference(1)}</w:p>` +
+    (added ? sectionEnd('Break.', ref('footer', 'rIdF') + LAYOUT) : paragraph('Break.')) +
+    `<w:p><w:r><w:t>Second.</w:t></w:r>${secondNote ? noteReference(2) : ''}</w:p>`;
+  const note = (id: number, text: string): string => `<w:footnote w:id="${id}">${paragraph(text)}</w:footnote>`;
+
+  test('a tracked footnote added beside a section break and a NUMPAGES footer reports nothing', async () => {
+    // Reject All leaves the added note definition behind with no reference
+    // reaching it; a reader does not lay it out.
+    const original = await withFootnotes(breakBody(false, false), note(1, 'First note.'));
+    const revised = await withFootnotes(breakBody(true, true), note(1, 'First note.') + note(2, 'Second note.'));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toBeUndefined();
+  });
+
+  test('an untracked footnote separator spacing change keeps the NUMPAGES footer listed after a section break is added', async () => {
+    // Separator spacing changes how much of each page the notes take, so
+    // the page total the footer shows; the redline does not track it.
+    const separator = (after: number): string =>
+      `<w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="${after}"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote>`;
+    const original = await withFootnotes(breakBody(false, false), separator(20) + note(1, 'First note.'));
+    const revised = await withFootnotes(breakBody(true, false), separator(10000) + note(1, 'First note.'));
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
+    ]));
+  });
 });
