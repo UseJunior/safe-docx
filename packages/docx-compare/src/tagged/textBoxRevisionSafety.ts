@@ -5053,7 +5053,7 @@ function markLifecycleRow(
 
 /** Elements a displaced story copy must not duplicate into another part. */
 const UNCOPYABLE_DISPLACED_CONTENT = new Set([
-  'drawing', 'pict', 'object', 'txbxContent', 'AlternateContent',
+  'object',
   'commentRangeStart', 'commentRangeEnd', 'commentReference',
   'footnoteReference', 'endnoteReference', 'altChunk', 'subDoc', 'dataBinding',
 ]);
@@ -5122,14 +5122,49 @@ function stripDisplayNeutralMarkup(root: Element, options: { finalParagraphAfter
     }
     element.removeAttributeNS(WORD_2010_NS, 'paraId');
     element.removeAttributeNS(WORD_2010_NS, 'textId');
+    // A drawing's `wp:docPr/@id` only keeps drawings unique in the document;
+    // a copy takes a fresh one (`renumberCopiedDrawings`).
+    if (element.namespaceURI === WORDPROCESSING_DRAWING_NS && element.localName === 'docPr') {
+      element.removeAttribute('id');
+    }
+  }
+}
+
+/**
+ * Give each copied DrawingML drawing a `wp:docPr/@id` of its own: the id
+ * keeps drawings unique across the document, so a copy beside its source
+ * takes the next unused one. A VML shape keeps its ids, which the package
+ * projection check compares as shown content.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 20.4.2.38
+ * @see https://github.com/UseJunior/safe-docx/issues/1500
+ */
+function renumberCopiedDrawings(copies: readonly Element[], packageRoots: readonly Element[]): void {
+  let nextDocPrId = 1;
+  for (const root of packageRoots) {
+    for (const docPr of Array.from(root.getElementsByTagNameNS(WORDPROCESSING_DRAWING_NS, 'docPr'))) {
+      const id = Number.parseInt(docPr.getAttribute('id') ?? '', 10);
+      if (Number.isFinite(id) && id >= nextDocPrId) nextDocPrId = id + 1;
+    }
+  }
+  for (const copy of copies) {
+    for (const element of [copy, ...Array.from(copy.getElementsByTagName('*'))]) {
+      if (element.namespaceURI === WORDPROCESSING_DRAWING_NS && element.localName === 'docPr') {
+        element.setAttribute('id', String(nextDocPrId));
+        nextDocPrId += 1;
+      }
+    }
   }
 }
 
 /**
  * The block content of a displaced story, ready to copy into a lifecycle
  * story, or `undefined` when it cannot be copied without a second package
- * resource: a drawing, an object, a text box, a comment or note anchor, or
- * any relationship reference would need its own target in the carried part.
+ * resource: an object, a comment or note anchor, or any relationship
+ * reference (a picture's `r:embed`, a linked image) would need its own
+ * target in the carried part. A text box with no relationship reference
+ * (VML or DrawingML) is self-contained and is copied; its drawing ids are
+ * made unique where it is inserted (`renumberCopiedDrawings`, #1500).
  * Identifiers that must stay unique in the document are left to the story
  * that owns them, and block-level containers are unwrapped
  * (`stripDisplayNeutralMarkup`): `w:sdt` and `w:customXml` carry no revision
@@ -5441,6 +5476,7 @@ async function markLifecycleAncillaryStoryParagraphs(
     : copyableDisplacedBlocks(options.displacedStoryXml);
   if (displacedBlocks && displacedBlocks.length > 0) {
     const imported = displacedBlocks.map((block) => document.importNode(block, true) as Element);
+    renumberCopiedDrawings(imported, preservedRoots);
     const before = markerTag === 'w:del'
       ? directChildElements(body).find((element) =>
         element.namespaceURI === OOXML.W_NS && element.localName === 'sectPr') ?? null
