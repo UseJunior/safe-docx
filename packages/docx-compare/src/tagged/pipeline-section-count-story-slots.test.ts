@@ -270,12 +270,12 @@ describe('header/footer changes beside an added or removed section break (#1475)
     }
   }
 
-  for (const mode of ['ins', 'del'] as const) {
-    test(`a header already holding a tracked paragraph ${mode === 'ins' ? 'insertion' : 'deletion'} keeps its author and date beside an added or removed break`, async () => {
+  for (const mode of ['ins', 'del'] as const) for (const boxed of [false, true]) {
+    test(`a ${boxed ? 'boxed ' : ''}header already holding a tracked paragraph ${mode === 'ins' ? 'insertion' : 'deletion'} keeps its author and date beside an added or removed break`, async () => {
       // Lifecycle marking would restamp the prior revision (PRESERVE), so such
       // a story is left to the earlier pairing.
       const prior = `<w:p><w:pPr><w:rPr><w:${mode} w:id="77" w:author="Prior" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:pPr>` +
-        `<w:r><w:t>History</w:t></w:r></w:p>${paragraph('Last')}`;
+        `<w:r><w:t>History</w:t></w:r></w:p>${boxed ? vmlBox('Boxed') : ''}${paragraph('Last')}`;
       const header = story('rIdH', 'header', 'header1.xml', prior);
       const withHeader = await packageWith(sectionEnd('One', '') + paragraph('Two'), ref('header', header.id), [header]);
       const withoutHeader = await packageWith(paragraph('One') + paragraph('Two'), '', []);

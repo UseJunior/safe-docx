@@ -3133,6 +3133,12 @@ async function slotLifecycleStoryInput(
   // Section ordinals name the same pages only in a matched topology; a pair
   // of a changed one is shown on the aligned pages instead (#1475).
   if (!pair.sectionAligned && pair.original.bindingClosure !== pair.revised.bindingClosure) return undefined;
+  // Lifecycle marking restamps a prior paragraph-mark revision's author and
+  // date; a section-aligned story already holding tracked changes keeps the
+  // earlier outcome (PRESERVE, #1475).
+  if (pair.sectionAligned && (holdsTrackedRevision(pair.original.xml) || holdsTrackedRevision(pair.revised.xml))) {
+    return undefined;
+  }
   // The story's paragraphs and rows are tracked and its last paragraph is made
   // to read as the blank story. Any other block is left to the ordinary
   // pairing and its checks, which report what they cannot carry.
