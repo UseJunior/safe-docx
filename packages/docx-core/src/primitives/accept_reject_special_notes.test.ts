@@ -59,8 +59,8 @@ async function settingsRefsResolve(buf: Uint8Array): Promise<void> {
   }
 }
 
-// Body: a deleted footnote reference (accept orphans note 2) and an inserted
-// one (reject orphans note 2), so the orphan-prune sweep runs in both modes.
+// Body: one deleted and one inserted reference to note 2. Each sweep removes
+// one reference (so the orphan-prune pass runs) and keeps the other alive.
 const BODY =
   `<w:p><w:r><w:t>Text</w:t></w:r><w:del w:id="10" ${DATE}><w:r><w:footnoteReference w:id="2"/></w:r></w:del></w:p>` +
   `<w:p><w:r><w:t>More</w:t></w:r><w:ins w:id="11" ${DATE}><w:r><w:footnoteReference w:id="2"/></w:r></w:ins></w:p>`;
