@@ -1420,4 +1420,29 @@ describe('header/footer fields that read other stories after a section-count cha
 
     expect(result.unrepresentedChanges).toBeUndefined();
   });
+
+  test('a footnote bookmark whose end moves without a tracked change keeps the NUMPAGES footer listed', async () => {
+    // Swapping only the end ids changes what REF A and REF B read; ids are
+    // allocation for the formatting comparison but pair starts with ends.
+    const footer: Part = {
+      id: 'rIdF', kind: 'footer', target: 'footer1.xml',
+      contentXml: '<w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>2</w:t></w:r></w:fldSimple><w:fldSimple w:instr=" REF A "><w:r><w:t>X</w:t></w:r></w:fldSimple></w:p>',
+    };
+    const notes = (firstEnd: number, secondEnd: number): string =>
+      '<w:footnote w:id="1"><w:p><w:bookmarkStart w:id="1" w:name="A"/><w:bookmarkStart w:id="2" w:name="B"/>' +
+      `<w:r><w:t>X</w:t></w:r><w:bookmarkEnd w:id="${firstEnd}"/><w:r><w:t>Y</w:t></w:r><w:bookmarkEnd w:id="${secondEnd}"/></w:p></w:footnote>`;
+    const build = async (added: boolean, firstEnd: number, secondEnd: number): Promise<Buffer> => {
+      const archive = await DocxArchive.load(await withFootnotes(breakBody(added, false), notes(firstEnd, secondEnd)));
+      archive.setFile('word/footer1.xml', `<w:ftr xmlns:w="${W_NS}">${footer.contentXml}</w:ftr>`);
+      return archive.save();
+    };
+    const original = await build(false, 1, 2);
+    const revised = await build(true, 2, 1);
+
+    const result = await compareDocumentsAtomizer(original, revised, COMPARE_OPTIONS);
+
+    expect(result.unrepresentedChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'footer', sectionIndex: 1 }),
+    ]));
+  });
 });

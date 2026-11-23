@@ -727,6 +727,8 @@ function reachableNotesIdentity(projectedDocumentXml: string, projectedNotesXml:
 const ALLOCATED_ID_MARKERS = new Set(['bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'commentReference']);
 
 function noteIdentity(note: Element): string {
+  // Read before ids are stripped: bookmark ids pair each start with its end.
+  const readable = fieldReadableStory(new XMLSerializer().serializeToString(note));
   const copy = note.cloneNode(true) as Element;
   copy.removeAttributeNS(W_NS, 'id');
   // Bookmark and comment-anchor ids are allocation; a bookmark's name and the
@@ -742,7 +744,7 @@ function noteIdentity(note: Element): string {
       run.parentNode?.removeChild(run);
     }
   }
-  return `${canonicalNode(copy)}|${fieldReadableStory(new XMLSerializer().serializeToString(copy))}`;
+  return `${canonicalNode(copy)}|${readable}`;
 }
 
 /**
