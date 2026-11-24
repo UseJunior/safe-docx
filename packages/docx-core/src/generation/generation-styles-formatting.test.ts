@@ -74,7 +74,7 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
           { kind: 'text', text: 'Condensed', colorHex: 'FFFFFF', characterScalePercent, sizePt: 1 },
         ] }] }],
       });
-      const { buffer } = await generateDocx(spec(20));
+      const buffer = Buffer.from(await generateDocx(spec(20)));
       const document = await loadPart(buffer, 'word/document.xml');
       const runProps = document.getElementsByTagNameNS(OOXML.W_NS, 'rPr').item(0)!;
       expect(wChildNames(runProps)).toEqual(['color', 'w', 'sz', 'szCs']);
