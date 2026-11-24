@@ -1,26 +1,78 @@
+:root {
+  --ink: #171920;
+  --muted: #525560;
+  --navy: #090e34;
+  --line: #d8dadf;
+  --panel: #fff;
+}
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background: #f4f6f0;
-  color: #172f28;
-  font: 1rem/1.55 system-ui, sans-serif;
+  min-height: 100vh;
+  background: radial-gradient(circle at 84% 4%, #dbdeea 0, transparent 28%),
+    linear-gradient(145deg, #f7f8fa 0%, #eceef3 100%);
+  color: var(--ink);
+  font: 1rem/1.55 ui-sans-serif, system-ui, sans-serif;
 }
-main { max-width: 52rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
-header { display: flex; align-items: center; gap: 1rem; margin-bottom: clamp(2rem, 8vw, 5rem); }
-header a { color: inherit; font-weight: 750; }
-header span { border: 1px solid #b3c1b9; border-radius: 1rem; padding: .12rem .65rem; font-size: .8rem; }
-h1 { font: 500 clamp(2.25rem, 6vw, 4.2rem)/1.04 Georgia, serif; letter-spacing: -.04em; margin: 0; }
-.intro { color: #405a51; max-width: 34rem; margin: 1.2rem 0 2rem; }
-section { padding: clamp(1rem, 4vw, 2rem); border: 1px solid #c9d1c8; border-radius: 1rem; background: #fff; }
+.site-header { background: var(--panel); border-bottom: 1px solid var(--line); }
+.nav-inner {
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: .75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.wordmark { color: #111827; font-size: 1.5rem; font-weight: 700; letter-spacing: -.04em; text-decoration: none; }
+.product-link { color: var(--muted); font-weight: 650; text-decoration: none; }
+.product-link:hover { color: var(--navy); text-decoration: underline; }
+main { max-width: 52rem; margin: 0 auto; padding: clamp(2.5rem, 6vw, 5.5rem) 1.25rem 4rem; }
+.eyebrow {
+  margin: 0;
+  color: #374162;
+  font-size: .76rem;
+  font-weight: 750;
+  letter-spacing: .09em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+h1 { margin: .75rem 0 1.4rem; font-size: clamp(2.5rem, 5.5vw, 4.25rem); font-weight: 500; letter-spacing: -.02em; line-height: 1.02; }
+.intro { color: var(--muted); max-width: 38rem; margin: 0 0 2rem; font-size: 1.2rem; line-height: 1.7; }
+section { padding: clamp(1rem, 4vw, 2rem); border: 1px solid var(--line); border-radius: .65rem; background: var(--panel); }
 .files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-label { display: block; border: 1px solid #d3ddd4; border-radius: .55rem; padding: .85rem; font-weight: 650; }
-input { display: block; width: 100%; margin-top: .5rem; font: inherit; font-size: .84rem; }
-.hint { color: #486158; font-size: .87rem; margin: .8rem 0 1.25rem; }
-button, #download { color: #fff; background: #195c49; border: 0; border-radius: .4rem; padding: .66rem 1rem; font: inherit; font-weight: 650; }
-#sample { color: #195c49; background: transparent; border: 1px solid currentColor; margin: .4rem 0; }
+label { display: block; min-width: 0; background: #f7f8fa; border: 1px solid var(--line); border-radius: .45rem; padding: .85rem; font-weight: 650; }
+input { display: block; width: 100%; margin-top: .5rem; font: inherit; font-size: .875rem; }
+input::file-selector-button {
+  margin-inline-end: .5rem;
+  padding: .35rem .55rem;
+  border: 1px solid #caccd4;
+  border-radius: .35rem;
+  background: var(--panel);
+  color: var(--navy);
+  font: inherit;
+  cursor: pointer;
+}
+.hint { color: var(--muted); font-size: .875rem; margin: .8rem 0 1.25rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .8rem; }
+button, #download {
+  border: 1px solid var(--navy);
+  border-radius: .45rem;
+  padding: .8rem 1.1rem;
+  background: var(--navy);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+#sample { background: transparent; color: var(--navy); }
 button:not(:disabled) { cursor: pointer; }
 button:disabled { opacity: .55; }
-#download:not([hidden]) { display: inline-block; }
+button:not(:disabled):hover, #download:hover { box-shadow: 0 8px 22px rgb(9 14 52 / 13%); }
+#download:not([hidden]) { display: inline-flex; }
 #status:empty { display: none; }
-:focus-visible { outline: 3px solid #307d69; outline-offset: 3px; }
-@media (max-width: 37rem) { .files { grid-template-columns: 1fr; } }
+:focus-visible { outline: 3px solid #2845cd; outline-offset: 3px; }
+@media (max-width: 37rem) {
+  .files { grid-template-columns: 1fr; }
+  .actions > button { flex: 1 1 100%; }
+}
