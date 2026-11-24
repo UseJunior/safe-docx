@@ -38,12 +38,42 @@ const MAX_POSITIVE_DRIFT = {
   branches: 2,
 };
 
+// The CI ratchet (workspace-test, Node 20) is the authority for package floors.
+// Node 22+ reports slightly higher V8 branch coverage (~0.1 pp for docx-markdoc
+// and docx-mcp), so a baseline written on a newer local Node fails CI (#1602).
+// --write-baseline therefore refuses to run off Node 20 unless the caller passes
+// --allow-non-node20 (for example, when rebaselining from the coverage-summary
+// files in a CI coverage artifact rather than from a local run).
+// SAFE_DOCX_COVERAGE_NODE_VERSION overrides the detected version (tests only).
+const REQUIRED_BASELINE_NODE_MAJOR = 20;
+
+function nodeMajor(version) {
+  return Number.parseInt(String(version).replace(/^v/, '').split('.')[0], 10);
+}
+
+function assertBaselineNodeVersion(args) {
+  if (!args.writeBaseline || args.allowNonNode20) return;
+  const version = process.env.SAFE_DOCX_COVERAGE_NODE_VERSION || process.versions.node;
+  if (nodeMajor(version) === REQUIRED_BASELINE_NODE_MAJOR) return;
+  console.error(
+    `Refusing to write the package coverage baseline on Node ${version}.\n` +
+      `The CI coverage ratchet runs on Node ${REQUIRED_BASELINE_NODE_MAJOR}, and other Node versions ` +
+      'report slightly different branch coverage, so floors written here can fail CI.\n' +
+      'Either:\n' +
+      `  - rerun on Node ${REQUIRED_BASELINE_NODE_MAJOR} (e.g. \`nvm use ${REQUIRED_BASELINE_NODE_MAJOR}\` then npm run coverage:packages:rebaseline), or\n` +
+      '  - rebaseline from the CI coverage artifact: place its per-package coverage-summary.json files\n' +
+      '    under packages/*/coverage/ and rerun with --allow-non-node20.'
+  );
+  process.exit(1);
+}
+
 function parseArgs(argv) {
   const out = {
     baseline: null,
     output: null,
     enforce: false,
     writeBaseline: false,
+    allowNonNode20: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -51,6 +81,7 @@ function parseArgs(argv) {
     else if (arg === '--output') out.output = argv[++i] ?? null;
     else if (arg === '--enforce') out.enforce = true;
     else if (arg === '--write-baseline') out.writeBaseline = true;
+    else if (arg === '--allow-non-node20') out.allowNonNode20 = true;
   }
   return out;
 }
@@ -239,6 +270,7 @@ function validateBaselinePolicy(baselineRaw) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  assertBaselineNodeVersion(args);
   const baselinePath = args.baseline ? path.resolve(ROOT, args.baseline) : null;
   const outputPath = args.output ? path.resolve(ROOT, args.output) : null;
 
