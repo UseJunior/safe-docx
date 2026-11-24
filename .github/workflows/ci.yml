@@ -456,6 +456,14 @@ jobs:
           npm run test:coverage -w @usejunior/docx-mcp
           npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
+      - name: Exercise the browser comparison in Chromium
+        if: ${{ env.CI_RUN_HEAVY == 'true' && matrix.coverage }}
+        run: |
+          npm --prefix site ci
+          npm --prefix site run build:prototype
+          cd site
+          npx --no-install playwright install --with-deps chromium
+          npm run test:prototype
       # The coverage step above names six workspaces. On PRs the Node 22 leg
       # (which runs `npm run test` across all of them) is skipped, so test the
       # rest here. Discovered from packages/* so a new workspace is never

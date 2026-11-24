@@ -1,0 +1,2 @@
+- [x] Add the sample action and reuse the guarded comparison path.
+- [x] Add the browser smoke to required CI and production deployment verification.

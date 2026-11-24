@@ -1,0 +1,34 @@
+name: Browser comparison production smoke
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      github.event.deployment.creator.login == 'vercel[bot]' &&
+      startsWith(github.event.deployment_status.environment_url, 'https://site-') &&
+      endsWith(github.event.deployment_status.environment_url, '-use-junior.vercel.app')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies and build the projection engine
+        run: |
+          npm ci
+          npm --prefix site ci
+          npm run build -w @usejunior/docx-compare
+      - name: Verify the live demo in Chromium
+        working-directory: site
+        run: |
+          npx --no-install playwright install --with-deps chromium
+          npm run test:prototype -- --production
