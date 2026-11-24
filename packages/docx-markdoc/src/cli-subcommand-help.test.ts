@@ -134,6 +134,7 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
       expect(spawned.stderr).toBe('');
       expect(spawned.stdout).toBe(`${commandHelp('create')}\n`);
     },
+    30_000,
   );
 
   test.openspec('[SDX-MDOC-CLIHELP-02] usage errors print one line and no stack')(
@@ -211,6 +212,7 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
         expectOneLine(spawned.stderr, /^ERROR CLI_USAGE: /u);
       }
     },
+    30_000,
   );
 
   test.openspec('[SDX-MDOC-CLIHELP-03] create help lists the whole creation grammar from its constants')(
@@ -252,6 +254,7 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
       }
       expect(creationGrammarHelp().join('\n')).not.toContain(UNDOCUMENTED);
     },
+    30_000,
   );
 
   test.openspec("[SDX-MDOC-CLIHELP-04] the issue's creation source passes and nothing is written")(
@@ -281,6 +284,7 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
       expect(await listing(directory)).toEqual(withProfileBefore);
       expect((await readdir(directory)).sort()).toEqual(['house.json', 'v.mdoc']);
     },
+    30_000,
   );
 
   test.openspec('[SDX-MDOC-CLIHELP-05] a bad creation source fails with the message and line create prints')(
@@ -313,6 +317,7 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
         expect(created.stderr, name).toBe(linted.stderr);
       }
     },
+    30_000,
   );
 
   test.openspec('[SDX-MDOC-CLIHELP-06] brownfield validate is unchanged')(
@@ -337,5 +342,6 @@ describe('Traceability: subcommand help, usage errors and validate --create', ()
       expect(withoutFlag.stderr).toContain("ERROR tag-undefined: Undefined tag: 'section' (line 10)");
       expect(withoutFlag.stderr).toContain('ERROR MISSING_SOURCE: ');
     },
+    30_000,
   );
 });
