@@ -7,7 +7,7 @@
 //   node scripts/bump_version.mjs --check   # Verify all versions are in sync
 //
 // Updates: root + all workspace package.json files, mcpb manifest.json,
-// cross-workspace dep ranges, and package-lock.json.
+// cross-workspace dep ranges, package-lock.json, and site/package-lock.json.
 // After running, commit the changes and merge to main. The Auto-tag release
 // workflow (.github/workflows/auto-tag-release.yml) then pushes the v<version>
 // tag, and the tag push triggers the release workflow.
@@ -38,6 +38,11 @@ const PACKAGE_JSONS = [
 
 const MANIFEST_JSON = 'packages/safe-docx-mcpb/manifest.json';
 const SMITHERY_MANIFEST_JSON = 'packages/safe-docx/.smithery/shttp/manifest.json';
+
+// site/ is not a root workspace (workspaces: ["packages/*"]), so the root
+// `npm install` never touches its lockfile. Its only versioned entries are the
+// root `version` and `packages[""].version`, so they are rewritten directly.
+const SITE_LOCKFILE = 'site/package-lock.json';
 
 // Cross-workspace dependencies (package name → dep specifier pattern)
 const WORKSPACE_DEPS = [
@@ -104,6 +109,10 @@ function checkVersionSync() {
     );
     ok = false;
   }
+
+  const siteLock = readJson(SITE_LOCKFILE);
+  versions.set(SITE_LOCKFILE, siteLock.version);
+  versions.set(`${SITE_LOCKFILE} packages[""]`, siteLock.packages?.['']?.version);
 
   const uniqueVersions = new Set(versions.values());
   if (uniqueVersions.size === 1) {
@@ -207,6 +216,15 @@ function bumpVersion(newVersion) {
     console.error('  ✗ npm install failed — fix manually and re-run');
     process.exit(1);
   }
+
+  // 4a. Update site/package-lock.json (not covered by the root install)
+  const siteLock = readJson(SITE_LOCKFILE);
+  siteLock.version = newVersion;
+  if (siteLock.packages?.['']) {
+    siteLock.packages[''].version = newVersion;
+  }
+  writeJson(SITE_LOCKFILE, siteLock);
+  console.log(`  ✓ ${SITE_LOCKFILE}`);
 
   // 5. Verify
   console.log('\nVerifying...');
