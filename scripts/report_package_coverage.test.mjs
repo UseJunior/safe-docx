@@ -49,10 +49,18 @@ function setupFixture(t, metrics) {
   return result;
 }
 
+// Pin the detected Node version so rebaseline tests do not depend on the runtime.
+const node20Env = { ...process.env, SAFE_DOCX_COVERAGE_NODE_VERSION: '20.19.0' };
+
 function run(root, ...args) {
+  return runWithNode(root, node20Env.SAFE_DOCX_COVERAGE_NODE_VERSION, ...args);
+}
+
+function runWithNode(root, nodeVersion, ...args) {
   return spawnSync(process.execPath, [scriptPath, ...args], {
     cwd: root,
     encoding: 'utf8',
+    env: { ...process.env, SAFE_DOCX_COVERAGE_NODE_VERSION: nodeVersion },
   });
 }
 
@@ -154,6 +162,7 @@ test('rebaseline writes current metrics with null deltas and policy metadata', (
   execFileSync(process.execPath, [scriptPath, '--baseline', baselinePath, '--write-baseline'], {
     cwd: root,
     encoding: 'utf8',
+    env: node20Env,
   });
   const written = JSON.parse(readFileSync(baselinePath, 'utf8'));
   assert.equal(written.packages['docx-core'].lines, 91.25);
@@ -163,4 +172,32 @@ test('rebaseline writes current metrics with null deltas and policy metadata', (
   assert.deepEqual(written.policy.max_positive_drift_percentage_points, { lines: 1, branches: 2 });
   const check = run(root, '--baseline', baselinePath, '--enforce');
   assert.equal(check.status, 0, check.stderr);
+});
+
+test('rebaseline refuses to run off Node 20 and names both safe options', (t) => {
+  const { root, baselinePath } = setupFixture(t, { current: { lines: 90.5 } });
+  const before = readFileSync(baselinePath, 'utf8');
+  for (const version of ['22.11.0', '26.0.0', '18.20.4']) {
+    const result = runWithNode(root, version, '--baseline', baselinePath, '--write-baseline');
+    assert.equal(result.status, 1, `expected refusal on Node ${version}`);
+    assert.match(result.stderr, new RegExp(`Refusing to write the package coverage baseline on Node ${version.replaceAll('.', '\\.')}`));
+    assert.match(result.stderr, /rerun on Node 20/);
+    assert.match(result.stderr, /CI coverage artifact/);
+    assert.match(result.stderr, /--allow-non-node20/);
+  }
+  assert.equal(readFileSync(baselinePath, 'utf8'), before);
+});
+
+test('rebaseline off Node 20 succeeds with --allow-non-node20', (t) => {
+  const { root, baselinePath } = setupFixture(t, { current: { lines: 90.5 } });
+  const result = runWithNode(root, '22.11.0', '--baseline', baselinePath, '--write-baseline', '--allow-non-node20');
+  assert.equal(result.status, 0, result.stderr);
+  const written = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  assert.equal(written.packages['docx-core'].lines, 90.5);
+});
+
+test('Node version guard does not affect enforce-only runs', (t) => {
+  const { root, baselinePath } = setupFixture(t);
+  const result = runWithNode(root, '26.0.0', '--baseline', baselinePath, '--enforce');
+  assert.equal(result.status, 0, result.stderr);
 });
