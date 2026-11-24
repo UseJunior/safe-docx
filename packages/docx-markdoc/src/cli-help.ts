@@ -302,6 +302,7 @@ const CREATION_KEY_VALUES: Readonly<Record<string, string>> = {
 
 /** What each creation tag does and, where one is closed, the values of its attributes. */
 const CREATION_TAG_HELP: Readonly<Record<string, string>> = {
+  'esign-anchor': '{% esign-anchor %}{{sig:Alice}}{% /esign-anchor %}: place a white 1-point text marker for e-signature field placement on a white page',
   center: '{% center %}...{% /center %}: a centred paragraph',
   legend: '{% legend %}...{% /legend %}: a legend, such as a signature-page notice, kept with the block before it',
   'paragraph-layout': `{% paragraph-layout ... %}...{% /paragraph-layout %}: body paragraphs with their own layout; align=${either(PARAGRAPH_LAYOUT_ALIGNMENTS)}, indent-left=${either(PARAGRAPH_LAYOUT_LEFT_INDENTS)} (inches), indent-hanging=${either(PARAGRAPH_LAYOUT_HANGING_INDENTS)} (inches, at most indent-left), keep-with-next=true (stay on the page of the next paragraph), keep-lines=true (keep all lines on one page)`,

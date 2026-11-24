@@ -138,6 +138,7 @@ export const CREATION_INLINE_TAGS: Record<string, ReadonlySet<string>> = {
   literal: new Set(),
   fill: new Set(),
   u: new Set(),
+  'esign-anchor': new Set(),
   fnref: new Set(['id']),
   xref: new Set(['to', 'show', 'number', 'format']),
   tc: new Set(['level']),
@@ -504,6 +505,15 @@ function checkInline(children: MarkdocNode[], line: number | undefined, highligh
           fillDepth += 1;
           node.children.forEach((child) => visit(child, false));
           fillDepth -= 1;
+          return;
+        }
+        if (node.tag === 'esign-anchor') {
+          const marker = inlineText(node);
+          if (literal || fillDepth > 0 || depth > 0 || formatted > 0
+              || node.children.length !== 1 || node.children[0]!.type !== 'text'
+              || !/^[^\s<>]+$/u.test(marker)) {
+            creationError('INVALID_ESIGN_ANCHOR', '{% esign-anchor %} requires one plain-text marker without spaces, outside inline formatting and fill-ins.', node, line);
+          }
           return;
         }
         if (node.tag === 'u') {

@@ -30,7 +30,7 @@ export type SourceHolder = {
  */
 export type SourcePiece = {
   kind: 'text' | 'soft' | 'fixed';
-  what?: 'cross-reference' | 'fill-bracket' | 'line-break' | 'footnote-reference' | 'generated';
+  what?: 'cross-reference' | 'esign-anchor' | 'fill-bracket' | 'line-break' | 'footnote-reference' | 'generated';
   text: string;
   start: number;
   end: number;
@@ -287,15 +287,20 @@ function mapUnit(source: string, unit: ParagraphUnit, built: BuiltParagraph): { 
     holders.push(holder);
     return holder;
   };
-  const addText = (content: string, holder: number) => {
+  const addText = (content: string, holder: number, anchorStart?: number) => {
     if (!content) return;
     const limit = nextTagStart();
     for (let start = cursor; start < limit; start += 1) {
       const map = matchAt(source, start, content, limit);
       if (!map) continue;
-      pieces.push({ kind: 'text', text: content, start: text.length, end: text.length + content.length, raw: map, holder });
-      text += content;
       cursor = map.at(-1)!;
+      if (anchorStart !== undefined) {
+        const [, close] = consumeTag();
+        fixed(content, holder, 'esign-anchor', { rawStart: anchorStart, rawEnd: close });
+      } else {
+        pieces.push({ kind: 'text', text: content, start: text.length, end: text.length + content.length, raw: map, holder });
+        text += content;
+      }
       return;
     }
     throw new MapFailure(`text '${content.slice(0, 40)}' was not found in its source`);
@@ -356,6 +361,10 @@ function mapUnit(source: string, unit: ParagraphUnit, built: BuiltParagraph): { 
             if (node.tag === 'fill') fixed(']', inner.id, 'fill-bracket');
             inner.end = text.length;
             inner.rawEnd = close;
+          } else if (node.tag === 'esign-anchor') {
+            const [open] = consumeTag();
+            const marker = String(node.children[0]!.attributes.content);
+            addText(marker, holder, open);
           } else if (node.tag === 'xref') {
             const [open, close] = consumeTag();
             if (node.attributes.format === 'section' && node.attributes.show !== 'text') fixed('Section ', holder, 'generated');

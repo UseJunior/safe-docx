@@ -2861,6 +2861,30 @@
       ]
     },
     {
+      "id": "ECMA-PART1-17-3-2-43",
+      "title": "Run character scale",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.2.43"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TextScale",
+      "claimRationale": "Part 1 §17.3.2.43 defines `w:w` as the character width relative to the normal\nwidth. The generation API emits positive integer percentages in transitional\nWordprocessingML.",
+      "evidence": [
+        {
+          "kind": "source",
+          "path": "packages/docx-core/src/generation/emit/properties.ts"
+        },
+        {
+          "kind": "test",
+          "path": "packages/docx-markdoc/src/create/esign-anchor.test.ts"
+        }
+      ]
+    },
+    {
       "id": "ECMA-PART1-17-3-2-6",
       "title": "Run color and theme transforms",
       "classification": "targeted",
@@ -7377,6 +7401,19 @@
       "occurrences": [
         {
           "contextPath": "schema/type:CT_TblStylePr"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TextScale",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "type",
+      "name": "CT_TextScale",
+      "occurrences": [
+        {
+          "contextPath": "schema/type:CT_TextScale"
         }
       ]
     },

@@ -53,6 +53,7 @@ export const RPR_ORDER = [
   'strike',
   'vanish',
   'color',
+  'w',
   'sz',
   'szCs',
   'highlight',

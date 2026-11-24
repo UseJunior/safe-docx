@@ -96,6 +96,21 @@ Part 1 §17.3.2.38 defines `w:sz` as a run font size expressed in half-points.
 safe-docx retains positive integral half-point sizes from imported annotation
 bodies and re-emits them across comment and footnote projections.
 
+## [ECMA-PART1-17-3-2-43] Run character scale
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.43"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TextScale
+verifiedBy: packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/esign-anchor.test.ts
+```
+
+Part 1 §17.3.2.43 defines `w:w` as the character width relative to the normal
+width. The generation API emits positive integer percentages in transitional
+WordprocessingML.
+
 ## [ECMA-PART4-14-9-1-1] VML rich text-box content (w:txbxContent)
 
 ```yaml
