@@ -196,6 +196,35 @@ describe('on_empty_numbered_paragraph (#1047)', () => {
       },
     );
 
+    test.openspec('A whole-paragraph tracked deletion is not reported')(
+      'tracked, policy "error": blanking a list item completely removes the item and raises no error (#1601)',
+      async ({ given, when, then }: AllureBddContext) => {
+        const s = await given('a numbered list in the default tracked mode', () =>
+          openList(item(run('second obligation')), 'tracked'),
+        );
+        const id = paragraphId(s.session, 'second obligation');
+        const results = await when('replace_text and batch_edit blank the middle item completely with on_empty_numbered_paragraph "error"', async () => {
+          const single = await replaceText(s.mgr, { file_path: s.inputPath, target_paragraph_id: id, old_string: 'second obligation', new_string: '', instruction: 'delete item (b)', on_empty_numbered_paragraph: 'error' });
+          const other = await openList(item(run('second obligation')), 'tracked');
+          const batch = await batchEdit(other.mgr, {
+            file_path: other.inputPath,
+            on_empty_numbered_paragraph: 'error',
+            steps: [{ step_id: 'drop-second', operation: 'replace_text', target_paragraph_id: paragraphId(other.session, 'second obligation'), old_string: 'second obligation', new_string: '', instruction: 'delete item (b)' }],
+          });
+          return [{ result: single, session: s }, { result: batch, session: other }];
+        });
+        await then('both edits succeed without a warning, and accepting the tracked save removes the list item', async () => {
+          for (const [i, { result, session }] of results.entries()) {
+            assertSuccess(result, 'edit');
+            expect(emptyNumberedWarnings(result)).toEqual([]);
+            const tracked = await savedDocumentXml(session.mgr, session.inputPath, path.join(session.tmpDir, `tracked-${i}.docx`), 'tracked');
+            acceptChanges(tracked);
+            expect(numberedTexts(tracked)).toEqual(['first obligation', 'third obligation']);
+          }
+        });
+      },
+    );
+
     test.openspec('An image-only list item is not reported')(
       'blanking the text of a list item that also holds a drawing is not reported',
       async ({ given, when, then }: AllureBddContext) => {
