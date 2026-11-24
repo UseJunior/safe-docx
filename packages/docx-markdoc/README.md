@@ -845,6 +845,11 @@ such as an unclosed tag, and headings below `###`.
   `{% signer date="Date: ___" %}{% fill %}Name{% /fill %}, Director{% /signer %}`.
   Signer content is one line of text. A second line, a line break, or a tag
   on its own line after the name fails with `INVALID_SIGNER`.
+- `{% esign-anchor %}{{sig:Alice}}{% /esign-anchor %}` inserts a searchable
+  placement marker for a PDF e-signature workflow. Put it immediately before
+  the matching signature or date line on a white background. Use a short,
+  unique plain-text marker without whitespace. The marker uses condensed
+  white 1-point text and takes up a small amount of inline space.
 - `{% u %}Purchase Price{% /u %}` underlines its content (single underline)
   and nothing outside it, so `{% u %}Purchase Price{% /u %}.` leaves the
   period plain. Use it for defined terms where they are defined, run-in

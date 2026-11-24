@@ -1250,6 +1250,10 @@ function validateRunProps(props: RunProps, path: string): void {
   if (props.sizePt !== undefined && (!(props.sizePt > 0) || !Number.isFinite(props.sizePt))) {
     throw new GenerationSpecError('invalid_value', `${path}/sizePt`, 'sizePt must be a positive finite number');
   }
+  const scale = props.characterScalePercent;
+  if (scale !== undefined && (!Number.isInteger(scale) || scale < 1 || scale > 600)) {
+    throw new GenerationSpecError('invalid_value', `${path}/characterScalePercent`, 'characterScalePercent must be an integer from 1 to 600');
+  }
   if (props.highlight !== undefined && !HIGHLIGHT_COLOR_SET.has(props.highlight)) {
     throw new GenerationSpecError(
       'invalid_value',

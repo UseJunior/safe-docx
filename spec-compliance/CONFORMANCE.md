@@ -18,6 +18,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-2-25` | w:r run content model excludes revision wrappers | 5 | 1 | 17.3.2.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_R` | packages/docx-compare/src/tagged/taggedTreeSerializer.ts; packages/docx-compare/src/tagged/sharedFieldMarkerRun.test.ts |
 | `ECMA-PART1-17-3-2-29` | Run style | 5 | 1 | 17.3.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rStyle` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
 | `ECMA-PART1-17-3-2-38` | Run font size | 5 | 1 | 17.3.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sz` | packages/docx-markdoc/src/import.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/footnotes.ts; packages/docx-markdoc/src/annotation-roundtrip.test.ts |
+| `ECMA-PART1-17-3-2-43` | Run character scale | 5 | 1 | 17.3.2.43 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TextScale` | packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/esign-anchor.test.ts |
 | `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline.ts; packages/docx-compare/src/tagged/pipeline-text-box-stories.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-hyperlink.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts; packages/docx-compare/src/tagged/pipeline-header-footer-text-box-lifecycle.test.ts |
 | `ECMA-PART4-19-1-2-11` | VML image data relationship (v:imagedata) | 5 | 4 | 19.1.2.11 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#element:imagedata` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/picturePayload.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-picture-payload-swap.test.ts |
 | `ECMA-PART1-20-4-2-38` | DrawingML rich text-box content (w:txbxContent) | 5 | 1 | 20.4.2.38 | `spec-compliance/ecma-376/schemas/transitional/dml-wordprocessingDrawing.xsd#element:txbxContent` | packages/docx-compare/src/tagged/textBoxRevisionSafety.ts; packages/docx-compare/src/tagged/pipeline-text-box-atomic-leaves.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-drawing-shape.test.ts; packages/docx-compare/src/tagged/pipeline-text-box-storage-shape.test.ts |
@@ -251,6 +252,18 @@ fail closed.
 Part 1 §17.3.2.38 defines `w:sz` as a run font size expressed in half-points.
 safe-docx retains positive integral half-point sizes from imported annotation
 bodies and re-emits them across comment and footnote projections.
+
+### ECMA-PART1-17-3-2-43 — Run character scale
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.43
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_TextScale`
+- **Verified by:** packages/docx-core/src/generation/emit/properties.ts; packages/docx-markdoc/src/create/esign-anchor.test.ts
+
+Part 1 §17.3.2.43 defines `w:w` as the character width relative to the normal
+width. The generation API emits positive integer percentages in transitional
+WordprocessingML.
 
 ### ECMA-PART4-14-9-1-1 — VML rich text-box content (w:txbxContent)
 

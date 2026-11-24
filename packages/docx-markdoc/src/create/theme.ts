@@ -31,7 +31,10 @@ function coalesce(runs: InlineSpec[]): InlineSpec[] {
       && Boolean(previous.bold) === Boolean(run.bold)
       && Boolean(previous.italic) === Boolean(run.italic)
       && previous.underline === run.underline
-      && previous.highlight === run.highlight) {
+      && previous.highlight === run.highlight
+      && previous.colorHex === run.colorHex
+      && previous.sizePt === run.sizePt
+      && previous.characterScalePercent === run.characterScalePercent) {
       previous.text += run.text;
       continue;
     }
@@ -412,6 +415,14 @@ export function creationPlugins(
         const text = runs.map((run) => (run.kind === 'text' ? run.text : '')).join('').trim();
         return [...runs, { kind: 'tableOfContentsEntry', text, level: Number(node.attributes.level) }];
       },
+    },
+    {
+      tag: 'esign-anchor',
+      renderInline: (node) => [{
+        kind: 'text', text: String(node.children[0]!.attributes.content),
+        // Keep glyphs separately searchable while minimizing the space taken by the marker.
+        colorHex: 'FFFFFF', sizePt: 1, characterScalePercent: 20,
+      }],
     },
     { tag: 'literal', renderInline: (node, api, style) => theme.withLiteral(() => api.renderInlineChildren(node, style)) },
     { tag: 'fill', renderInline: (node, api, style) => theme.fill(style, () => api.renderInlineChildren(node, style)) },

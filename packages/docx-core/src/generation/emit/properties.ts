@@ -33,6 +33,7 @@ const ALIGNMENT_TO_JC: Record<NonNullable<ParagraphProps['alignment']>, string> 
  * properties so all script ranges agree.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.43
  */
 export function buildRunPropsElement(
   doc: Document,
@@ -76,6 +77,9 @@ export function buildRunPropsElement(
     if (props.themeTint !== undefined) attrs['w:themeTint'] = props.themeTint;
     if (props.themeShade !== undefined) attrs['w:themeShade'] = props.themeShade;
     children.set(W.color, createWmlElement(doc, W.color, attrs));
+  }
+  if (props.characterScalePercent !== undefined) {
+    children.set('w', createWmlElement(doc, 'w', { 'w:val': String(props.characterScalePercent) }));
   }
   if (props.sizePt !== undefined) {
     const halfPoints = String(Math.round(props.sizePt * 2));

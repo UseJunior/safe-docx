@@ -286,6 +286,8 @@ export type RunProps = {
   /** Applied to ascii + hAnsi + eastAsia + cs so all script ranges agree. */
   font?: string;
   sizePt?: number;
+  /** Horizontal character width as an integer percentage. */
+  characterScalePercent?: number;
   caps?: boolean;
   smallCaps?: boolean;
 };
