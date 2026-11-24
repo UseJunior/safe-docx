@@ -595,6 +595,26 @@ describe('Traceability: pull brings Word edits on a create output back into its 
     60_000,
   );
 
+  test('pulls edits beside a fixed e-signature anchor while preserving its source markup', async () => {
+    const marker = '{{sig:Alice}}';
+    const source = `Signature: {% esign-anchor %}${marker}{% /esign-anchor %}______________________`;
+    const base = await createDocumentFromMarkdoc(source);
+
+    const edited = await edit(base.docx, { document: (xml) => once(xml, 'Signature: ', 'Signed by: ') });
+    const result = await pullCreationEdits({ source, base, edited });
+    expect(result).toMatchObject({
+      complete: true,
+      diagnostics: [],
+      pulledSource: source.replace('Signature:', 'Signed by:'),
+    });
+
+    const changedMarker = await edit(base.docx, { document: (xml) => once(xml, marker, '{{sig:Jane}}') });
+    const blocked = await pullCreationEdits({ source, base, edited: changedMarker });
+    expect(blocked.complete).toBe(false);
+    expect(blocked.pulledSource).toBeUndefined();
+    expect(blocked.diagnostics).not.toHaveLength(0);
+  });
+
   test.openspec('[SDX-MDOC-PULL-02] pull --apply writes a new .mdoc that keeps the creation markup and rebuilds to the edited body')(
     'Scenario: pull --apply writes a new .mdoc that keeps the creation markup and rebuilds to the edited body',
     async () => {

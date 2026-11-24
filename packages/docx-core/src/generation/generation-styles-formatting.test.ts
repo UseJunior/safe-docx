@@ -66,6 +66,29 @@ function wChildNames(el: Element): string[] {
 }
 
 describe('Traceability: styles and run/paragraph formatting emission', () => {
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.43' })(
+    'emits character width in run properties and rejects out-of-range widths',
+    async () => {
+      const spec = (characterScalePercent: number): DocumentSpec => ({
+        sections: [{ blocks: [{ kind: 'paragraph', runs: [
+          { kind: 'text', text: 'Condensed', colorHex: 'FFFFFF', characterScalePercent, sizePt: 1 },
+        ] }] }],
+      });
+      const { buffer } = await generateDocx(spec(20));
+      const document = await loadPart(buffer, 'word/document.xml');
+      const runProps = document.getElementsByTagNameNS(OOXML.W_NS, 'rPr').item(0)!;
+      expect(wChildNames(runProps)).toEqual(['color', 'w', 'sz', 'szCs']);
+      expect(getDirectChildrenByName(runProps, 'w')[0]!.getAttributeNS(OOXML.W_NS, 'val')).toBe('20');
+
+      for (const scale of [0, 601, 1.5]) {
+        await expect(generateDocx(spec(scale))).rejects.toMatchObject({
+          code: 'invalid_value',
+          path: '/sections/0/blocks/0/runs/0/characterScalePercent',
+        });
+      }
+    },
+  );
+
   test.openspec('[SDX-GEN-004] dangling references are rejected before emission')(
     'Scenario: dangling references are rejected before emission',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
