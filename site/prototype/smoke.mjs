@@ -5,10 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { DocxArchive, parseXml } from '@usejunior/docx-core';
 import { acceptAllChanges, rejectAllChanges } from '@usejunior/docx-compare';
 import { chromium } from 'playwright';
-import { samples } from './samples.mjs';
 
 const route = '/labs/docx-compare';
 const fixture = name => fileURLToPath(new URL('../../' + name, import.meta.url));
+const goodPair = ['source.docx', 'revised.docx']
+  .map(name => fixture('tests/test_documents/text-box/' + name));
 const badPair = [
   'ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx',
   'ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx',
@@ -18,7 +19,7 @@ async function serveBuild() {
   const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url)));
   const headers = Object.fromEntries(config.headers.at(-1).headers.map(({ key, value }) => [key, value]));
   const types = { 'index.html': 'text/html', 'demo.css': 'text/css', 'demo.js': 'text/javascript',
-    'worker.js': 'text/javascript', 'samples.js': 'text/javascript' };
+    'worker.js': 'text/javascript' };
   const server = createServer(async (request, response) => {
     const file = request.url === route ? 'index.html' : request.url.slice(route.length + 1);
     if (!Object.hasOwn(types, file) || !request.url.startsWith(route)) {
@@ -62,7 +63,6 @@ try {
   const original = page.locator('#original');
   const revised = page.locator('#revised');
   const compare = page.getByRole('button', { name: 'Compare documents' });
-  const sample = page.getByRole('button', { name: 'Try with sample files' });
   const download = page.getByRole('link', { name: 'Download redline' });
   const status = page.getByRole('status');
   assert.equal(await compare.isDisabled(), true);
@@ -72,16 +72,14 @@ try {
     await download.click();
     const downloaded = await pending;
     const output = await readFile(await downloaded.path());
-    const [before, after] = await Promise.all(samples.map(([file]) => readFile(fixture(file))));
+    const [before, after] = await Promise.all(goodPair.map(file => readFile(file)));
     assert.match(await status.textContent(), /redline is ready/u);
     assert.equal(await text(output, rejectAllChanges), await text(before));
     assert.equal(await text(output, acceptAllChanges), await text(after));
   }
 
-  await sample.click();
-  await checkDownload();
-  await original.setInputFiles(fixture(samples[0][0]));
-  await revised.setInputFiles(fixture(samples[1][0]));
+  await original.setInputFiles(goodPair[0]);
+  await revised.setInputFiles(goodPair[1]);
   await compare.click();
   await checkDownload();
 
@@ -91,7 +89,7 @@ try {
   await page.getByText('No redline was created.', { exact: false }).waitFor({ timeout: 180_000 });
   assert.equal(await download.count(), 0);
   assert.deepEqual(errors, []);
-  const assetPaths = new Set([route, ...['demo.js', 'demo.css', 'worker.js', 'samples.js'].map(file => route + '/' + file)]);
+  const assetPaths = new Set([route, ...['demo.js', 'demo.css', 'worker.js'].map(file => route + '/' + file)]);
   for (const request of requests) {
     const url = new URL(request.url());
     assert.equal(request.method(), 'GET');
@@ -100,7 +98,7 @@ try {
     assert.equal(url.search, '');
     assert.ok(assetPaths.has(url.pathname), 'Unexpected browser request: ' + url.pathname);
   }
-  console.log('Passed: browser sample, local-file round trip, and refusal without a download or upload.');
+  console.log('Passed: browser local-file round trip and refusal without a download or upload.');
 } finally {
   await browser?.close();
   server?.close();

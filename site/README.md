@@ -21,7 +21,7 @@ The Vercel deployment serves an unlisted browser comparison prototype at
 It bundles the portable engine from this checkout into a Web Worker and places
 the static files in `_site`.
 
-`npm run test:prototype` verifies the built sample flow, local file selection,
+`npm run test:prototype` verifies local file selection,
 both revision projections, and refusal of a known incomplete pair in Chromium.
 First build the comparison workspace and prototype, then install Chromium with
 `npx playwright install chromium`. The required workspace test runs this smoke

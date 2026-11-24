@@ -1,8 +1,8 @@
 ## ADDED Requirements
 
-### Requirement: Built-in browser comparison example
-The prototype SHALL provide a built-in sample that passes through the same browser worker and fidelity check as visitor files.
+### Requirement: Browser comparison smoke coverage
+The browser smoke check SHALL exercise the visitor's local file selection flow.
 
-#### Scenario: Compare the built-in sample
-- **WHEN** a visitor selects the sample action
-- **THEN** the page runs the comparison and offers a verified redline without requiring file selection
+#### Scenario: Compare two local files
+- **WHEN** a visitor selects an original and revised Word file and starts the comparison
+- **THEN** the page offers a verified redline if both revision projections match
