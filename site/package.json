@@ -7,13 +7,15 @@
   "scripts": {
     "build": "eleventy",
     "dev": "eleventy --serve",
-    "build:prototype": "node prototype/build.mjs"
+    "build:prototype": "node prototype/build.mjs",
+    "test:prototype": "node prototype/smoke.mjs"
   },
   "devDependencies": {
     "@11ty/eleventy": "^3.1.6",
     "@xmldom/xmldom": "0.9.12",
     "esbuild": "0.28.1",
     "jszip": "3.10.1",
-    "markdown-it": "^14.3.3"
+    "markdown-it": "^14.3.3",
+    "playwright": "1.65.1"
   }
 }

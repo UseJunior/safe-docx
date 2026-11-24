@@ -17,6 +17,7 @@ label { display: block; border: 1px solid #d3ddd4; border-radius: .55rem; paddin
 input { display: block; width: 100%; margin-top: .5rem; font: inherit; font-size: .84rem; }
 .hint { color: #486158; font-size: .87rem; margin: .8rem 0 1.25rem; }
 button, #download { color: #fff; background: #195c49; border: 0; border-radius: .4rem; padding: .66rem 1rem; font: inherit; font-weight: 650; }
+#sample { color: #195c49; background: transparent; border: 1px solid currentColor; margin: .4rem 0; }
 button:not(:disabled) { cursor: pointer; }
 button:disabled { opacity: .55; }
 #download:not([hidden]) { display: inline-block; }
