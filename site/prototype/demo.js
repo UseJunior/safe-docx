@@ -1,7 +1,6 @@
 const original = document.querySelector('#original');
 const revised = document.querySelector('#revised');
 const compare = document.querySelector('#compare');
-const sample = document.querySelector('#sample');
 const download = document.querySelector('#download');
 const status = document.querySelector('#status');
 const limit = 10_000_000;
@@ -19,7 +18,6 @@ function reset() {
   download.removeAttribute('href');
   status.textContent = '';
   compare.disabled = !original.files.length || !revised.files.length;
-  sample.disabled = false;
 }
 
 original.addEventListener('change', reset);
@@ -36,23 +34,13 @@ compare.addEventListener('click', () => {
     return;
   }
 
-  void runComparison(() => files, false);
+  runComparison(files);
 });
 
-sample.addEventListener('click', () => {
-  void runComparison(async () => {
-    const { default: entries } = await import('./samples.js');
-    return entries.map(([name, encoded]) =>
-      new File([Uint8Array.from(atob(encoded), char => char.charCodeAt(0))], name));
-  }, true);
-});
-
-async function runComparison(loadFiles, isSample) {
-  reset();
+function runComparison(files) {
   const current = runId;
   compare.disabled = true;
-  sample.disabled = true;
-  status.textContent = isSample ? 'Comparing sample documents…' : 'Comparing documents…';
+  status.textContent = 'Comparing documents…';
   const fail = () => {
     if (current !== runId) return;
     reset();
@@ -60,8 +48,6 @@ async function runComparison(loadFiles, isSample) {
   };
 
   try {
-    const files = await loadFiles();
-    if (current !== runId) return;
     worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
     worker.onerror = fail;
     worker.onmessage = ({ data }) => {
@@ -81,7 +67,7 @@ async function runComparison(loadFiles, isSample) {
       }));
       download.href = url;
       download.hidden = false;
-      status.textContent = isSample ? 'Your sample redline is ready.' : 'Your redline is ready.';
+      status.textContent = 'Your redline is ready.';
     };
     worker.postMessage(files);
   } catch {

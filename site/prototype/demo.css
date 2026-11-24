@@ -54,7 +54,6 @@ input::file-selector-button {
   cursor: pointer;
 }
 .hint { color: var(--muted); font-size: .875rem; margin: .8rem 0 1.25rem; }
-.actions { display: flex; flex-wrap: wrap; gap: .8rem; }
 button, #download {
   border: 1px solid var(--navy);
   border-radius: .45rem;
@@ -65,7 +64,6 @@ button, #download {
   font-weight: 700;
   text-decoration: none;
 }
-#sample { background: transparent; color: var(--navy); }
 button:not(:disabled) { cursor: pointer; }
 button:disabled { opacity: .55; }
 button:not(:disabled):hover, #download:hover { box-shadow: 0 8px 22px rgb(9 14 52 / 13%); }
@@ -74,5 +72,5 @@ button:not(:disabled):hover, #download:hover { box-shadow: 0 8px 22px rgb(9 14 5
 :focus-visible { outline: 3px solid #2845cd; outline-offset: 3px; }
 @media (max-width: 37rem) {
   .files { grid-template-columns: 1fr; }
-  .actions > button { flex: 1 1 100%; }
+  #compare { width: 100%; }
 }
