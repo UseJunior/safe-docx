@@ -200,7 +200,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       on_empty_numbered_paragraph: z
         .enum(['warn', 'error', 'remove_paragraph', 'ignore'])
         .optional()
-        .describe('What to do with paragraphs that replace_text steps leave numbered but empty, judged after the last step: "warn" (default) adds a warning carrying the step_id of the step that emptied the paragraph; "error" refuses the whole batch before any step is applied; "remove_paragraph" removes them once after the last step, so later steps can still anchor on them; "ignore" reports nothing.'),
+        .describe('What to do with paragraphs that replace_text steps leave numbered but empty, judged after the last step: "warn" (default) adds a warning carrying the step_id of the step that emptied the paragraph; "error" refuses the whole batch before any step is applied; "remove_paragraph" removes them once after the last step, so later steps can still anchor on them; "ignore" reports nothing. When edits are tracked, deleting a paragraph\'s entire text also deletes its paragraph mark as a tracked change, so the list item is removed once the change is accepted and this setting does not apply; it still applies when the mark is kept, as for a paragraph holding a bookmark, comment anchor or section break, or one a table cell requires.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
@@ -227,7 +227,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       on_empty_numbered_paragraph: z
         .enum(['warn', 'error', 'remove_paragraph', 'ignore'])
         .optional()
-        .describe('DOCX only. What to do when the edit leaves the target paragraph numbered but empty, so Word shows a bare list label: "warn" (default) adds a warning naming the paragraph; "error" refuses the edit and leaves the document unchanged; "remove_paragraph" also deletes the remaining whitespace and the paragraph (tracked when edits are tracked), including local bookmarks wholly inside it; spanning bookmarks, comments, fields, section breaks and required table-cell paragraphs remain protected, and affected cross-references are reported; "ignore" reports nothing. Only fires when the paragraph had visible content before the edit.'),
+        .describe('DOCX only. What to do when the edit leaves the target paragraph numbered but empty, so Word shows a bare list label: "warn" (default) adds a warning naming the paragraph; "error" refuses the edit and leaves the document unchanged; "remove_paragraph" also deletes the remaining whitespace and the paragraph (tracked when edits are tracked), including local bookmarks wholly inside it; spanning bookmarks, comments, fields, section breaks and required table-cell paragraphs remain protected, and affected cross-references are reported; "ignore" reports nothing. Only fires when the paragraph had visible content before the edit. When edits are tracked, deleting a paragraph\'s entire text also deletes its paragraph mark as a tracked change, so the list item is removed once the change is accepted and this setting does not apply; it still applies when the mark is kept, as for a paragraph holding a bookmark, comment anchor or section break, or one a table cell requires.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
